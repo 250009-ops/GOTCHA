@@ -1,11 +1,32 @@
-export const APP_LANGUAGES = ['en', 'ru', 'uz'] as const;
+/** Keep aligned with Prisma `AppLanguage` / `@gotcha/shared`. */
+export const APP_LANGUAGES = ['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const;
 export type AppLanguage = (typeof APP_LANGUAGES)[number];
+
+export const LANGUAGE_META: Record<AppLanguage, { label: string; flag: string }> = {
+  en: { label: 'English', flag: '🇬🇧' },
+  ru: { label: 'Russian', flag: '🇷🇺' },
+  uz: { label: 'Uzbek', flag: '🇺🇿' },
+  fr: { label: 'French', flag: '🇫🇷' },
+  es: { label: 'Spanish', flag: '🇪🇸' },
+  ja: { label: 'Japanese', flag: '🇯🇵' },
+  de: { label: 'German', flag: '🇩🇪' },
+  ko: { label: 'Korean', flag: '🇰🇷' },
+  pt: { label: 'Portuguese', flag: '🇵🇹' },
+};
 
 export const CEFR_LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'] as const;
 export type CefrLevel = (typeof CEFR_LEVELS)[number];
 
 export const CONTENT_TYPES = ['book', 'article', 'story', 'news', 'user_import'] as const;
 export type ContentType = (typeof CONTENT_TYPES)[number];
+
+export interface CatalogLanguage {
+  code: string;
+  name: string;
+  nativeName: string;
+  flagEmoji: string;
+  isEnabled: boolean;
+}
 
 export interface UserTargetLanguage {
   targetLanguage: AppLanguage;
@@ -85,6 +106,7 @@ export interface ContentItem {
   description?: string | null;
   language: AppLanguage;
   contentType: ContentType;
+  contentSource?: string | null;
   cefrLevel: CefrLevel;
   genre?: string | null;
   coverImageUrl?: string | null;
@@ -112,9 +134,11 @@ export interface ContentSegment {
 export interface LookupResult {
   lemma: string;
   translation: string;
-  phonetic?: string;
-  partOfSpeech?: string;
-  grammarNote?: string;
+  phonetic?: string | null;
+  partOfSpeech?: string | null;
+  grammarNote?: string | null;
+  /** True when served from shared lemma / memory cache (no OpenAI spend). */
+  cached?: boolean;
 }
 
 export interface VocabItem {
@@ -126,8 +150,12 @@ export interface VocabItem {
   dueAt: string;
   intervalDays: number;
   repetitions: number;
+  easeFactor?: number;
+  lastReviewedAt?: string | null;
+  notes?: string | null;
   sourceLang: AppLanguage;
   targetLang?: AppLanguage;
+  content?: { id: string; title: string } | null;
 }
 
 export type WordStatus = 'unknown' | 'learning' | 'known' | 'ignored';

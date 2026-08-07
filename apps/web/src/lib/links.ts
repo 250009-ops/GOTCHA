@@ -31,7 +31,7 @@ export const FALLBACK_PLANS: MarketingPlan[] = [
     priceLabel: '$0',
     priceUnit: 'forever',
     aiDailyQuota: 50,
-    importLimit: 3,
+    importLimit: 15,
     offlineEnabled: false,
     unlimitedLookups: false,
     unlimitedImports: false,
@@ -40,7 +40,7 @@ export const FALLBACK_PLANS: MarketingPlan[] = [
     features: [
       'Access to public library',
       '50 AI lookups / day',
-      '3 imports per month',
+      '15 imports',
       'Basic SRS review',
       '7-day reading history',
     ],

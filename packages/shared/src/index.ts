@@ -1,5 +1,21 @@
-export const APP_LANGUAGES = ['en', 'ru', 'uz'] as const;
+/** Shared language catalog — keep in sync with Prisma `AppLanguage` enum. */
+export const APP_LANGUAGES = ['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const;
 export type AppLanguage = (typeof APP_LANGUAGES)[number];
+
+export const LANGUAGE_META: Record<
+  AppLanguage,
+  { label: string; nativeName: string; flag: string }
+> = {
+  en: { label: 'English', nativeName: 'English', flag: '🇬🇧' },
+  ru: { label: 'Russian', nativeName: 'Русский', flag: '🇷🇺' },
+  uz: { label: 'Uzbek', nativeName: "Oʻzbekcha", flag: '🇺🇿' },
+  fr: { label: 'French', nativeName: 'Français', flag: '🇫🇷' },
+  es: { label: 'Spanish', nativeName: 'Español', flag: '🇪🇸' },
+  ja: { label: 'Japanese', nativeName: '日本語', flag: '🇯🇵' },
+  de: { label: 'German', nativeName: 'Deutsch', flag: '🇩🇪' },
+  ko: { label: 'Korean', nativeName: '한국어', flag: '🇰🇷' },
+  pt: { label: 'Portuguese', nativeName: 'Português', flag: '🇵🇹' },
+};
 
 export const CEFR_LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'] as const;
 export type CefrLevel = (typeof CEFR_LEVELS)[number];
@@ -37,4 +53,12 @@ export interface ApiError {
   statusCode: number;
   message: string;
   error?: string;
+}
+
+export interface CatalogLanguage {
+  code: AppLanguage | string;
+  name: string;
+  nativeName: string;
+  flagEmoji: string;
+  isEnabled: boolean;
 }

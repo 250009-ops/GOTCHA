@@ -53,7 +53,9 @@ export function GlobalSearch() {
     const el = inputRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    setCoords({ top: rect.bottom + 8, left: rect.left, width: Math.max(rect.width, 320) });
+    const width = Math.min(Math.max(rect.width, 280), window.innerWidth - 16);
+    const left = Math.min(Math.max(8, rect.left), window.innerWidth - width - 8);
+    setCoords({ top: rect.bottom + 8, left, width });
   }, []);
 
   useEffect(() => {
@@ -175,8 +177,8 @@ export function GlobalSearch() {
               if (hit) selectResult(hit);
             }
           }}
-          placeholder="Search library, vocabulary… ⌘K"
-          className="w-full h-9 pl-9 pr-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-gray-900 placeholder:text-[#99a1af] outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 focus:bg-white"
+          placeholder="Search library, vocabulary…"
+          className="w-full h-9 pl-9 pr-3 sm:pr-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-gray-900 placeholder:text-[#99a1af] outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 focus:bg-white"
         />
       </label>
 

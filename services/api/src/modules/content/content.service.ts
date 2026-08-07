@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PublishStatus, Prisma } from '@prisma/client';
+import { APP_LANGUAGES } from '@gotcha/shared';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import {
   getDevContentById,
@@ -9,12 +10,57 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 
+const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = {
+  en: { name: 'English', nativeName: 'English', flagEmoji: '🇬🇧' },
+  ru: { name: 'Russian', nativeName: 'Русский', flagEmoji: '🇷🇺' },
+  uz: { name: 'Uzbek', nativeName: "Oʻzbekcha", flagEmoji: '🇺🇿' },
+  fr: { name: 'French', nativeName: 'Français', flagEmoji: '🇫🇷' },
+  es: { name: 'Spanish', nativeName: 'Español', flagEmoji: '🇪🇸' },
+  ja: { name: 'Japanese', nativeName: '日本語', flagEmoji: '🇯🇵' },
+  de: { name: 'German', nativeName: 'Deutsch', flagEmoji: '🇩🇪' },
+  ko: { name: 'Korean', nativeName: '한국어', flagEmoji: '🇰🇷' },
+  pt: { name: 'Portuguese', nativeName: 'Português', flagEmoji: '🇵🇹' },
+};
+
 @Injectable()
 export class ContentService {
   constructor(private prisma: PrismaService) {}
 
   private useDevContent() {
     return isDevAuthEnabled() && !this.prisma.dbAvailable;
+  }
+
+  /** Languages learners may select — respects admin LanguageCatalog.isEnabled. */
+  async listLanguages() {
+    if (this.useDevContent()) {
+      return APP_LANGUAGES.map((code) => ({
+        code,
+        ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
+        isEnabled: true,
+      }));
+    }
+
+    const rows = await this.prisma.languageCatalog.findMany({
+      where: { isEnabled: true },
+      orderBy: { sortOrder: 'asc' },
+    });
+
+    if (rows.length > 0) {
+      return rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        nativeName: r.nativeName,
+        flagEmoji: r.flagEmoji,
+        isEnabled: r.isEnabled,
+      }));
+    }
+
+    // Catalog not seeded yet — fall back to shared AppLanguage set.
+    return APP_LANGUAGES.map((code) => ({
+      code,
+      ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
+      isEnabled: true,
+    }));
   }
 
   async getFeed(userId: string, targetLang?: string) {
@@ -49,7 +95,7 @@ export class ContentService {
       ...(targetLang ? { language: targetLang as never } : {}),
     };
 
-    const [featured, recent] = await Promise.all([
+    const [featured, recent, myImports] = await Promise.all([
       this.prisma.contentCollection.findMany({
         where: { isFeatured: true, ...(targetLang ? { language: targetLang as never } : {}) },
         include: {
@@ -66,7 +112,24 @@ export class ContentService {
         orderBy: { publishedAt: 'desc' },
         take: 12,
       }),
+      // Ensure the learner's own imports surface in Library / Browse (Imports filter).
+      this.prisma.contentItem.findMany({
+        where: {
+          publishStatus: PublishStatus.published,
+          createdById: userId,
+          contentSource: 'user_import',
+          ...(targetLang ? { language: targetLang as never } : {}),
+        },
+        orderBy: { publishedAt: 'desc' },
+        take: 24,
+      }),
     ]);
+
+    const recentIds = new Set(recent.map((r) => r.id));
+    const mergedRecent = [
+      ...myImports.filter((i) => !recentIds.has(i.id)),
+      ...recent,
+    ].slice(0, 36);
 
     return {
       continueReading: progress.map((p) => ({
@@ -75,7 +138,7 @@ export class ContentService {
         lastReadAt: p.lastReadAt,
       })),
       featuredCollections: featured,
-      recentlyPublished: recent,
+      recentlyPublished: mergedRecent,
     };
   }
 

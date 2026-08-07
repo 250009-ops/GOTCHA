@@ -39,6 +39,42 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
+  String _extractSentenceAround(String text, int start, int end) {
+    if (text.isEmpty) return '';
+    final len = text.length;
+    var a = start.clamp(0, len);
+    var b = end.clamp(a, len);
+    var s = a;
+    while (s > 0) {
+      final ch = text[s - 1];
+      if (ch == '.' || ch == '!' || ch == '?' || ch == '\n') break;
+      s--;
+    }
+    while (s < a && RegExp(r'\s').hasMatch(text[s])) {
+      s++;
+    }
+    var e = b;
+    while (e < len) {
+      final ch = text[e];
+      if (ch == '.' || ch == '!' || ch == '?') {
+        e++;
+        break;
+      }
+      if (ch == '\n') break;
+      e++;
+    }
+    var sentence = text.substring(s, e).trim();
+    if (sentence.length > 400) {
+      final ws = (a - 80).clamp(0, len);
+      final we = (b + 80).clamp(0, len);
+      sentence = text.substring(ws, we).trim();
+    }
+    if (sentence.length > 500) {
+      sentence = sentence.substring(0, 500);
+    }
+    return sentence;
+  }
+
   Future<void> _lookupToken(Map<String, dynamic> token) async {
     if (token['isWord'] != true) return;
     setState(() {
@@ -46,10 +82,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _lookup = null;
     });
 
-    final sentence = _segment?['plainText']?.toString() ?? '';
+    final plain = _segment?['plainText']?.toString() ?? '';
+    final start = (token['start'] as num?)?.toInt() ?? 0;
+    final end = (token['end'] as num?)?.toInt() ?? start;
+    final sentence = _extractSentenceAround(plain, start, end);
     try {
       final res = await ref.read(apiClientProvider).post('/ai/lookup', {
         'token': token['surface'],
+        'lemma': token['lemma'] ?? token['surface'],
         'sentence': sentence,
         'sourceLang': 'en',
         'targetLang': 'uz',
@@ -118,11 +158,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(_lookup!['translation']?.toString() ?? '', style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800)),
-                            if (_lookup!['grammarNote'] != null) ...[
-                              const SizedBox(height: 8),
-                              Text(_lookup!['grammarNote'].toString(), style: Theme.of(context).textTheme.bodyMedium),
-                            ],
+                            Text(
+                              _lookup!['lemma']?.toString() ?? '',
+                              style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w800),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _lookup!['translation']?.toString() ?? '',
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
                             const SizedBox(height: 16),
                             Row(
                               children: [

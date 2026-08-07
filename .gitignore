@@ -10,6 +10,8 @@ Thumbs.db
 .vscode/
 coverage/
 .turbo/
+uploads/
+**/uploads/
 services/api/prisma/migrations/**/migration_lock.toml
 apps/mobile/.dart_tool/
 apps/mobile/build/

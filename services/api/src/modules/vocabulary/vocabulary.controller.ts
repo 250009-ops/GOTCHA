@@ -1,8 +1,12 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, AuthUserPayload } from '../../common/decorators';
 import { VocabularyService } from './vocabulary.service';
-import { ReviewVocabularyDto, SaveVocabularyDto } from './dto/vocabulary.dto';
+import {
+  ReviewVocabularyDto,
+  SaveVocabularyDto,
+  UpdateVocabularyDto,
+} from './dto/vocabulary.dto';
 
 @ApiTags('vocabulary')
 @Controller('vocabulary')
@@ -22,6 +26,20 @@ export class VocabularyController {
   @Post()
   save(@CurrentUser() user: AuthUserPayload, @Body() dto: SaveVocabularyDto) {
     return this.vocabulary.save(user.sub, dto);
+  }
+
+  @Patch(':id')
+  update(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id') id: string,
+    @Body() dto: UpdateVocabularyDto,
+  ) {
+    return this.vocabulary.update(user.sub, id, dto);
+  }
+
+  @Delete(':id')
+  remove(@CurrentUser() user: AuthUserPayload, @Param('id') id: string) {
+    return this.vocabulary.remove(user.sub, id);
   }
 
   @Post(':id/review')

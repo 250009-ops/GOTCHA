@@ -240,7 +240,7 @@ export class DevAuthService {
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
     this.refreshTokens.set(refreshHash, { userId, email, deviceName, expiresAt });
-    return { accessToken, refreshToken };
+    return { accessToken, refreshToken, isAdmin: false, adminRole: null as string | null };
   }
 
   private async issueTokensForUser(userId: string, email: string, deviceName?: string) {
@@ -269,7 +269,7 @@ export class DevAuthService {
         data: { userId, tokenHash: refreshHash, deviceName, expiresAt },
       });
 
-      return { accessToken, refreshToken };
+      return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
     } catch {
       return this.issueDevTokens(userId, email, deviceName);
     }

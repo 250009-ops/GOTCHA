@@ -4,15 +4,14 @@ import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { useAuth } from '../lib/auth';
+import { clearTokens } from '../lib/api';
+import { isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
-
-const MARKETING_URL =
-  import.meta.env.VITE_MARKETING_URL ?? 'http://localhost:5174';
 
 const FEATURES = [
   {
     title: 'Read real content',
-    desc: 'Books, articles, news in English, Russian & Uzbek',
+    desc: 'Books, articles, and news across supported languages',
   },
   {
     title: 'Build vocabulary',
@@ -60,9 +59,10 @@ export default function AuthPage() {
   const isLogin = pathname === '/login';
   const plan = searchParams.get('plan');
   const fromLanding = searchParams.get('from') === 'landing';
+  const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
 
-  const [email, setEmail] = useState(isLogin ? 'learner@gotcha.app' : '');
-  const [password, setPassword] = useState(isLogin ? 'Learner2026!' : '');
+  const [email, setEmail] = useState(isLogin ? (adminReturnUrl ? 'admin@gotcha.app' : 'learner@gotcha.app') : '');
+  const [password, setPassword] = useState(isLogin ? (adminReturnUrl ? 'GotchaAdmin2026!' : 'Learner2026!') : '');
   const [name, setName] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -76,8 +76,30 @@ export default function AuthPage() {
     setLoading(true);
     try {
       if (isLogin) {
-        await login(email, password);
-        toast.success('Welcome back!');
+        const session = await login(email, password);
+        if (adminReturnUrl) {
+          if (!session.isAdmin) {
+            toast.error('This account does not have admin access');
+            navigate('/app');
+            return;
+          }
+          // Leave tokens only for the admin app (hash handoff); avoid a lingering learner session.
+          clearTokens();
+          const handoff = new URL(adminReturnUrl);
+          handoff.hash = new URLSearchParams({
+            accessToken: session.accessToken,
+            refreshToken: session.refreshToken,
+          }).toString();
+          toast.success('Welcome back!');
+          window.location.assign(handoff.toString());
+          return;
+        }
+        if (searchParams.get('returnUrl')) {
+          // returnUrl was present but rejected (wrong origin) — stay in learner.
+          toast.message('Signed in to the learner app');
+        } else {
+          toast.success('Welcome back!');
+        }
         navigate('/app');
       } else {
         await register({
@@ -98,11 +120,7 @@ export default function AuthPage() {
   };
 
   const goHome = () => {
-    if (fromLanding) {
-      window.location.href = MARKETING_URL;
-      return;
-    }
-    navigate(isLogin ? '/login' : '/register');
+    window.location.assign(MARKETING_URL);
   };
 
   const switchMode = () => {
@@ -112,7 +130,7 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb]">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb] overflow-x-hidden">
       {/* Desktop marketing panel */}
       <div className="hidden lg:flex flex-col w-[480px] shrink-0 relative overflow-hidden gap-6 px-10 pt-10 pb-8 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
         <div className="absolute -left-[120px] -top-[120px] size-[320px] pointer-events-none">
@@ -178,16 +196,16 @@ export default function AuthPage() {
         </div>
       </div>
 
-      {/* Mobile branded header */}
-      <div className="lg:hidden flex flex-col gap-3 px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
+      {/* Narrow-web branded header */}
+      <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
         <BrandMark light />
         <p className="text-[#ddd6ff] text-sm leading-5">Read your way to fluency.</p>
       </div>
 
       {/* Form area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-6">
-        <div className="w-full max-w-[448px]">
-          <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
+      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-w-0">
+        <div className="w-full max-w-[448px] min-w-0">
+          <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-5 sm:p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
             <div className="flex flex-col gap-1.5">
               <h2 className="text-2xl font-extrabold text-[#101828] leading-8">
                 {isLogin ? 'Welcome back' : 'Create your account'}

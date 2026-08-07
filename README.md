@@ -150,7 +150,9 @@ gotcha/
 
 Copy `.env.example` to `.env` and set:
 
-- `OPENAI_API_KEY` — for live AI translations and quiz generation
+- `OPENAI_API_KEY` — paste your OpenAI key (leave empty for local demo lookups). Restart the API after changing. Learner Reader uses it for live translations; Admin **Settings → AI controls** toggles enablement, models, and daily limits; **AI Usage** shows live logs when available.
+- `OPENAI_MODEL_LOOKUP` / `OPENAI_MODEL_QUIZ` — defaults for AI models (admin can override via Settings)
+- `OPENAI_BASE_URL` — optional (Azure OpenAI / proxies)
 - `JWT_SECRET` — use a long random string in production
 - `DATABASE_URL` — must match your PostgreSQL instance (see below)
 

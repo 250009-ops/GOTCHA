@@ -48,6 +48,41 @@ const STATUS_STYLES: Record<WordStatus, string> = {
   ignored: 'text-gray-400 cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
 };
 
+/** Sentence (or short window) containing the tapped token — never the full chapter. */
+function extractSentenceAround(text: string, start: number, end: number): string {
+  if (!text) return '';
+  const len = text.length;
+  const a = Math.max(0, Math.min(start, len));
+  const b = Math.max(a, Math.min(end, len));
+
+  let s = a;
+  while (s > 0) {
+    const ch = text[s - 1];
+    if (ch === '.' || ch === '!' || ch === '?' || ch === '\n' || ch === '…') break;
+    s--;
+  }
+  while (s < a && /\s/.test(text[s]!)) s++;
+
+  let e = b;
+  while (e < len) {
+    const ch = text[e]!;
+    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
+      e++;
+      break;
+    }
+    if (ch === '\n') break;
+    e++;
+  }
+
+  let sentence = text.slice(s, e).trim();
+  if (sentence.length > 400) {
+    const ws = Math.max(0, a - 80);
+    const we = Math.min(len, b + 80);
+    sentence = text.slice(ws, we).trim();
+  }
+  return sentence.slice(0, 500);
+}
+
 function DictionaryPanel({
   result,
   status,
@@ -86,26 +121,16 @@ function DictionaryPanel({
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-2xl font-bold text-[#101828]">{result.lemma}</span>
-                  {result.partOfSpeech && (
-                    <span className="text-xs font-medium text-[#7008e7] bg-[#f5f3ff] rounded-md px-1.5 py-0.5">{result.partOfSpeech}</span>
-                  )}
                 </div>
                 <button type="button" className="p-1.5 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe] transition-colors shrink-0" aria-label="Pronounce">
                   <Volume2 className="w-4 h-4" />
                 </button>
               </div>
-              {result.phonetic && <div className="text-sm text-[#99a1af] font-mono mt-1">{result.phonetic}</div>}
             </div>
             <div className="bg-[#f5f3ff] rounded-xl p-3">
               <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Translation</div>
               <div className="text-[#1e2939] leading-relaxed">{result.translation}</div>
             </div>
-            {result.grammarNote && (
-              <div className="bg-[#f9fafb] rounded-xl p-3">
-                <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-wider mb-1">Grammar note</div>
-                <div className="text-[#4a5565] text-sm leading-relaxed">{result.grammarNote}</div>
-              </div>
-            )}
             <div className="flex items-center gap-2 text-xs">
               <div className={cn('px-2 py-1 rounded-md font-medium', {
                 'bg-[#fffbeb] text-[#bb4d00]': status === 'unknown',
@@ -171,7 +196,7 @@ function DictionaryPanel({
 export default function ReaderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, preferences, updatePreferences } = useAuth();
+  const { user, preferences, updatePreferences, refreshVocab } = useAuth();
 
   const [content, setContent] = useState<ContentItem | null>(null);
   const [segments, setSegments] = useState<ContentSegment[]>([]);
@@ -251,17 +276,31 @@ export default function ReaderPage() {
       try {
         const res = await api<LookupResult>('/ai/lookup', {
           method: 'POST',
-          body: JSON.stringify({ token: surface, sentence, sourceLang, targetLang }),
+          body: JSON.stringify({
+            token: surface,
+            lemma,
+            sentence,
+            sourceLang,
+            targetLang,
+          }),
         });
         setActiveLookup({
           lemma: res.lemma ?? lemma,
           translation: res.translation,
-          phonetic: res.phonetic,
-          partOfSpeech: res.partOfSpeech,
-          grammarNote: res.grammarNote,
         });
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : 'Lookup failed');
+        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        let message = raw;
+        if (/disabled by an administrator/i.test(raw)) {
+          message = 'AI lookups are temporarily disabled. Please try again later.';
+        } else if (/quota exceeded|daily limit reached/i.test(raw)) {
+          message = 'Daily AI lookup limit reached. Try again tomorrow or upgrade your plan.';
+        } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
+          message = 'AI lookup is unavailable right now. Please try again later.';
+        } else if (/AI lookup failed/i.test(raw)) {
+          message = 'AI lookup failed. Please try again in a moment.';
+        }
+        toast.error(message);
       } finally {
         setLookupLoading(false);
       }
@@ -300,6 +339,7 @@ export default function ReaderPage() {
       });
       setWordStatuses((p) => ({ ...p, [activeWord]: 'learning' }));
       toast.success(`"${activeWord}" saved to vocabulary`);
+      void refreshVocab().catch(() => undefined);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
     }
@@ -391,9 +431,9 @@ export default function ReaderPage() {
   const zoomPct = Math.round(fontScale * 100);
 
   return (
-    <div className="flex flex-col h-screen bg-[#FDFCFF]">
+    <div className="flex flex-col h-screen max-h-dvh bg-[#FDFCFF] overflow-hidden">
       {/* Header — Figma 8:5841 */}
-      <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
+      <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shrink-0 min-w-0">
         <button
           type="button"
           onClick={() => navigate('/app')}
@@ -571,11 +611,21 @@ export default function ReaderPage() {
                     key={token.i}
                     role="button"
                     tabIndex={0}
-                    onClick={() => handleWordClick(key, token.surface, segment.plainText)}
+                    onClick={() =>
+                      handleWordClick(
+                        key,
+                        token.surface,
+                        extractSentenceAround(segment.plainText, token.start, token.end),
+                      )
+                    }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
-                        void handleWordClick(key, token.surface, segment.plainText);
+                        void handleWordClick(
+                          key,
+                          token.surface,
+                          extractSentenceAround(segment.plainText, token.start, token.end),
+                        );
                       }
                     }}
                     className={cn(

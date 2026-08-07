@@ -15,7 +15,11 @@ interface AuthContextValue {
   stats: UserStats | null;
   preferences: UserPreferences | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<{
+    accessToken: string;
+    refreshToken: string;
+    isAdmin: boolean;
+  }>;
   register: (data: {
     email: string;
     password: string;
@@ -28,8 +32,12 @@ interface AuthContextValue {
   updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
   updatePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
   vocabItems: VocabItem[];
+  vocabLoading: boolean;
+  vocabError: string | null;
   refreshVocab: () => Promise<void>;
   rateWord: (id: string, rating: string) => Promise<void>;
+  markVocabMastered: (id: string, mastered?: boolean) => Promise<void>;
+  removeVocab: (id: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -49,6 +57,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [stats, setStats] = useState<UserStats | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [vocabItems, setVocabItems] = useState<VocabItem[]>([]);
+  const [vocabLoading, setVocabLoading] = useState(false);
+  const [vocabError, setVocabError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const refreshProfile = useCallback(async () => {
@@ -69,8 +79,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshVocab = useCallback(async () => {
-    const items = await api<VocabItem[]>('/vocabulary');
-    setVocabItems(items);
+    setVocabLoading(true);
+    setVocabError(null);
+    try {
+      const items = await api<VocabItem[]>('/vocabulary');
+      setVocabItems(
+        items.map((item) => ({
+          ...item,
+          dueAt: typeof item.dueAt === 'string' ? item.dueAt : new Date(item.dueAt as unknown as Date).toISOString(),
+        })),
+      );
+    } catch (e) {
+      setVocabError(e instanceof Error ? e.message : 'Failed to load vocabulary');
+      throw e;
+    } finally {
+      setVocabLoading(false);
+    }
   }, []);
 
   const bootstrap = useCallback(async () => {
@@ -81,7 +105,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     try {
       await refreshProfile();
-      await refreshVocab();
+      try {
+        await refreshVocab();
+      } catch {
+        /* profile ok; vocab error surfaced via vocabError */
+      }
     } catch {
       clearTokens();
       setUser(null);
@@ -95,14 +123,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [bootstrap]);
 
   const login = useCallback(async (email: string, password: string) => {
-    const res = await api<{ accessToken: string; refreshToken: string; user: UserProfile }>(
-      '/auth/login',
-      { method: 'POST', body: JSON.stringify({ email, password }) },
-    );
+    const res = await api<{
+      accessToken: string;
+      refreshToken: string;
+      isAdmin?: boolean;
+      user: UserProfile;
+    }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
     setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
     setUser(res.user);
     await refreshProfile();
     await refreshVocab();
+    return {
+      accessToken: res.accessToken,
+      refreshToken: res.refreshToken,
+      isAdmin: !!res.isAdmin,
+    };
   }, [refreshProfile, refreshVocab]);
 
   const register = useCallback(
@@ -130,6 +168,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setStats(null);
     setPreferences(null);
     setVocabItems([]);
+    setVocabError(null);
   }, []);
 
   const updatePreferences = useCallback(async (patch: Partial<UserPreferences>) => {
@@ -162,6 +201,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refreshVocab],
   );
 
+  const markVocabMastered = useCallback(
+    async (id: string, mastered = true) => {
+      await api(`/vocabulary/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ mastered }),
+      });
+      await refreshVocab();
+    },
+    [refreshVocab],
+  );
+
+  const removeVocab = useCallback(
+    async (id: string) => {
+      await api(`/vocabulary/${id}`, { method: 'DELETE' });
+      await refreshVocab();
+    },
+    [refreshVocab],
+  );
+
   const value = useMemo(
     () => ({
       user,
@@ -175,8 +233,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateProfile,
       updatePreferences,
       vocabItems,
+      vocabLoading,
+      vocabError,
       refreshVocab,
       rateWord,
+      markVocabMastered,
+      removeVocab,
     }),
     [
       user,
@@ -190,8 +252,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       updateProfile,
       updatePreferences,
       vocabItems,
+      vocabLoading,
+      vocabError,
       refreshVocab,
       rateWord,
+      markVocabMastered,
+      removeVocab,
     ],
   );
 

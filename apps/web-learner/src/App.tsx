@@ -24,6 +24,7 @@ export default function App() {
         }
       >
         <Route index element={<LibraryPage />} />
+        <Route path="browse" element={<LibraryPage />} />
         <Route path="vocabulary" element={<VocabularyPage />} />
         <Route path="import" element={<ImportPage />} />
         <Route path="stats" element={<StatsPage />} />

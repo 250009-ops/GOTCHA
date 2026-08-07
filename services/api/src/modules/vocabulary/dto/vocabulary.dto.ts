@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString } from 'class-validator';
 import { AppLanguage, SrsRating } from '@prisma/client';
 
 export class SaveVocabularyDto {
@@ -34,4 +34,14 @@ export class SaveVocabularyDto {
 export class ReviewVocabularyDto {
   @IsEnum(SrsRating)
   rating!: SrsRating;
+}
+
+export class UpdateVocabularyDto {
+  @IsOptional()
+  @IsBoolean()
+  mastered?: boolean;
+
+  @IsOptional()
+  @IsString()
+  notes?: string;
 }

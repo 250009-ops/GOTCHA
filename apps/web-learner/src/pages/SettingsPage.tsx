@@ -20,13 +20,13 @@ import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { avatarInitials, type AppLanguage, type SubscriptionInfo } from '../lib/types';
-
-const LANGUAGE_META: Record<AppLanguage, { label: string; flag: string }> = {
-  en: { label: 'English', flag: '🇬🇧' },
-  ru: { label: 'Russian', flag: '🇷🇺' },
-  uz: { label: 'Uzbek', flag: '🇺🇿' },
-};
+import {
+  avatarInitials,
+  LANGUAGE_META,
+  type AppLanguage,
+  type CatalogLanguage,
+  type SubscriptionInfo,
+} from '../lib/types';
 
 const READER_THEMES = [
   { value: 'light', label: 'Light', icon: Sun },
@@ -107,6 +107,7 @@ export default function SettingsPage() {
 
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [subLoading, setSubLoading] = useState(true);
+  const [catalogLangs, setCatalogLangs] = useState<CatalogLanguage[]>([]);
 
   useEffect(() => {
     if (user) {
@@ -114,6 +115,12 @@ export default function SettingsPage() {
       setNativeLanguage(user.nativeLanguage ?? 'en');
     }
   }, [user]);
+
+  useEffect(() => {
+    api<CatalogLanguage[]>('/content/languages')
+      .then(setCatalogLangs)
+      .catch(console.error);
+  }, []);
 
   useEffect(() => {
     if (preferences) {
@@ -133,6 +140,17 @@ export default function SettingsPage() {
       .catch(console.error)
       .finally(() => setSubLoading(false));
   }, []);
+
+  const languageOptions =
+    catalogLangs.length > 0
+      ? catalogLangs
+      : Object.entries(LANGUAGE_META).map(([code, meta]) => ({
+          code,
+          name: meta.label,
+          nativeName: meta.label,
+          flagEmoji: meta.flag,
+          isEnabled: true,
+        }));
 
   const saveAll = async () => {
     setSaving(true);
@@ -193,6 +211,19 @@ export default function SettingsPage() {
             className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           />
         </Row>
+        <Row label="Native language" description="Used for translations and lookups">
+          <select
+            value={nativeLanguage}
+            onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
+            className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+          >
+            {languageOptions.map((l) => (
+              <option key={l.code} value={l.code}>
+                {l.flagEmoji} {l.name}
+              </option>
+            ))}
+          </select>
+        </Row>
         <Row label="Email" description="Used for login and notifications">
           <div className="flex items-center gap-2">
             <span className="text-sm text-[#6a7282]">{user?.email}</span>
@@ -215,12 +246,13 @@ export default function SettingsPage() {
           <div className="px-5 py-6 text-center text-sm text-gray-400">No target languages set yet.</div>
         ) : (
           targetLanguages.map((tl) => {
-            const meta = LANGUAGE_META[tl.targetLanguage];
+            const catalog = languageOptions.find((l) => l.code === tl.targetLanguage);
+            const meta = LANGUAGE_META[tl.targetLanguage as AppLanguage];
             return (
               <div key={tl.targetLanguage} className="flex items-center gap-3 px-5 py-3.5">
-                <span className="text-xl leading-none">{meta?.flag ?? '🌐'}</span>
+                <span className="text-xl leading-none">{catalog?.flagEmoji ?? meta?.flag ?? '🌐'}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[#1e2939]">{meta?.label ?? tl.targetLanguage}</div>
+                  <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? meta?.label ?? tl.targetLanguage}</div>
                   <div className="text-xs text-[#99a1af] mt-0.5">
                     Level: {tl.cefrLevel.toUpperCase()}
                     {tl.placementScore != null ? ` · Score: ${tl.placementScore}/100` : ''}

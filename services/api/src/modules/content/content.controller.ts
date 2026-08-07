@@ -1,6 +1,6 @@
 import { Controller, Get, Param, Put, Body, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
-import { CurrentUser, AuthUserPayload } from '../../common/decorators';
+import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
 import { ContentService } from './content.service';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 
@@ -17,6 +17,13 @@ export class ContentController {
   @Get()
   list(@Query() query: ContentQueryDto) {
     return this.content.list(query);
+  }
+
+  /** Enabled languages for learner UI (admin LanguageCatalog toggles). */
+  @Public()
+  @Get('languages')
+  languages() {
+    return this.content.listLanguages();
   }
 
   @Get(':id')

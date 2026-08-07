@@ -5,6 +5,13 @@ import { PrismaService } from '../prisma/prisma.service';
 export class LimitsService {
   constructor(private prisma: PrismaService) {}
 
+  /** Dev / local demos: skip import quota when explicitly enabled. */
+  private devUnlimitedImports(): boolean {
+    const flag = (process.env.DEV_UNLIMITED_IMPORTS ?? '').toLowerCase();
+    if (flag === 'true' || flag === '1' || flag === 'yes') return true;
+    return false;
+  }
+
   async getActivePlan(userId: string) {
     const sub = await this.prisma.userSubscription.findFirst({
       where: { userId, status: 'active' },
@@ -14,14 +21,38 @@ export class LimitsService {
     return sub?.plan ?? null;
   }
 
-  async assertImportAllowed(userId: string) {
+  async getImportQuota(userId: string) {
+    if (this.devUnlimitedImports()) {
+      const count = await this.prisma.userImport.count({ where: { userId } });
+      return {
+        limit: null as number | null,
+        count,
+        unlimited: true,
+        remaining: null as number | null,
+      };
+    }
+
     const plan = await this.getActivePlan(userId);
-    const limit = plan?.importLimit ?? 3;
-    // Values >= 1e6 are treated as unlimited (Premium / Figma "Unlimited imports").
-    if (limit >= 1_000_000) return;
+    // Default free-tier fallback raised for professional demos (seed Free plan = 15).
+    const limit = plan?.importLimit ?? 15;
+    const unlimited = limit >= 1_000_000;
     const count = await this.prisma.userImport.count({ where: { userId } });
-    if (count >= limit) {
-      throw new ForbiddenException(`Import limit reached (${limit}). Upgrade to Premium for more.`);
+    return {
+      limit: unlimited ? null : limit,
+      count,
+      unlimited,
+      remaining: unlimited ? null : Math.max(0, limit - count),
+    };
+  }
+
+  async assertImportAllowed(userId: string) {
+    const quota = await this.getImportQuota(userId);
+    // Values >= 1e6 are treated as unlimited (Premium / Figma "Unlimited imports").
+    if (quota.unlimited || quota.limit == null) return;
+    if (quota.count >= quota.limit) {
+      throw new ForbiddenException(
+        `Import limit reached (${quota.limit}). Upgrade to Premium for more.`,
+      );
     }
   }
 

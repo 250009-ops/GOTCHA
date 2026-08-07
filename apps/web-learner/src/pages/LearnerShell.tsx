@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
-  BookOpen,
   Brain,
   ChevronLeft,
   ChevronRight,
@@ -37,31 +36,26 @@ const secondaryNav: NavItem[] = [
   { path: '/app/stats', label: 'Statistics', icon: BarChart3 },
 ];
 
-const mobileNav: NavItem[] = [
-  { path: '/app', label: 'Library', icon: Home, exact: true },
-  { path: '/app/vocabulary', label: 'Vocab', icon: Brain },
-  { path: '/app/import', label: 'Import', icon: Upload },
-  { path: '/app/stats', label: 'Stats', icon: BarChart3 },
-  { path: '/app/settings', label: 'Settings', icon: Settings },
-];
+function prefersExpandedSidebar() {
+  if (typeof window === 'undefined') return true;
+  return window.matchMedia('(min-width: 1024px)').matches;
+}
 
 export default function LearnerShell() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, stats, preferences, logout } = useAuth();
-  const [expanded, setExpanded] = useState(true);
+  const { user, stats, logout } = useAuth();
+  const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
 
   const isActive = (path: string, exact = false) => {
     if (exact || path === '/app') {
-      return location.pathname === '/app' || location.pathname === '/app/';
+      const p = location.pathname.replace(/\/$/, '') || '/';
+      return p === '/app' || p === '/app/browse';
     }
     return location.pathname.startsWith(path);
   };
 
-  const todayMinutes = stats?.todayMinutes ?? 0;
-  const dailyGoal = preferences?.dailyGoalMinutes ?? 15;
-  const todayPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
   const initials = avatarInitials(user?.displayName ?? user?.email ?? 'G');
 
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {
@@ -104,11 +98,12 @@ export default function LearnerShell() {
 
   return (
     <TooltipProvider delayDuration={0}>
-      <div className="flex min-h-screen bg-[#F5F3FF]">
-        {/* Desktop sidebar — full height, left of header (Figma LearnerShell) */}
+      {/* Fixed-height shell: sidebar + topbar stay pinned; only main scrolls */}
+      <div className="flex h-screen max-h-dvh bg-[#F5F3FF] overflow-hidden">
+        {/* Sidebar — always present for web; icon rail on narrow widths */}
         <div
           className={cn(
-            'hidden lg:block shrink-0 relative z-20 sticky top-0 h-screen transition-all duration-200',
+            'shrink-0 relative z-20 h-full transition-[width] duration-200',
             expanded ? 'w-60' : 'w-[3.75rem]',
           )}
         >
@@ -125,7 +120,7 @@ export default function LearnerShell() {
               )}
             </div>
 
-            <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto">
+            <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto min-h-0">
               {primaryNav.map((item) => (
                 <NavLink key={item.path} item={item} collapsed={!expanded} />
               ))}
@@ -174,6 +169,7 @@ export default function LearnerShell() {
 
           <button
             type="button"
+            aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
             className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-[#7f22fe] shadow-sm z-30 flex"
             onClick={() => setExpanded((e) => !e)}
           >
@@ -181,40 +177,13 @@ export default function LearnerShell() {
           </button>
         </div>
 
-        <div className="flex flex-col flex-1 min-w-0 min-h-screen">
-          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center gap-4 px-4 lg:px-5 sticky top-0 z-30 shrink-0 overflow-visible">
-            {/* Mobile brand — book mark + GOTCHA (Figma 9:22260) */}
-            <div className="lg:hidden flex items-center gap-2.5">
-              <div
-                className="w-7 h-7 rounded-[10px] flex items-center justify-center shrink-0 shadow-sm"
-                style={{ backgroundImage: 'linear-gradient(135deg, #7f22fe 0%, #432dd7 100%)' }}
-              >
-                <BookOpen className="w-3.5 h-3.5 text-white" strokeWidth={1.75} />
-              </div>
-              <span className="font-brand text-[#101828] tracking-[-0.4px] text-base leading-6">GOTCHA</span>
-            </div>
-
-            {/* Desktop search */}
-            <div className="hidden lg:block flex-1 max-w-[512px]">
+        <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
+          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 lg:px-5 z-30 shrink-0 overflow-visible">
+            <div className="flex-1 min-w-0 max-w-[512px]">
               <GlobalSearch />
             </div>
 
-            <div className="flex-1" />
-
-            <div className="flex items-center gap-2.5">
-              {/* Daily goal — desktop header only */}
-              <div className="hidden lg:flex items-center gap-2 bg-[#f9fafb] border border-[#e5e7eb] rounded-full px-3 py-1.5">
-                <div className="relative w-16 h-1.5 bg-[#e5e7eb] rounded-full overflow-hidden">
-                  <div
-                    className={cn('absolute inset-y-0 left-0 rounded-full', todayPct >= 100 ? 'bg-emerald-500' : 'bg-[#8e51ff]')}
-                    style={{ width: `${todayPct}%` }}
-                  />
-                </div>
-                <span className="text-xs font-medium text-[#4a5565] tabular-nums leading-4">
-                  {todayMinutes}<span className="text-[#99a1af]">/{dailyGoal}m</span>
-                </span>
-              </div>
-
+            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
               <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1.5">
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />
                 <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-4">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
@@ -258,31 +227,10 @@ export default function LearnerShell() {
             </div>
           </header>
 
-          <main className="flex-1 min-w-0 overflow-y-auto pb-16 lg:pb-0 relative z-0">
+          <main className="flex-1 min-h-0 min-w-0 overflow-y-auto relative z-0">
             <Outlet />
           </main>
         </div>
-
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 z-20">
-          <div className="flex items-center justify-around h-14 px-1">
-            {mobileNav.map((item) => {
-              const active = isActive(item.path, item.exact);
-              return (
-                <button
-                  key={item.path}
-                  type="button"
-                  onClick={() => navigate(item.path)}
-                  className={cn('flex flex-col items-center gap-0.5 flex-1 py-1.5 rounded-xl mx-0.5', active ? 'text-[#7f22fe]' : 'text-gray-400')}
-                >
-                  <div className={cn('p-1.5 rounded-xl', active && 'bg-violet-100')}>
-                    <item.icon className="w-5 h-5" />
-                  </div>
-                  <span className="text-[10px] font-medium leading-none">{item.label}</span>
-                </button>
-              );
-            })}
-          </div>
-        </nav>
       </div>
     </TooltipProvider>
   );

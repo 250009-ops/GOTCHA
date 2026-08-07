@@ -7,6 +7,13 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { UserStatsResponse } from '../lib/types';
 
+function localIsoDate(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function GLogo({ size = 40 }: { size?: number }) {
   return (
     <div
@@ -66,16 +73,6 @@ function ChartCard({
   );
 }
 
-function ChartEmpty({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="h-[180px] flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50 px-6 text-center">
-      <TrendingUp className="w-8 h-8 text-gray-200 mb-2" />
-      <div className="text-sm font-medium text-gray-500">{title}</div>
-      <div className="text-xs text-gray-400 mt-1">{description}</div>
-    </div>
-  );
-}
-
 export default function StatsPage() {
   const { stats, preferences, vocabItems } = useAuth();
   const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
@@ -86,7 +83,6 @@ export default function StatsPage() {
   }, []);
 
   const masteredCount = vocabItems.filter((v) => v.mastered).length;
-  const learningCount = vocabItems.filter((v) => !v.mastered).length;
   const dailyGoal = preferences?.dailyGoalMinutes ?? 15;
   const todayMinutes = stats?.todayMinutes ?? 0;
   const todayPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
@@ -97,7 +93,21 @@ export default function StatsPage() {
 
   const dailySlice = useMemo(() => {
     const daily = apiStats?.history?.daily ?? [];
-    return daily.slice(-rangeDays);
+    const sliced = daily.slice(-rangeDays);
+    if (sliced.length >= rangeDays) return sliced;
+
+    // Pad sparse/missing history so charts keep a full 7d/30d axis.
+    const byDate = new Map(sliced.map((d) => [d.date, d]));
+    const days: { date: string; minutes: number; wordsSaved: number }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    for (let i = rangeDays - 1; i >= 0; i -= 1) {
+      const d = new Date(today);
+      d.setDate(today.getDate() - i);
+      const key = localIsoDate(d);
+      days.push(byDate.get(key) ?? { date: key, minutes: 0, wordsSaved: 0 });
+    }
+    return days;
   }, [apiStats, rangeDays]);
 
   const readingSeries = useMemo(
@@ -108,10 +118,22 @@ export default function StatsPage() {
     () => dailySlice.map((d) => ({ label: formatShortDate(d.date), value: d.wordsSaved })),
     [dailySlice],
   );
-  const weeklySeries = useMemo(
-    () => (apiStats?.history?.weekly ?? []).map((w) => ({ label: formatShortDate(w.weekStart), value: w.wordsSaved })),
-    [apiStats],
-  );
+  const weeklySeries = useMemo(() => {
+    const weekly = apiStats?.history?.weekly ?? [];
+    if (weekly.length) {
+      return weekly.map((w) => ({ label: formatShortDate(w.weekStart), value: w.wordsSaved }));
+    }
+    // Fallback empty weeks so the line chart still paints axes.
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Array.from({ length: 8 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (7 - i) * 7);
+      const day = d.getDay();
+      d.setDate(d.getDate() - day);
+      return { label: formatShortDate(localIsoDate(d)), value: 0 };
+    });
+  }, [apiStats]);
   const wordsInPeriod = dailySlice.reduce((s, d) => s + d.wordsSaved, 0);
   const heatmap = apiStats?.history?.heatmap ?? [];
   const currentStreak = stats?.streakCount ?? 0;
@@ -179,29 +201,32 @@ export default function StatsPage() {
         <>
           <div className="grid lg:grid-cols-2 gap-5">
             <ChartCard title="Reading Time" subtitle={`${totalReadMinutes} min total · avg ${avgMinPerDay} min/day`} icon={<GLogo size={32} />}>
-              {readingSeries.some((d) => d.value > 0) ? (
-                <AreaLineChart data={readingSeries} color="#8e51ff" />
-              ) : (
-                <ChartEmpty title="No reading time yet" description="Open a story from your library to start tracking." />
-              )}
+              <AreaLineChart
+                data={readingSeries}
+                color="#8e51ff"
+                valueSuffix="min"
+                emptyMessage="No reading time in this range"
+              />
             </ChartCard>
 
             <ChartCard title="New Words" subtitle={`${wordsInPeriod} words in this period`} icon={<GLogo size={32} />}>
-              {wordsSeries.some((d) => d.value > 0) ? (
-                <BarChart data={wordsSeries} color="#51a2ff" />
-              ) : (
-                <ChartEmpty title="No words saved yet" description="Save words while reading to see your vocabulary growth." />
-              )}
+              <BarChart
+                data={wordsSeries}
+                color="#51a2ff"
+                valueSuffix="words"
+                emptyMessage="No words saved in this range"
+              />
             </ChartCard>
           </div>
 
-          <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,1fr)] gap-5">
+          <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-5">
             <ChartCard title="Weekly Word Saves" subtitle="New vocabulary per week" icon={<TrendingUp className="w-4 h-4 text-[#00966b]" />}>
-              {weeklySeries.some((d) => d.value > 0) ? (
-                <DotLineChart data={weeklySeries} color="#00966b" />
-              ) : (
-                <ChartEmpty title="No word saves yet" description="Weekly vocabulary trends will appear here." />
-              )}
+              <DotLineChart
+                data={weeklySeries}
+                color="#00966b"
+                valueSuffix="words"
+                emptyMessage="No weekly word saves yet"
+              />
             </ChartCard>
 
             <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">

@@ -11,6 +11,12 @@ enum AppLanguage {
   en
   ru
   uz
+  fr
+  es
+  ja
+  de
+  ko
+  pt
 }
 
 enum CefrLevel {
@@ -121,6 +127,43 @@ enum WordStatus {
   learning
   known
   ignored
+}
+
+enum SupportTicketStatus {
+  open
+  in_progress
+  waiting
+  resolved
+  closed
+}
+
+enum SupportTicketPriority {
+  low
+  medium
+  high
+  urgent
+}
+
+enum CampaignStatus {
+  draft
+  scheduled
+  sending
+  sent
+  cancelled
+}
+
+enum CampaignChannel {
+  push
+  email
+  in_app
+}
+
+enum AchievementCategory {
+  streak
+  reading
+  vocabulary
+  social
+  special
 }
 
 model User {
@@ -625,4 +668,81 @@ model PlacementResult {
 
   @@index([userId, targetLanguage])
   @@map("placement_results")
+}
+
+model SupportTicket {
+  id           String                @id @default(uuid()) @db.Uuid
+  userId       String?               @map("user_id") @db.Uuid
+  subject      String
+  body         String
+  status       SupportTicketStatus   @default(open)
+  priority     SupportTicketPriority @default(medium)
+  category     String                @default("general")
+  assigneeId   String?               @map("assignee_id") @db.Uuid
+  resolvedAt   DateTime?             @map("resolved_at")
+  createdAt    DateTime              @default(now()) @map("created_at")
+  updatedAt    DateTime              @updatedAt @map("updated_at")
+
+  @@index([status, priority])
+  @@map("support_tickets")
+}
+
+model NotificationCampaign {
+  id          String          @id @default(uuid()) @db.Uuid
+  name        String
+  subject     String
+  body        String
+  channel     CampaignChannel @default(push)
+  status      CampaignStatus  @default(draft)
+  audience    String          @default("all")
+  scheduledAt DateTime?       @map("scheduled_at")
+  sentAt      DateTime?       @map("sent_at")
+  createdById String?         @map("created_by") @db.Uuid
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@map("notification_campaigns")
+}
+
+model Achievement {
+  id          String              @id @default(uuid()) @db.Uuid
+  code        String              @unique
+  title       String
+  description String
+  category    AchievementCategory @default(special)
+  iconKey     String?             @map("icon_key")
+  points      Int                 @default(10)
+  threshold   Int                 @default(1)
+  isActive    Boolean             @default(true) @map("is_active")
+  sortOrder   Int                 @default(0) @map("sort_order")
+  createdAt   DateTime            @default(now()) @map("created_at")
+  updatedAt   DateTime            @updatedAt @map("updated_at")
+
+  @@map("achievements")
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("platform_settings")
+}
+
+model LanguageCatalog {
+  code           String   @id
+  name           String
+  nativeName     String   @map("native_name")
+  flagEmoji      String   @map("flag_emoji")
+  regionLabel    String?  @map("region_label")
+  status         String   @default("Active")
+  cefrCoverage   Int      @default(0) @map("cefr_coverage")
+  isEnabled      Boolean  @default(true) @map("is_enabled")
+  learnerCount   Int      @default(0) @map("learner_count")
+  contentCount   Int      @default(0) @map("content_count")
+  sortOrder      Int      @default(0) @map("sort_order")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("language_catalog")
 }

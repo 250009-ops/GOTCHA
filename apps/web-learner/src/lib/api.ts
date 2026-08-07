@@ -63,10 +63,13 @@ export async function api<T>(
   options: RequestInit = {},
   token?: string | null,
 ): Promise<T> {
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(options.headers as Record<string, string>),
   };
+  // Let the browser set multipart boundary when uploading files.
+  if (isFormData) delete headers['Content-Type'];
 
   const accessToken = token ?? getAccessToken();
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;

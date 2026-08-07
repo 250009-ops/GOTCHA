@@ -1,11 +1,13 @@
-import { IsEnum, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class ImportPasteDto {
   @IsString()
+  @MinLength(1)
   title!: string;
 
   @IsString()
+  @MinLength(1)
   text!: string;
 
   @IsOptional()
@@ -14,11 +16,23 @@ export class ImportPasteDto {
 }
 
 export class ImportUrlDto {
+  @IsOptional()
   @IsString()
-  title!: string;
+  title?: string;
 
   @IsString()
+  @IsUrl({ require_protocol: true, protocols: ['http', 'https'] })
   url!: string;
+
+  @IsOptional()
+  @IsEnum(AppLanguage)
+  language?: AppLanguage;
+}
+
+export class ImportFileDto {
+  @IsOptional()
+  @IsString()
+  title?: string;
 
   @IsOptional()
   @IsEnum(AppLanguage)

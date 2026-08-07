@@ -31,7 +31,7 @@ export class MarketingService {
           ? [
               'Access to public library',
               `${plan.aiDailyQuota} AI lookups / day`,
-              `${plan.importLimit} imports per month`,
+              `${plan.importLimit} imports`,
               'Basic SRS review',
               '7-day reading history',
             ]
