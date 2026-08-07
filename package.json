@@ -19,7 +19,9 @@
     "build": "npm run build --workspaces --if-present",
     "db:migrate": "npm run db:migrate --workspace=services/api",
     "db:seed": "npm run db:seed --workspace=services/api",
-    "db:generate": "npm run db:generate --workspace=services/api"
+    "db:generate": "npm run db:generate --workspace=services/api",
+    "deploy:vps:env": "node scripts/generate-vps-env.mjs",
+    "deploy:vps": "node scripts/deploy-vps.mjs"
   },
   "engines": {
     "node": ">=20"

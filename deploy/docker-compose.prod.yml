@@ -1,0 +1,51 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: gotcha-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: gotcha
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: gotcha
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - gotcha_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gotcha -d gotcha"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: gotcha-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6380:6379"
+    volumes:
+      - gotcha_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: gotcha-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-gotcha}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    ports:
+      - "127.0.0.1:9100:9000"
+      - "127.0.0.1:9101:9001"
+    volumes:
+      - gotcha_minio_data:/data
+
+volumes:
+  gotcha_pg_data:
+  gotcha_redis_data:
+  gotcha_minio_data:

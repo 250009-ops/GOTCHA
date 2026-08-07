@@ -1,0 +1,133 @@
+/**
+ * Deploy Gotcha full stack to Eskiz VPS2 (single host).
+ * Requires deploy/.env with IP, PASSWORD, DOMAIN (from scripts/generate-vps-env.mjs).
+ *
+ * Usage: node scripts/deploy-vps.mjs
+ */
+import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const root = path.resolve(__dirname, '..');
+const require = createRequire('C:/projects/donish_edu/backend/package.json');
+const { Client } = require('ssh2');
+const dotenv = require('dotenv');
+
+dotenv.config({ path: path.join(root, 'deploy/.env') });
+
+const IP = process.env.IP?.trim();
+const PASSWORD = process.env.PASSWORD?.trim();
+const DOMAIN = process.env.DOMAIN?.trim() || 'vps10094.eskiz.uz';
+const APP_DIR = process.env.VPS_APP_DIR?.trim() || '/var/www/gotcha';
+
+if (!IP || !PASSWORD) {
+  console.error('IP and PASSWORD required in deploy/.env');
+  process.exit(1);
+}
+
+function runLocal(cmd, args, opts = {}) {
+  const r = spawnSync(cmd, args, { stdio: 'inherit', cwd: root, shell: true, ...opts });
+  if (r.status !== 0) throw new Error(`${cmd} failed (${r.status})`);
+}
+
+function sshExec(conn, cmd, timeoutMs = 600_000) {
+  return new Promise((resolve, reject) => {
+    conn.exec(cmd, { pty: true }, (err, stream) => {
+      if (err) return reject(err);
+      const timer = setTimeout(() => {
+        stream.close();
+        reject(new Error(`timeout: ${cmd.slice(0, 80)}`));
+      }, timeoutMs);
+      stream.on('data', (d) => process.stdout.write(d));
+      stream.stderr.on('data', (d) => process.stderr.write(d));
+      stream.on('close', (code) => {
+        clearTimeout(timer);
+        code === 0 ? resolve() : reject(new Error(`exit ${code}: ${cmd.slice(0, 120)}`));
+      });
+    });
+  });
+}
+
+function uploadFile(conn, localPath, remotePath) {
+  return new Promise((resolve, reject) => {
+    conn.sftp((err, sftp) => {
+      if (err) return reject(err);
+      sftp.fastPut(localPath, remotePath, (e) => {
+        sftp.end();
+        e ? reject(e) : resolve();
+      });
+    });
+  });
+}
+
+console.log(`==> Packing project for ${IP} (${DOMAIN})`);
+const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+const tarName = `gotcha-deploy-${stamp}.tgz`;
+const tarPath = path.join(os.tmpdir(), tarName);
+
+// Prefer tar.exe (Windows 10+) 
+const excludes = [
+  '--exclude=node_modules',
+  '--exclude=.git',
+  '--exclude=uploads',
+  '--exclude=**/dist',
+  '--exclude=**/.turbo',
+  '--exclude=apps/mobile',
+  '--exclude=services/api/eng.traineddata',
+  '--exclude={0}',
+  '--exclude=scripts/_probe-vps.mjs',
+  '--exclude=scripts/_probe-vps2.mjs',
+  '--exclude=scripts/_probe-vps3.mjs',
+];
+runLocal('tar', ['-czf', tarPath, ...excludes, '-C', root, '.']);
+
+const conn = new Client();
+await new Promise((resolve, reject) => {
+  conn
+    .on('ready', resolve)
+    .on('error', reject)
+    .connect({ host: IP, port: 22, username: 'root', password: PASSWORD, readyTimeout: 30000 });
+});
+
+try {
+  console.log('==> Uploading archive');
+  await sshExec(conn, `mkdir -p ${APP_DIR} /tmp/gotcha-upload`);
+  await uploadFile(conn, tarPath, `/tmp/gotcha-upload/${tarName}`);
+
+  console.log('==> Extract + install');
+  await sshExec(
+    conn,
+    [
+      `set -e`,
+      `rm -rf ${APP_DIR}.prev`,
+      `if [ -d ${APP_DIR}/services ]; then mv ${APP_DIR} ${APP_DIR}.prev; fi`,
+      `mkdir -p ${APP_DIR}`,
+      `tar -xzf /tmp/gotcha-upload/${tarName} -C ${APP_DIR}`,
+      `chmod +x ${APP_DIR}/deploy/install.sh ${APP_DIR}/deploy/update.sh`,
+      // keep previous uploads if any
+      `if [ -d ${APP_DIR}.prev/uploads ]; then cp -a ${APP_DIR}.prev/uploads ${APP_DIR}/; fi`,
+      `export VPS_APP_DIR=${APP_DIR} DOMAIN=${DOMAIN}`,
+      `bash ${APP_DIR}/deploy/install.sh`,
+    ].join(' && '),
+    900_000,
+  );
+
+  console.log('==> Health check');
+  await sshExec(
+    conn,
+    `curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3200/api/v1/health || curl -sS http://127.0.0.1:3200/api/docs | head -c 200 || true`,
+  );
+
+  console.log(`\nDeploy finished: https://${DOMAIN}/`);
+} finally {
+  conn.end();
+  try {
+    fs.unlinkSync(tarPath);
+  } catch {
+    /* ignore */
+  }
+}

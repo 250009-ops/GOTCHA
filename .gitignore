@@ -3,7 +3,12 @@ dist/
 build/
 .env
 .env.local
+.env.production
+deploy/.env
+deploy/.secrets
 *.log
+services/api/eng.traineddata
+{0}
 .DS_Store
 Thumbs.db
 .idea/
