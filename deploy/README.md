@@ -2,7 +2,9 @@
 
 One VPS runs the entire platform: Postgres, Redis, MinIO, API, worker, marketing, learner, and admin.
 
-## Ports (localhost only — no clash with itestu)
+**Do not run `deploy:vps` until the Eskiz VPS2 IP, root password, and domain are provided.**
+
+## Ports (localhost only on the VPS)
 
 | Service  | Host port |
 |----------|-----------|
@@ -11,23 +13,21 @@ One VPS runs the entire platform: Postgres, Redis, MinIO, API, worker, marketing
 | MinIO    | 9100/9101 |
 | API      | 3200      |
 
-## Public URLs
+## Public URLs (after DOMAIN is set)
 
-Using `DOMAIN=vps10094.eskiz.uz`:
-
-- https://vps10094.eskiz.uz/ — marketing
-- https://vps10094.eskiz.uz/learn/ — learner
-- https://vps10094.eskiz.uz/admin/ — admin
-- https://vps10094.eskiz.uz/api/v1 — API
+- `https://DOMAIN/` — marketing
+- `https://DOMAIN/learn/` — learner
+- `https://DOMAIN/admin/` — admin
+- `https://DOMAIN/api/v1` — API
 
 ## From Windows
 
 ```powershell
-# Once: create deploy/.env (JWT, DB, S3, VPS IP/PASSWORD, OpenAI)
+# Create/refresh deploy/.env secrets (safe anytime; does not deploy)
 npm run deploy:vps:env
 
-# Ship + install on the VPS
-npm run deploy:vps
+# After you provide IP + PASSWORD + DOMAIN in deploy/.env:
+# npm run deploy:vps
 ```
 
-`deploy/.env` is gitignored. Root `.env` keeps local-dev settings; deploy keys are also appended there for convenience.
+`deploy/.env` is gitignored. Root `.env` stays for local dev; VPS placeholders live at the bottom.

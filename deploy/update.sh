@@ -11,7 +11,11 @@ get_env() {
 }
 
 DOMAIN="${DOMAIN:-$(get_env DOMAIN)}"
-DOMAIN="${DOMAIN:-vps10094.eskiz.uz}"
+if [[ -z "${DOMAIN}" || "${DOMAIN}" == "YOUR_DOMAIN" ]]; then
+  echo "Set DOMAIN in deploy/.env before update"
+  exit 1
+fi
+
 export DB_PASSWORD="$(get_env DB_PASSWORD)"
 export S3_ACCESS_KEY="$(get_env S3_ACCESS_KEY)"
 export S3_SECRET_KEY="$(get_env S3_SECRET_KEY)"

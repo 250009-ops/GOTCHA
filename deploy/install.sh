@@ -6,8 +6,7 @@
 set -euo pipefail
 
 APP_DIR="${VPS_APP_DIR:-/var/www/gotcha}"
-DOMAIN="${DOMAIN:-vps10094.eskiz.uz}"
-CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@${DOMAIN}}"
+CERTBOT_EMAIL_DEFAULT=""
 SKIP_SSL="${SKIP_SSL:-0}"
 
 if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
@@ -26,7 +25,11 @@ get_env() {
 }
 
 DOMAIN="${DOMAIN:-$(get_env DOMAIN)}"
-DOMAIN="${DOMAIN:-vps10094.eskiz.uz}"
+if [[ -z "${DOMAIN}" || "${DOMAIN}" == "YOUR_DOMAIN" ]]; then
+  echo "Set DOMAIN in deploy/.env before install"
+  exit 1
+fi
+CERTBOT_EMAIL="${CERTBOT_EMAIL:-admin@${DOMAIN}}"
 DB_PASSWORD="$(get_env DB_PASSWORD)"
 S3_SECRET_KEY="$(get_env S3_SECRET_KEY)"
 S3_ACCESS_KEY="$(get_env S3_ACCESS_KEY)"

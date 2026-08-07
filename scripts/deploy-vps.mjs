@@ -21,16 +21,22 @@ dotenv.config({ path: path.join(root, 'deploy/.env') });
 
 const IP = process.env.IP?.trim();
 const PASSWORD = process.env.PASSWORD?.trim();
-const DOMAIN = process.env.DOMAIN?.trim() || 'vps10094.eskiz.uz';
+const DOMAIN = process.env.DOMAIN?.trim() || '';
 const APP_DIR = process.env.VPS_APP_DIR?.trim() || '/var/www/gotcha';
 
 if (!IP || !PASSWORD) {
   console.error('IP and PASSWORD required in deploy/.env');
+  console.error('VPS not provided yet — fill IP/PASSWORD/DOMAIN when ready, then re-run.');
+  process.exit(1);
+}
+if (!DOMAIN) {
+  console.error('DOMAIN required in deploy/.env before deploy');
   process.exit(1);
 }
 
 function runLocal(cmd, args, opts = {}) {
-  const r = spawnSync(cmd, args, { stdio: 'inherit', cwd: root, shell: true, ...opts });
+  // Avoid shell:true so paths with spaces (e.g. "GOTCHA_android app") stay intact.
+  const r = spawnSync(cmd, args, { stdio: 'inherit', cwd: root, shell: false, ...opts });
   if (r.status !== 0) throw new Error(`${cmd} failed (${r.status})`);
 }
 
