@@ -125,7 +125,7 @@ try {
   console.log('==> Health check');
   await sshExec(
     conn,
-    `curl -sS -o /dev/null -w "%{http_code}" http://127.0.0.1:3200/api/v1/health || curl -sS http://127.0.0.1:3200/api/docs | head -c 200 || true`,
+    `curl -sS -o /dev/null -w "api_docs=%{http_code}\\n" http://127.0.0.1:3200/api/docs; curl -sS -o /dev/null -w "nginx=%{http_code}\\n" -H "Host: ${DOMAIN}" http://127.0.0.1/; pm2 status || true`,
   );
 
   console.log(`\nDeploy finished: https://${DOMAIN}/`);

@@ -53,8 +53,9 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq git curl nginx certbot python3-certbot-nginx ca-certificates
 
-if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 20 ]]; then
-  curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+# Node 22+: jsdom@30 nested undici needs newer runtime (fails on Node 20)
+if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
   apt-get install -y -qq nodejs
 fi
 
@@ -107,7 +108,7 @@ OPENAI_API_KEY=${OPENAI_API_KEY:-}
 OPENAI_MODEL_LOOKUP=${OPENAI_MODEL_LOOKUP:-gpt-4.1-mini}
 OPENAI_MODEL_QUIZ=${OPENAI_MODEL_QUIZ:-gpt-4.1-mini}
 API_PORT=3200
-API_CORS_ORIGINS=https://${DOMAIN}
+API_CORS_ORIGINS=https://${DOMAIN},https://www.${DOMAIN}
 DEV_AUTH_ANY_CREDENTIAL=false
 DEV_UNLIMITED_IMPORTS=false
 WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-5}
@@ -118,10 +119,25 @@ ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/api/.env"
 ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/worker/.env"
 
 echo "==> npm install + build"
+# Strip BOM/CRLF that can break tsc emit / shell scripts from Windows packs
+find "$APP_DIR" -type f \( -name '*.json' -o -name '*.sh' -o -name '*.cjs' -o -name '*.yml' \) \
+  -not -path '*/node_modules/*' -print0 \
+  | xargs -0 -r sed -i '1s/^\xEF\xBB\xBF//;s/\r$//' || true
+
 npm ci
+npm run build --workspace=packages/shared
 npm run db:generate
+# nest/tsc write tsconfig.build.tsbuildinfo — stale info can skip JS emit
+rm -rf services/api/dist services/worker/dist
+rm -f services/api/*.tsbuildinfo services/worker/*.tsbuildinfo
 npm run build --workspace=services/api
+test -f services/api/dist/main.js || {
+  echo "API build missing dist/main.js — falling back to tsc"
+  (cd services/api && npx tsc -p tsconfig.build.json --incremental false)
+  test -f services/api/dist/main.js
+}
 npm run build --workspace=services/worker
+test -f services/worker/dist/index.js
 
 # Strip BOM from migrations if present
 find services/api/prisma/migrations -name '*.sql' -exec sed -i '1s/^\xEF\xBB\xBF//' {} + 2>/dev/null || true
@@ -163,7 +179,7 @@ systemctl reload nginx
 
 if [[ "$SKIP_SSL" != "1" ]]; then
   echo "==> HTTPS (Let's Encrypt)"
-  certbot --nginx -d "$DOMAIN" \
+  certbot --nginx -d "$DOMAIN" -d "www.${DOMAIN}" \
     --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect || {
     echo "WARN: certbot failed — HTTP may still work until DNS/ports are ready"
   }

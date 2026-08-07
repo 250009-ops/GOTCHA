@@ -64,7 +64,7 @@ OPENAI_MODEL_LOOKUP=gpt-4.1-mini
 OPENAI_MODEL_QUIZ=gpt-4.1-mini
 
 API_PORT=3200
-API_CORS_ORIGINS=https://${publicHost}
+API_CORS_ORIGINS=https://${publicHost},https://www.${publicHost}
 DEV_AUTH_ANY_CREDENTIAL=false
 DEV_UNLIMITED_IMPORTS=false
 WORKER_CONCURRENCY=5
