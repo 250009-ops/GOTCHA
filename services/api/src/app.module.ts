@@ -1,0 +1,46 @@
+import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
+import { join } from 'path';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { DevAuthModule } from './common/dev-auth/dev-auth.module';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './modules/auth/auth.module';
+import { UsersModule } from './modules/users/users.module';
+import { ContentModule } from './modules/content/content.module';
+import { VocabularyModule } from './modules/vocabulary/vocabulary.module';
+import { PracticeModule } from './modules/practice/practice.module';
+import { AiModule } from './modules/ai/ai.module';
+import { BillingModule } from './modules/billing/billing.module';
+import { ImportsModule } from './modules/imports/imports.module';
+import { AdminModule } from './modules/admin/admin.module';
+import { ReadingModule } from './modules/reading/reading.module';
+import { MarketingModule } from './modules/marketing/marketing.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: [
+        join(process.cwd(), '.env'),
+        join(process.cwd(), '../../.env'),
+      ],
+    }),
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    DevAuthModule,
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    ContentModule,
+    ReadingModule,
+    VocabularyModule,
+    PracticeModule,
+    AiModule,
+    BillingModule,
+    ImportsModule,
+    AdminModule,
+    MarketingModule,
+  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+})
+export class AppModule {}

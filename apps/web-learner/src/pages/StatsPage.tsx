@@ -1,0 +1,258 @@
+import { useEffect, useMemo, useState } from 'react';
+import { BarChart3, TrendingUp } from 'lucide-react';
+import { EmptyState } from '../components/EmptyState';
+import { AreaLineChart, BarChart, DotLineChart, formatShortDate, HeatmapCalendar } from '../components/charts';
+import { cn } from '../components/ui/utils';
+import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import type { UserStatsResponse } from '../lib/types';
+
+function GLogo({ size = 40 }: { size?: number }) {
+  return (
+    <div
+      className="bg-[#2107aa] rounded-[14px] flex items-center justify-center shrink-0"
+      style={{ width: size, height: size }}
+    >
+      <span className="font-brand text-white leading-none" style={{ fontSize: size * 0.6 }}>G</span>
+    </div>
+  );
+}
+
+function KpiCard({
+  value,
+  label,
+  sub,
+  color,
+}: {
+  value: string;
+  label: string;
+  sub?: string;
+  color: string;
+}) {
+  return (
+    <div className={cn('rounded-2xl border p-4 flex items-center gap-3', color)}>
+      <GLogo size={40} />
+      <div>
+        <div className="font-bold text-xl leading-none">{value}</div>
+        <div className="text-xs mt-1 opacity-70">{label}</div>
+        {sub && <div className="text-xs mt-0.5 opacity-50">{sub}</div>}
+      </div>
+    </div>
+  );
+}
+
+function ChartCard({
+  title,
+  subtitle,
+  icon,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  icon?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">
+      <div className="flex items-center justify-between mb-5">
+        <div>
+          <h3 className="font-bold text-gray-900 text-lg">{title}</h3>
+          <p className="text-[#99a1af] text-xs mt-0.5">{subtitle}</p>
+        </div>
+        {icon}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ChartEmpty({ title, description }: { title: string; description: string }) {
+  return (
+    <div className="h-[180px] flex flex-col items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50 px-6 text-center">
+      <TrendingUp className="w-8 h-8 text-gray-200 mb-2" />
+      <div className="text-sm font-medium text-gray-500">{title}</div>
+      <div className="text-xs text-gray-400 mt-1">{description}</div>
+    </div>
+  );
+}
+
+export default function StatsPage() {
+  const { stats, preferences, vocabItems } = useAuth();
+  const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
+  const [range, setRange] = useState<'7d' | '30d'>('30d');
+
+  useEffect(() => {
+    api<UserStatsResponse>('/users/me/stats').then(setApiStats).catch(console.error);
+  }, []);
+
+  const masteredCount = vocabItems.filter((v) => v.mastered).length;
+  const learningCount = vocabItems.filter((v) => !v.mastered).length;
+  const dailyGoal = preferences?.dailyGoalMinutes ?? 15;
+  const todayMinutes = stats?.todayMinutes ?? 0;
+  const todayPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
+  const totalReadMinutes = apiStats?.totalReadMinutes ?? 0;
+  const rangeDays = range === '7d' ? 7 : 30;
+  const avgMinPerDay = Math.round(totalReadMinutes / rangeDays);
+  const hasActivity = totalReadMinutes > 0 || (apiStats?.wordsSaved ?? 0) > 0 || vocabItems.length > 0;
+
+  const dailySlice = useMemo(() => {
+    const daily = apiStats?.history?.daily ?? [];
+    return daily.slice(-rangeDays);
+  }, [apiStats, rangeDays]);
+
+  const readingSeries = useMemo(
+    () => dailySlice.map((d) => ({ label: formatShortDate(d.date), value: d.minutes })),
+    [dailySlice],
+  );
+  const wordsSeries = useMemo(
+    () => dailySlice.map((d) => ({ label: formatShortDate(d.date), value: d.wordsSaved })),
+    [dailySlice],
+  );
+  const weeklySeries = useMemo(
+    () => (apiStats?.history?.weekly ?? []).map((w) => ({ label: formatShortDate(w.weekStart), value: w.wordsSaved })),
+    [apiStats],
+  );
+  const wordsInPeriod = dailySlice.reduce((s, d) => s + d.wordsSaved, 0);
+  const heatmap = apiStats?.history?.heatmap ?? [];
+  const currentStreak = stats?.streakCount ?? 0;
+  const bestStreak = apiStats?.bestStreak ?? currentStreak;
+
+  const totalVocab = vocabItems.length || apiStats?.vocabularyTotal || 0;
+  const mastered = apiStats?.vocabularyMastered ?? masteredCount;
+  const learning = Math.max(0, totalVocab - mastered);
+  const masteredPct = totalVocab ? Math.round((mastered / totalVocab) * 100) : 0;
+  const learningPct = totalVocab ? 100 - masteredPct : 0;
+
+  return (
+    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+        <div className="flex-1">
+          <h1 className="text-2xl font-bold text-gray-900">Statistics</h1>
+          <p className="text-[#99a1af] text-sm mt-0.5">Track your learning progress over time.</p>
+        </div>
+        <div className="flex gap-2 bg-[#f3f4f6] p-1 rounded-[14px]">
+          {(['7d', '30d'] as const).map((r) => (
+            <button
+              key={r}
+              type="button"
+              onClick={() => setRange(r)}
+              className={cn(
+                'px-3 py-1.5 rounded-[10px] text-xs font-semibold transition-all',
+                range === r ? 'bg-white text-[#1e2939] shadow-sm' : 'text-[#99a1af] hover:text-gray-600',
+              )}
+            >
+              {r === '7d' ? 'Last 7 days' : 'Last 30 days'}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard value={`${currentStreak} days`} label="Current streak" color="text-[#bb4d00] bg-[#fffbeb] border-[#fee685]" />
+        <KpiCard
+          value={`${Math.floor(totalReadMinutes / 60)}h ${totalReadMinutes % 60}m`}
+          label="Total reading"
+          sub={hasActivity ? `avg ${avgMinPerDay}m/day` : undefined}
+          color="text-[#7008e7] bg-[#f5f3ff] border-[#ddd6ff]"
+        />
+        <KpiCard
+          value={`${totalVocab}`}
+          label="Words saved"
+          sub={`${mastered} mastered`}
+          color="text-[#1447e6] bg-[#eff6ff] border-[#bedbff]"
+        />
+        <KpiCard
+          value={`${todayPct}%`}
+          label="Daily goal"
+          sub={`${todayMinutes}/${dailyGoal} min today`}
+          color="text-[#364153] bg-[#f9fafb] border-[#e5e7eb]"
+        />
+      </div>
+
+      {!hasActivity ? (
+        <EmptyState
+          icon={BarChart3}
+          title="No activity yet"
+          description="Your reading time, word saves, and streak charts will appear here once you start learning."
+        />
+      ) : (
+        <>
+          <div className="grid lg:grid-cols-2 gap-5">
+            <ChartCard title="Reading Time" subtitle={`${totalReadMinutes} min total · avg ${avgMinPerDay} min/day`} icon={<GLogo size={32} />}>
+              {readingSeries.some((d) => d.value > 0) ? (
+                <AreaLineChart data={readingSeries} color="#8e51ff" />
+              ) : (
+                <ChartEmpty title="No reading time yet" description="Open a story from your library to start tracking." />
+              )}
+            </ChartCard>
+
+            <ChartCard title="New Words" subtitle={`${wordsInPeriod} words in this period`} icon={<GLogo size={32} />}>
+              {wordsSeries.some((d) => d.value > 0) ? (
+                <BarChart data={wordsSeries} color="#51a2ff" />
+              ) : (
+                <ChartEmpty title="No words saved yet" description="Save words while reading to see your vocabulary growth." />
+              )}
+            </ChartCard>
+          </div>
+
+          <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(280px,1fr)] gap-5">
+            <ChartCard title="Weekly Word Saves" subtitle="New vocabulary per week" icon={<TrendingUp className="w-4 h-4 text-[#00966b]" />}>
+              {weeklySeries.some((d) => d.value > 0) ? (
+                <DotLineChart data={weeklySeries} color="#00966b" />
+              ) : (
+                <ChartEmpty title="No word saves yet" description="Weekly vocabulary trends will appear here." />
+              )}
+            </ChartCard>
+
+            <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-gray-900 text-lg">Activity</h3>
+                <span className="text-[#99a1af] text-xs">Last 10 weeks</span>
+              </div>
+              <HeatmapCalendar data={heatmap} />
+              <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-[#f9fafb]">
+                <div className="text-center">
+                  <div className="font-bold text-lg text-gray-900">{currentStreak}</div>
+                  <div className="text-xs text-[#99a1af]">Current streak</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-bold text-lg text-gray-900">{bestStreak}</div>
+                  <div className="text-xs text-[#99a1af]">Best streak</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">
+            <h3 className="font-bold text-gray-900 text-lg mb-4">Vocabulary Breakdown</h3>
+            <div className="grid sm:grid-cols-3 gap-4">
+              {[
+                { label: 'Total saved', value: totalVocab, dot: 'bg-[#e5e7eb]', text: 'text-[#364153]' },
+                { label: 'Still learning', value: learning, dot: 'bg-[#51a2ff]', text: 'text-[#1447e6]' },
+                { label: 'Mastered', value: mastered, dot: 'bg-[#00d492]', text: 'text-[#007a55]' },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-3 p-3 bg-[#f9fafb] rounded-[14px]">
+                  <div className={cn('w-3 h-3 rounded-[6px] shrink-0', s.dot)} />
+                  <div>
+                    <div className={cn('font-bold text-lg leading-none', s.text)}>{s.value}</div>
+                    <div className="text-xs text-[#99a1af] mt-0.5">{s.label}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4">
+              <div className="h-2.5 bg-[#f3f4f6] rounded-full overflow-hidden flex">
+                <div className="h-full bg-[#00d492] transition-all" style={{ width: `${masteredPct}%` }} />
+                <div className="h-full bg-[#51a2ff] transition-all" style={{ width: `${learningPct}%` }} />
+              </div>
+              <div className="flex justify-between mt-1.5 text-xs text-[#99a1af]">
+                <span>{masteredPct}% mastered</span>
+                <span>{learningPct}% in progress</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
