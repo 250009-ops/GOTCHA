@@ -3,6 +3,8 @@
 interface ImportMetaEnv {
   readonly VITE_API_URL?: string;
   readonly VITE_LEARNER_APP_URL?: string;
+  /** Admin console base URL (path-aware on production, e.g. https://host/admin). */
+  readonly VITE_ADMIN_APP_URL?: string;
 }
 
 interface ImportMeta {

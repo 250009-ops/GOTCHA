@@ -26,7 +26,17 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const LEARNER_APP_URL = import.meta.env.VITE_LEARNER_APP_URL ?? 'http://localhost:5175';
+const LEARNER_APP_URL = (
+  import.meta.env.VITE_LEARNER_APP_URL ?? 'http://localhost:5175'
+).replace(/\/$/, '');
+
+/** Admin app base for login returnUrl (path-aware on single-host deploys). */
+function adminAppReturnUrl() {
+  const fromEnv = import.meta.env.VITE_ADMIN_APP_URL?.trim();
+  if (fromEnv) return fromEnv.replace(/\/?$/, '/');
+  const base = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
+  return `${window.location.origin}${base === '/' ? '/' : base}`;
+}
 
 /** Consume one-time token handoff from shared learner login (`#accessToken=...&refreshToken=...`). */
 function consumeHashTokens() {
@@ -43,7 +53,7 @@ function consumeHashTokens() {
 }
 
 export function redirectToSharedLogin() {
-  const returnUrl = encodeURIComponent(`${window.location.origin}/`);
+  const returnUrl = encodeURIComponent(adminAppReturnUrl());
   window.location.href = `${LEARNER_APP_URL}/login?returnUrl=${returnUrl}`;
 }
 
