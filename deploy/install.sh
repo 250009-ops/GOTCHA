@@ -21,7 +21,9 @@ fi
 
 get_env() {
   local key="$1"
-  grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 | cut -d= -f2-
+  local line
+  line="$(grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 || true)"
+  printf '%s' "${line#*=}"
 }
 
 DOMAIN="${DOMAIN:-$(get_env DOMAIN)}"

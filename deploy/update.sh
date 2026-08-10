@@ -7,7 +7,9 @@ cd "$APP_DIR"
 
 get_env() {
   local key="$1"
-  grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 | cut -d= -f2-
+  local line
+  line="$(grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 || true)"
+  printf '%s' "${line#*=}"
 }
 
 DOMAIN="${DOMAIN:-$(get_env DOMAIN)}"
@@ -52,6 +54,9 @@ SMTP_REPLY_TO="$(get_env SMTP_REPLY_TO)"
 
 sync_runtime_env_key LEARNER_APP_URL "${LEARNER_APP_URL}"
 sync_runtime_env_key API_PORT "${API_PORT:-3200}"
+sync_runtime_env_key API_CORS_ORIGINS "$(get_env API_CORS_ORIGINS)"
+sync_runtime_env_key DEV_AUTH_ANY_CREDENTIAL "$(get_env DEV_AUTH_ANY_CREDENTIAL)"
+sync_runtime_env_key DEV_UNLIMITED_IMPORTS "$(get_env DEV_UNLIMITED_IMPORTS)"
 sync_runtime_env_key SMTP_HOST "${SMTP_HOST}"
 sync_runtime_env_key SMTP_PORT "${SMTP_PORT:-465}"
 sync_runtime_env_key SMTP_SECURE "${SMTP_SECURE:-true}"
@@ -60,11 +65,33 @@ sync_runtime_env_key SMTP_PASS "${SMTP_PASS}"
 sync_runtime_env_key SMTP_FROM "${SMTP_FROM:-GOTCHA <noreply@${DOMAIN}>}"
 sync_runtime_env_key SMTP_REPLY_TO "${SMTP_REPLY_TO}"
 
+# Defaults if deploy/.env omitted optional keys
+if [[ -z "$(get_env API_CORS_ORIGINS)" ]]; then
+  sync_runtime_env_key API_CORS_ORIGINS "https://${DOMAIN},https://www.${DOMAIN}"
+fi
+if [[ -z "$(get_env DEV_AUTH_ANY_CREDENTIAL)" ]]; then
+  sync_runtime_env_key DEV_AUTH_ANY_CREDENTIAL "false"
+fi
+if [[ -z "$(get_env DEV_UNLIMITED_IMPORTS)" ]]; then
+  sync_runtime_env_key DEV_UNLIMITED_IMPORTS "false"
+fi
+
+# Strip CRLF that can break shell scripts uploaded from Windows
+find "$APP_DIR/deploy" -type f \( -name '*.sh' -o -name '*.cjs' -o -name '*.yml' \) \
+  -print0 | xargs -0 -r sed -i '1s/^\xEF\xBB\xBF//;s/\r$//' || true
+
+ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/api/.env"
+ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/worker/.env"
+
 docker compose -f deploy/docker-compose.prod.yml up -d
 
 npm ci
+npm run build --workspace=packages/shared --if-present
 npm run db:generate
+rm -rf services/api/dist services/worker/dist
+rm -f services/api/*.tsbuildinfo services/worker/*.tsbuildinfo
 npm run build --workspace=services/api
+test -f services/api/dist/main.js
 npm run build --workspace=services/worker
 cd services/api && npx prisma migrate deploy && cd "$APP_DIR"
 
