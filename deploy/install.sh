@@ -149,22 +149,9 @@ npm run db:seed || true
 cd "$APP_DIR"
 
 echo "==> Build frontends (path-based on one domain)"
-export VITE_API_URL="https://${DOMAIN}/api/v1"
-export VITE_WEB_URL="https://${DOMAIN}"
-export VITE_MARKETING_URL="https://${DOMAIN}"
-export VITE_LEARNER_APP_URL="https://${DOMAIN}/learn"
-export VITE_ADMIN_APP_URL="https://${DOMAIN}/admin"
-
-VITE_BASE=/ npm run build --workspace=apps/web
-VITE_BASE=/learn/ npm run build --workspace=apps/web-learner
-VITE_BASE=/admin/ npm run build --workspace=apps/admin
-
-echo "==> Publish static sites"
-rm -rf "${APP_DIR}/public"
-mkdir -p "${APP_DIR}/public/learn" "${APP_DIR}/public/admin"
-cp -a apps/web/dist/. "${APP_DIR}/public/"
-cp -a apps/web-learner/dist/. "${APP_DIR}/public/learn/"
-cp -a apps/admin/dist/. "${APP_DIR}/public/admin/"
+# shellcheck source=lib/vite-env.sh
+source "${APP_DIR}/deploy/lib/vite-env.sh"
+build_and_publish_frontends
 
 echo "==> PM2"
 VPS_APP_DIR="$APP_DIR" pm2 startOrReload deploy/ecosystem.config.cjs --update-env

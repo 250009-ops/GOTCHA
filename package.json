@@ -21,7 +21,8 @@
     "db:seed": "npm run db:seed --workspace=services/api",
     "db:generate": "npm run db:generate --workspace=services/api",
     "deploy:vps:env": "node scripts/generate-vps-env.mjs",
-    "deploy:vps": "node scripts/deploy-vps.mjs"
+    "deploy:vps": "node scripts/deploy-vps.mjs",
+    "deploy:frontends": "node scripts/redeploy-frontends.mjs"
   },
   "engines": {
     "node": ">=22"
