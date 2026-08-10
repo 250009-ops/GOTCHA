@@ -27,7 +27,8 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Drop stale learner tokens so this page never triggers /users/me or /auth/refresh.
+    // Clear leftover tokens when opening auth screens (once on mount).
+    // Do not clear inside submit — that raced with login and wiped the new session.
     clearTokens();
   }, []);
 
@@ -44,7 +45,7 @@ export default function AuthPage() {
         if (adminReturnUrl) {
           if (!session.isAdmin) {
             toast.error('This account does not have admin access');
-            navigate('/app');
+            navigate('/app', { replace: true });
             return;
           }
           // Leave tokens only for the admin app (hash handoff); avoid a lingering learner session.
@@ -64,7 +65,7 @@ export default function AuthPage() {
         } else {
           toast.success('Welcome back!');
         }
-        navigate('/app');
+        navigate('/app', { replace: true });
       } else {
         const result = await register({
           email,
@@ -79,7 +80,7 @@ export default function AuthPage() {
           return;
         }
         toast.success('Account created!');
-        navigate('/app');
+        navigate('/app', { replace: true });
       }
     } catch (err) {
       const e = err as Error & { code?: string; email?: string; status?: number };

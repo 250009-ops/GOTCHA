@@ -137,14 +137,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshProfile, refreshVocab]);
 
   useEffect(() => {
-    // Public auth pages: never hit /users/me or /auth/refresh (stops console 401 spam).
+    // Public auth pages: drop *stale* sessions only. Never wipe a session that
+    // login/register just established while we are still on /login (user set →
+    // effect re-ran and used to clearTokens + setUser(null) before navigate('/app')).
     if (isPublicAuthRoute) {
-      clearTokens();
-      setUser(null);
-      setStats(null);
-      setPreferences(null);
-      setVocabItems([]);
-      setVocabError(null);
+      if (!user) {
+        clearTokens();
+        setStats(null);
+        setPreferences(null);
+        setVocabItems([]);
+        setVocabError(null);
+      }
       setLoading(false);
       setBootstrapped(true);
       return;
