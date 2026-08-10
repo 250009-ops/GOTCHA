@@ -146,6 +146,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setVocabItems([]);
       setVocabError(null);
       setLoading(false);
+      setBootstrapped(true);
       return;
     }
     // Session already established via login/register in this tab.
@@ -175,8 +176,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
     setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
     setUser(res.user);
-    await refreshProfile();
-    await refreshVocab();
+    try {
+      await refreshProfile();
+    } catch {
+      /* profile fields partially available from login response */
+    }
+    try {
+      await refreshVocab();
+    } catch {
+      /* vocabulary is non-blocking after login */
+    }
     return {
       accessToken: res.accessToken,
       refreshToken: res.refreshToken,
