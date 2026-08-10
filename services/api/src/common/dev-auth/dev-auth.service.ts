@@ -86,9 +86,23 @@ export class DevAuthService {
 
   async register(dto: RegisterDto) {
     const existing = await this.tryFindDbUser(dto.email);
-    if (existing) throw new ConflictException('Email already registered');
+    if (existing) {
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Account already exists. Sign in, or resend verification if you never confirmed your email.',
+        code: 'EMAIL_ALREADY_REGISTERED',
+        email: existing.email,
+      });
+    }
     if (this.usersByEmail.has(dto.email.trim().toLowerCase())) {
-      throw new ConflictException('Email already registered');
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Account already exists. Sign in, or resend verification if you never confirmed your email.',
+        code: 'EMAIL_ALREADY_REGISTERED',
+        email: dto.email.trim().toLowerCase(),
+      });
     }
 
     const dbUser = await this.tryCreateDbUser(dto);
@@ -136,6 +150,7 @@ export class DevAuthService {
       totalReadMinutes: 0,
       wordsSaved: 0,
       wordsTapped: 0,
+      streakCount: 0,
       bestStreak: 0,
       history: { daily: [], weekly: [], heatmap: [] },
     };

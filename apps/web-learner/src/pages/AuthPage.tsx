@@ -82,10 +82,26 @@ export default function AuthPage() {
         navigate('/app');
       }
     } catch (err) {
-      const e = err as Error & { code?: string; email?: string };
+      const e = err as Error & { code?: string; email?: string; status?: number };
       if (e.code === 'EMAIL_NOT_VERIFIED' || /verify your email/i.test(e.message || '')) {
         toast.message('Please verify your email before signing in');
         navigate(`/verify-email?email=${encodeURIComponent(e.email || email)}`);
+        return;
+      }
+      if (
+        e.code === 'EMAIL_EXISTS_UNVERIFIED' ||
+        (e.status === 409 && /not verified/i.test(e.message || ''))
+      ) {
+        toast.message('Account already exists — check your inbox or resend verification');
+        navigate(`/verify-email?email=${encodeURIComponent(e.email || email)}`);
+        return;
+      }
+      if (
+        e.code === 'EMAIL_ALREADY_REGISTERED' ||
+        e.status === 409 ||
+        /already (registered|exists)/i.test(e.message || '')
+      ) {
+        toast.error('Account already exists — Sign in or resend verification');
         return;
       }
       toast.error(err instanceof Error ? err.message : 'Authentication failed');

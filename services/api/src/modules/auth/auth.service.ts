@@ -103,7 +103,26 @@ export class AuthService {
 
     const email = dto.email.trim().toLowerCase();
     const existing = await this.prisma.user.findUnique({ where: { email } });
-    if (existing) throw new ConflictException('Email already registered');
+    if (existing) {
+      if (!existing.emailVerifiedAt) {
+        await this.sendVerification(existing);
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message:
+            'Account already exists but is not verified. We sent a new verification email — check your inbox or open Resend.',
+          code: 'EMAIL_EXISTS_UNVERIFIED',
+          email: existing.email,
+        });
+      }
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Account already exists. Sign in, or resend verification if you never confirmed your email.',
+        code: 'EMAIL_ALREADY_REGISTERED',
+        email: existing.email,
+      });
+    }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const primaryTarget = dto.targetLanguages[0];

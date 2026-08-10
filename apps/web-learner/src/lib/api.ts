@@ -106,13 +106,19 @@ export async function api<T>(
       message?: string | string[];
       code?: string;
       email?: string;
+      statusCode?: number;
     };
     const message = Array.isArray(err.message)
       ? err.message.join(', ')
       : (err.message ?? 'Request failed');
-    const error = new Error(message) as Error & { code?: string; email?: string };
+    const error = new Error(message) as Error & {
+      code?: string;
+      email?: string;
+      status?: number;
+    };
     if (err.code) error.code = err.code;
     if (err.email) error.email = err.email;
+    error.status = err.statusCode ?? res.status;
     throw error;
   }
 
