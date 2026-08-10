@@ -3,6 +3,20 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 const ACCESS_KEY = 'gotcha_learner_access';
 const REFRESH_KEY = 'gotcha_learner_refresh';
 
+/** Auth endpoints that must not send Bearer tokens or trigger /auth/refresh. */
+const PUBLIC_AUTH_API = new Set([
+  '/auth/login',
+  '/auth/register',
+  '/auth/refresh',
+  '/auth/verify-email',
+  '/auth/resend-verification',
+]);
+
+function isPublicAuthApi(path: string) {
+  const bare = path.split('?')[0] ?? path;
+  return PUBLIC_AUTH_API.has(bare);
+}
+
 export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
@@ -71,12 +85,15 @@ export async function api<T>(
   // Let the browser set multipart boundary when uploading files.
   if (isFormData) delete headers['Content-Type'];
 
-  const accessToken = token ?? getAccessToken();
+  const publicAuth = isPublicAuthApi(path);
+  // Explicit null means "no auth"; undefined falls back to stored access token.
+  const accessToken = publicAuth ? (token ?? null) : (token === undefined ? getAccessToken() : token);
   if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   let res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-  if (res.status === 401 && accessToken) {
+  // Never refresh on public auth calls (e.g. login 401 EMAIL_NOT_VERIFIED with a stale token).
+  if (res.status === 401 && accessToken && !publicAuth) {
     const newToken = await refreshAccessToken();
     if (newToken) {
       headers.Authorization = `Bearer ${newToken}`;

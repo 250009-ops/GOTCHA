@@ -7,8 +7,12 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { useLocation } from 'react-router-dom';
 import { api, clearTokens, setTokens } from './api';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
+
+/** Routes where we must not call /users/me, /users/me/stats, or /auth/refresh. */
+const PUBLIC_AUTH_ROUTES = new Set(['/login', '/register', '/verify-email']);
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -53,6 +57,8 @@ const defaultPreferences: UserPreferences = {
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { pathname } = useLocation();
+  const isPublicAuthRoute = PUBLIC_AUTH_ROUTES.has(pathname);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
@@ -60,6 +66,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [vocabLoading, setVocabLoading] = useState(false);
   const [vocabError, setVocabError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   const refreshProfile = useCallback(async () => {
     const [profile, userStats] = await Promise.all([
@@ -101,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem('gotcha_learner_access');
     if (!token) {
       setLoading(false);
+      setBootstrapped(true);
       return;
     }
     try {
@@ -113,14 +121,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {
       clearTokens();
       setUser(null);
+      setStats(null);
+      setPreferences(null);
+      setVocabItems([]);
     } finally {
       setLoading(false);
+      setBootstrapped(true);
     }
   }, [refreshProfile, refreshVocab]);
 
   useEffect(() => {
+    // Public auth pages: never hit /users/me or /auth/refresh (stops console 401 spam).
+    if (isPublicAuthRoute) {
+      clearTokens();
+      setUser(null);
+      setStats(null);
+      setPreferences(null);
+      setVocabItems([]);
+      setVocabError(null);
+      setLoading(false);
+      return;
+    }
+    // Session already established via login/register in this tab.
+    if (user) {
+      setBootstrapped(true);
+      setLoading(false);
+      return;
+    }
+    // Already attempted bootstrap (success or cleared stale tokens).
+    if (bootstrapped) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
     void bootstrap();
-  }, [bootstrap]);
+  }, [isPublicAuthRoute, bootstrap, bootstrapped, user]);
 
   const login = useCallback(async (email: string, password: string) => {
     const res = await api<{

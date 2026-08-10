@@ -2,11 +2,11 @@
 const base = `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}assets/verify`;
 
 export const verifyAssets = {
-  mailOpen: `${base}/mail-open.svg`,
-  bgGlow: `${base}/bg-glow.svg`,
-  check: `${base}/check.svg`,
+  envelope: `${base}/envelope.svg`,
+  bgGlow: `${base}/bg-glow-web.svg`,
+  badgeCheck: `${base}/badge-check.svg`,
   user: `${base}/user.svg`,
-  externalLink: `${base}/external-link.svg`,
+  externalLink: `${base}/external-link-web.svg`,
   chevronLeft: `${base}/chevron-left.svg`,
 } as const;
 

@@ -2,57 +2,42 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
-import { api } from '../lib/api';
+import { AuthShell } from '../components/AuthShell';
+import { api, clearTokens } from '../lib/api';
 import { VerifyIcon, verifyAssets as a } from '../assets/verify';
 
 type Phase = 'sent' | 'verifying' | 'success' | 'error';
 
-function BrandMark() {
-  return (
-    <div className="flex items-center gap-3">
-      <div
-        className="flex items-center justify-center bg-[#2107aa] rounded-[12px]"
-        style={{ width: 40, height: 40 }}
-      >
-        <span
-          className="text-white text-2xl leading-none"
-          style={{ fontFamily: 'Bagel Fat One, cursive' }}
-        >
-          G
-        </span>
-      </div>
-      <span
-        className="text-[20px] leading-7 tracking-[-0.5px] text-[#101828]"
-        style={{ fontFamily: 'Bagel Fat One, cursive' }}
-      >
-        GOTCHA
-      </span>
-    </div>
-  );
-}
-
 function EnvelopeIllustration() {
   return (
-    <div className="relative flex items-center justify-center size-[140px]">
+    <div className="relative flex items-center justify-center size-[180px]">
       <img
         src={a.bgGlow}
         alt=""
-        className="absolute left-1/2 top-1/2 size-[120px] -translate-x-1/2 -translate-y-1/2 pointer-events-none"
-        width={120}
-        height={120}
+        className="absolute left-1/2 top-1/2 size-[150px] -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+        width={150}
+        height={150}
       />
-      <div className="absolute left-0 top-5 rounded-lg bg-[#6c1d95] px-2 py-1 text-xs font-bold text-white shadow-[0_4px_4px_rgba(108,29,149,0.2)]">
+      <div className="absolute left-0 top-6 rounded-[10px] bg-[#2107aa] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(33,7,170,0.2)]">
         A
       </div>
-      <div className="absolute left-[100px] top-3.5 rounded-lg bg-[#2107aa] px-2 py-1 text-xs font-bold text-white shadow-[0_4px_4px_rgba(33,7,170,0.2)]">
+      <div className="absolute right-0 top-4 rounded-[10px] bg-[#6c1d95] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(108,29,149,0.2)]">
         あ
       </div>
-      <div className="relative flex h-16 w-20 flex-col items-center justify-center rounded-xl border-[3px] border-[#6c1d95] bg-white p-2.5 shadow-[0_8px_8px_rgba(0,0,0,0.06)]">
-        <VerifyIcon src={a.mailOpen} size={24} />
-      </div>
-      <div className="absolute left-[90px] top-[84px] flex size-6 items-center justify-center rounded-xl border-2 border-white bg-[#10b981]">
-        <VerifyIcon src={a.check} size={12} />
-      </div>
+      <img
+        src={a.envelope}
+        alt=""
+        className="relative z-[1] h-[80px] w-[100px] object-contain"
+        width={100}
+        height={80}
+      />
+      <img
+        src={a.badgeCheck}
+        alt=""
+        className="absolute right-[22px] bottom-[36px] z-[2] size-[30px]"
+        width={30}
+        height={30}
+      />
     </div>
   );
 }
@@ -68,6 +53,11 @@ export default function VerifyEmailPage() {
   const [email, setEmail] = useState(emailParam);
   const [error, setError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+
+  useEffect(() => {
+    // Auth routes should not keep a stale learner session (avoids /users/me 401 spam).
+    clearTokens();
+  }, []);
 
   const title = useMemo(() => {
     if (phase === 'success') return 'Email verified';
@@ -100,7 +90,6 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   const openEmailApp = () => {
-    // Best-effort: open the user's default mail client / webmail tab.
     window.location.href = 'mailto:';
   };
 
@@ -133,96 +122,96 @@ export default function VerifyEmailPage() {
           : "We've sent a verification link to your email address. Please check your inbox and tap the link to confirm your account.";
 
   return (
-    <div className="min-h-screen flex flex-col bg-white">
-      <div className="flex items-center justify-between px-5 sm:px-8 pt-6 pb-2">
-        <button
-          type="button"
-          onClick={() => navigate(email ? `/register` : '/login')}
-          className="flex size-10 items-center justify-center rounded-xl hover:bg-gray-50"
-          aria-label="Back"
-        >
-          <VerifyIcon src={a.chevronLeft} size={20} />
-        </button>
-        <BrandMark />
-        <div className="size-10" />
-      </div>
-
-      <div className="flex-1 flex flex-col items-center justify-center px-7 py-8 max-w-[448px] w-full mx-auto gap-7">
-        <EnvelopeIllustration />
-
-        <div className="flex flex-col gap-3 text-center w-full">
-          <h1 className="text-2xl font-extrabold text-[#111827] leading-tight">{title}</h1>
-          <p className="text-[15px] leading-relaxed text-[#4b5563]">{body}</p>
-        </div>
-
-        {email && phase !== 'verifying' && (
-          <div className="inline-flex items-center gap-2 rounded-[20px] border border-[#e9d5ff] bg-[#f3e8ff] px-5 py-2.5">
-            <VerifyIcon src={a.user} size={16} />
-            <span className="text-[15px] font-semibold text-[#6c1d95]">{email}</span>
+    <AuthShell>
+      <div className="w-full max-w-[500px] min-w-0">
+        <div className="bg-white border border-[#e5e7eb] rounded-2xl xl:rounded-[24px] p-5 sm:p-8 xl:p-12 flex flex-col items-center gap-7 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
+          <div className="flex flex-col gap-2 text-center w-full">
+            <h1 className="text-2xl xl:text-[32px] font-extrabold text-[#101828] leading-8 xl:leading-10">
+              {title}
+            </h1>
+            <p className="text-[15px] leading-[22px] text-[#6b7280]">{body}</p>
           </div>
-        )}
 
-        {phase === 'sent' && (
-          <div className="flex flex-col gap-5 w-full items-center">
-            <Button
-              type="button"
-              onClick={openEmailApp}
-              className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_8px_8px_rgba(108,29,149,0.14)] gap-2"
-            >
-              <VerifyIcon src={a.externalLink} size={20} />
-              Open Email App
-            </Button>
-            <p className="text-sm font-semibold text-[#4b5563]">
-              Didn&apos;t receive it?{' '}
-              <button
+          {phase !== 'verifying' && <EnvelopeIllustration />}
+
+          {email && phase !== 'verifying' && (
+            <div className="flex w-full items-center gap-2.5 rounded-[20px] border border-[#e5e7eb] bg-[#f3f4f6] px-6 py-3">
+              <VerifyIcon src={a.user} size={18} />
+              <span className="text-[15px] font-bold text-[#101828] truncate">{email}</span>
+            </div>
+          )}
+
+          {phase === 'sent' && (
+            <div className="flex flex-col gap-5 w-full items-center">
+              <Button
+                type="button"
+                onClick={openEmailApp}
+                className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)] gap-2.5"
+              >
+                <VerifyIcon src={a.externalLink} size={20} />
+                Open Email App
+              </Button>
+              <p className="text-sm font-semibold text-[#6b7280]">
+                Didn&apos;t receive it?{' '}
+                <button
+                  type="button"
+                  onClick={() => void resend()}
+                  disabled={resending}
+                  className="text-[#6c1d95] underline underline-offset-2 disabled:opacity-60"
+                >
+                  {resending ? 'Sending…' : 'Resend email'}
+                </button>
+              </p>
+            </div>
+          )}
+
+          {phase === 'error' && (
+            <div className="flex flex-col gap-4 w-full items-center">
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#6c1d95]/20 focus:border-[#6c1d95]"
+              />
+              <Button
                 type="button"
                 onClick={() => void resend()}
-                disabled={resending}
-                className="text-[#6c1d95] underline underline-offset-2 disabled:opacity-60"
+                disabled={resending || !email}
+                className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
               >
-                {resending ? 'Sending…' : 'Resend email'}
-              </button>
-            </p>
-          </div>
-        )}
+                {resending ? 'Sending…' : 'Resend verification email'}
+              </Button>
+            </div>
+          )}
 
-        {phase === 'error' && (
-          <div className="flex flex-col gap-4 w-full items-center">
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#6c1d95]/20 focus:border-[#6c1d95]"
-            />
+          {phase === 'success' && (
             <Button
               type="button"
-              onClick={() => void resend()}
-              disabled={resending || !email}
+              onClick={() => navigate('/login')}
               className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
             >
-              {resending ? 'Sending…' : 'Resend verification email'}
+              Sign in
             </Button>
+          )}
+
+          {phase === 'verifying' && (
+            <div className="flex items-center gap-2 text-sm text-[#6b7280]">
+              <span className="w-4 h-4 border-2 border-[#6c1d95]/30 border-t-[#6c1d95] rounded-full animate-spin" />
+              Confirming your email…
+            </div>
+          )}
+
+          <div className="h-px w-full bg-[#e5e7eb]" />
+
+          <div className="flex items-center justify-center gap-1.5 text-sm">
+            <span className="font-medium text-[#6b7280]">Already verified?</span>
+            <Link to="/login" className="font-bold text-[#6c1d95] underline underline-offset-2">
+              Sign in
+            </Link>
           </div>
-        )}
-
-        {phase === 'success' && (
-          <Button
-            type="button"
-            onClick={() => navigate('/login')}
-            className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
-          >
-            Sign in
-          </Button>
-        )}
+        </div>
       </div>
-
-      <div className="flex items-center justify-center gap-1.5 pb-9 pt-6 text-sm">
-        <span className="font-medium text-[#4b5563]">Already verified?</span>
-        <Link to="/login" className="font-bold text-[#6c1d95] underline underline-offset-2">
-          Sign in
-        </Link>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
