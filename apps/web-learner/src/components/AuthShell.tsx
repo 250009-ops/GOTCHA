@@ -77,7 +77,7 @@ function MarketingPanel() {
               key={f.title}
               className="flex items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.07] p-3.5"
             >
-              <span className="block shrink-0 size-2.5 rounded-full bg-white" />
+              <span className="block shrink-0 size-2.5 rounded-full bg-[#ff8904]" />
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm leading-5">{f.title}</div>
                 <div className="text-[#c4b4ff] text-[13px] leading-[18px]">{f.desc}</div>
@@ -93,11 +93,13 @@ function MarketingPanel() {
             <p className="text-white text-[13px] font-semibold">12,840 learners</p>
             <p className="text-[#c4b4ff] text-xs">actively reading this week</p>
           </div>
-          <div className="flex items-center gap-2">
-            {['AC', 'JD', 'MR', 'SK'].map((i) => (
+          <div className="flex items-center">
+            {['AC', 'JD', 'MR', 'SK'].map((i, idx) => (
               <div
                 key={i}
-                className="flex items-center justify-center size-8 rounded-2xl border border-white/10 bg-gradient-to-r from-[#a684ff] to-[#4f39f6] text-white text-[10px] font-extrabold"
+                className={`flex items-center justify-center size-8 rounded-2xl border-2 border-white bg-gradient-to-r from-[#a684ff] to-[#4f39f6] text-white text-[10px] font-extrabold ${
+                  idx > 0 ? '-ml-2' : ''
+                }`}
               >
                 {i}
               </div>
