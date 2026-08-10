@@ -57,6 +57,15 @@ sync_runtime_env_key API_PORT "${API_PORT:-3200}"
 sync_runtime_env_key API_CORS_ORIGINS "$(get_env API_CORS_ORIGINS)"
 sync_runtime_env_key DEV_AUTH_ANY_CREDENTIAL "$(get_env DEV_AUTH_ANY_CREDENTIAL)"
 sync_runtime_env_key DEV_UNLIMITED_IMPORTS "$(get_env DEV_UNLIMITED_IMPORTS)"
+sync_runtime_env_key IMPORTS_UNLIMITED "$(get_env IMPORTS_UNLIMITED)"
+sync_runtime_env_key PAYMENT_GATEWAY_ENABLED "$(get_env PAYMENT_GATEWAY_ENABLED)"
+sync_runtime_env_key ATMOS_CONSUMER_KEY "$(get_env ATMOS_CONSUMER_KEY)"
+sync_runtime_env_key ATMOS_CONSUMER_SECRET "$(get_env ATMOS_CONSUMER_SECRET)"
+sync_runtime_env_key ATMOS_STORE_ID "$(get_env ATMOS_STORE_ID)"
+sync_runtime_env_key ATMOS_API_KEY "$(get_env ATMOS_API_KEY)"
+sync_runtime_env_key ATMOS_API_BASE "$(get_env ATMOS_API_BASE)"
+sync_runtime_env_key ATMOS_IKPU "$(get_env ATMOS_IKPU)"
+sync_runtime_env_key ATMOS_MERCHANT_TIN "$(get_env ATMOS_MERCHANT_TIN)"
 sync_runtime_env_key SMTP_HOST "${SMTP_HOST}"
 sync_runtime_env_key SMTP_PORT "${SMTP_PORT:-465}"
 sync_runtime_env_key SMTP_SECURE "${SMTP_SECURE:-true}"
@@ -102,8 +111,15 @@ build_and_publish_frontends
 VPS_APP_DIR="$APP_DIR" pm2 startOrReload deploy/ecosystem.config.cjs --update-env
 pm2 save
 
+# Refresh app routes without stripping Certbot SSL (prior deploys overwrote listen 443).
 sed "s/__DOMAIN__/${DOMAIN}/g" deploy/nginx/gotcha.conf > "/etc/nginx/sites-available/gotcha"
 ln -sf /etc/nginx/sites-available/gotcha /etc/nginx/sites-enabled/gotcha
 nginx -t && systemctl reload nginx
+if [[ -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
+  certbot install --cert-name "${DOMAIN}" --nginx --non-interactive --redirect \
+    || certbot --nginx -d "${DOMAIN}" -d "www.${DOMAIN}" --non-interactive --agree-tos \
+         -m "admin@${DOMAIN}" --redirect --reinstall || true
+  nginx -t && systemctl reload nginx
+fi
 
 echo "Update complete: https://${DOMAIN}/"
