@@ -51,6 +51,7 @@ SMTP_FROM="$(get_env SMTP_FROM)"
 SMTP_REPLY_TO="$(get_env SMTP_REPLY_TO)"
 
 sync_runtime_env_key LEARNER_APP_URL "${LEARNER_APP_URL}"
+sync_runtime_env_key API_PORT "${API_PORT:-3200}"
 sync_runtime_env_key SMTP_HOST "${SMTP_HOST}"
 sync_runtime_env_key SMTP_PORT "${SMTP_PORT:-465}"
 sync_runtime_env_key SMTP_SECURE "${SMTP_SECURE:-true}"
