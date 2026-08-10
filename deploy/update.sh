@@ -22,6 +22,43 @@ export S3_SECRET_KEY="$(get_env S3_SECRET_KEY)"
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-gotcha}"
 export S3_ACCESS_KEY
 
+# Keep runtime .env in sync for SMTP + learner links (PM2 reads services/api/.env → APP_DIR/.env)
+# Uses awk so values with *, ?, &, etc. (mailbox passwords) are safe.
+sync_runtime_env_key() {
+  local key="$1"
+  local value="$2"
+  local file="${APP_DIR}/.env"
+  local tmp
+  touch "$file"
+  tmp="$(mktemp)"
+  KEY="$key" VAL="$value" awk '
+    BEGIN { k=ENVIRON["KEY"]; v=ENVIRON["VAL"]; done=0 }
+    index($0, k "=") == 1 { print k "=" v; done=1; next }
+    { print }
+    END { if (!done) print k "=" v }
+  ' "$file" >"$tmp"
+  mv "$tmp" "$file"
+}
+
+LEARNER_APP_URL="$(get_env LEARNER_APP_URL)"
+LEARNER_APP_URL="${LEARNER_APP_URL:-https://${DOMAIN}/learn}"
+SMTP_HOST="$(get_env SMTP_HOST)"
+SMTP_PORT="$(get_env SMTP_PORT)"
+SMTP_SECURE="$(get_env SMTP_SECURE)"
+SMTP_USER="$(get_env SMTP_USER)"
+SMTP_PASS="$(get_env SMTP_PASS)"
+SMTP_FROM="$(get_env SMTP_FROM)"
+SMTP_REPLY_TO="$(get_env SMTP_REPLY_TO)"
+
+sync_runtime_env_key LEARNER_APP_URL "${LEARNER_APP_URL}"
+sync_runtime_env_key SMTP_HOST "${SMTP_HOST}"
+sync_runtime_env_key SMTP_PORT "${SMTP_PORT:-465}"
+sync_runtime_env_key SMTP_SECURE "${SMTP_SECURE:-true}"
+sync_runtime_env_key SMTP_USER "${SMTP_USER}"
+sync_runtime_env_key SMTP_PASS "${SMTP_PASS}"
+sync_runtime_env_key SMTP_FROM "${SMTP_FROM:-GOTCHA <noreply@${DOMAIN}>}"
+sync_runtime_env_key SMTP_REPLY_TO "${SMTP_REPLY_TO}"
+
 docker compose -f deploy/docker-compose.prod.yml up -d
 
 npm ci

@@ -26,7 +26,7 @@ interface AuthContextValue {
     displayName?: string;
     nativeLanguage: string;
     targetLanguages: string[];
-  }) => Promise<void>;
+  }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
   updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
@@ -151,13 +151,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       nativeLanguage: string;
       targetLanguages: string[];
     }) => {
-      const res = await api<{ accessToken: string; refreshToken: string; user: UserProfile }>(
-        '/auth/register',
-        { method: 'POST', body: JSON.stringify(data) },
-      );
+      const res = await api<{
+        accessToken?: string;
+        refreshToken?: string;
+        user?: UserProfile;
+        requiresEmailVerification?: boolean;
+        email?: string;
+        message?: string;
+      }>('/auth/register', { method: 'POST', body: JSON.stringify(data) });
+
+      if (res.requiresEmailVerification || (!res.accessToken && res.email)) {
+        return {
+          requiresEmailVerification: true as const,
+          email: res.email ?? data.email,
+        };
+      }
+
+      if (!res.accessToken || !res.refreshToken || !res.user) {
+        throw new Error(res.message || 'Registration failed');
+      }
+
       setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
       setUser(res.user);
       await refreshProfile();
+      return {};
     },
     [refreshProfile],
   );

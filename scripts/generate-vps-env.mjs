@@ -65,9 +65,21 @@ OPENAI_MODEL_QUIZ=gpt-4.1-mini
 
 API_PORT=3200
 API_CORS_ORIGINS=https://${publicHost},https://www.${publicHost}
+LEARNER_APP_URL=https://${publicHost}/learn
 DEV_AUTH_ANY_CREDENTIAL=false
+# Unlimited imports until payment gateway is integrated
+IMPORTS_UNLIMITED=true
 DEV_UNLIMITED_IMPORTS=false
+PAYMENT_GATEWAY_ENABLED=false
 WORKER_CONCURRENCY=5
+
+# SMTP — Eskiz Mail (mail.${publicHost}, SSL 465). Set SMTP_PASS to the mailbox password.
+SMTP_HOST=mail.${publicHost}
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=noreply@${publicHost}
+SMTP_PASS=
+SMTP_FROM=GOTCHA <noreply@${publicHost}>
 
 # Frontend public URLs (baked into static builds)
 VITE_API_URL=https://${publicHost}/api/v1

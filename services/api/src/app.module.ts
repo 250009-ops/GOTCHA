@@ -4,6 +4,7 @@ import { join } from 'path';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { DevAuthModule } from './common/dev-auth/dev-auth.module';
+import { MailModule } from './common/mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -28,6 +29,7 @@ import { MarketingModule } from './modules/marketing/marketing.module';
     }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
     DevAuthModule,
+    MailModule,
     PrismaModule,
     AuthModule,
     UsersModule,

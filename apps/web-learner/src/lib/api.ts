@@ -85,8 +85,18 @@ export async function api<T>(
   }
 
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Request failed'));
+    const err = await res.json().catch(() => ({ message: res.statusText })) as {
+      message?: string | string[];
+      code?: string;
+      email?: string;
+    };
+    const message = Array.isArray(err.message)
+      ? err.message.join(', ')
+      : (err.message ?? 'Request failed');
+    const error = new Error(message) as Error & { code?: string; email?: string };
+    if (err.code) error.code = err.code;
+    if (err.email) error.email = err.email;
+    throw error;
   }
 
   if (res.status === 204) return undefined as T;

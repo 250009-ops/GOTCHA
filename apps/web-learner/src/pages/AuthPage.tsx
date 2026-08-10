@@ -102,17 +102,28 @@ export default function AuthPage() {
         }
         navigate('/app');
       } else {
-        await register({
+        const result = await register({
           email,
           password,
           displayName: name || undefined,
           nativeLanguage: 'en',
           targetLanguages: ['ru'],
         });
+        if (result.requiresEmailVerification) {
+          toast.success('Check your inbox to verify your email');
+          navigate(`/verify-email?email=${encodeURIComponent(result.email || email)}`);
+          return;
+        }
         toast.success('Account created!');
         navigate('/app');
       }
     } catch (err) {
+      const e = err as Error & { code?: string; email?: string };
+      if (e.code === 'EMAIL_NOT_VERIFIED' || /verify your email/i.test(e.message || '')) {
+        toast.message('Please verify your email before signing in');
+        navigate(`/verify-email?email=${encodeURIComponent(e.email || email)}`);
+        return;
+      }
       toast.error(err instanceof Error ? err.message : 'Authentication failed');
     } finally {
       setLoading(false);

@@ -113,6 +113,13 @@ enum ImportType {
   epub
 }
 
+enum PurchaseStatus {
+  pending
+  completed
+  failed
+  refunded
+}
+
 enum IngestionSourceType {
   url
   pdf
@@ -177,6 +184,9 @@ model User {
   timezone         String    @default("UTC")
   streakCount      Int       @default(0) @map("streak_count")
   streakLastDate   DateTime? @map("streak_last_date") @db.Date
+  emailVerifiedAt  DateTime? @map("email_verified_at")
+  emailVerificationToken   String?   @unique @map("email_verification_token")
+  emailVerificationExpires DateTime? @map("email_verification_expires")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   deletedAt        DateTime? @map("deleted_at")
@@ -199,6 +209,7 @@ model User {
   moderationReviews ModerationQueue[] @relation("Moderator")
   knownWords        UserKnownWord[]
   bookmarks         ContentBookmark[]
+  contentPurchases  ContentPurchase[]
 
   @@map("users")
 }
@@ -338,6 +349,10 @@ model ContentItem {
   audioKey        String?       @map("audio_key")
   wordCount       Int           @default(0) @map("word_count")
   uniqueWordCount Int           @default(0) @map("unique_word_count")
+  /// Catalog commerce: free store items have isFree=true and priceUsd=0/null.
+  isFree          Boolean       @default(true) @map("is_free")
+  priceUsd        Decimal?      @map("price_usd") @db.Decimal(10, 2)
+  salesCount      Int           @default(0) @map("sales_count")
   licenseId       String?       @map("license_id") @db.Uuid
   publishStatus   PublishStatus @default(draft) @map("publish_status")
   publishedAt     DateTime?     @map("published_at")
@@ -361,9 +376,53 @@ model ContentItem {
   ingestionJobs    IngestionJob[]
   moderationItems  ModerationQueue[]
   bookmarks        ContentBookmark[]
+  purchases        ContentPurchase[]
 
   @@index([publishStatus, language, cefrLevel])
   @@map("content_items")
+}
+
+/// Placeholder local purchases (no Stripe). Status can stay pending until a gateway exists.
+model ContentPurchase {
+  id         String         @id @default(uuid()) @db.Uuid
+  userId     String?        @map("user_id") @db.Uuid
+  contentId  String         @map("content_id") @db.Uuid
+  amountUsd  Decimal        @map("amount_usd") @db.Decimal(10, 2)
+  status     PurchaseStatus @default(pending)
+  provider   String         @default("local_placeholder")
+  providerRef String?       @map("provider_ref")
+  createdAt  DateTime       @default(now()) @map("created_at")
+
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  user    User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([contentId, status])
+  @@map("content_purchases")
+}
+
+model ImportPricingRule {
+  id             String  @id @default(uuid()) @db.Uuid
+  key            String  @unique
+  label          String
+  pricePerImport Decimal @default(0) @map("price_per_import") @db.Decimal(10, 2)
+  pricePerPage   Decimal @default(0) @map("price_per_page") @db.Decimal(10, 2)
+  isActive       Boolean @default(true) @map("is_active")
+  sortOrder      Int     @default(0) @map("sort_order")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  @@map("import_pricing_rules")
+}
+
+model ImportPageTier {
+  id        String  @id @default(uuid()) @db.Uuid
+  label     String
+  minPages  Int     @map("min_pages")
+  maxPages  Int?    @map("max_pages")
+  priceUsd  Decimal @map("price_usd") @db.Decimal(10, 2)
+  sortOrder Int     @default(0) @map("sort_order")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("import_page_tiers")
 }
 
 model ContentCollectionItem {
@@ -559,6 +618,10 @@ model UserImport {
   ingestionStatus  IngestionStatus @default(queued) @map("ingestion_status")
   contentId        String?         @map("content_id") @db.Uuid
   errorMessage     String?         @map("error_message")
+  /** Pages processed so far (PDF OCR / extract progress for UI polling). */
+  progressPagesDone  Int?          @map("progress_pages_done")
+  /** Total pages being processed (capped at MAX_PDF_PAGES). */
+  progressPagesTotal Int?          @map("progress_pages_total")
   isPublic         Boolean         @default(false) @map("is_public")
   createdAt        DateTime        @default(now()) @map("created_at")
 

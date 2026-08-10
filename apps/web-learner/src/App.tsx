@@ -8,6 +8,7 @@ import ReaderPage from './pages/ReaderPage';
 import SettingsPage from './pages/SettingsPage';
 import StatsPage from './pages/StatsPage';
 import VocabularyPage from './pages/VocabularyPage';
+import VerifyEmailPage from './pages/VerifyEmailPage';
 
 export default function App() {
   return (
@@ -15,6 +16,7 @@ export default function App() {
       <Route path="/" element={<Navigate to="/app" replace />} />
       <Route path="/login" element={<AuthPage />} />
       <Route path="/register" element={<AuthPage />} />
+      <Route path="/verify-email" element={<VerifyEmailPage />} />
       <Route
         path="/app"
         element={

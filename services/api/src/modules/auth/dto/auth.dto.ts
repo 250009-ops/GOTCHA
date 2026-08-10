@@ -38,3 +38,14 @@ export class RefreshDto {
   @IsString()
   refreshToken!: string;
 }
+
+export class ResendEmailVerificationDto {
+  @IsEmail()
+  email!: string;
+}
+
+export class VerifyEmailDto {
+  @IsString()
+  @MinLength(16)
+  token!: string;
+}
