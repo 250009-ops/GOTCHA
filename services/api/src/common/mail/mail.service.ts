@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import { emailVerificationEmail } from './mail.templates';
+import { emailVerificationEmail, passwordResetEmail } from './mail.templates';
 
 export type SendMailOptions = {
   to: string;
@@ -78,5 +78,35 @@ export class MailService {
     }
 
     this.logger.log(`Verification email sent to ${to}`);
+  }
+
+  async sendPasswordResetEmail(to: string, name: string, resetUrl: string): Promise<void> {
+    const { subject, text, html } = passwordResetEmail(name, resetUrl);
+    const sent = await this.send({ to, subject, text, html });
+
+    if (!sent) {
+      this.logger.warn(`SMTP not configured — password reset link for ${to}: ${resetUrl}`);
+      return;
+    }
+
+    this.logger.log(`Password reset email sent to ${to}`);
+  }
+
+  /** Production SMTP health check — does not send mail. */
+  async verifyTransporter(): Promise<{ ok: boolean; host?: string; port?: number; error?: string }> {
+    const host = this.config.get<string>('SMTP_HOST')?.trim();
+    if (!host) {
+      return { ok: false, error: 'SMTP_HOST not configured' };
+    }
+    const port = Number(this.config.get('SMTP_PORT', '465'));
+    try {
+      const transporter = this.getTransporter();
+      if (!transporter) return { ok: false, host, port, error: 'Transporter unavailable' };
+      await transporter.verify();
+      return { ok: true, host, port };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { ok: false, host, port, error: message };
+    }
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:gotcha_app/core/auth/auth_provider.dart';
+import 'package:gotcha_app/features/auth/forgot_password_screen.dart';
 import 'package:gotcha_app/features/auth/login_screen.dart';
 import 'package:gotcha_app/features/auth/register_screen.dart';
+import 'package:gotcha_app/features/auth/reset_password_screen.dart';
 import 'package:gotcha_app/features/onboarding/onboarding_screen.dart';
 import 'package:gotcha_app/features/onboarding/splash_screen.dart';
 import 'package:gotcha_app/features/reader/reader_screen.dart';
@@ -41,9 +43,16 @@ class _GotchaRouterDelegate extends RouterDelegate<String>
 
   String _path = '/';
   String? _readerContentId;
+  String? _resetToken;
 
   @override
-  String get currentConfiguration => _readerContentId != null ? '/reader/$_readerContentId' : _path;
+  String get currentConfiguration {
+    if (_readerContentId != null) return '/reader/$_readerContentId';
+    if (_path == '/reset-password' && _resetToken != null) {
+      return '/reset-password?token=$_resetToken';
+    }
+    return _path;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -58,7 +67,8 @@ class _GotchaRouterDelegate extends RouterDelegate<String>
           _readerContentId = null;
           notifyListeners();
         } else if (_path != '/') {
-          _path = '/';
+          _path = '/login';
+          _resetToken = null;
           notifyListeners();
         }
         return true;
@@ -82,18 +92,27 @@ class _GotchaRouterDelegate extends RouterDelegate<String>
     }
 
     if (!auth.isAuthenticated) {
-      return [
-        MaterialPage(
-          child: _path == '/register'
-              ? RegisterScreen(onNavigateLogin: () => _go('/login'))
-              : _path == '/onboarding'
-                  ? OnboardingScreen(onDone: () => _go('/register'))
-                  : LoginScreen(
-                      onNavigateRegister: () => _go('/register'),
-                      onNavigateOnboarding: () => _go('/onboarding'),
-                    ),
-        ),
-      ];
+      Widget child;
+      if (_path == '/register') {
+        child = RegisterScreen(onNavigateLogin: () => _go('/login'));
+      } else if (_path == '/onboarding') {
+        child = OnboardingScreen(onDone: () => _go('/register'));
+      } else if (_path == '/forgot-password') {
+        child = ForgotPasswordScreen(onNavigateLogin: () => _go('/login'));
+      } else if (_path == '/reset-password') {
+        child = ResetPasswordScreen(
+          token: _resetToken ?? '',
+          onNavigateLogin: () => _go('/login'),
+          onNavigateForgot: () => _go('/forgot-password'),
+        );
+      } else {
+        child = LoginScreen(
+          onNavigateRegister: () => _go('/register'),
+          onNavigateOnboarding: () => _go('/onboarding'),
+          onNavigateForgotPassword: () => _go('/forgot-password'),
+        );
+      }
+      return [MaterialPage(child: child)];
     }
 
     return [
@@ -111,6 +130,7 @@ class _GotchaRouterDelegate extends RouterDelegate<String>
 
   void _go(String path) {
     _path = path;
+    if (path != '/reset-password') _resetToken = null;
     notifyListeners();
   }
 
@@ -118,8 +138,15 @@ class _GotchaRouterDelegate extends RouterDelegate<String>
   Future<void> setNewRoutePath(String configuration) async {
     if (configuration.startsWith('/reader/')) {
       _readerContentId = configuration.split('/').last;
-    } else {
-      _path = configuration;
+      return;
     }
+    final uri = Uri.tryParse(configuration);
+    if (uri != null && uri.path == '/reset-password') {
+      _path = '/reset-password';
+      _resetToken = uri.queryParameters['token'];
+      return;
+    }
+    _path = configuration;
+    _resetToken = null;
   }
 }

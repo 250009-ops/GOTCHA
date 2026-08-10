@@ -103,3 +103,36 @@ export function emailVerificationEmail(
 
   return { subject: title, text, html };
 }
+
+export function passwordResetEmail(
+  name: string,
+  resetUrl: string,
+): { subject: string; text: string; html: string } {
+  const title = 'Reset your GOTCHA password';
+  const text = [
+    `Hi ${name},`,
+    '',
+    'We received a request to reset your GOTCHA password.',
+    'Use the link below to choose a new password.',
+    '',
+    `Reset password: ${resetUrl}`,
+    '',
+    'This link expires in 1 hour. If you didn’t request a reset, you can ignore this email.',
+  ].join('\n');
+
+  const html = buildEmailHtml({
+    preheader: 'Reset your GOTCHA password.',
+    title,
+    bodyHtml: `
+      <p>Hi ${escapeHtml(name)},</p>
+      <p>We received a request to reset your <strong>GOTCHA</strong> password.</p>
+      <p style="margin-top:12px; font-size:13px; color:#4b5563;">Click the button below to choose a new password. If you didn’t ask for this, you can safely ignore this email.</p>
+    `,
+    ctaLabel: 'Reset password',
+    ctaUrl: resetUrl,
+    footerNote:
+      'If the button does not work, copy and paste this link into your browser: ' + resetUrl,
+  });
+
+  return { subject: title, text, html };
+}

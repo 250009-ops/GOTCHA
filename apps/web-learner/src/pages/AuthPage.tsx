@@ -196,6 +196,7 @@ export default function AuthPage() {
               <div className="flex items-center justify-end">
                 <button
                   type="button"
+                  onClick={() => navigate('/forgot-password')}
                   className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
                 >
                   Forgot password?

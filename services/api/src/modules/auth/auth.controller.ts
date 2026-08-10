@@ -3,10 +3,12 @@ import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
 import { AuthService } from './auth.service';
 import {
+  ForgotPasswordDto,
   LoginDto,
   RefreshDto,
   RegisterDto,
   ResendEmailVerificationDto,
+  ResetPasswordDto,
   VerifyEmailDto,
 } from './dto/auth.dto';
 
@@ -49,5 +51,17 @@ export class AuthController {
   @Post('resend-verification')
   resendEmailVerification(@Body() dto: ResendEmailVerificationDto) {
     return this.auth.resendEmailVerification(dto.email);
+  }
+
+  @Public()
+  @Post('forgot-password')
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.auth.forgotPassword(dto.email);
+  }
+
+  @Public()
+  @Post('reset-password')
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.auth.resetPassword(dto.token, dto.password);
   }
 }

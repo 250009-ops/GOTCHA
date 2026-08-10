@@ -15,6 +15,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
 
 @Injectable()
 export class AuthService {
@@ -268,6 +269,97 @@ export class AuthService {
 
     await this.sendVerification(user);
     return { sent: true, message: 'Verification email sent.' };
+  }
+
+  private async createPasswordResetToken(userId: string) {
+    const rawToken = randomBytes(32).toString('hex');
+    const passwordResetToken = this.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        passwordResetToken,
+        passwordResetExpires: expiresAt,
+      },
+    });
+
+    return rawToken;
+  }
+
+  private async sendPasswordReset(user: { id: string; email: string; displayName: string | null }) {
+    const rawToken = await this.createPasswordResetToken(user.id);
+    const resetUrl = `${this.learnerAppUrl()}/reset-password?token=${rawToken}`;
+    const name = user.displayName?.trim() || user.email.split('@')[0];
+
+    void this.mail.sendPasswordResetEmail(user.email, name, resetUrl).catch((err) => {
+      console.error('Failed to send password reset email', err);
+    });
+
+    return resetUrl;
+  }
+
+  async forgotPassword(emailRaw: string) {
+    const email = emailRaw.trim().toLowerCase();
+    const user = await this.prisma.user.findUnique({ where: { email } });
+
+    // Always return the same generic success (no account enumeration).
+    if (user?.passwordHash) {
+      await this.sendPasswordReset(user);
+    }
+
+    return {
+      sent: true,
+      message: 'If an account exists for that email, we sent a password reset link.',
+    };
+  }
+
+  async resetPassword(token: string, newPassword: string) {
+    const raw = token?.trim();
+    if (!raw) throw new BadRequestException('Reset token is required.');
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('Password must be at least 8 characters.');
+    }
+
+    const passwordResetToken = this.hashToken(raw);
+    const user = await this.prisma.user.findFirst({
+      where: {
+        passwordResetToken,
+        passwordResetExpires: { gt: new Date() },
+      },
+    });
+
+    if (!user) {
+      throw new BadRequestException('Invalid or expired password reset token.');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          // Completing reset implies mailbox access — mark verified if still pending.
+          emailVerifiedAt: user.emailVerifiedAt ?? new Date(),
+          emailVerificationToken: null,
+          emailVerificationExpires: null,
+        },
+      }),
+      // Invalidate existing sessions after a password change.
+      this.prisma.authRefreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return {
+      reset: true,
+      email: user.email,
+      message: 'Password updated. You can sign in with your new password.',
+    };
   }
 
   sanitizeUser(user: {

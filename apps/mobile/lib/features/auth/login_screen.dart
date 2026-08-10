@@ -10,11 +10,18 @@ import 'package:gotcha_app/core/theme/gotcha_theme.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
 
-  const LoginScreen({super.key, required this.onNavigateRegister, required this.onNavigateOnboarding});
+  const LoginScreen({
+    super.key,
+    required this.onNavigateRegister,
+    required this.onNavigateOnboarding,
+    required this.onNavigateForgotPassword,
+  });
 
   final VoidCallback onNavigateRegister;
 
   final VoidCallback onNavigateOnboarding;
+
+  final VoidCallback onNavigateForgotPassword;
 
 
 
@@ -212,7 +219,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
                   ],
 
-                  const SizedBox(height: 24),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: widget.onNavigateForgotPassword,
+                      child: const Text(
+                        'Forgot password?',
+                        style: TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF7F22FE), fontSize: 13),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 8),
 
                   FilledButton(
 

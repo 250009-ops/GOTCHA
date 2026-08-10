@@ -12,7 +12,13 @@ import { api, clearTokens, setTokens } from './api';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
 
 /** Routes where we must not call /users/me, /users/me/stats, or /auth/refresh. */
-const PUBLIC_AUTH_ROUTES = new Set(['/login', '/register', '/verify-email']);
+const PUBLIC_AUTH_ROUTES = new Set([
+  '/login',
+  '/register',
+  '/verify-email',
+  '/forgot-password',
+  '/reset-password',
+]);
 
 interface AuthContextValue {
   user: UserProfile | null;
