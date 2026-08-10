@@ -1,4 +1,5 @@
-const base = '/assets/auth';
+// Vite base is `/` locally and `/learn/` in production — never hardcode `/assets/...`.
+const base = `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}assets/auth`;
 
 export const authAssets = {
   check: `${base}/check.svg`,

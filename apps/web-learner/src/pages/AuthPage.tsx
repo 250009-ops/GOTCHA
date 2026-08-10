@@ -133,22 +133,21 @@ export default function AuthPage() {
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb] overflow-x-hidden">
       {/* Desktop marketing panel */}
       <div className="hidden lg:flex flex-col w-[480px] shrink-0 relative overflow-hidden gap-6 px-10 pt-10 pb-8 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
-        <div className="absolute -left-[120px] -top-[120px] size-[320px] pointer-events-none">
-          <div className="absolute -inset-[25%]">
-            <img src={a.bgGlow1} alt="" className="block size-full max-w-none" />
-          </div>
-        </div>
-        <div className="absolute left-[260px] top-[420px] size-[260px] pointer-events-none">
-          <div className="absolute -inset-[27%]">
-            <img src={a.bgGlow2} alt="" className="block size-full max-w-none" />
-          </div>
-        </div>
+        {/* Soft glows via CSS — avoids broken <img> frames when public assets 404 under a subpath */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute -left-[120px] -top-[120px] size-[320px] rounded-full bg-white/[0.05] blur-[40px]"
+        />
+        <div
+          aria-hidden
+          className="pointer-events-none absolute left-[260px] top-[420px] size-[260px] rounded-full bg-white/[0.05] blur-[40px]"
+        />
 
-        <div className="relative">
+        <div className="relative z-10">
           <BrandMark light />
         </div>
 
-        <div className="relative flex-1 flex flex-col gap-6">
+        <div className="relative z-10 flex-1 flex flex-col gap-6">
           <div className="flex flex-col gap-3">
             <h1 className="text-[36px] leading-[44px] font-extrabold text-white">
               Read your way
@@ -202,8 +201,8 @@ export default function AuthPage() {
         <p className="text-[#ddd6ff] text-sm leading-5">Read your way to fluency.</p>
       </div>
 
-      {/* Form area */}
-      <div className="flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-w-0">
+      {/* Form area — always mount on the right (desktop) / below (mobile) */}
+      <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-w-0 bg-[#f9fafb]">
         <div className="w-full max-w-[448px] min-w-0">
           <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-5 sm:p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
             <div className="flex flex-col gap-1.5">
