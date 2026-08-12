@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   AchievementCategory,
   AppLanguage,
@@ -9,6 +14,7 @@ import {
   LicenseStatus,
   ModerationStatus,
   PublishStatus,
+  SubscriptionTier,
   SupportTicketPriority,
   SupportTicketStatus,
 } from '@prisma/client';
@@ -24,10 +30,15 @@ import {
   defaultAiPlatformSettings,
   parseAiPlatformSettings,
 } from '../ai/ai-settings';
+import { AuthService } from '../auth/auth.service';
+import { UpdateAdminProfileDto } from './dto/admin.dto';
 
 @Injectable()
 export class AdminService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auth: AuthService,
+  ) {}
 
   private async getMetrics(): Promise<FigmaAdminMetrics> {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: ADMIN_METRICS_KEY } });
@@ -38,48 +49,348 @@ export class AdminService {
   }
 
   async dashboard() {
-    const metrics = await this.getMetrics();
-    const d = metrics.dashboard;
-    const [publishedContent, userImports, moderationPending, ingestionQueued] = await Promise.all([
-      this.prisma.contentItem.count({ where: { publishStatus: PublishStatus.published } }),
-      this.prisma.userImport.count(),
-      this.prisma.moderationQueue.count({ where: { status: 'pending' } }),
-      this.prisma.ingestionJob.count({ where: { status: 'queued' } }),
-    ]);
+    const now = new Date();
+    const dayStart = new Date(now);
+    dayStart.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(dayStart);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    const twoWeeksAgo = new Date(dayStart);
+    twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const prevMonthEnd = new Date(monthStart.getTime() - 1);
+    const months = this.lastNMonths(6);
 
-    return {
-      users: d.users,
+    const aiSettings = await this.resolveAiSettings();
+
+    const [
+      users,
+      createdThisWeek,
+      createdPrevWeek,
+      activeSubscribers,
+      activeTodayRows,
       publishedContent,
       userImports,
       moderationPending,
       ingestionQueued,
-      activeSubscribers: d.activeSubscribers,
-      mrr: d.mrr,
-      mrrGrowthPct: d.mrrGrowthPct,
-      aiLookupsToday: d.aiLookupsToday,
-      aiLimit: d.aiLimit,
-      aiUsagePct: d.aiUsagePct,
-      userGrowthPct: d.userGrowthPct,
-      conversionPct: d.conversionPct,
+      aiTodayAgg,
+      activeSubs,
+      contentRevMonth,
+      contentRevPrevMonth,
+      contentRevToday,
+      recentUsersRaw,
+      recentPublished,
+      recentTickets,
+      contentPurchasesSince,
+    ] = await Promise.all([
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.user.count({ where: { deletedAt: null, createdAt: { gte: weekAgo } } }),
+      this.prisma.user.count({
+        where: { deletedAt: null, createdAt: { gte: twoWeeksAgo, lt: weekAgo } },
+      }),
+      this.prisma.userSubscription.count({
+        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
+      }),
+      this.prisma.readingSession.findMany({
+        where: { startedAt: { gte: dayStart } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.contentItem.count({ where: { publishStatus: PublishStatus.published } }),
+      this.prisma.userImport.count(),
+      this.prisma.moderationQueue.count({ where: { status: 'pending' } }),
+      this.prisma.ingestionJob.count({ where: { status: 'queued' } }),
+      this.prisma.aiUsageDaily.aggregate({
+        where: { usageDate: { gte: dayStart } },
+        _sum: { lookupCount: true, quizCount: true, tokensUsed: true },
+      }),
+      this.prisma.userSubscription.findMany({
+        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
+        include: { plan: true },
+      }),
+      this.prisma.contentPurchase.aggregate({
+        where: { status: 'completed', createdAt: { gte: monthStart } },
+        _sum: { amountUsd: true },
+      }),
+      this.prisma.contentPurchase.aggregate({
+        where: { status: 'completed', createdAt: { gte: prevMonthStart, lte: prevMonthEnd } },
+        _sum: { amountUsd: true },
+      }),
+      this.prisma.contentPurchase.aggregate({
+        where: { status: 'completed', createdAt: { gte: dayStart } },
+        _sum: { amountUsd: true },
+      }),
+      this.prisma.user.findMany({
+        where: { deletedAt: null },
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        include: {
+          targetLanguages: true,
+          subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+        },
+      }),
+      this.prisma.contentItem.findMany({
+        where: { publishStatus: PublishStatus.published, publishedAt: { not: null } },
+        orderBy: { publishedAt: 'desc' },
+        take: 3,
+        select: {
+          id: true,
+          title: true,
+          cefrLevel: true,
+          language: true,
+          publishedAt: true,
+        },
+      }),
+      this.prisma.supportTicket.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 3,
+        select: { id: true, subject: true, createdAt: true },
+      }),
+      this.prisma.contentPurchase.findMany({
+        where: {
+          status: 'completed',
+          createdAt: { gte: new Date(dayStart.getTime() - 6 * 86_400_000) },
+        },
+        select: { amountUsd: true, createdAt: true },
+      }),
+    ]);
+
+    const activeToday = activeTodayRows.length;
+    const mrr = activeSubs.reduce((sum, s) => sum + Number(s.plan.priceMonthly ?? 0), 0);
+    const revenueMonthUsd = Number(contentRevMonth._sum.amountUsd ?? 0);
+    const revenuePrevUsd = Number(contentRevPrevMonth._sum.amountUsd ?? 0);
+    const revenueToday = Number(contentRevToday._sum.amountUsd ?? 0);
+    const revenueMomDelta = Number((revenueMonthUsd - revenuePrevUsd).toFixed(2));
+    const mrrGrowthPct =
+      revenuePrevUsd > 0
+        ? Number((((revenueMonthUsd - revenuePrevUsd) / revenuePrevUsd) * 100).toFixed(1))
+        : revenueMonthUsd > 0
+          ? 100
+          : 0;
+    const userGrowthPct =
+      createdPrevWeek > 0
+        ? Number((((createdThisWeek - createdPrevWeek) / createdPrevWeek) * 100).toFixed(1))
+        : createdThisWeek > 0
+          ? 100
+          : 0;
+    const conversionPct =
+      users > 0 ? Number(((activeSubscribers / users) * 100).toFixed(1)) : 0;
+    const engagementPct = users > 0 ? Number(((activeToday / users) * 100).toFixed(1)) : 0;
+
+    const aiLookupsToday = aiTodayAgg._sum.lookupCount ?? 0;
+    const aiQuizzesToday = aiTodayAgg._sum.quizCount ?? 0;
+    const aiTokensToday = Number(aiTodayAgg._sum.tokensUsed ?? 0);
+    const aiLimit = aiSettings.dailyLimit;
+    const aiUsagePct =
+      aiLimit > 0 ? Number(Math.min(100, (aiLookupsToday / aiLimit) * 100).toFixed(1)) : 0;
+
+    const userGrowth = await Promise.all(
+      months.map(async (m) => ({
+        month: m.label,
+        users: await this.prisma.user.count({
+          where: { deletedAt: null, createdAt: { lte: m.end } },
+        }),
+      })),
+    );
+
+    const revenueTrend = await Promise.all(
+      months.map(async (m) => {
+        const [subs, purchases] = await Promise.all([
+          this.prisma.userSubscription.findMany({
+            where: {
+              status: { in: ['active', 'trialing'] },
+              plan: { tier: 'premium' },
+              createdAt: { lte: m.end },
+            },
+            include: { plan: true },
+          }),
+          this.prisma.contentPurchase.aggregate({
+            where: {
+              status: 'completed',
+              createdAt: { gte: m.start, lte: m.end },
+            },
+            _sum: { amountUsd: true },
+          }),
+        ]);
+        const mrrAt = subs.reduce((sum, s) => sum + Number(s.plan.priceMonthly ?? 0), 0);
+        const purchaseUsd = Number(purchases._sum.amountUsd ?? 0);
+        return { month: m.label, mrr: Number((mrrAt + purchaseUsd).toFixed(2)), users: 0 };
+      }),
+    );
+
+    const revenueDailyMap = new Map<string, number>();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(dayStart);
+      d.setDate(d.getDate() - i);
+      revenueDailyMap.set(d.toISOString().slice(0, 10), 0);
+    }
+    for (const p of contentPurchasesSince) {
+      const key = p.createdAt.toISOString().slice(0, 10);
+      if (revenueDailyMap.has(key)) {
+        revenueDailyMap.set(key, (revenueDailyMap.get(key) ?? 0) + Number(p.amountUsd));
+      }
+    }
+
+    const revenueDaily = [...revenueDailyMap.entries()].map(([date, amount]) => ({
+      month: new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
+      day: date,
+      mrr: Number(amount.toFixed(2)),
+      users: 0,
+    }));
+
+    const recentUsers = recentUsersRaw.map((u) => {
+      const mapped = this.mapUserRow(u);
+      return {
+        id: mapped.id,
+        displayName: mapped.displayName,
+        email: mapped.email,
+        targetLanguage: mapped.targetLanguage,
+        billingTier: mapped.billingTier,
+        createdAt: mapped.createdAt,
+      };
+    });
+
+    type ActivityItem = {
+      id: string;
+      type: 'user' | 'content' | 'support';
+      title: string;
+      subtitle: string;
+      createdAt: string;
+      href?: string;
+    };
+    const activity: ActivityItem[] = [];
+    for (const u of recentUsersRaw.slice(0, 3)) {
+      const mapped = this.mapUserRow(u);
+      activity.push({
+        id: `user:${u.id}`,
+        type: 'user',
+        title: 'New user registered',
+        subtitle: `${mapped.displayName || mapped.email} - ${mapped.billingTier}`,
+        createdAt: u.createdAt.toISOString(),
+        href: `/users`,
+      });
+    }
+    for (const c of recentPublished) {
+      activity.push({
+        id: `content:${c.id}`,
+        type: 'content',
+        title: 'Content published',
+        subtitle: `"${c.title}" ${(c.cefrLevel ?? '').toUpperCase()} ${this.langLabel(c.language)}`,
+        createdAt: (c.publishedAt ?? now).toISOString(),
+        href: `/content`,
+      });
+    }
+    for (const t of recentTickets) {
+      activity.push({
+        id: `ticket:${t.id}`,
+        type: 'support',
+        title: 'New support ticket',
+        subtitle: t.subject,
+        createdAt: t.createdAt.toISOString(),
+        href: `/support`,
+      });
+    }
+    activity.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+    const recentActivity = activity.slice(0, 5);
+
+    const importPaidMonth = await this.prisma.importPayment
+      .aggregate({
+        where: { status: 'paid', paidAt: { gte: monthStart } },
+        _sum: { amountTiyins: true },
+      })
+      .catch(() => ({ _sum: { amountTiyins: 0 as number | null } }));
+    const importRevenueUzs = Math.round((importPaidMonth._sum.amountTiyins ?? 0) / 100);
+
+    return {
+      users,
+      publishedContent,
+      userImports,
+      moderationPending,
+      ingestionQueued,
+      activeSubscribers,
+      activeToday,
+      engagementPct,
+      mrr: Number(mrr.toFixed(2)),
+      mrrGrowthPct,
+      aiLookupsToday,
+      aiLimit,
+      aiUsagePct,
+      userGrowthPct,
+      conversionPct,
+      revenueToday: Number(revenueToday.toFixed(2)),
+      revenueMomDelta,
       aiUsageTotal: {
-        tokensUsed: Math.round(d.aiLookupsToday * 32),
-        lookupCount: d.aiLookupsToday,
-        quizCount: Math.round(d.aiLookupsToday * 0.08),
+        tokensUsed: aiTokensToday || aiLookupsToday * 32,
+        lookupCount: aiLookupsToday,
+        quizCount: aiQuizzesToday,
       },
-      userGrowth: [...d.userGrowth],
-      revenueTrend: [...d.revenueTrend],
-      revenueMomDelta: d.revenueMomDelta,
-      aiCategories: d.aiCategories.map((c) => ({ ...c })),
-      topPhrases: d.topPhrases.map((p) => ({ ...p })),
+      userGrowth,
+      revenueTrend,
+      revenueDaily,
+      // No reliable lemma-category / phrase leaderboard yet — clients should hide empty.
+      aiCategories: [] as Array<{ name: string; pct: number; color: string }>,
+      topPhrases: [] as Array<{
+        phrase: string;
+        language: string;
+        level: string;
+        lookups: number;
+        aiMatch: number;
+      }>,
       contentByLevel: [],
-      recentUsers: d.recentUsers.map((u) => ({ ...u })),
+      recentUsers,
+      recentActivity,
+      // Separate currencies — never mix UZS imports into USD MRR.
+      revenueCurrency: 'USD',
+      importCurrency: 'UZS',
+      importRevenueUzs,
     };
   }
 
-  async listUsers(q?: string, tier?: string) {
+  async listUsers(q?: string, tier?: string, status?: string) {
+    const statusKey = (status ?? '').trim().toLowerCase();
+    const includeSuspended = statusKey === 'suspended';
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(dayStart);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const [aiSettings, usageToday, activeRecentRows] = await Promise.all([
+      this.resolveAiSettings(),
+      this.prisma.aiUsageDaily.findMany({
+        where: { usageDate: { gte: dayStart } },
+        include: {
+          user: {
+            include: {
+              subscriptions: {
+                where: { status: { in: ['active', 'trialing'] } },
+                include: { plan: true },
+                orderBy: { createdAt: 'desc' },
+                take: 1,
+              },
+            },
+          },
+        },
+      }),
+      this.prisma.readingSession.findMany({
+        where: { startedAt: { gte: weekAgo } },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+    ]);
+
+    const flaggedIds = new Set<string>();
+    for (const r of usageToday) {
+      const quota =
+        r.user.subscriptions[0]?.plan.aiDailyQuota ?? aiSettings.defaultUserQuota;
+      if (quota < 1_000_000 && r.lookupCount >= Math.max(1, Math.floor(quota * 0.9))) {
+        flaggedIds.add(r.userId);
+      }
+    }
+    const activeRecentIds = new Set(activeRecentRows.map((r) => r.userId));
+
     const users = await this.prisma.user.findMany({
       where: {
-        deletedAt: null,
+        deletedAt: includeSuspended ? { not: null } : null,
         ...(q
           ? {
               OR: [
@@ -99,40 +410,291 @@ export class AdminService {
       },
     });
 
-    let rows = users.map((u) => ({
-      ...this.mapUserRow(u),
-      isAdmin: Boolean(u.adminProfile),
-      adminRole: u.adminProfile?.role ?? null,
-      vocabCount: u._count.vocabulary,
-      sessionCount: u._count.readingSessions,
-    }));
+    let rows = users.map((u) => {
+      const mapped = this.mapUserRow(u);
+      const isFlagged = flaggedIds.has(u.id);
+      const isSuspended = Boolean(u.deletedAt);
+      return {
+        ...mapped,
+        planLabel: mapped.billingTier === 'Premium' ? 'Premium' : 'Free Tier',
+        isAdmin: Boolean(u.adminProfile),
+        adminRole: u.adminProfile?.role ?? null,
+        vocabCount: u._count.vocabulary,
+        sessionCount: u._count.readingSessions,
+        isFlagged,
+        isSuspended,
+        isActiveRecently: activeRecentIds.has(u.id) && !isSuspended,
+      };
+    });
 
     if (tier) {
       rows = rows.filter((r) => r.billingTier.toLowerCase().includes(tier.toLowerCase()));
     }
+    if (statusKey === 'flagged') {
+      rows = rows.filter((r) => r.isFlagged);
+    }
 
-    const metrics = await this.getMetrics();
+    const [total, premium, suspended] = await Promise.all([
+      this.prisma.user.count({ where: { deletedAt: null } }),
+      this.prisma.userSubscription.count({
+        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
+      }),
+      this.prisma.user.count({ where: { deletedAt: { not: null } } }),
+    ]);
+
     return {
       stats: {
-        total: metrics.users.total,
-        premium: metrics.users.premium,
-        free: metrics.users.free,
-        suspended: metrics.users.suspended,
+        total,
+        premium,
+        free: Math.max(0, total - premium),
+        suspended,
+        flagged: flaggedIds.size,
       },
       users: rows,
     };
   }
 
-  async updateUser(id: string, body: { displayName?: string; deleted?: boolean }) {
-    const user = await this.prisma.user.findUnique({ where: { id } });
-    if (!user) throw new NotFoundException('User not found');
-    return this.prisma.user.update({
+  async getUser(id: string) {
+    const u = await this.prisma.user.findUnique({
       where: { id },
-      data: {
-        displayName: body.displayName,
-        deletedAt: body.deleted === true ? new Date() : body.deleted === false ? null : undefined,
+      include: {
+        targetLanguages: true,
+        subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+        adminProfile: true,
+        _count: { select: { vocabulary: true, readingSessions: true } },
       },
     });
+    if (!u) throw new NotFoundException('User not found');
+
+    const dayStart = new Date();
+    dayStart.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(dayStart);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+
+    const [usageToday, recentSessions, recentVocab, recentImports, aiSettings] = await Promise.all([
+      this.prisma.aiUsageDaily.findFirst({
+        where: { userId: id, usageDate: { gte: dayStart } },
+      }),
+      this.prisma.readingSession.findMany({
+        where: { userId: id },
+        orderBy: { startedAt: 'desc' },
+        take: 8,
+        include: { content: { select: { title: true } } },
+      }),
+      this.prisma.userVocabulary.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 8,
+        select: { lemma: true, sourceLang: true, createdAt: true },
+      }),
+      this.prisma.userImport.findMany({
+        where: { userId: id },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { title: true, createdAt: true },
+      }),
+      this.resolveAiSettings(),
+    ]);
+
+    const quota =
+      u.subscriptions[0]?.plan.aiDailyQuota ?? aiSettings.defaultUserQuota;
+    const isFlagged =
+      Boolean(usageToday) &&
+      quota < 1_000_000 &&
+      (usageToday?.lookupCount ?? 0) >= Math.max(1, Math.floor(quota * 0.9));
+    const isSuspended = Boolean(u.deletedAt);
+    const recentRead = await this.prisma.readingSession.findFirst({
+      where: { userId: id, startedAt: { gte: weekAgo } },
+      select: { id: true },
+    });
+
+    const mapped = this.mapUserRow(u);
+    const activity: Array<{ id: string; label: string; createdAt: string; type: string }> = [];
+
+    for (const s of recentSessions) {
+      const title = s.content?.title?.trim() || 'a story';
+      activity.push({
+        id: `session:${s.id}`,
+        type: 'reading',
+        label: `Read ${title}`,
+        createdAt: s.startedAt.toISOString(),
+      });
+    }
+
+    // Collapse vocab saves in the same calendar hour into one row.
+    const vocabBuckets = new Map<string, { count: number; lang: string; at: Date }>();
+    for (const v of recentVocab) {
+      const hourKey = v.createdAt.toISOString().slice(0, 13);
+      const prev = vocabBuckets.get(hourKey);
+      if (prev) {
+        prev.count += 1;
+      } else {
+        vocabBuckets.set(hourKey, {
+          count: 1,
+          lang: this.langLabel(v.sourceLang),
+          at: v.createdAt,
+        });
+      }
+    }
+    for (const [key, b] of vocabBuckets) {
+      activity.push({
+        id: `vocab:${key}`,
+        type: 'vocabulary',
+        label:
+          b.count === 1
+            ? `Saved a ${b.lang} word`
+            : `Learned ${b.count} new ${b.lang} words`,
+        createdAt: b.at.toISOString(),
+      });
+    }
+
+    for (const imp of recentImports) {
+      activity.push({
+        id: `import:${imp.title}:${imp.createdAt.toISOString()}`,
+        type: 'import',
+        label: `Imported ${imp.title}`,
+        createdAt: imp.createdAt.toISOString(),
+      });
+    }
+
+    const sub = u.subscriptions[0];
+    if (sub) {
+      activity.push({
+        id: `sub:${sub.id}`,
+        type: 'subscription',
+        label:
+          sub.plan.tier === 'premium'
+            ? 'Subscribed to Premium plan'
+            : 'On Free plan',
+        createdAt: sub.createdAt.toISOString(),
+      });
+    }
+
+    activity.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
+
+    return {
+      ...mapped,
+      planLabel: mapped.billingTier === 'Premium' ? 'Premium' : 'Free Tier',
+      isAdmin: Boolean(u.adminProfile),
+      adminRole: u.adminProfile?.role ?? null,
+      vocabCount: u._count.vocabulary,
+      sessionCount: u._count.readingSessions,
+      isFlagged,
+      isSuspended,
+      isActiveRecently: Boolean(recentRead) && !isSuspended,
+      recentActivity: activity.slice(0, 8),
+    };
+  }
+
+  async updateUser(
+    id: string,
+    body: { displayName?: string; deleted?: boolean; tier?: string },
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { adminProfile: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (body.deleted === true && user.adminProfile) {
+      throw new BadRequestException('Admin accounts cannot be suspended here.');
+    }
+
+    if (body.displayName !== undefined || body.deleted !== undefined) {
+      await this.prisma.user.update({
+        where: { id },
+        data: {
+          displayName: body.displayName,
+          deletedAt:
+            body.deleted === true ? new Date() : body.deleted === false ? null : undefined,
+        },
+      });
+    }
+
+    if (body.tier !== undefined) {
+      await this.adjustUserTier(id, body.tier);
+    }
+
+    return this.getUser(id);
+  }
+
+  async adjustUserTier(id: string, tierRaw: string) {
+    const tierKey = tierRaw.trim().toLowerCase();
+    if (tierKey !== 'free' && tierKey !== 'premium') {
+      throw new BadRequestException('tier must be "free" or "premium"');
+    }
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { adminProfile: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.adminProfile) {
+      throw new BadRequestException('Cannot adjust tier for admin accounts.');
+    }
+
+    const plan = await this.prisma.subscriptionPlan.findUnique({
+      where: { tier: tierKey as SubscriptionTier },
+    });
+    if (!plan) throw new NotFoundException(`Plan "${tierKey}" not found`);
+
+    const existing = await this.prisma.userSubscription.findFirst({
+      where: { userId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      await this.prisma.userSubscription.update({
+        where: { id: existing.id },
+        data: {
+          planId: plan.id,
+          status: 'active',
+          currentPeriodEnd:
+            tierKey === 'premium'
+              ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+              : null,
+        },
+      });
+    } else {
+      await this.prisma.userSubscription.create({
+        data: {
+          userId: id,
+          planId: plan.id,
+          status: 'active',
+          currentPeriodEnd:
+            tierKey === 'premium'
+              ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+              : null,
+          provider: 'admin',
+        },
+      });
+    }
+
+    return this.getUser(id);
+  }
+
+  async resetUserPassword(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { adminProfile: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.adminProfile) {
+      throw new BadRequestException('Cannot reset password for admin accounts here.');
+    }
+    return this.auth.adminTriggerPasswordReset(id);
+  }
+
+  async hardDeleteUser(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      include: { adminProfile: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.adminProfile) {
+      throw new BadRequestException('Admin accounts cannot be permanently deleted here.');
+    }
+    await this.prisma.user.delete({ where: { id } });
+    return { deleted: true, id };
   }
 
   listContent(status?: PublishStatus) {
@@ -147,12 +709,15 @@ export class AdminService {
     // Keep Figma-sized KPI numbers for the Content Library header cards.
     const metrics = await this.getMetrics();
     const c = metrics.content;
+    const freeItemsDb = await this.prisma.contentItem.count({ where: { isFree: true } });
     return {
       total: c.total,
       published: c.published,
       draft: c.draft,
       review: c.review,
       archived: c.archived ?? 0,
+      activeSalesMonthly: c.activeSalesMonthly ?? 12450,
+      freeItems: Math.max(c.freeItems ?? 0, freeItemsDb),
     };
   }
 
@@ -191,14 +756,28 @@ export class AdminService {
         activeReads: item._count.readingProgress,
         completion,
         publishStatus: item.publishStatus,
+        isFree: item.isFree,
+        priceUsd: Number(item.priceUsd ?? 0),
+        salesCount: item.salesCount,
       };
     });
+  }
+
+  private parseContentPricing(body: Record<string, unknown>) {
+    const isFree = body.isFree === true || body.isFree === 'true' || body.pricing === 'free';
+    const rawPrice = body.priceUsd ?? body.price;
+    const priceUsd = isFree ? 0 : Number(rawPrice ?? 0);
+    return {
+      isFree,
+      priceUsd: Number.isFinite(priceUsd) ? priceUsd : 0,
+    };
   }
 
   async createContent(adminId: string, body: Record<string, unknown>) {
     const title = String(body.title ?? 'Untitled');
     const plainText = String(body.plainText ?? '');
     const { tokenMap, sentenceMap, wordCount } = tokenizeText(plainText);
+    const pricing = this.parseContentPricing(body);
 
     return this.prisma.contentItem.create({
       data: {
@@ -211,6 +790,8 @@ export class AdminService {
         cefrLevel: (body.cefrLevel as never) ?? 'b1',
         genre: body.genre ? String(body.genre) : undefined,
         licenseId: body.licenseId ? String(body.licenseId) : undefined,
+        isFree: pricing.isFree,
+        priceUsd: pricing.priceUsd,
         wordCount,
         uniqueWordCount: uniqueWordCount(tokenMap as never),
         publishStatus: PublishStatus.draft,
@@ -232,6 +813,72 @@ export class AdminService {
     });
   }
 
+  async updateContent(id: string, body: Record<string, unknown>) {
+    const existing = await this.prisma.contentItem.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Content not found');
+
+    const pricing =
+      body.isFree !== undefined || body.priceUsd !== undefined || body.price !== undefined || body.pricing !== undefined
+        ? this.parseContentPricing({
+            isFree: body.isFree ?? existing.isFree,
+            priceUsd: body.priceUsd ?? body.price ?? existing.priceUsd,
+            pricing: body.pricing,
+          })
+        : null;
+
+    return this.prisma.contentItem.update({
+      where: { id },
+      data: {
+        title: body.title !== undefined ? String(body.title) : undefined,
+        description: body.description !== undefined ? String(body.description) : undefined,
+        language: body.language !== undefined ? (body.language as never) : undefined,
+        contentType: body.contentType !== undefined ? (body.contentType as ContentType) : undefined,
+        cefrLevel: body.cefrLevel !== undefined ? (body.cefrLevel as never) : undefined,
+        publishStatus: body.publishStatus !== undefined ? (body.publishStatus as PublishStatus) : undefined,
+        isFree: pricing?.isFree,
+        priceUsd: pricing?.priceUsd,
+        salesCount: body.salesCount !== undefined ? Number(body.salesCount) : undefined,
+      },
+    });
+  }
+
+  async getCatalogPricingRules() {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'catalogPricingRules' } });
+    const defaults = {
+      contentType: 'book',
+      basePriceUsd: 4.99,
+      perPageSurchargeUsd: 0.02,
+      volumeDiscountsEnabled: true,
+      buy3PctOff: 10,
+      buy5PctOff: 20,
+    };
+    if (!row?.value || typeof row.value !== 'object') return defaults;
+    return { ...defaults, ...(row.value as object) };
+  }
+
+  async updateCatalogPricingRules(body: Record<string, unknown>) {
+    const current = await this.getCatalogPricingRules();
+    const next = {
+      ...current,
+      contentType: body.contentType !== undefined ? String(body.contentType) : current.contentType,
+      basePriceUsd: body.basePriceUsd !== undefined ? Number(body.basePriceUsd) : current.basePriceUsd,
+      perPageSurchargeUsd:
+        body.perPageSurchargeUsd !== undefined ? Number(body.perPageSurchargeUsd) : current.perPageSurchargeUsd,
+      volumeDiscountsEnabled:
+        body.volumeDiscountsEnabled !== undefined
+          ? Boolean(body.volumeDiscountsEnabled)
+          : current.volumeDiscountsEnabled,
+      buy3PctOff: body.buy3PctOff !== undefined ? Number(body.buy3PctOff) : current.buy3PctOff,
+      buy5PctOff: body.buy5PctOff !== undefined ? Number(body.buy5PctOff) : current.buy5PctOff,
+    };
+    await this.prisma.platformSetting.upsert({
+      where: { key: 'catalogPricingRules' },
+      update: { value: next as never },
+      create: { key: 'catalogPricingRules', value: next as never },
+    });
+    return next;
+  }
+
   publishContent(id: string) {
     return this.prisma.contentItem.update({
       where: { id },
@@ -244,6 +891,152 @@ export class AdminService {
       where: { id },
       data: { publishStatus: PublishStatus.archived },
     });
+  }
+
+  async importPricing(range = '12m') {
+    const metrics = await this.getMetrics();
+    const m = metrics.importPricing;
+    const dayStart = new Date();
+    dayStart.setUTCHours(0, 0, 0, 0);
+    const monthStart = new Date(Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1));
+
+    const [rules, tiers, freeLimits, importCount, paidMonth, freeMonth, importsToday] = await Promise.all([
+      this.prisma.importPricingRule.findMany({ orderBy: { sortOrder: 'asc' } }),
+      this.prisma.importPageTier.findMany({ orderBy: { sortOrder: 'asc' } }),
+      this.getImportFreeLimits(),
+      this.prisma.userImport.count(),
+      this.prisma.importPayment.aggregate({
+        where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: monthStart } },
+        _sum: { amountTiyins: true },
+        _count: true,
+      }).catch(() => ({ _sum: { amountTiyins: 0 }, _count: 0 })),
+      this.prisma.importPayment.count({
+        where: { status: 'paid', amountTiyins: 0, paidAt: { gte: monthStart } },
+      }).catch(() => 0),
+      this.prisma.userImport.count({ where: { createdAt: { gte: dayStart } } }),
+    ]);
+
+    const revenueUzs = (paidMonth._sum.amountTiyins ?? 0) / 100;
+    const freePool = Math.max(1, freeLimits.dailyFreeImportsPerUser * 30);
+    const freeUsed = freeMonth;
+
+    return {
+      range,
+      currency: 'UZS',
+      atmosConfigured: Boolean(
+        process.env.ATMOS_CONSUMER_KEY && process.env.ATMOS_STORE_ID,
+      ),
+      paymentGatewayEnabled: ['true', '1', 'yes', 'on'].includes(
+        (process.env.PAYMENT_GATEWAY_ENABLED ?? '').trim().toLowerCase(),
+      ),
+      stats: {
+        // Prefer live DB aggregates (incl. 0) — do not fall back to Figma seed metrics.
+        totalImportsToday: importsToday,
+        importsGrowthPct: m.importsGrowthPct,
+        revenueFromImports: revenueUzs,
+        revenueGrowthPct: m.revenueGrowthPct,
+        freeImportsUsed: freeUsed,
+        freeImportsPool: freePool,
+        freeUsedPct: Math.round((freeUsed / freePool) * 100),
+        conversionPct: m.conversionPct,
+        conversionGrowthPct: m.conversionGrowthPct,
+        realImportCount: importCount,
+        paidImportsThisMonth: paidMonth._count,
+      },
+      rules: rules.map((r) => ({
+        id: r.id,
+        key: r.key,
+        label: r.label,
+        pricePerImport: Number(r.pricePerImport),
+        pricePerPage: Number(r.pricePerPage),
+        isActive: r.isActive,
+        sortOrder: r.sortOrder,
+      })),
+      tiers: tiers.map((t) => ({
+        id: t.id,
+        label: t.label,
+        minPages: t.minPages,
+        maxPages: t.maxPages,
+        priceUsd: Number(t.priceUsd),
+        priceUzs: Number(t.priceUsd),
+        sortOrder: t.sortOrder,
+      })),
+      freeLimits,
+    };
+  }
+
+  async updateImportPricingRules(body: { rules?: Array<Record<string, unknown>> }) {
+    const rules = body.rules ?? [];
+    await Promise.all(
+      rules.map((rule) =>
+        this.prisma.importPricingRule.update({
+          where: { id: String(rule.id) },
+          data: {
+            pricePerImport: rule.pricePerImport !== undefined ? Number(rule.pricePerImport) : undefined,
+            pricePerPage: rule.pricePerPage !== undefined ? Number(rule.pricePerPage) : undefined,
+            isActive: rule.isActive !== undefined ? Boolean(rule.isActive) : undefined,
+            label: rule.label !== undefined ? String(rule.label) : undefined,
+          },
+        }),
+      ),
+    );
+    return this.importPricing();
+  }
+
+  async updateImportPageTier(id: string, body: Record<string, unknown>) {
+    const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Page tier not found');
+    return this.prisma.importPageTier.update({
+      where: { id },
+      data: {
+        label: body.label !== undefined ? String(body.label) : undefined,
+        minPages: body.minPages !== undefined ? Number(body.minPages) : undefined,
+        maxPages: body.maxPages === null ? null : body.maxPages !== undefined ? Number(body.maxPages) : undefined,
+        priceUsd:
+          body.priceUzs !== undefined
+            ? Number(body.priceUzs)
+            : body.priceUsd !== undefined
+              ? Number(body.priceUsd)
+              : undefined,
+      },
+    });
+  }
+
+  async getImportFreeLimits() {
+    const row = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
+    const defaults = {
+      dailyFreeImportsPerUser: 3,
+      monthlyFreePageLimit: 50,
+      allowedFormats: ['article', 'news'] as string[],
+      resetCycle: 'monthly',
+      allowRollover: true,
+    };
+    if (!row?.value || typeof row.value !== 'object') return defaults;
+    return { ...defaults, ...(row.value as object) };
+  }
+
+  async updateImportFreeLimits(body: Record<string, unknown>) {
+    const current = await this.getImportFreeLimits();
+    const next = {
+      ...current,
+      dailyFreeImportsPerUser:
+        body.dailyFreeImportsPerUser !== undefined
+          ? Number(body.dailyFreeImportsPerUser)
+          : current.dailyFreeImportsPerUser,
+      monthlyFreePageLimit:
+        body.monthlyFreePageLimit !== undefined ? Number(body.monthlyFreePageLimit) : current.monthlyFreePageLimit,
+      allowedFormats: Array.isArray(body.allowedFormats)
+        ? body.allowedFormats.map(String)
+        : current.allowedFormats,
+      resetCycle: body.resetCycle !== undefined ? String(body.resetCycle) : current.resetCycle,
+      allowRollover: body.allowRollover !== undefined ? Boolean(body.allowRollover) : current.allowRollover,
+    };
+    await this.prisma.platformSetting.upsert({
+      where: { key: 'importFreeLimits' },
+      update: { value: next as never },
+      create: { key: 'importFreeLimits', value: next as never },
+    });
+    return next;
   }
 
   listLicenses(status?: LicenseStatus) {
@@ -279,7 +1072,7 @@ export class AdminService {
     const item = await this.prisma.moderationQueue.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Moderation item not found');
 
-    return this.prisma.moderationQueue.update({
+    const updated = await this.prisma.moderationQueue.update({
       where: { id },
       data: {
         status,
@@ -288,6 +1081,25 @@ export class AdminService {
         reviewedAt: new Date(),
       },
     });
+
+    // Flip the underlying content's publish state so the review decision actually takes
+    // effect end-to-end (previously this only updated the queue row itself — see
+    // docs/E2E_AUDIT_REPORT.md's moderation-bypass finding).
+    if (item.contentId) {
+      if (status === ModerationStatus.approved) {
+        await this.prisma.contentItem.update({
+          where: { id: item.contentId },
+          data: { publishStatus: PublishStatus.published, publishedAt: new Date() },
+        });
+      } else if (status === ModerationStatus.rejected) {
+        await this.prisma.contentItem.update({
+          where: { id: item.contentId },
+          data: { publishStatus: PublishStatus.archived },
+        });
+      }
+    }
+
+    return updated;
   }
 
   listIngestionJobs() {
@@ -374,14 +1186,14 @@ export class AdminService {
     ]);
 
     const billingHits =
-      /bill|sub|premium|mrr|revenue|plan/i.test(query)
+      /bill|sub|premium|mrr|revenue|plan|import|pricing|limit/i.test(query)
         ? [
             {
-              id: 'subs',
+              id: 'import-pricing',
               type: 'subscription' as const,
-              title: 'Subscriptions & Revenue',
-              subtitle: 'Plans, MRR, and recent transactions',
-              href: '/subscriptions',
+              title: 'Import & Pricing',
+              subtitle: 'Import costs, free limits, and page tiers',
+              href: '/import-pricing',
             },
           ]
         : [];
@@ -868,6 +1680,8 @@ export class AdminService {
         lessonCompletionDeltaPct: a.lessonCompletionDeltaPct,
         retentionPct: a.retentionPct,
         retentionGrowthPct: a.retentionGrowthPct,
+        revenue: metrics.content.activeSalesMonthly ?? metrics.dashboard.mrr,
+        revenueGrowthPct: Number((metrics.dashboard.mrrGrowthPct * (range === '7d' ? 0.65 : 1)).toFixed(1)),
         users: metrics.dashboard.users,
         sessions: Math.round(dau * 18 * factor),
         vocab: Math.round(128400 * factor),
@@ -897,110 +1711,141 @@ export class AdminService {
   }
 
   async languages() {
-    const metrics = await this.getMetrics();
     const catalog = await this.prisma.languageCatalog.findMany();
-    const byCode = new Map<string, (typeof catalog)[number]>(catalog.map((l) => [l.code, l]));
-    const metaByCode = new Map<string, (typeof metrics.languages.catalog)[number]>(
-      metrics.languages.catalog.map((l) => [l.code, l]),
+    const byCode = new Map(catalog.map((l) => [l.code, l]));
+
+    const [contentGroups, learnerGroups, cefrGroups] = await Promise.all([
+      this.prisma.contentItem.groupBy({
+        by: ['language'],
+        _count: { _all: true },
+      }),
+      this.prisma.userTargetLanguage.groupBy({
+        by: ['targetLanguage'],
+        _count: { _all: true },
+      }),
+      this.prisma.contentItem.groupBy({
+        by: ['language', 'cefrLevel'],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const contentByLang = new Map(contentGroups.map((g) => [g.language, g._count._all]));
+    const learnersByLang = new Map(
+      learnerGroups.map((g) => [g.targetLanguage, g._count._all]),
     );
+    const cefrLevelsByLang = new Map<string, Set<string>>();
+    for (const g of cefrGroups) {
+      const set = cefrLevelsByLang.get(g.language) ?? new Set<string>();
+      set.add(g.cefrLevel);
+      cefrLevelsByLang.set(g.language, set);
+    }
 
-    // Union of Figma catalog + DB rows (e.g. Russian) so admin matches Prisma AppLanguage set.
-    const codes = [
-      ...new Set([
-        ...metrics.languages.catalog.map((l) => l.code),
-        ...catalog.map((l) => l.code),
-      ]),
-    ];
-
+    const codes = Object.values(AppLanguage);
     const languages = codes
-      .map((code) => {
-        const meta = metaByCode.get(code);
+      .map((code, idx) => {
         const row = byCode.get(code);
+        const contentCount = contentByLang.get(code) ?? 0;
+        const learnerCount = learnersByLang.get(code) ?? 0;
+        const cefrCoverage = Math.round(((cefrLevelsByLang.get(code)?.size ?? 0) / 6) * 100);
+        const isEnabled = row?.isEnabled ?? true;
         return {
           code,
-          name: row?.name ?? meta?.name ?? this.langLabel(code),
-          nativeName: row?.nativeName ?? meta?.nativeName ?? this.langNative(code),
-          flagEmoji: row?.flagEmoji ?? meta?.flagEmoji ?? this.langFlag(code),
-          regionLabel: row?.regionLabel ?? meta?.region ?? null,
-          status: row?.status ?? meta?.status ?? 'Active',
-          cefrCoverage: row?.cefrCoverage ?? meta?.cefrCoverage ?? 0,
-          learnerCount: row?.learnerCount ?? meta?.learnerCount ?? 0,
-          contentCount: row?.contentCount ?? meta?.contentCount ?? 0,
-          isEnabled: row?.isEnabled ?? meta?.isEnabled ?? true,
-          sortOrder: row?.sortOrder ?? meta?.sortOrder ?? 99,
+          name: row?.name ?? this.langLabel(code),
+          nativeName: row?.nativeName ?? this.langNative(code),
+          flagEmoji: row?.flagEmoji ?? this.langFlag(code),
+          regionLabel: row?.regionLabel ?? null,
+          status: row?.status ?? (isEnabled ? 'Active' : 'Draft'),
+          cefrCoverage,
+          learnerCount,
+          contentCount,
+          isEnabled,
+          sortOrder: row?.sortOrder ?? idx + 1,
         };
       })
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
+    const enabled = languages.filter((l) => l.isEnabled);
+    const totalContentItems = languages.reduce((s, l) => s + l.contentCount, 0);
+    const avgCefrCoverage = languages.length
+      ? Math.round(languages.reduce((s, l) => s + l.cefrCoverage, 0) / languages.length)
+      : 0;
+
     return {
       stats: {
-        supported: metrics.languages.supported,
-        supportedDelta: metrics.languages.supportedDelta,
-        totalContentItems: metrics.languages.totalContentItems,
-        contentDelta: metrics.languages.contentDelta,
-        avgCefrCoverage: metrics.languages.avgCefrCoverage,
-        cefrDelta: metrics.languages.cefrDelta,
-        interfaceTranslations: metrics.languages.interfaceTranslations,
+        supported: enabled.length,
+        totalContentItems,
+        avgCefrCoverage,
       },
-      cefrThresholds: metrics.languages.cefrThresholds.map((t) => ({ ...t })),
       languages,
     };
   }
 
   async updateLanguage(code: string, body: { isEnabled?: boolean; status?: string }) {
-    const meta = FIGMA_ADMIN_METRICS.languages.catalog.find((l) => l.code === code);
+    const isEnabled = body.isEnabled;
+    const status =
+      body.status ??
+      (isEnabled === false ? 'Draft' : isEnabled === true ? 'Active' : undefined);
     return this.prisma.languageCatalog.upsert({
       where: { code },
       update: {
-        isEnabled: body.isEnabled,
-        status: body.status ?? (body.isEnabled === false ? 'Draft' : undefined),
+        isEnabled,
+        status,
       },
       create: {
         code,
-        name: meta?.name ?? this.langLabel(code),
-        nativeName: meta?.nativeName ?? this.langNative(code),
-        flagEmoji: meta?.flagEmoji ?? this.langFlag(code),
-        regionLabel: meta?.region,
-        status: body.status ?? meta?.status ?? 'Active',
-        cefrCoverage: meta?.cefrCoverage ?? 0,
-        learnerCount: meta?.learnerCount ?? 0,
-        contentCount: meta?.contentCount ?? 0,
-        isEnabled: body.isEnabled ?? meta?.isEnabled ?? true,
-        sortOrder: meta?.sortOrder ?? 99,
+        name: this.langLabel(code),
+        nativeName: this.langNative(code),
+        flagEmoji: this.langFlag(code),
+        status: status ?? 'Active',
+        cefrCoverage: 0,
+        learnerCount: 0,
+        contentCount: 0,
+        isEnabled: isEnabled ?? true,
+        sortOrder: 99,
       },
     });
   }
 
   async levelTests() {
-    const results = await this.prisma.placementResult.findMany({
-      orderBy: { createdAt: 'desc' },
-      take: 50,
-    });
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+
+    const [results, total, monthTotal, avgAgg, byLevel] = await Promise.all([
+      this.prisma.placementResult.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      }),
+      this.prisma.placementResult.count(),
+      this.prisma.placementResult.count({ where: { createdAt: { gte: monthStart } } }),
+      this.prisma.placementResult.aggregate({ _avg: { score: true } }),
+      this.prisma.placementResult.groupBy({
+        by: ['suggestedLevel'],
+        _count: { _all: true },
+        _avg: { score: true },
+      }),
+    ]);
+
     const users = await this.prisma.user.findMany({
       where: { id: { in: [...new Set(results.map((r) => r.userId))] } },
       select: { id: true, email: true, displayName: true },
     });
     const userMap = new Map(users.map((u) => [u.id, u]));
 
-    const byLevel = await this.prisma.placementResult.groupBy({
-      by: ['suggestedLevel'],
-      _count: { _all: true },
-      _avg: { score: true },
-    });
+    const levelOrder = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'];
+    const byLevelSorted = [...byLevel].sort(
+      (a, b) => levelOrder.indexOf(a.suggestedLevel) - levelOrder.indexOf(b.suggestedLevel),
+    );
 
     return {
       stats: {
-        total: results.length
-          ? await this.prisma.placementResult.count()
-          : 0,
-        avgScore:
-          byLevel.length === 0
-            ? 0
-            : byLevel.reduce((s, r) => s + (r._avg.score ?? 0), 0) / byLevel.length,
-        byLevel: byLevel.map((r) => ({
+        total,
+        monthTotal,
+        avgScore: Number((avgAgg._avg.score ?? 0).toFixed(1)),
+        byLevel: byLevelSorted.map((r) => ({
           level: r.suggestedLevel,
           count: r._count._all,
           avgScore: Number((r._avg.score ?? 0).toFixed(1)),
+          pct: total > 0 ? Math.round((r._count._all / total) * 100) : 0,
         })),
       },
       results: results.map((r) => ({
@@ -1012,14 +1857,22 @@ export class AdminService {
 
   async gamification() {
     const achievements = await this.prisma.achievement.findMany({ orderBy: { sortOrder: 'asc' } });
-    const [streakers, vocabMasters, sessionUsers] = await Promise.all([
+    const [streakers, vocabMasters, sessionUsers, streakAgg] = await Promise.all([
       this.prisma.user.count({ where: { streakCount: { gte: 7 }, deletedAt: null } }),
       this.prisma.userVocabulary.count({ where: { mastered: true } }),
       this.prisma.readingSession.groupBy({
         by: ['userId'],
         _count: { _all: true },
       }),
+      this.prisma.user.aggregate({
+        where: { deletedAt: null },
+        _avg: { streakCount: true },
+        _sum: { streakCount: true },
+      }),
     ]);
+
+    const catalogPoints = achievements.reduce((sum, a) => sum + (a.points ?? 0), 0);
+    const avgStreakDays = Number((streakAgg._avg.streakCount ?? 0).toFixed(1));
 
     return {
       stats: {
@@ -1028,7 +1881,19 @@ export class AdminService {
         streakers,
         vocabMasters,
         activeReaders: sessionUsers.filter((s) => s._count._all >= 5).length,
+        // No UserAchievement ledger — catalog points + live avg streak only.
+        catalogPoints,
+        avgStreakDays,
+        totalEarned: catalogPoints,
       },
+      // No leaderboard season model in schema — clients should hide if empty.
+      seasons: [] as Array<{
+        id: string;
+        title: string;
+        status: string;
+        endsInDays: number | null;
+        participants: number;
+      }>,
       achievements,
     };
   }
@@ -1099,6 +1964,8 @@ export class AdminService {
         name: body.name !== undefined ? String(body.name) : undefined,
         subject: body.subject !== undefined ? String(body.subject) : undefined,
         body: body.body !== undefined ? String(body.body) : undefined,
+        channel: body.channel !== undefined ? (body.channel as CampaignChannel) : undefined,
+        audience: body.audience !== undefined ? String(body.audience) : undefined,
         status: body.status !== undefined ? (body.status as CampaignStatus) : undefined,
         scheduledAt: body.scheduledAt ? new Date(String(body.scheduledAt)) : undefined,
         sentAt: body.status === 'sent' ? new Date() : undefined,
@@ -1182,6 +2049,7 @@ export class AdminService {
       [AI_SETTING_KEYS.dailyLimit]: aiDefaults.dailyLimit,
       [AI_SETTING_KEYS.lookupModel]: aiDefaults.lookupModel,
       [AI_SETTING_KEYS.quizModel]: aiDefaults.quizModel,
+      [AI_SETTING_KEYS.importCleanupModel]: aiDefaults.importCleanupModel,
       [AI_SETTING_KEYS.defaultUserQuota]: aiDefaults.defaultUserQuota,
       aiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
       ...map,
@@ -1210,6 +2078,38 @@ export class AdminService {
       include: { adminProfile: true },
     });
     if (!user) throw new NotFoundException('User not found');
+    return {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      avatarUrl: user.avatarUrl,
+      role: user.adminProfile?.role ?? null,
+    };
+  }
+
+  /**
+   * Admin self-service profile update (own display name / email).
+   * Mirrors users.service.ts's updateProfile but scoped to admin.controller.ts (`PATCH /admin/me`),
+   * since the admin panel authenticates via the same JWT/User row but has its own settings UI.
+   */
+  async updateMe(userId: string, dto: UpdateAdminProfileDto) {
+    if (dto.email) {
+      const email = dto.email.trim().toLowerCase();
+      const existing = await this.prisma.user.findUnique({ where: { email } });
+      if (existing && existing.id !== userId) {
+        throw new ConflictException('Email is already in use by another account.');
+      }
+    }
+
+    const user = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        displayName: dto.displayName?.trim() || undefined,
+        email: dto.email ? dto.email.trim().toLowerCase() : undefined,
+      },
+      include: { adminProfile: true },
+    });
+
     return {
       id: user.id,
       email: user.email,

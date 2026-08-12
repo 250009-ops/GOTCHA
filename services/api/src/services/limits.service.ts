@@ -1,15 +1,41 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+function envFlagTrue(value: string | undefined): boolean {
+  const v = (value ?? '').trim().toLowerCase();
+  return v === 'true' || v === '1' || v === 'yes' || v === 'on';
+}
+
+function envFlagFalse(value: string | undefined): boolean {
+  const v = (value ?? '').trim().toLowerCase();
+  return v === 'false' || v === '0' || v === 'no' || v === 'off';
+}
+
 @Injectable()
 export class LimitsService {
   constructor(private prisma: PrismaService) {}
 
-  /** Dev / local demos: skip import quota when explicitly enabled. */
-  private devUnlimitedImports(): boolean {
-    const flag = (process.env.DEV_UNLIMITED_IMPORTS ?? '').toLowerCase();
-    if (flag === 'true' || flag === '1' || flag === 'yes') return true;
+  /**
+   * Skip commerce import quotas until a payment gateway is live.
+   * Priority: IMPORTS_UNLIMITED / DEV_UNLIMITED_IMPORTS → true;
+   * otherwise unlimited whenever PAYMENT_GATEWAY_ENABLED is absent/false.
+   */
+  private importsUnlimitedByConfig(): boolean {
+    if (envFlagTrue(process.env.IMPORTS_UNLIMITED) || envFlagTrue(process.env.DEV_UNLIMITED_IMPORTS)) {
+      return true;
+    }
+    if (!envFlagTrue(process.env.PAYMENT_GATEWAY_ENABLED)) {
+      return true;
+    }
+    if (envFlagFalse(process.env.IMPORTS_UNLIMITED)) {
+      return false;
+    }
     return false;
+  }
+
+  /** When gateway is on, imports are gated by free allowance / Atmos payment — not plan count. */
+  paymentGatewayEnforcesImports(): boolean {
+    return !this.importsUnlimitedByConfig();
   }
 
   async getActivePlan(userId: string) {
@@ -22,32 +48,34 @@ export class LimitsService {
   }
 
   async getImportQuota(userId: string) {
-    if (this.devUnlimitedImports()) {
+    if (this.importsUnlimitedByConfig()) {
       const count = await this.prisma.userImport.count({ where: { userId } });
       return {
         limit: null as number | null,
         count,
         unlimited: true,
         remaining: null as number | null,
+        paymentGated: false,
       };
     }
 
-    const plan = await this.getActivePlan(userId);
-    // Default free-tier fallback raised for professional demos (seed Free plan = 15).
-    const limit = plan?.importLimit ?? 15;
-    const unlimited = limit >= 1_000_000;
+    // Gateway mode: no hard plan cap; learner pays per import (or uses free pool).
     const count = await this.prisma.userImport.count({ where: { userId } });
     return {
-      limit: unlimited ? null : limit,
+      limit: null as number | null,
       count,
-      unlimited,
-      remaining: unlimited ? null : Math.max(0, limit - count),
+      unlimited: false,
+      remaining: null as number | null,
+      paymentGated: true,
     };
   }
 
   async assertImportAllowed(userId: string) {
+    // Plan-count gate only when gateway is off and unlimited flags are false.
+    // With gateway on, ImportCommerceService.consumePayment enforces payment.
+    if (this.paymentGatewayEnforcesImports()) return;
+
     const quota = await this.getImportQuota(userId);
-    // Values >= 1e6 are treated as unlimited (Premium / Figma "Unlimited imports").
     if (quota.unlimited || quota.limit == null) return;
     if (quota.count >= quota.limit) {
       throw new ForbiddenException(

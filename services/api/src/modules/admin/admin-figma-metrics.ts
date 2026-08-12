@@ -1,7 +1,7 @@
 /**
  * Verbatim admin console metrics from Figma file mYIXcSh2YNEDAnCBeajqit
- * (Dashboard 47:6, Subscriptions 47:1091, Languages 61:1442, Analytics 47:1756,
- * Content 47:1327, AI Usage 47:748). Seeded into platform_settings and returned by admin APIs.
+ * (Dashboard 47:6, Import & Pricing 47:1091, Languages 61:1442, Analytics 47:1756,
+ * Content & Reading Store 47:1327, AI Usage 47:748). Seeded into platform_settings and returned by admin APIs.
  */
 export const ADMIN_METRICS_KEY = 'adminConsoleMetrics';
 
@@ -230,17 +230,29 @@ export const FIGMA_ADMIN_METRICS = {
     draft: 89,
     review: 35,
     archived: 0,
+    activeSalesMonthly: 12450,
+    freeItems: 34,
     /** Seed-only sample titles (not returned as fake table rows). */
     seedCurriculum: [
-      { title: 'The Little Prince (Le Petit Prince)', language: 'fr', level: 'a2', type: 'book', wordCount: 15240, status: 'published' },
-      { title: 'Tech News Weekly: AI Disruption', language: 'en', level: 'b2', type: 'news', wordCount: 1250, status: 'published' },
-      { title: 'Russian Folk Tales & Legends', language: 'ru', level: 'b1', type: 'book', wordCount: 8920, status: 'published' },
-      { title: 'Uzbek Culture & Navruz Festival', language: 'uz', level: 'a1', type: 'article', wordCount: 950, status: 'draft' },
-      { title: 'The Art of Language Acquisition', language: 'en', level: 'c1', type: 'article', wordCount: 3400, status: 'published' },
-      { title: 'Daily News: Global Climate Update', language: 'en', level: 'b2', type: 'news', wordCount: 1110, status: 'review' },
-      { title: 'Sherlock Holmes: Red-Headed League', language: 'en', level: 'c2', type: 'book', wordCount: 11840, status: 'draft' },
-      { title: 'Intro to Uzbek Verbs & Grammar', language: 'uz', level: 'a1', type: 'article', wordCount: 2150, status: 'review' },
+      { title: 'The Little Prince (Le Petit Prince)', language: 'fr', level: 'a2', type: 'book', wordCount: 15240, status: 'published', priceUsd: 8.99, salesCount: 482, isFree: false },
+      { title: 'Tech News Weekly: AI Disruption', language: 'en', level: 'b2', type: 'news', wordCount: 1250, status: 'published', priceUsd: 2.99, salesCount: 890, isFree: false },
+      { title: 'Russian Folk Tales & Legends', language: 'ru', level: 'b1', type: 'book', wordCount: 8920, status: 'published', priceUsd: 12.99, salesCount: 231, isFree: false },
+      { title: 'Uzbek Culture & Navruz Festival', language: 'uz', level: 'a1', type: 'article', wordCount: 950, status: 'draft', priceUsd: 0, salesCount: 0, isFree: true },
+      { title: 'The Art of Language Acquisition', language: 'en', level: 'c1', type: 'article', wordCount: 3400, status: 'published', priceUsd: 4.99, salesCount: 3120, isFree: false },
+      { title: 'Daily News: Global Climate Update', language: 'en', level: 'b2', type: 'news', wordCount: 1110, status: 'review', priceUsd: 2.99, salesCount: 543, isFree: false },
+      { title: 'Sherlock Holmes: Red-Headed League', language: 'en', level: 'c2', type: 'book', wordCount: 11840, status: 'draft', priceUsd: 9.99, salesCount: 0, isFree: false },
+      { title: 'Intro to Uzbek Verbs & Grammar', language: 'uz', level: 'a1', type: 'article', wordCount: 2150, status: 'review', priceUsd: 2.99, salesCount: 412, isFree: false },
     ],
+  },
+  importPricing: {
+    totalImportsToday: 1230,
+    importsGrowthPct: 12.4,
+    revenueFromImports: 3890,
+    revenueGrowthPct: 15.1,
+    freeImportsUsed: 4500,
+    freeImportsPool: 10000,
+    conversionPct: 34,
+    conversionGrowthPct: 2.3,
   },
   aiUsage: {
     lookupsToday: 45230,

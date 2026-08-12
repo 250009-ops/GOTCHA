@@ -51,6 +51,7 @@ export class ImportsController {
         file: { type: 'string', format: 'binary' },
         title: { type: 'string' },
         language: { type: 'string' },
+        paymentId: { type: 'string', format: 'uuid' },
       },
       required: ['file'],
     },

@@ -20,6 +20,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
+import { quoteImport } from '../lib/importBilling';
 
 interface ImportItem {
   id: string;
@@ -30,6 +31,8 @@ interface ImportItem {
   createdAt: string;
   sourceUrl?: string | null;
   errorMessage?: string | null;
+  progressPagesDone?: number | null;
+  progressPagesTotal?: number | null;
   content?: { id: string; title: string; wordCount?: number | null } | null;
 }
 
@@ -46,8 +49,8 @@ interface ImportListResponse {
 
 const PAGE_SIZE = 8;
 const MIN_PASTE_WORDS = 50;
-const MAX_PASTE_CHARS = 500_000;
-const MAX_FILE_BYTES = 40 * 1024 * 1024;
+const MAX_PASTE_CHARS = 5_000_000;
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_FILE_MB = Math.round(MAX_FILE_BYTES / (1024 * 1024));
 const ACCEPTED_EXT = ['.pdf', '.epub'];
 
@@ -177,7 +180,7 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
             className="w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
           />
         </div>
-        <p className="text-xs text-[#99a1af] mt-1">Works with public articles, blogs, and .txt URLs. Paywalled or login-gated pages will fail with a clear error.</p>
+        <p className="text-xs text-[#99a1af] mt-1">Works with Wikipedia, public articles, blogs, and .txt URLs. Paywalled or login-gated pages will fail with a clear error.</p>
       </div>
       <div className="pt-4">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
@@ -333,7 +336,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
       <div className="flex items-start gap-2 p-3 mt-4 bg-[#eff6ff] border border-[#bedbff] rounded-[14px]">
         <Info className="w-4 h-4 text-[#1447e6] shrink-0 mt-0.5" />
         <p className="text-xs text-[#1447e6]">
-          Text PDFs and EPUBs extract fully. Small scanned PDFs get best-effort OCR (first pages). Password-protected PDFs are not supported.
+          Text PDFs extract up to ~500 pages. Scanned PDFs use chunked OCR (English best; Russian/Uzbek less accurate). Large files process in the background — watch progress in history. Password-protected PDFs are not supported.
         </p>
       </div>
       <div className="pt-4">
@@ -381,6 +384,9 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // Reflects the real PAYMENT_GATEWAY_ENABLED state instead of hardcoded Atmos copy
+  // (see docs/E2E_AUDIT_REPORT.md's stale-paid-import-messaging finding).
+  const [gatewayEnabled, setGatewayEnabled] = useState(false);
 
   const atImportLimit = !importsUnlimited && importRemaining !== null && importRemaining <= 0;
 
@@ -398,6 +404,9 @@ export default function ImportPage() {
 
   useEffect(() => {
     void load(1).finally(() => setHistoryLoading(false));
+    quoteImport({ importType: 'paste', wordCount: 0 })
+      .then((q) => setGatewayEnabled(q.gatewayEnabled))
+      .catch(() => undefined);
   }, []);
 
   // Poll while any import is still processing
@@ -432,19 +441,53 @@ export default function ImportPage() {
     if (!atImportLimit) return true;
     toast.error(
       importLimit
-        ? `Import limit reached (${importLimit}). Delete an import or upgrade to Premium.`
-        : 'Import limit reached. Delete an import or upgrade to Premium.',
+        ? `Import limit reached (${importLimit}). Delete an import or pay for a new import.`
+        : 'Import limit reached. Delete an import or pay for a new import.',
     );
     return false;
+  };
+
+  const confirmPay = async (quote: { amountUzs: number; estimatedPages: number; tier: { label: string } | null }) => {
+    const { formatUzs } = await import('../lib/importBilling');
+    return window.confirm(
+      `This import is ~${quote.estimatedPages} pages (${quote.tier?.label ?? 'custom'}).\n` +
+        `Pay ${formatUzs(quote.amountUzs)} via Atmos to continue?`,
+    );
   };
 
   const handleUrlImport = async (data: { url: string; title: string; lang: string }) => {
     if (!guardLimit()) return;
     setLoading(true);
     try {
+      const { quoteImport, checkoutImport, savePendingImport } = await import('../lib/importBilling');
+      const quote = await quoteImport({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+      let paymentId: string | null = null;
+      if (quote.gatewayEnabled) {
+        if (quote.requiresPayment && !(await confirmPay(quote))) {
+          throw new Error('Payment cancelled');
+        }
+        const checkout = await checkoutImport({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+        paymentId = checkout.paymentId;
+        if (checkout.paymentUrl) {
+          savePendingImport({
+            kind: 'url',
+            paymentId: checkout.paymentId,
+            url: data.url,
+            title: data.title,
+            lang: data.lang,
+          });
+          window.location.href = checkout.paymentUrl;
+          return;
+        }
+      }
       const item = await api<ImportItem>('/imports/url', {
         method: 'POST',
-        body: JSON.stringify({ url: data.url, language: data.lang, title: data.title || undefined }),
+        body: JSON.stringify({
+          url: data.url,
+          language: data.lang,
+          title: data.title || undefined,
+          ...(paymentId ? { paymentId } : {}),
+        }),
       });
       toastReady(item);
       await load(1);
@@ -459,9 +502,46 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
+      const { quoteImport, checkoutImport, savePendingImport, wordCountOf } = await import('../lib/importBilling');
+      const words = wordCountOf(data.text);
+      const quote = await quoteImport({
+        importType: 'paste',
+        contentFormat: 'article',
+        textLength: data.text.length,
+        wordCount: words,
+      });
+      let paymentId: string | null = null;
+      if (quote.gatewayEnabled) {
+        if (quote.requiresPayment && !(await confirmPay(quote))) {
+          throw new Error('Payment cancelled');
+        }
+        const checkout = await checkoutImport({
+          importType: 'paste',
+          contentFormat: 'article',
+          textLength: data.text.length,
+          wordCount: words,
+        });
+        paymentId = checkout.paymentId;
+        if (checkout.paymentUrl) {
+          savePendingImport({
+            kind: 'paste',
+            paymentId: checkout.paymentId,
+            title: data.title,
+            text: data.text,
+            lang: data.lang,
+          });
+          window.location.href = checkout.paymentUrl;
+          return;
+        }
+      }
       const item = await api<ImportItem>('/imports/paste', {
         method: 'POST',
-        body: JSON.stringify({ title: data.title, text: data.text, language: data.lang }),
+        body: JSON.stringify({
+          title: data.title,
+          text: data.text,
+          language: data.lang,
+          ...(paymentId ? { paymentId } : {}),
+        }),
       });
       toastReady(item);
       await load(1);
@@ -476,10 +556,64 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
+      const { quoteImport, checkoutImport, savePendingImport } = await import('../lib/importBilling');
+      const isEpub = data.file.name.toLowerCase().endsWith('.epub');
+      const importType = isEpub ? 'epub' : 'pdf';
+      // Rough page estimate from size until server OCR reports real pages (~50KB/page).
+      const pageCount = Math.max(1, Math.min(500, Math.ceil(data.file.size / 50_000)));
+      const quote = await quoteImport({
+        importType,
+        contentFormat: 'ebook',
+        pageCount,
+      });
+      let paymentId: string | null = null;
+      if (quote.gatewayEnabled) {
+        if (quote.requiresPayment && !(await confirmPay(quote))) {
+          throw new Error('Payment cancelled');
+        }
+        const checkout = await checkoutImport({
+          importType,
+          contentFormat: 'ebook',
+          pageCount,
+        });
+        paymentId = checkout.paymentId;
+        if (checkout.paymentUrl) {
+          const MAX_INLINE = 1.5 * 1024 * 1024;
+          if (data.file.size <= MAX_INLINE) {
+            const buf = await data.file.arrayBuffer();
+            const bytes = new Uint8Array(buf);
+            let binary = '';
+            for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+            savePendingImport({
+              kind: 'file',
+              paymentId: checkout.paymentId,
+              fileName: data.file.name,
+              fileType: data.file.type,
+              fileBase64: btoa(binary),
+              title: data.title,
+              lang: data.lang,
+            });
+          } else {
+            savePendingImport({
+              kind: 'file',
+              paymentId: checkout.paymentId,
+              fileName: data.file.name,
+              fileType: data.file.type,
+              title: data.title,
+              lang: data.lang,
+              needsReupload: true,
+            });
+            sessionStorage.setItem('gotcha_paid_payment_id', checkout.paymentId);
+          }
+          window.location.href = checkout.paymentUrl;
+          return;
+        }
+      }
       const form = new FormData();
       form.append('file', data.file);
       form.append('language', data.lang);
       if (data.title.trim()) form.append('title', data.title.trim());
+      if (paymentId) form.append('paymentId', paymentId);
       const item = await api<ImportItem>('/imports/file', {
         method: 'POST',
         body: form,
@@ -543,10 +677,17 @@ export default function ImportPage() {
               <div className="flex items-start gap-2 p-3 mb-4 bg-[#fffbeb] border border-[#fee685] rounded-[14px]">
                 <AlertCircle className="w-4 h-4 text-[#bb4d00] shrink-0 mt-0.5" />
                 <p className="text-xs text-[#bb4d00]">
-                  Free plan limit reached ({importLimit ?? total} imports). Delete one from history or upgrade to Premium for more.
+                  {gatewayEnabled
+                    ? 'Import allowance reached. Delete an old import or pay per material size via Atmos.'
+                    : 'Import allowance reached. Delete an old import to free up space — paid imports are not available right now.'}
                 </p>
               </div>
             )}
+            <p className="text-[11px] text-[#99a1af] mb-3">
+              {gatewayEnabled
+                ? 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/monthly allowances still apply when enabled.'
+                : 'Imports are free right now — paid imports via Atmos are currently disabled. Free daily/monthly allowances still apply when enabled.'}
+            </p>
             {tab === 'url' && <URLForm loading={loading || atImportLimit} onSubmit={handleUrlImport} />}
             {tab === 'paste' && <PasteForm loading={loading || atImportLimit} onSubmit={handlePasteImport} />}
             {tab === 'pdf' && <FileForm loading={loading || atImportLimit} onSubmit={handleFileImport} />}
@@ -597,8 +738,19 @@ export default function ImportPage() {
                           {!!item.content?.wordCount && item.content.wordCount > 0 && (
                             <span className="text-xs text-[#99a1af]">{formatWordCount(item.content.wordCount)}</span>
                           )}
+                          {isPendingStatus(item.ingestionStatus) &&
+                            item.progressPagesTotal != null &&
+                            item.progressPagesTotal > 0 && (
+                              <span className="text-xs text-[#1447e6] tabular-nums">
+                                {Math.min(item.progressPagesDone ?? 0, item.progressPagesTotal)} /{' '}
+                                {item.progressPagesTotal} pages
+                              </span>
+                            )}
                           {item.ingestionStatus === 'failed' && item.errorMessage && (
                             <span className="text-xs text-[#fb2c36] truncate max-w-full">{item.errorMessage}</span>
+                          )}
+                          {item.ingestionStatus === 'ready' && item.errorMessage && (
+                            <span className="text-xs text-amber-600 truncate max-w-full">{item.errorMessage}</span>
                           )}
                         </div>
                       </div>

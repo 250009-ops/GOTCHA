@@ -106,7 +106,7 @@ try {
   await sshExec(conn, `mkdir -p ${APP_DIR} /tmp/gotcha-upload`);
   await uploadFile(conn, tarPath, `/tmp/gotcha-upload/${tarName}`);
 
-  console.log('==> Extract + install');
+  console.log('==> Extract archive');
   await sshExec(
     conn,
     [
@@ -115,9 +115,24 @@ try {
       `if [ -d ${APP_DIR}/services ]; then mv ${APP_DIR} ${APP_DIR}.prev; fi`,
       `mkdir -p ${APP_DIR}`,
       `tar -xzf /tmp/gotcha-upload/${tarName} -C ${APP_DIR}`,
+      `mkdir -p ${APP_DIR}/deploy`,
       `chmod +x ${APP_DIR}/deploy/install.sh ${APP_DIR}/deploy/update.sh`,
       // keep previous uploads if any
       `if [ -d ${APP_DIR}.prev/uploads ]; then cp -a ${APP_DIR}.prev/uploads ${APP_DIR}/; fi`,
+    ].join(' && '),
+    120_000,
+  );
+
+  // Windows tar --exclude=.env also drops deploy/.env; upload secrets explicitly.
+  console.log('==> Upload deploy/.env');
+  await uploadFile(conn, path.join(root, 'deploy/.env'), `${APP_DIR}/deploy/.env`);
+  await sshExec(conn, `chmod 600 ${APP_DIR}/deploy/.env`);
+
+  console.log('==> Install');
+  await sshExec(
+    conn,
+    [
+      `set -e`,
       `export VPS_APP_DIR=${APP_DIR} DOMAIN=${DOMAIN}`,
       `bash ${APP_DIR}/deploy/install.sh`,
     ].join(' && '),

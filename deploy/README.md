@@ -31,3 +31,11 @@ npm run deploy:vps:env
 ```
 
 `deploy/.env` is gitignored. Root `.env` stays for local dev; VPS placeholders live at the bottom.
+
+## Atmos payments
+
+See [docs/ATMOS.md](../docs/ATMOS.md) for callback/success URLs, env vars, and go-live checklist.
+
+- Callback: `https://DOMAIN/api/v1/billing/atmos/webhook`
+- Success: `https://DOMAIN/learn/app/import/payment-return`
+- Keep `PAYMENT_GATEWAY_ENABLED=false` until sandbox E2E succeeds, then set `true` and `IMPORTS_UNLIMITED=false`.

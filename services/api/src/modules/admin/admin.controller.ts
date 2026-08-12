@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -13,6 +14,7 @@ import { AdminRole, LicenseStatus, ModerationStatus, PublishStatus } from '@pris
 import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
+import { UpdateAdminProfileDto } from './dto/admin.dto';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -26,6 +28,13 @@ export class AdminController {
     return this.admin.me(user.sub);
   }
 
+  /** Admin self-service profile update (own display name / email). See users.controller.ts's PATCH /users/me for the learner equivalent. */
+  @Patch('me')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor, AdminRole.moderator)
+  updateMe(@CurrentUser() user: AuthUserPayload, @Body() dto: UpdateAdminProfileDto) {
+    return this.admin.updateMe(user.sub, dto);
+  }
+
   @Get('dashboard')
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
   dashboard() {
@@ -34,14 +43,45 @@ export class AdminController {
 
   @Get('users')
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.moderator)
-  users(@Query('q') q?: string, @Query('tier') tier?: string) {
-    return this.admin.listUsers(q, tier);
+  users(
+    @Query('q') q?: string,
+    @Query('tier') tier?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.admin.listUsers(q, tier, status);
+  }
+
+  @Get('users/:id')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.moderator)
+  getUser(@Param('id') id: string) {
+    return this.admin.getUser(id);
   }
 
   @Patch('users/:id')
   @Roles(AdminRole.superadmin)
-  updateUser(@Param('id') id: string, @Body() body: { displayName?: string; deleted?: boolean }) {
+  updateUser(
+    @Param('id') id: string,
+    @Body() body: { displayName?: string; deleted?: boolean; tier?: string },
+  ) {
     return this.admin.updateUser(id, body);
+  }
+
+  @Post('users/:id/reset-password')
+  @Roles(AdminRole.superadmin)
+  resetUserPassword(@Param('id') id: string) {
+    return this.admin.resetUserPassword(id);
+  }
+
+  @Post('users/:id/adjust-tier')
+  @Roles(AdminRole.superadmin)
+  adjustUserTier(@Param('id') id: string, @Body() body: { tier?: string }) {
+    return this.admin.adjustUserTier(id, String(body.tier ?? ''));
+  }
+
+  @Delete('users/:id')
+  @Roles(AdminRole.superadmin)
+  hardDeleteUser(@Param('id') id: string) {
+    return this.admin.hardDeleteUser(id);
   }
 
   @Get('content')
@@ -62,10 +102,28 @@ export class AdminController {
     return this.admin.contentStats();
   }
 
+  @Get('content/pricing-rules')
+  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  catalogPricingRules() {
+    return this.admin.getCatalogPricingRules();
+  }
+
+  @Patch('content/pricing-rules')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updateCatalogPricingRules(@Body() body: Record<string, unknown>) {
+    return this.admin.updateCatalogPricingRules(body);
+  }
+
   @Post('content')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   createContent(@CurrentUser() user: AuthUserPayload, @Body() body: Record<string, unknown>) {
     return this.admin.createContent(user.sub, body);
+  }
+
+  @Patch('content/:id')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updateContent(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.admin.updateContent(id, body);
   }
 
   @Patch('content/:id/publish')
@@ -124,6 +182,36 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.analyst)
   subscriptions(@Query('range') range?: string) {
     return this.admin.subscriptions(range);
+  }
+
+  @Get('import-pricing')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
+  importPricing(@Query('range') range?: string) {
+    return this.admin.importPricing(range);
+  }
+
+  @Patch('import-pricing/rules')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updateImportPricingRules(@Body() body: { rules?: Array<Record<string, unknown>> }) {
+    return this.admin.updateImportPricingRules(body);
+  }
+
+  @Patch('import-pricing/tiers/:id')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updateImportPageTier(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.admin.updateImportPageTier(id, body);
+  }
+
+  @Get('import-pricing/limits')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
+  importFreeLimits() {
+    return this.admin.getImportFreeLimits();
+  }
+
+  @Patch('import-pricing/limits')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updateImportFreeLimits(@Body() body: Record<string, unknown>) {
+    return this.admin.updateImportFreeLimits(body);
   }
 
   @Get('ai-usage')

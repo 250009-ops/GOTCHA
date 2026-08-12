@@ -7,28 +7,34 @@ import {
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { ContentSource, ContentType, ImportType, PublishStatus } from '@prisma/client';
+import { ContentSource, ContentType, ImportType, ModerationStatus, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
+import { ImportCommerceService } from '../billing/import-commerce.service';
+import { AiService } from '../ai/ai.service';
 import { tokenizeText, slugify, paginateText } from '../../utils/tokenizer';
 import { ImportFileDto, ImportPasteDto, ImportUrlDto } from './dto/imports.dto';
 import {
   assertMaxChars,
   assertMinWords,
+  countWords,
   ExtractedChapter,
   extractTextFromEpub,
   extractTextFromPdf,
   extractTextFromUrl,
   formatFileSizeLimit,
+  ImportProgress,
   MAX_FILE_BYTES,
   MIN_IMPORT_WORDS,
   splitTextIntoChapters,
   titleFromUrl,
 } from './extract-text';
+import { ImportCleanupSource, isImportAiCleanupEnabled } from './import-ai-cleanup';
 import { preparePastedText } from './import-text-cleaner';
 
 /** Above this size, finish processing in the background so the client can poll status. */
 const ASYNC_PASTE_CHARS = 40_000;
+/** Large EPUBs finish in background; PDFs always async (OCR / many pages). */
 const ASYNC_FILE_BYTES = 5 * 1024 * 1024;
 
 @Injectable()
@@ -38,7 +44,18 @@ export class ImportsService {
   constructor(
     private prisma: PrismaService,
     private limits: LimitsService,
+    private importCommerce: ImportCommerceService,
+    private ai: AiService,
   ) {}
+
+  private async requirePaymentIfNeeded(
+    userId: string,
+    paymentId: string | undefined,
+    importType: ImportType,
+  ) {
+    const payment = await this.importCommerce.consumePayment(userId, paymentId, importType);
+    return payment;
+  }
 
   private uploadsRoot() {
     return process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
@@ -98,8 +115,30 @@ export class ImportsService {
     return { id, deleted: true };
   }
 
+  /**
+   * Reads the admin-configured moderation settings (`/admin/settings`) so import behavior
+   * actually reflects them — previously these toggles were persisted but never read
+   * anywhere outside the settings page itself (see docs/E2E_AUDIT_REPORT.md).
+   * Defaults mirror admin.service.ts's `settings()` defaults.
+   */
+  private async getModerationSettings() {
+    const rows = await this.prisma.platformSetting.findMany({
+      where: { key: { in: ['contentModerationEnabled', 'autoApproveImports'] } },
+    });
+    const map: Record<string, unknown> = {};
+    for (const row of rows) map[row.key] = row.value;
+
+    const contentModerationEnabled =
+      map.contentModerationEnabled !== undefined ? Boolean(map.contentModerationEnabled) : true;
+    const autoApproveImports =
+      map.autoApproveImports !== undefined ? Boolean(map.autoApproveImports) : false;
+
+    return { contentModerationEnabled, autoApproveImports };
+  }
+
   async importPaste(userId: string, dto: ImportPasteDto) {
     await this.limits.assertImportAllowed(userId);
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste);
 
     try {
       assertMaxChars(dto.text, 'Pasted text');
@@ -125,10 +164,18 @@ export class ImportsService {
         ingestionStatus: 'processing',
       },
     });
+    if (payment) await this.importCommerce.attachUserImport(payment.id, userImport.id);
 
     const run = async () => {
       const chapters = splitTextIntoChapters(text, title);
-      const content = await this.createImportContent(userId, title, chapters, dto.language);
+      const content = await this.createImportContent(
+        userId,
+        title,
+        chapters,
+        dto.language,
+        undefined,
+        userImport.id,
+      );
       return this.prisma.userImport.update({
         where: { id: userImport.id },
         data: {
@@ -159,6 +206,7 @@ export class ImportsService {
    */
   async importUrl(userId: string, dto: ImportUrlDto) {
     await this.limits.assertImportAllowed(userId);
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.url);
 
     const title = (dto.title?.trim() || titleFromUrl(dto.url)).slice(0, 200);
     const userImport = await this.prisma.userImport.create({
@@ -171,6 +219,7 @@ export class ImportsService {
         ingestionStatus: 'processing',
       },
     });
+    if (payment) await this.importCommerce.attachUserImport(payment.id, userImport.id);
 
     const job = await this.prisma.ingestionJob.create({
       data: {
@@ -181,16 +230,23 @@ export class ImportsService {
       },
     });
 
-    try {
+    const run = async () => {
       const extracted = await extractTextFromUrl(dto.url);
       assertMinWords(extracted.text, 'text from URL');
       const finalTitle = (dto.title?.trim() || extracted.detectedTitle || title).slice(0, 200);
+      const chapters = await this.aiCleanChapters(
+        extracted.chapters,
+        'url',
+        finalTitle,
+        userId,
+      );
       const content = await this.createImportContent(
         userId,
         finalTitle,
-        extracted.chapters,
+        chapters,
         dto.language,
         dto.url,
+        userImport.id,
       );
 
       await this.prisma.ingestionJob.update({
@@ -207,6 +263,19 @@ export class ImportsService {
         },
         include: { content: true },
       });
+    };
+
+    // AI cleanup can exceed reverse-proxy timeouts — finish in background when enabled.
+    if (isImportAiCleanupEnabled() && Boolean(process.env.OPENAI_API_KEY?.trim())) {
+      void this.finishInBackground(userImport.id, job.id, run);
+      return this.prisma.userImport.findUniqueOrThrow({
+        where: { id: userImport.id },
+        include: { content: true },
+      });
+    }
+
+    try {
+      return await run();
     } catch (err) {
       return this.markFailed(userImport.id, job.id, err, 'URL import failed');
     }
@@ -236,6 +305,7 @@ export class ImportsService {
     }
 
     const importType = isPdf ? ImportType.pdf : ImportType.epub;
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';
     const title =
       (dto.title?.trim() ||
@@ -257,6 +327,7 @@ export class ImportsService {
         ingestionStatus: 'processing',
       },
     });
+    if (payment) await this.importCommerce.attachUserImport(payment.id, userImport.id);
 
     const job = await this.prisma.ingestionJob.create({
       data: {
@@ -268,12 +339,29 @@ export class ImportsService {
     });
 
     const buffer = file.buffer;
+    const onProgress = (progress: ImportProgress) =>
+      this.updateImportProgress(userImport.id, progress);
+
     const run = async () => {
       const extracted = isPdf
-        ? await extractTextFromPdf(buffer)
+        ? await extractTextFromPdf(buffer, { onProgress, language: dto.language })
         : await extractTextFromEpub(buffer);
-      assertMinWords(extracted.text, isPdf ? 'text from PDF' : 'text from EPUB');
-      const content = await this.createImportContent(userId, title, extracted.chapters, dto.language);
+      const sourceLabel = isPdf ? 'text from PDF' : 'text from EPUB';
+      assertMinWords(extracted.text, sourceLabel);
+      const chapters = await this.aiCleanChapters(
+        extracted.chapters,
+        isPdf ? 'pdf' : 'epub',
+        title,
+        userId,
+      );
+      const content = await this.createImportContent(
+        userId,
+        title,
+        chapters,
+        dto.language,
+        undefined,
+        userImport.id,
+      );
 
       await this.prisma.ingestionJob.update({
         where: { id: job.id },
@@ -285,21 +373,24 @@ export class ImportsService {
         data: {
           ingestionStatus: 'ready',
           contentId: content.id,
+          progressPagesDone: extracted.pageCount ?? null,
+          progressPagesTotal: extracted.pageCount ?? null,
+          errorMessage: extracted.truncatedPages
+            ? `Imported first 500 pages (document has more pages).`
+            : null,
         },
         include: { content: true },
       });
     };
 
-    // Large PDFs / OCR can take a while — return processing and finish in background.
-    if (file.size >= ASYNC_FILE_BYTES || isPdf) {
-      // Still sync for small text PDFs; only async when large or we expect OCR cost.
-      if (file.size >= ASYNC_FILE_BYTES) {
-        void this.finishInBackground(userImport.id, job.id, run);
-        return this.prisma.userImport.findUniqueOrThrow({
-          where: { id: userImport.id },
-          include: { content: true },
-        });
-      }
+    // PDFs always async (multi-page extract / OCR must not block the HTTP request).
+    // Large EPUBs also finish in the background.
+    if (isPdf || file.size >= ASYNC_FILE_BYTES) {
+      void this.finishInBackground(userImport.id, job.id, run);
+      return this.prisma.userImport.findUniqueOrThrow({
+        where: { id: userImport.id },
+        include: { content: true },
+      });
     }
 
     try {
@@ -307,6 +398,52 @@ export class ImportsService {
     } catch (err) {
       return this.markFailed(userImport.id, job.id, err, 'File import failed');
     }
+  }
+
+  /**
+   * AI post-extract cleanup for URL/PDF/EPUB. Always returns usable chapters
+   * (falls back to the deterministic extract when AI is off, fails, or over-trims).
+   */
+  private async aiCleanChapters(
+    chapters: ExtractedChapter[],
+    source: ImportCleanupSource,
+    documentTitle: string,
+    userId: string,
+  ): Promise<ExtractedChapter[]> {
+    try {
+      const cleaned = await this.ai.cleanImportChapters(chapters, {
+        source,
+        documentTitle,
+        userId,
+      });
+      const words = countWords(cleaned.map((c) => c.text).join('\n\n'));
+      if (words < MIN_IMPORT_WORDS) {
+        this.logger.warn(
+          `Import AI cleanup left ${words} words — keeping original extract`,
+        );
+        return chapters;
+      }
+      return cleaned;
+    } catch (err) {
+      this.logger.warn(
+        `Import AI cleanup unexpected error — using original extract: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return chapters;
+    }
+  }
+
+  private async updateImportProgress(importId: string, progress: ImportProgress) {
+    await this.prisma.userImport
+      .update({
+        where: { id: importId },
+        data: {
+          progressPagesDone: progress.pagesDone,
+          progressPagesTotal: progress.pagesTotal,
+        },
+      })
+      .catch(() => undefined);
   }
 
   private finishInBackground(
@@ -348,6 +485,7 @@ export class ImportsService {
     chaptersOrText: ExtractedChapter[] | string,
     language?: string | null,
     sourceUrl?: string | null,
+    userImportId?: string,
   ) {
     const chapters: ExtractedChapter[] =
       typeof chaptersOrText === 'string'
@@ -405,7 +543,12 @@ export class ImportsService {
     const slugBase = slugify(title) || 'import';
     const slug = `${slugBase}-${Date.now()}`;
 
-    return this.prisma.contentItem.create({
+    // Gate publication on the admin's moderation settings (previously always published
+    // instantly and globally regardless of these settings — see docs/E2E_AUDIT_REPORT.md).
+    const { contentModerationEnabled, autoApproveImports } = await this.getModerationSettings();
+    const autoApprove = !contentModerationEnabled || autoApproveImports;
+
+    const content = await this.prisma.contentItem.create({
       data: {
         slug,
         title,
@@ -415,8 +558,8 @@ export class ImportsService {
         cefrLevel: 'b1',
         wordCount: totalWordCount,
         uniqueWordCount: allLemmas.size,
-        publishStatus: PublishStatus.published,
-        publishedAt: new Date(),
+        publishStatus: autoApprove ? PublishStatus.published : PublishStatus.review,
+        publishedAt: autoApprove ? new Date() : null,
         createdById: userId,
         sourceUrl: sourceUrl ?? undefined,
         segments: {
@@ -425,5 +568,18 @@ export class ImportsService {
       },
       include: { segments: true },
     });
+
+    if (!autoApprove) {
+      await this.prisma.moderationQueue.create({
+        data: {
+          importId: userImportId,
+          contentId: content.id,
+          reason: 'User-submitted import pending moderation review.',
+          status: ModerationStatus.pending,
+        },
+      });
+    }
+
+    return content;
   }
 }

@@ -2,8 +2,10 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import AuthPage from './pages/AuthPage';
 import ImportPage from './pages/ImportPage';
+import ImportPaymentReturnPage from './pages/ImportPaymentReturnPage';
 import LearnerShell from './pages/LearnerShell';
 import LibraryPage from './pages/LibraryPage';
+import PracticePage from './pages/PracticePage';
 import ReaderPage from './pages/ReaderPage';
 import SettingsPage from './pages/SettingsPage';
 import StatsPage from './pages/StatsPage';
@@ -33,6 +35,7 @@ export default function App() {
         <Route path="browse" element={<LibraryPage />} />
         <Route path="vocabulary" element={<VocabularyPage />} />
         <Route path="import" element={<ImportPage />} />
+        <Route path="import/payment-return" element={<ImportPaymentReturnPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
@@ -41,6 +44,14 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ReaderPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/app/practice"
+        element={
+          <ProtectedRoute>
+            <PracticePage />
           </ProtectedRoute>
         }
       />

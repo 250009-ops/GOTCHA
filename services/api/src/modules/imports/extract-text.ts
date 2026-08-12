@@ -12,19 +12,43 @@ import {
 } from './import-text-cleaner';
 
 export const MIN_IMPORT_WORDS = 50;
-/** Paste / extracted text hard cap — reject only above this with a clear error. */
-export const MAX_IMPORT_CHARS = 500_000;
+/** Paste / extracted text hard cap — sized for ~500 pages of dense text. */
+export const MAX_IMPORT_CHARS = 5_000_000;
 /** Soft cap for a single extracted document before chapter packing. */
-export const MAX_EXTRACTED_CHARS = 500_000;
-export const MAX_FILE_BYTES = 40 * 1024 * 1024;
-/** OCR only the first N pages of scanned PDFs (keeps sync path practical). */
-export const OCR_MAX_PAGES = 8;
-/** Trigger OCR when extracted text is thinner than this many words per page on average. */
+export const MAX_EXTRACTED_CHARS = 5_000_000;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
+/** Hard page ceiling for PDF extract + OCR (memory / time guard). */
+export const MAX_PDF_PAGES = 500;
+/** Browser-like UA; Wikimedia requires a descriptive UA with contact. */
+const IMPORT_USER_AGENT =
+  'GotchaImporter/2.1 (+https://gotcha.app; contact=imports@gotcha.app) Mozilla/5.0 (compatible; AppleWebKit/537.36; Chrome/122.0.0.0 Safari/537.36)';
+/** Max pages that may be OCR'd (aligned with MAX_PDF_PAGES). */
+export const OCR_MAX_PAGES = MAX_PDF_PAGES;
+/** OCR pages in batches to bound peak memory (screenshots + tesseract). */
+export const OCR_BATCH_SIZE = 15;
+/** Render scale for OCR (~144 DPI at 2.0 × 72). Higher = better Latin accuracy, more RAM. */
+export const OCR_RENDER_SCALE = 2;
+/** Per-page: OCR when the text layer has fewer than this many words. */
+export const OCR_PAGE_MIN_WORDS = 15;
+/** Document-level: also consider OCR when average words/page is below this. */
 export const OCR_WORDS_PER_PAGE_THRESHOLD = 15;
+/** Group consecutive PDF pages into reader chapters for large docs. */
+export const PDF_CHAPTER_PAGE_GROUP = 10;
 
 export interface ExtractedChapter {
   title: string;
   text: string;
+}
+
+export interface ImportProgress {
+  pagesDone: number;
+  pagesTotal: number;
+}
+
+export interface ExtractPdfOptions {
+  onProgress?: (progress: ImportProgress) => void | Promise<void>;
+  /** App language hint — English gets best OCR; RU uses rus; UZ falls back to eng. */
+  language?: string | null;
 }
 
 export interface ExtractedDocument {
@@ -33,6 +57,7 @@ export interface ExtractedDocument {
   detectedTitle?: string;
   usedOcr?: boolean;
   pageCount?: number;
+  truncatedPages?: boolean;
 }
 
 export function countWords(text: string): number {
@@ -169,7 +194,82 @@ function chaptersToDocument(
   return { text, chapters: capped.length ? capped : [{ title: 'Imported text', text }], detectedTitle, ...extras };
 }
 
+/** Content-root selectors (not body) — Weebly/Wix-style sites often split articles across sections. */
+const MAIN_CONTENT_SELECTORS = [
+  '#wsite-content',
+  '#main-wrap',
+  'article',
+  'main',
+  '[role="main"]',
+  '.mw-parser-output',
+  '.post-content',
+  '.entry-content',
+  '.article-body',
+  '.article-content',
+  '#content',
+  '#mw-content-text',
+  '.content-area',
+  '.page-content',
+];
+
+type CheerioAPI = ReturnType<typeof cheerio.load>;
+
+function pageTitleFromHtml($: CheerioAPI): string | undefined {
+  return (
+    $('meta[property="og:title"]').attr('content')?.trim() ||
+    $('title').first().text().replace(/\s+/g, ' ').trim() ||
+    undefined
+  );
+}
+
+/** True when `longer` substantially continues the same article as `shorter` (Readability truncated). */
+function looksLikeExtendedArticle(shorter: string, longer: string): boolean {
+  const shortWords = countWords(shorter);
+  const longWords = countWords(longer);
+  if (shortWords < MIN_IMPORT_WORDS || longWords < shortWords * 1.2) return false;
+
+  const normalize = (t: string) =>
+    t
+      .toLowerCase()
+      .replace(/[^\p{L}\p{M}\p{N}\s]+/gu, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  const a = normalize(shorter);
+  const b = normalize(longer);
+  if (!a || !b || b.length < a.length) return false;
+
+  // Prefer a mid-article fingerprint so shared nav chrome at the start does not fake a match.
+  const probeLen = Math.min(180, Math.floor(a.length * 0.35));
+  const probeStart = Math.min(Math.floor(a.length * 0.25), Math.max(0, a.length - probeLen));
+  const probe = a.slice(probeStart, probeStart + probeLen).trim();
+  if (probe.length < 40) return b.includes(a.slice(0, Math.min(120, a.length)));
+  return b.includes(probe);
+}
+
+function extractFromContentRoots(
+  html: string,
+): { text: string; title?: string; words: number } | null {
+  const $ = cheerio.load(html);
+  const title = pageTitleFromHtml($);
+  let best: { text: string; words: number } | null = null;
+
+  for (const sel of MAIN_CONTENT_SELECTORS) {
+    const node = $(sel).first();
+    if (!node.length) continue;
+    const fragment = node.html();
+    if (!fragment) continue;
+    const text = htmlToCleanText(fragment);
+    const words = countWords(text);
+    if (words < MIN_IMPORT_WORDS) continue;
+    if (!best || words > best.words) best = { text, words };
+  }
+
+  if (!best) return null;
+  return { text: best.text, title, words: best.words };
+}
+
 function htmlToReadable(html: string, url: string): { text: string; title?: string } {
+  let readability: { text: string; title?: string; words: number } | null = null;
   try {
     const dom = new JSDOM(html, { url });
     const reader = new Readability(dom.window.document);
@@ -177,10 +277,12 @@ function htmlToReadable(html: string, url: string): { text: string; title?: stri
     // Prefer Readability's HTML fragment so tables/images can be converted properly.
     if (article?.content && countWords(article.textContent || '') >= MIN_IMPORT_WORDS) {
       const text = htmlToCleanText(article.content);
-      if (countWords(text) >= MIN_IMPORT_WORDS) {
-        return {
+      const words = countWords(text);
+      if (words >= MIN_IMPORT_WORDS) {
+        readability = {
           text,
           title: article.title?.trim() || undefined,
+          words,
         };
       }
     }
@@ -188,19 +290,33 @@ function htmlToReadable(html: string, url: string): { text: string; title?: stri
     // fall through to cheerio path
   }
 
+  const fromRoot = extractFromContentRoots(html);
+
+  // Readability often stops early on multi-section builders (Weebly parallax breaks, etc.).
+  // Prefer a known content root when it clearly continues the same article further.
+  if (
+    readability &&
+    fromRoot &&
+    fromRoot.words > readability.words * 1.2 &&
+    looksLikeExtendedArticle(readability.text, fromRoot.text)
+  ) {
+    return {
+      text: fromRoot.text,
+      title: readability.title || fromRoot.title,
+    };
+  }
+
+  if (readability) {
+    return { text: readability.text, title: readability.title };
+  }
+
+  if (fromRoot) {
+    return { text: fromRoot.text, title: fromRoot.title };
+  }
+
   const $ = cheerio.load(html);
-  const title =
-    $('meta[property="og:title"]').attr('content')?.trim() ||
-    $('title').first().text().replace(/\s+/g, ' ').trim() ||
-    undefined;
-  const mainHtml =
-    $('article').html() ||
-    $('main').html() ||
-    $('[role="main"]').html() ||
-    $('.mw-parser-output').html() ||
-    $('.post-content, .entry-content, .article-body, #content, #mw-content-text').first().html() ||
-    $('body').html() ||
-    html;
+  const title = pageTitleFromHtml($);
+  const mainHtml = $('body').html() || html;
   return { text: htmlToCleanText(mainHtml), title };
 }
 
@@ -225,18 +341,133 @@ function mapFetchError(err: unknown, status?: number): Error {
   return new Error(message || 'URL import failed');
 }
 
+function fetchHeaders(accept: string): Record<string, string> {
+  return {
+    'User-Agent': IMPORT_USER_AGENT,
+    Accept: accept,
+    'Accept-Language': 'en-US,en;q=0.9',
+    'Accept-Encoding': 'gzip, deflate, br',
+  };
+}
+
+/** Normalize mobile / http Wikipedia URLs and extract API origin + article title. */
+export function parseWikipediaUrl(
+  url: string,
+): { apiOrigin: string; title: string; canonicalUrl: string } | null {
+  let u: URL;
+  try {
+    u = new URL(url.trim());
+  } catch {
+    return null;
+  }
+
+  const host = u.hostname.replace(/^www\./i, '').toLowerCase();
+  const mobile = host.match(/^([a-z0-9-]+)\.m\.wikipedia\.org$/i);
+  const desktop = host.match(/^([a-z0-9-]+)\.wikipedia\.org$/i);
+  const lang = (mobile?.[1] || desktop?.[1] || '').toLowerCase();
+  if (!lang || lang === 'm') return null;
+
+  let title = '';
+  if (u.pathname.startsWith('/wiki/')) {
+    title = decodeURIComponent(u.pathname.slice('/wiki/'.length));
+  } else if (/\/w\/index\.php$/i.test(u.pathname)) {
+    title = u.searchParams.get('title') || '';
+  }
+  title = title.replace(/_/g, ' ').trim();
+  if (!title || /^Special:/i.test(title) || /^File:/i.test(title)) return null;
+
+  const apiOrigin = `https://${lang}.wikipedia.org`;
+  const canonicalUrl = `${apiOrigin}/wiki/${encodeURIComponent(title.replace(/ /g, '_')).replace(/%3A/gi, ':')}`;
+  return { apiOrigin, title, canonicalUrl };
+}
+
+async function extractWikipediaViaApi(
+  parsed: { apiOrigin: string; title: string; canonicalUrl: string },
+): Promise<ExtractedDocument | null> {
+  const apiUrl =
+    `${parsed.apiOrigin}/w/api.php?` +
+    new URLSearchParams({
+      action: 'parse',
+      page: parsed.title,
+      prop: 'text|displaytitle',
+      formatversion: '2',
+      format: 'json',
+      redirects: '1',
+      disableeditsection: '1',
+      disabletoc: '1',
+    }).toString();
+
+  let response: Response;
+  try {
+    response = await fetch(apiUrl, {
+      headers: fetchHeaders('application/json'),
+      redirect: 'follow',
+      signal: AbortSignal.timeout(45_000),
+    });
+  } catch {
+    return null;
+  }
+
+  if (!response.ok) return null;
+
+  let payload: {
+    error?: { code?: string; info?: string };
+    parse?: { title?: string; displaytitle?: string; text?: string };
+  };
+  try {
+    payload = (await response.json()) as typeof payload;
+  } catch {
+    return null;
+  }
+
+  if (payload.error || !payload.parse?.text) {
+    return null;
+  }
+
+  const html = typeof payload.parse.text === 'string' ? payload.parse.text : '';
+  const displayTitle = (payload.parse.displaytitle || payload.parse.title || parsed.title)
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const safeTitle = displayTitle
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+
+  // Wrap fragment so cheerio / Readability see a full document.
+  const wrapped = `<!DOCTYPE html><html><head><title>${safeTitle}</title></head><body><div class="mw-parser-output">${html}</div></body></html>`;
+  const { text, title } = htmlToReadable(wrapped, parsed.canonicalUrl);
+  const cleaned = clampText(cleanImportPlainText(text));
+  if (countWords(cleaned) < MIN_IMPORT_WORDS) {
+    // Fallback: strip tags from the parse HTML directly.
+    const direct = clampText(cleanImportPlainText(htmlToCleanText(html)));
+    if (countWords(direct) < MIN_IMPORT_WORDS) return null;
+    const chapters = splitTextIntoChapters(direct, displayTitle);
+    return chaptersToDocument(chapters, displayTitle);
+  }
+
+  const chapters = splitTextIntoChapters(cleaned, title || displayTitle);
+  return chaptersToDocument(chapters, title || displayTitle);
+}
+
 export async function extractTextFromUrl(url: string): Promise<ExtractedDocument> {
+  const wiki = parseWikipediaUrl(url);
+  if (wiki) {
+    const fromApi = await extractWikipediaViaApi(wiki);
+    if (fromApi && countWords(fromApi.text) >= MIN_IMPORT_WORDS) {
+      return fromApi;
+    }
+    // Fall through to HTML fetch using the canonical desktop URL.
+    url = wiki.canonicalUrl;
+  }
+
   let response: Response;
   try {
     response = await fetch(url, {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (compatible; GotchaImporter/2.0; +https://gotcha.app) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
+      headers: fetchHeaders('text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8'),
       redirect: 'follow',
-      signal: AbortSignal.timeout(30_000),
+      signal: AbortSignal.timeout(45_000),
     });
   } catch (err) {
     throw mapFetchError(err);
@@ -248,6 +479,7 @@ export async function extractTextFromUrl(url: string): Promise<ExtractedDocument
 
   const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
   const body = await response.text();
+  const finalUrl = response.url || url;
 
   if (contentType.includes('text/plain') || /\.txt(\?|$)/i.test(url)) {
     const text = clampText(cleanImportPlainText(body));
@@ -255,54 +487,37 @@ export async function extractTextFromUrl(url: string): Promise<ExtractedDocument
     return chaptersToDocument(chapters, titleFromUrl(url));
   }
 
-  const { text, title } = htmlToReadable(body, url);
+  // If HTML fetch redirected onto Wikipedia, try the API once more with the final URL.
+  const wikiFinal = parseWikipediaUrl(finalUrl);
+  if (wikiFinal && !wiki) {
+    const fromApi = await extractWikipediaViaApi(wikiFinal);
+    if (fromApi && countWords(fromApi.text) >= MIN_IMPORT_WORDS) {
+      return fromApi;
+    }
+  }
+
+  const { text, title } = htmlToReadable(body, finalUrl);
   const cleaned = clampText(cleanImportPlainText(text));
   if (countWords(cleaned) < MIN_IMPORT_WORDS) {
     // Paywall / cookie walls often leave almost no article text.
     const lower = body.toLowerCase();
     if (
-      /subscribe|paywall|premium content|sign in to continue|create an account to read/i.test(lower) &&
+      /subscribe to (continue|read)|paywall|premium content|sign in to continue|create an account to read/i.test(
+        lower,
+      ) &&
       countWords(cleaned) < MIN_IMPORT_WORDS
     ) {
       throw new Error(
         'Could not extract readable article text — the page looks paywalled or login-gated.',
       );
     }
+    throw new Error(
+      `Need at least ${MIN_IMPORT_WORDS} words (found ${countWords(cleaned)}). The page may block extraction — try paste instead.`,
+    );
   }
 
-  const chapters = splitTextIntoChapters(cleaned, title || titleFromUrl(url));
-  return chaptersToDocument(chapters, title || titleFromUrl(url));
-}
-
-async function ocrPdfPages(buffer: Buffer, pageCount: number): Promise<string> {
-  const pagesToOcr = Math.min(pageCount || OCR_MAX_PAGES, OCR_MAX_PAGES);
-  const parser = new PDFParse({ data: buffer });
-  try {
-    const shots = await parser.getScreenshot({
-      first: pagesToOcr,
-      scale: 1.5,
-      imageBuffer: true,
-      imageDataUrl: false,
-    });
-
-    const { createWorker } = await import('tesseract.js');
-    const worker = await createWorker('eng');
-    try {
-      const parts: string[] = [];
-      for (const page of shots.pages) {
-        const data = page.data;
-        if (!data?.length) continue;
-        const result = await worker.recognize(Buffer.from(data));
-        const text = cleanPdfPageText(result.data.text || '');
-        if (text) parts.push(text);
-      }
-      return parts.join('\n\n');
-    } finally {
-      await worker.terminate().catch(() => undefined);
-    }
-  } finally {
-    await parser.destroy().catch(() => undefined);
-  }
+  const chapters = splitTextIntoChapters(cleaned, title || titleFromUrl(finalUrl));
+  return chaptersToDocument(chapters, title || titleFromUrl(finalUrl));
 }
 
 function isPasswordError(err: unknown): boolean {
@@ -312,14 +527,149 @@ function isPasswordError(err: unknown): boolean {
   return name === 'PasswordException' || /password/i.test(message);
 }
 
-export async function extractTextFromPdf(buffer: Buffer): Promise<ExtractedDocument> {
+/** Map app language to a tesseract traineddata code. Uzbek has no solid pack — use eng. */
+function tesseractLangFor(language?: string | null): { lang: string; note?: string } {
+  const code = (language || 'en').toLowerCase();
+  if (code === 'ru' || code === 'rus') {
+    return {
+      lang: 'rus+eng',
+      note: 'Russian OCR uses rus+eng; accuracy is lower than English text PDFs.',
+    };
+  }
+  if (code === 'uz' || code === 'uzb') {
+    return {
+      lang: 'eng',
+      note: 'Uzbek OCR is not well supported; English OCR is used and accuracy may be poor for Cyrillic/Latin UZ text.',
+    };
+  }
+  return { lang: 'eng' };
+}
+
+async function reportProgress(
+  onProgress: ExtractPdfOptions['onProgress'],
+  pagesDone: number,
+  pagesTotal: number,
+): Promise<void> {
+  if (!onProgress) return;
+  try {
+    await onProgress({ pagesDone, pagesTotal });
+  } catch {
+    // Progress updates must never fail the import.
+  }
+}
+
+/**
+ * OCR specific 1-based page numbers in batches. Prefer calling only for pages
+ * whose text layer is thin/empty. Keeps peak memory bounded via OCR_BATCH_SIZE.
+ */
+async function ocrPdfPageNumbers(
+  buffer: Buffer,
+  pageNumbers: number[],
+  options?: {
+    language?: string | null;
+    onBatchDone?: (completedInBatch: number) => void | Promise<void>;
+  },
+): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (pageNumbers.length === 0) return out;
+
+  const { lang } = tesseractLangFor(options?.language);
+  const { createWorker } = await import('tesseract.js');
+  // OEM 1 = LSTM only — better accuracy for modern Latin print than legacy engine.
+  const worker = await createWorker(lang, 1);
+  try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: '3' as never, // fully automatic page segmentation
+      user_defined_dpi: '144',
+    });
+
+    for (let i = 0; i < pageNumbers.length; i += OCR_BATCH_SIZE) {
+      const batch = pageNumbers.slice(i, i + OCR_BATCH_SIZE);
+      const parser = new PDFParse({ data: buffer });
+      try {
+        const shots = await parser.getScreenshot({
+          partial: batch,
+          scale: OCR_RENDER_SCALE,
+          imageBuffer: true,
+          imageDataUrl: false,
+        });
+
+        for (const page of shots.pages) {
+          const data = page.data;
+          const pageNum = page.pageNumber;
+          if (!data?.length || !pageNum) continue;
+          const result = await worker.recognize(Buffer.from(data));
+          const text = cleanPdfPageText(result.data.text || '');
+          if (text) out.set(pageNum, text);
+        }
+      } finally {
+        await parser.destroy().catch(() => undefined);
+      }
+
+      if (options?.onBatchDone) {
+        await options.onBatchDone(batch.length);
+      }
+    }
+  } finally {
+    await worker.terminate().catch(() => undefined);
+  }
+
+  return out;
+}
+
+/** Build chapter list from ordered page texts (page groups or heading split). */
+function chaptersFromPdfPages(pageTexts: string[], fallbackTitle = 'Imported PDF'): ExtractedChapter[] {
+  const nonEmpty = pageTexts
+    .map((t, i) => ({ page: i + 1, text: t.trim() }))
+    .filter((p) => p.text.length > 0);
+
+  if (nonEmpty.length === 0) {
+    return [];
+  }
+
+  if (nonEmpty.length === 1) {
+    const headed = splitTextIntoChapters(nonEmpty[0].text, fallbackTitle);
+    return headed;
+  }
+
+  // Prefer heading heuristics on the full stream when they find real structure.
+  const joined = nonEmpty.map((p) => p.text).join('\n\n');
+  const headed = splitTextIntoChapters(joined, fallbackTitle);
+  if (headed.length > 1 && headed.some((c) => countWords(c.text) >= 40)) {
+    return headed;
+  }
+
+  // Otherwise group consecutive pages for a usable TOC on large books.
+  const chapters: ExtractedChapter[] = [];
+  for (let i = 0; i < nonEmpty.length; i += PDF_CHAPTER_PAGE_GROUP) {
+    const slice = nonEmpty.slice(i, i + PDF_CHAPTER_PAGE_GROUP);
+    const start = slice[0].page;
+    const end = slice[slice.length - 1].page;
+    const title = start === end ? `Page ${start}` : `Pages ${start}–${end}`;
+    chapters.push({
+      title,
+      text: slice.map((p) => p.text).join('\n\n'),
+    });
+  }
+  return chapters;
+}
+
+export async function extractTextFromPdf(
+  buffer: Buffer,
+  options: ExtractPdfOptions = {},
+): Promise<ExtractedDocument> {
   let result: Awaited<ReturnType<PDFParse['getText']>>;
-  let pageCount = 0;
+  let fullPageCount = 0;
   const parser = new PDFParse({ data: buffer });
   try {
     try {
-      result = await parser.getText({ pageJoiner: '' });
-      pageCount = result.total || result.pages?.length || 0;
+      // Cap pages at MAX_PDF_PAGES during text extract when the API supports first/last.
+      result = await parser.getText({
+        pageJoiner: '',
+        first: 1,
+        last: MAX_PDF_PAGES,
+      });
+      fullPageCount = result.total || result.pages?.length || 0;
     } catch (err) {
       if (isPasswordError(err)) {
         throw new Error('This PDF is password-protected. Remove the password and try again.');
@@ -330,82 +680,109 @@ export async function extractTextFromPdf(buffer: Buffer): Promise<ExtractedDocum
     await parser.destroy().catch(() => undefined);
   }
 
-  const rawPages = (result.pages ?? []).map((p) => p.text || '');
+  // If getText ignored first/last, still slice in memory.
+  const allPages = result.pages ?? [];
+  const truncatedPages = allPages.length > MAX_PDF_PAGES || fullPageCount > MAX_PDF_PAGES;
+  const pages = allPages.slice(0, MAX_PDF_PAGES);
+  const pageCount = pages.length;
+  const pagesTotal = pageCount;
+
+  await reportProgress(options.onProgress, 0, pagesTotal || 1);
+
+  const rawPages = pages.map((p) => p.text || '');
   const cleanedPages = stripRepeatedPdfHeadersFooters(rawPages);
-  const pageChapters: ExtractedChapter[] = cleanedPages
-    .map((pageText, i) => ({
-      title: `Page ${(result.pages?.[i]?.num ?? i + 1)}`,
-      text: pageText,
-    }))
-    .filter((c) => c.text.length > 0);
 
-  let text = clampText(cleanImportPlainText(pageChapters.map((c) => c.text).join('\n\n')));
-  let usedOcr = false;
-  const words = countWords(text);
-  const wordsPerPage = pageCount > 0 ? words / pageCount : words;
+  // Per-page text layer first; decide OCR only where thin.
+  const pageTexts = cleanedPages.map((t) => cleanPdfPageText(t));
+  const pageWordCounts = pageTexts.map((t) => countWords(t));
+  const totalTextWords = pageWordCounts.reduce((a, b) => a + b, 0);
+  const wordsPerPage = pageCount > 0 ? totalTextWords / pageCount : totalTextWords;
 
-  if (words < MIN_IMPORT_WORDS || (pageCount > 0 && wordsPerPage < OCR_WORDS_PER_PAGE_THRESHOLD)) {
-    if (pageCount > OCR_MAX_PAGES && words < MIN_IMPORT_WORDS) {
-      // Attempt OCR on first pages; if still thin, give a clear large-scan message.
-      try {
-        const ocrText = await ocrPdfPages(buffer, pageCount);
-        const ocrWords = countWords(ocrText);
-        if (ocrWords >= MIN_IMPORT_WORDS) {
-          usedOcr = true;
-          text = clampText(ocrText);
-          const ocrPages = stripRepeatedPdfHeadersFooters(
-            ocrText.split(/\n\n+/).filter((t) => t.trim()),
-          );
-          const chapters = ocrPages
-            .map((t, i) => ({ title: `OCR page ${i + 1}`, text: t }))
-            .filter((c) => c.text);
-          return chaptersToDocument(
-            chapters.length ? chapters : [{ title: 'OCR text', text }],
-            undefined,
-            { usedOcr: true, pageCount },
-          );
-        }
-      } catch {
-        // fall through to message
-      }
-      throw new Error(
-        `This looks like a large scanned PDF (${pageCount} pages) with little extractable text. OCR is limited to the first ${OCR_MAX_PAGES} pages — try a text PDF, a shorter scan, or paste the text.`,
-      );
+  const needsOcrScan =
+    totalTextWords < MIN_IMPORT_WORDS ||
+    (pageCount > 0 && wordsPerPage < OCR_WORDS_PER_PAGE_THRESHOLD);
+
+  const pagesNeedingOcr: number[] = [];
+  for (let i = 0; i < pageCount; i++) {
+    if (pageWordCounts[i] < OCR_PAGE_MIN_WORDS) {
+      pagesNeedingOcr.push(pages[i]?.num ?? i + 1);
     }
+  }
+
+  // Cap OCR work at OCR_MAX_PAGES pages (same as MAX_PDF_PAGES).
+  const ocrTargets = pagesNeedingOcr.slice(0, OCR_MAX_PAGES);
+  const thinRatio = pageCount > 0 ? pagesNeedingOcr.length / pageCount : 0;
+  // Text-heavy PDFs skip OCR (blank separators stay blank). Scanned / mixed docs OCR thin pages.
+  const shouldRunOcr =
+    ocrTargets.length > 0 &&
+    (needsOcrScan || totalTextWords < MIN_IMPORT_WORDS || thinRatio >= 0.3);
+  let usedOcr = false;
+
+  if (shouldRunOcr) {
+    let ocrDone = 0;
+    // Count text-layer-only pages as already "done" for progress UX.
+    const textOnlyDone = pageCount - ocrTargets.length;
+    await reportProgress(options.onProgress, Math.max(0, textOnlyDone), pagesTotal);
 
     try {
-      const ocrText = await ocrPdfPages(buffer, pageCount || OCR_MAX_PAGES);
-      const ocrWords = countWords(ocrText);
-      if (ocrWords > words) {
-        usedOcr = true;
-        text = clampText(cleanImportPlainText(ocrText));
-        const chapters = splitTextIntoChapters(text, 'Scanned PDF');
-        return chaptersToDocument(chapters, undefined, { usedOcr: true, pageCount });
+      const ocrMap = await ocrPdfPageNumbers(buffer, ocrTargets, {
+        language: options.language,
+        onBatchDone: async (n) => {
+          ocrDone += n;
+          await reportProgress(
+            options.onProgress,
+            Math.min(pagesTotal, textOnlyDone + ocrDone),
+            pagesTotal,
+          );
+        },
+      });
+      usedOcr = ocrMap.size > 0;
+
+      for (let i = 0; i < pageCount; i++) {
+        const pageNum = pages[i]?.num ?? i + 1;
+        const ocrText = ocrMap.get(pageNum);
+        if (!ocrText) continue;
+        const existingWords = countWords(pageTexts[i] || '');
+        const ocrWords = countWords(ocrText);
+        if (ocrWords > existingWords) {
+          pageTexts[i] = ocrText;
+        }
       }
     } catch (err) {
-      if (words < MIN_IMPORT_WORDS) {
+      if (totalTextWords < MIN_IMPORT_WORDS) {
         throw new Error(
           err instanceof Error
             ? `Scanned PDF OCR failed: ${err.message}`
             : 'Scanned PDF OCR failed',
         );
       }
+      // Keep text-layer content when OCR fails mid-document.
     }
-
-    if (words < MIN_IMPORT_WORDS) {
-      throw new Error(
-        `No extractable text from PDF (scanned image PDFs need OCR). Tried OCR on up to ${OCR_MAX_PAGES} pages.`,
-      );
-    }
+  } else {
+    await reportProgress(options.onProgress, pagesTotal, pagesTotal);
   }
 
-  // Prefer page-based chapters for multi-page docs; collapse tiny pages into one stream.
-  const chapters =
-    pageChapters.length > 1 && pageChapters.some((c) => countWords(c.text) >= 20)
-      ? pageChapters
-      : splitTextIntoChapters(text, 'Imported PDF');
+  // Normalize header/footer again after OCR merges.
+  const finalPages = stripRepeatedPdfHeadersFooters(pageTexts);
+  const text = clampText(cleanImportPlainText(finalPages.join('\n\n')));
+  const words = countWords(text);
 
-  return chaptersToDocument(chapters, undefined, { usedOcr, pageCount });
+  if (words < MIN_IMPORT_WORDS) {
+    throw new Error(
+      pageCount === 0
+        ? 'No extractable text from PDF'
+        : `No extractable text from PDF after text-layer extract and OCR on ${ocrTargets.length} page(s) (of ${pageCount}). Try a text PDF, higher-quality scan, or paste.`,
+    );
+  }
+
+  await reportProgress(options.onProgress, pagesTotal, pagesTotal);
+
+  const chapters = chaptersFromPdfPages(finalPages, 'Imported PDF');
+  return chaptersToDocument(chapters.length ? chapters : [{ title: 'Imported PDF', text }], undefined, {
+    usedOcr,
+    pageCount: fullPageCount || pageCount,
+    truncatedPages,
+  });
 }
 
 async function readEpubSpineOrder(zip: JSZip): Promise<string[] | null> {

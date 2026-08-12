@@ -5,12 +5,12 @@ import AnalyticsPage from './pages/AnalyticsPage';
 import ContentPage from './pages/ContentPage';
 import DashboardPage from './pages/DashboardPage';
 import GamificationPage from './pages/GamificationPage';
+import ImportPricingPage from './pages/ImportPricingPage';
 import LanguagesPage from './pages/LanguagesPage';
 import LevelTestsPage from './pages/LevelTestsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProtectedRoute from './pages/ProtectedRoute';
 import SettingsPage from './pages/SettingsPage';
-import SubscriptionsPage from './pages/SubscriptionsPage';
 import SupportPage from './pages/SupportPage';
 import UsersPage from './pages/UsersPage';
 
@@ -22,19 +22,24 @@ export default function App() {
           <Route index element={<DashboardPage />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="content" element={<ContentPage />} />
+          <Route path="content/:directory" element={<ContentPage />} />
           <Route path="languages" element={<LanguagesPage />} />
           <Route path="level-tests" element={<LevelTestsPage />} />
           <Route path="ai-usage" element={<AiUsagePage />} />
           <Route path="gamification" element={<GamificationPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="subscriptions" element={<SubscriptionsPage />} />
+          <Route path="import-pricing" element={<ImportPricingPage />} />
+          <Route path="import-pricing/:directory" element={<ImportPricingPage />} />
+          {/* Legacy Subscriptions nav → Import & Pricing */}
+          <Route path="subscriptions" element={<Navigate to="/import-pricing" replace />} />
+          <Route path="subscriptions/:directory" element={<Navigate to="/import-pricing" replace />} />
           <Route path="analytics" element={<AnalyticsPage />} />
           <Route path="support" element={<SupportPage />} />
           <Route path="settings" element={<SettingsPage />} />
           {/* Figma IA: ops live under Content → User Imports (not sidebar nav) */}
-          <Route path="licenses" element={<Navigate to="/content?tab=user_imports" replace />} />
-          <Route path="moderation" element={<Navigate to="/content?tab=user_imports" replace />} />
-          <Route path="ingestion" element={<Navigate to="/content?tab=user_imports" replace />} />
+          <Route path="licenses" element={<Navigate to="/content/user-imports" replace />} />
+          <Route path="moderation" element={<Navigate to="/content/user-imports" replace />} />
+          <Route path="ingestion" element={<Navigate to="/content/user-imports" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

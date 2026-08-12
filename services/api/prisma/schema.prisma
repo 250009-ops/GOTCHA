@@ -120,6 +120,14 @@ enum PurchaseStatus {
   refunded
 }
 
+enum ImportPaymentStatus {
+  pending
+  paid
+  failed
+  expired
+  refunded
+}
+
 enum IngestionSourceType {
   url
   pdf
@@ -212,6 +220,7 @@ model User {
   knownWords        UserKnownWord[]
   bookmarks         ContentBookmark[]
   contentPurchases  ContentPurchase[]
+  importPayments    ImportPayment[]
 
   @@map("users")
 }
@@ -420,11 +429,44 @@ model ImportPageTier {
   label     String
   minPages  Int     @map("min_pages")
   maxPages  Int?    @map("max_pages")
-  priceUsd  Decimal @map("price_usd") @db.Decimal(10, 2)
+  /// Amount in UZS (soʻm). Column kept as price_usd for backward compatibility.
+  priceUsd  Decimal @map("price_usd") @db.Decimal(12, 2)
   sortOrder Int     @default(0) @map("sort_order")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("import_page_tiers")
+}
+
+/// Atmos (or other) payment for a single import by page-tier price.
+model ImportPayment {
+  id                  String              @id @default(uuid()) @db.Uuid
+  userId              String              @map("user_id") @db.Uuid
+  status              ImportPaymentStatus @default(pending)
+  importType          ImportType          @map("import_type")
+  contentFormat       String              @map("content_format")
+  estimatedPages      Int                 @map("estimated_pages")
+  tierId              String?             @map("tier_id") @db.Uuid
+  amountTiyins        Int                 @map("amount_tiyins")
+  currency            String              @default("UZS")
+  provider            String              @default("atmos")
+  /// Our idempotent account id sent to Atmos as `account` / matched as callback `invoice`.
+  account             String              @unique
+  providerPaymentId   String?             @map("provider_payment_id")
+  providerInvoiceToken String?            @map("provider_invoice_token")
+  paymentUrl          String?             @map("payment_url")
+  ofdUrl              String?             @map("ofd_url")
+  userImportId        String?             @map("user_import_id") @db.Uuid
+  rawCreateJson       Json?               @map("raw_create_json")
+  rawCallbackJson     Json?               @map("raw_callback_json")
+  createdAt           DateTime            @default(now()) @map("created_at")
+  paidAt              DateTime?           @map("paid_at")
+  expiresAt           DateTime?           @map("expires_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([providerPaymentId])
+  @@map("import_payments")
 }
 
 model ContentCollectionItem {

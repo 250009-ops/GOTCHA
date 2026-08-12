@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, IsUrl, MinLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUrl, IsUUID, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class ImportPasteDto {
@@ -13,6 +13,11 @@ export class ImportPasteDto {
   @IsOptional()
   @IsEnum(AppLanguage)
   language?: AppLanguage;
+
+  /** Paid/free ImportPayment id from /billing/imports/checkout */
+  @IsOptional()
+  @IsUUID()
+  paymentId?: string;
 }
 
 export class ImportUrlDto {
@@ -27,6 +32,10 @@ export class ImportUrlDto {
   @IsOptional()
   @IsEnum(AppLanguage)
   language?: AppLanguage;
+
+  @IsOptional()
+  @IsUUID()
+  paymentId?: string;
 }
 
 export class ImportFileDto {
@@ -37,4 +46,8 @@ export class ImportFileDto {
   @IsOptional()
   @IsEnum(AppLanguage)
   language?: AppLanguage;
+
+  @IsOptional()
+  @IsUUID()
+  paymentId?: string;
 }

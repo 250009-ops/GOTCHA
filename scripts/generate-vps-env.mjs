@@ -29,6 +29,19 @@ const jwtSecret = get(existing, 'JWT_SECRET') || hex(48);
 const dbPassword = get(existing, 'DB_PASSWORD') || get(rootEnv, 'DB_PASSWORD') || hex(24);
 const s3Secret = get(existing, 'S3_SECRET_KEY') || hex(24);
 
+// Atmos payment gateway credentials — preserve from existing env if set
+const atmosConsumerKey = get(existing, 'ATMOS_CONSUMER_KEY') || get(rootEnv, 'ATMOS_CONSUMER_KEY');
+const atmosConsumerSecret = get(existing, 'ATMOS_CONSUMER_SECRET') || get(rootEnv, 'ATMOS_CONSUMER_SECRET');
+const atmosStoreId = get(existing, 'ATMOS_STORE_ID') || get(rootEnv, 'ATMOS_STORE_ID');
+const atmosApiKey = get(existing, 'ATMOS_API_KEY') || get(rootEnv, 'ATMOS_API_KEY');
+const atmosApiBase = get(existing, 'ATMOS_API_BASE') || get(rootEnv, 'ATMOS_API_BASE') || 'https://apigw.atmos.uz';
+const atmosIkpu = get(existing, 'ATMOS_IKPU') || get(rootEnv, 'ATMOS_IKPU') || '10899001001000000';
+const atmosMerchantTin = get(existing, 'ATMOS_MERCHANT_TIN') || get(rootEnv, 'ATMOS_MERCHANT_TIN');
+
+// Payment gateway settings — preserve existing or default to disabled
+const importsUnlimited = get(existing, 'IMPORTS_UNLIMITED') || get(rootEnv, 'IMPORTS_UNLIMITED') || 'false';
+const paymentGatewayEnabled = get(existing, 'PAYMENT_GATEWAY_ENABLED') || get(rootEnv, 'PAYMENT_GATEWAY_ENABLED') || 'false';
+
 const publicHost = domain || 'YOUR_DOMAIN';
 
 const deployEnv = `# Gotcha — Eskiz VPS2 (single-host full stack)
@@ -62,16 +75,27 @@ UPLOADS_DIR=/var/www/gotcha/uploads
 OPENAI_API_KEY=${openai}
 OPENAI_MODEL_LOOKUP=gpt-4.1-mini
 OPENAI_MODEL_QUIZ=gpt-4.1-mini
+OPENAI_MODEL_IMPORT=gpt-4.1-mini
+IMPORT_AI_CLEANUP_ENABLED=true
 
 API_PORT=3200
 API_CORS_ORIGINS=https://${publicHost},https://www.${publicHost}
 LEARNER_APP_URL=https://${publicHost}/learn
 DEV_AUTH_ANY_CREDENTIAL=false
-# Unlimited imports until payment gateway is integrated
-IMPORTS_UNLIMITED=true
 DEV_UNLIMITED_IMPORTS=false
-PAYMENT_GATEWAY_ENABLED=false
 WORKER_CONCURRENCY=5
+
+# Atmos payment gateway — see docs/ATMOS.md for setup. Fill credentials to enable paid imports.
+# When ready to charge, set PAYMENT_GATEWAY_ENABLED=true and IMPORTS_UNLIMITED=false.
+ATMOS_CONSUMER_KEY=${atmosConsumerKey}
+ATMOS_CONSUMER_SECRET=${atmosConsumerSecret}
+ATMOS_STORE_ID=${atmosStoreId}
+ATMOS_API_KEY=${atmosApiKey}
+ATMOS_API_BASE=${atmosApiBase}
+ATMOS_IKPU=${atmosIkpu}
+ATMOS_MERCHANT_TIN=${atmosMerchantTin}
+IMPORTS_UNLIMITED=${importsUnlimited}
+PAYMENT_GATEWAY_ENABLED=${paymentGatewayEnabled}
 
 # SMTP — Eskiz Mail (mail.${publicHost}, SSL 465). Set SMTP_PASS to the mailbox password.
 SMTP_HOST=mail.${publicHost}

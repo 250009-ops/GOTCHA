@@ -55,6 +55,11 @@ SMTP_REPLY_TO="$(get_env SMTP_REPLY_TO)"
 sync_runtime_env_key LEARNER_APP_URL "${LEARNER_APP_URL}"
 sync_runtime_env_key API_PORT "${API_PORT:-3200}"
 sync_runtime_env_key API_CORS_ORIGINS "$(get_env API_CORS_ORIGINS)"
+sync_runtime_env_key OPENAI_API_KEY "$(get_env OPENAI_API_KEY)"
+sync_runtime_env_key OPENAI_MODEL_LOOKUP "$(get_env OPENAI_MODEL_LOOKUP)"
+sync_runtime_env_key OPENAI_MODEL_QUIZ "$(get_env OPENAI_MODEL_QUIZ)"
+sync_runtime_env_key OPENAI_MODEL_IMPORT "$(get_env OPENAI_MODEL_IMPORT)"
+sync_runtime_env_key IMPORT_AI_CLEANUP_ENABLED "$(get_env IMPORT_AI_CLEANUP_ENABLED)"
 sync_runtime_env_key DEV_AUTH_ANY_CREDENTIAL "$(get_env DEV_AUTH_ANY_CREDENTIAL)"
 sync_runtime_env_key DEV_UNLIMITED_IMPORTS "$(get_env DEV_UNLIMITED_IMPORTS)"
 sync_runtime_env_key IMPORTS_UNLIMITED "$(get_env IMPORTS_UNLIMITED)"
@@ -83,6 +88,18 @@ if [[ -z "$(get_env DEV_AUTH_ANY_CREDENTIAL)" ]]; then
 fi
 if [[ -z "$(get_env DEV_UNLIMITED_IMPORTS)" ]]; then
   sync_runtime_env_key DEV_UNLIMITED_IMPORTS "false"
+fi
+if [[ -z "$(get_env OPENAI_MODEL_LOOKUP)" ]]; then
+  sync_runtime_env_key OPENAI_MODEL_LOOKUP "gpt-4.1-mini"
+fi
+if [[ -z "$(get_env OPENAI_MODEL_QUIZ)" ]]; then
+  sync_runtime_env_key OPENAI_MODEL_QUIZ "gpt-4.1-mini"
+fi
+if [[ -z "$(get_env OPENAI_MODEL_IMPORT)" ]]; then
+  sync_runtime_env_key OPENAI_MODEL_IMPORT "gpt-4.1-mini"
+fi
+if [[ -z "$(get_env IMPORT_AI_CLEANUP_ENABLED)" ]]; then
+  sync_runtime_env_key IMPORT_AI_CLEANUP_ENABLED "true"
 fi
 
 # Strip CRLF that can break shell scripts uploaded from Windows
