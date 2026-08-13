@@ -48,6 +48,17 @@ export type ImportQuoteResult = {
   };
 };
 
+export type CheckoutResult = {
+  quote: ImportQuoteResult;
+  paymentId: string;
+  account: string;
+  transactionId: number | null;
+  status: string;
+  isFree: boolean;
+  /** Step for Atmos flow: 'done' (free), 'card' (need card input), 'otp' (need OTP), 'paid' */
+  step: 'done' | 'card' | 'otp' | 'paid';
+};
+
 @Injectable()
 export class ImportCommerceService {
   constructor(
@@ -201,18 +212,14 @@ export class ImportCommerceService {
     };
   }
 
-  private successUrl(paymentId: string, platform: 'web' | 'android') {
-    const learner = (process.env.LEARNER_APP_URL || 'https://gotchaa.uz/learn').replace(/\/$/, '');
-    if (platform === 'android') {
-      return `${learner}/app/import/payment-return?paymentId=${encodeURIComponent(paymentId)}&platform=android`;
-    }
-    return `${learner}/app/import/payment-return?paymentId=${encodeURIComponent(paymentId)}`;
-  }
-
+  /**
+   * Step 1: Create checkout + Atmos transaction (no card data yet).
+   * Returns step='card' if payment is required — frontend shows card input form.
+   */
   async checkout(
     userId: string,
     input: ImportQuoteInput & { platform?: 'web' | 'android' },
-  ) {
+  ): Promise<CheckoutResult> {
     const quote = await this.quote(userId, input);
 
     if (!quote.requiresPayment) {
@@ -234,9 +241,10 @@ export class ImportCommerceService {
         quote,
         paymentId: payment.id,
         account: payment.account,
-        paymentUrl: null as string | null,
+        transactionId: null,
         status: payment.status,
         isFree: true,
+        step: 'done',
       };
     }
 
@@ -248,6 +256,13 @@ export class ImportCommerceService {
     }
 
     const account = `imp_${randomUUID().replace(/-/g, '')}`;
+    
+    // Create Atmos transaction
+    const atmosTx = await this.atmos.createTransaction({
+      account,
+      amountTiyins: quote.amountTiyins,
+    });
+
     const payment = await this.prisma.importPayment.create({
       data: {
         userId,
@@ -259,35 +274,167 @@ export class ImportCommerceService {
         amountTiyins: quote.amountTiyins,
         account,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-      },
-    });
-
-    const invoice = await this.atmos.createInvoice({
-      account,
-      amountTiyins: quote.amountTiyins,
-      successUrl: this.successUrl(payment.id, input.platform === 'android' ? 'android' : 'web'),
-      itemName: `Gotcha import (${quote.estimatedPages} p.)`,
-      itemId: payment.id,
-    });
-
-    const updated = await this.prisma.importPayment.update({
-      where: { id: payment.id },
-      data: {
-        providerPaymentId: String(invoice.paymentId),
-        providerInvoiceToken: invoice.token,
-        paymentUrl: invoice.url,
-        rawCreateJson: invoice.raw as Prisma.InputJsonValue,
+        providerPaymentId: String(atmosTx.transactionId),
+        rawCreateJson: atmosTx.raw as Prisma.InputJsonValue,
       },
     });
 
     return {
       quote,
-      paymentId: updated.id,
-      account: updated.account,
-      paymentUrl: updated.paymentUrl,
-      status: updated.status,
+      paymentId: payment.id,
+      account: payment.account,
+      transactionId: atmosTx.transactionId,
+      status: payment.status,
       isFree: false,
+      step: 'card',
     };
+  }
+
+  /**
+   * Step 2: Pre-apply — send card details to Atmos, trigger OTP.
+   * Called after user enters card number and expiry in frontend.
+   * Card data is NOT stored — only passed through to Atmos.
+   */
+  async preApply(
+    userId: string,
+    paymentId: string,
+    cardNumber: string,
+    expiry: string,
+  ): Promise<{ paymentId: string; maskedPhone?: string; step: 'otp' }> {
+    const payment = await this.prisma.importPayment.findFirst({
+      where: { id: paymentId, userId },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.paid) {
+      throw new BadRequestException('Payment is already completed');
+    }
+    if (!payment.providerPaymentId) {
+      throw new BadRequestException('Transaction not initialized');
+    }
+
+    const transactionId = Number(payment.providerPaymentId);
+    const result = await this.atmos.preApplyTransaction({
+      transactionId,
+      cardNumber,
+      expiry,
+    });
+
+    return {
+      paymentId,
+      maskedPhone: result.maskedPhone,
+      step: 'otp',
+    };
+  }
+
+  /**
+   * Step 3: Apply — confirm with OTP.
+   * Called after user enters the OTP received via SMS.
+   */
+  async apply(
+    userId: string,
+    paymentId: string,
+    otp: string,
+  ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'card' }> {
+    const payment = await this.prisma.importPayment.findFirst({
+      where: { id: paymentId, userId },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.paid) {
+      return { paymentId, status: 'paid', step: 'paid' };
+    }
+    if (!payment.providerPaymentId) {
+      throw new BadRequestException('Transaction not initialized');
+    }
+
+    const transactionId = Number(payment.providerPaymentId);
+    
+    try {
+      const result = await this.atmos.applyTransaction({
+        transactionId,
+        otp,
+      });
+
+      if (result.confirmed) {
+        await this.prisma.importPayment.update({
+          where: { id: payment.id },
+          data: {
+            status: ImportPaymentStatus.paid,
+            paidAt: new Date(),
+            ofdUrl: result.ofdUrl,
+            rawCallbackJson: result.raw as Prisma.InputJsonValue,
+          },
+        });
+
+        return {
+          paymentId,
+          status: 'paid',
+          ofdUrl: result.ofdUrl,
+          step: 'paid',
+        };
+      }
+    } catch (err) {
+      // If OTP fails, user can retry with new card
+      throw err;
+    }
+
+    return { paymentId, status: 'pending', step: 'card' };
+  }
+
+  /**
+   * Resend OTP to cardholder.
+   */
+  async retryOtp(
+    userId: string,
+    paymentId: string,
+  ): Promise<{ paymentId: string; step: 'otp' }> {
+    const payment = await this.prisma.importPayment.findFirst({
+      where: { id: paymentId, userId },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.paid) {
+      throw new BadRequestException('Payment is already completed');
+    }
+    if (!payment.providerPaymentId) {
+      throw new BadRequestException('Transaction not initialized');
+    }
+
+    const transactionId = Number(payment.providerPaymentId);
+    await this.atmos.retryOtp(transactionId);
+
+    return { paymentId, step: 'otp' };
+  }
+
+  /**
+   * Cancel a pending payment or refund a paid payment.
+   */
+  async cancelPayment(
+    userId: string,
+    paymentId: string,
+    reason?: string,
+  ): Promise<{ paymentId: string; status: string }> {
+    const payment = await this.prisma.importPayment.findFirst({
+      where: { id: paymentId, userId },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    
+    if (payment.status === ImportPaymentStatus.paid && payment.providerPaymentId) {
+      // Refund confirmed payment
+      const transactionId = Number(payment.providerPaymentId);
+      await this.atmos.reverseTransaction({ transactionId, reason });
+      await this.prisma.importPayment.update({
+        where: { id: payment.id },
+        data: { status: ImportPaymentStatus.refunded },
+      });
+      return { paymentId, status: 'refunded' };
+    }
+
+    // Cancel pending payment
+    await this.prisma.importPayment.update({
+      where: { id: payment.id },
+      data: { status: ImportPaymentStatus.failed },
+    });
+
+    return { paymentId, status: 'cancelled' };
   }
 
   async getPayment(userId: string, paymentId: string) {
@@ -296,24 +443,20 @@ export class ImportCommerceService {
     });
     if (!payment) throw new NotFoundException('Payment not found');
 
-    // Fallback poll Atmos if still pending (success_url return before webhook arrives).
+    // Fallback poll Atmos if still pending
     if (payment.status === ImportPaymentStatus.pending && payment.providerPaymentId) {
-      const remote = await this.atmos.getInvoiceStatus(payment.providerPaymentId);
-      const processingId = (remote as { processing_id?: string | number | null } | null)?.processing_id;
-      const paymentStatus = String(
-        (remote as { payment_status?: string; result?: { status?: string } } | null)?.payment_status ??
-          (remote as { result?: { status?: string } } | null)?.result?.status ??
-          '',
-      ).toLowerCase();
-      const looksPaid =
-        Boolean(processingId) ||
-        paymentStatus.includes('paid') ||
-        paymentStatus.includes('success') ||
-        paymentStatus.includes('confirm');
-      if (looksPaid) {
-        await this.markPaid(payment.account, {
-          providerRef: String(processingId ?? payment.providerPaymentId),
-          raw: remote,
+      const transactionId = Number(payment.providerPaymentId);
+      const remote = await this.atmos.getTransaction(transactionId);
+      
+      if (remote?.confirmed) {
+        await this.prisma.importPayment.update({
+          where: { id: payment.id },
+          data: {
+            status: ImportPaymentStatus.paid,
+            paidAt: new Date(),
+            ofdUrl: remote.ofdUrl,
+            rawCallbackJson: remote.raw as Prisma.InputJsonValue,
+          },
         });
         return this.prisma.importPayment.findFirstOrThrow({ where: { id: paymentId, userId } });
       }

@@ -1,16 +1,50 @@
-# Atmos pay-per-import (Gotcha)
+# Atmos Merchant API Integration (Gotcha)
 
-Local card payments for **import-by-size** via Atmos hosted checkout. Premium subscription checkout is out of scope.
+Local card payments (UzCard/Humo) for **import-by-size** via Atmos Merchant API.
+
+## API Flow (Merchant API — NOT Hosted Checkout)
+
+The integration uses the official Atmos Merchant API methods:
+
+1. **Create Transaction** (`POST /merchant/pay/create`) — creates a draft transaction
+2. **Pre-confirm Transaction** (`POST /merchant/pay/pre-apply`) — sends OTP to cardholder
+3. **Confirm Transaction** (`POST /merchant/pay/apply`) — confirms with OTP, debits card
+4. **Get Transaction Info** (`POST /merchant/pay/get`) — check status
+5. **Cancel Transaction** (`POST /merchant/pay/reverse`) — refund/cancel
+
+**We do NOT use the Hosted Checkout** (`/checkout/invoice/create`, `checkout.pays.uz`) as it times out.
+
+## User Flow
+
+1. User sees price modal in Gotcha (UZS amount)
+2. User clicks "Purchase" → checkout creates Atmos transaction
+3. User enters card number + expiry in Gotcha modal
+4. Backend calls `/merchant/pay/pre-apply` → Atmos sends OTP SMS to cardholder
+5. User enters OTP in Gotcha modal
+6. Backend calls `/merchant/pay/apply` → payment confirmed
+7. Import proceeds
 
 ## URLs (production — `gotchaa.uz`)
 
 | Purpose | URL |
 |--------|-----|
 | Atmos callback (webhook) | `https://gotchaa.uz/api/v1/billing/atmos/webhook` |
-| Learner success return | `https://gotchaa.uz/learn/app/import/payment-return?paymentId=…` |
 | API | `https://gotchaa.uz/api/v1` |
 
-Give Atmos the **callback URL** so they can POST payment confirmations before finalizing debit.
+Give Atmos the **callback URL** so they can POST payment confirmations.
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/billing/imports/quote` | Get price quote |
+| POST | `/billing/imports/checkout` | Create transaction (step=card) |
+| POST | `/billing/imports/payments/:id/pre-apply` | Submit card, trigger OTP |
+| POST | `/billing/imports/payments/:id/apply` | Submit OTP, confirm payment |
+| POST | `/billing/imports/payments/:id/retry-otp` | Resend OTP |
+| POST | `/billing/imports/payments/:id/cancel` | Cancel/refund |
+| GET | `/billing/imports/payments/:id` | Get payment status |
+| POST | `/billing/atmos/webhook` | Atmos callback (public) |
 
 ## Env (`deploy/.env` — never commit secrets)
 
@@ -22,6 +56,8 @@ ATMOS_API_KEY=…              # callback MD5 key (when Atmos provides it)
 ATMOS_API_BASE=https://apigw.atmos.uz
 ATMOS_IKPU=10899001001000000
 ATMOS_MERCHANT_TIN=…         # YaTT PINFL for OFD
+# ATMOS_TERMINAL_ID=…        # optional if the store has a single terminal
+# ATMOS_LANG=ru
 
 # Keep false until sandbox E2E works:
 PAYMENT_GATEWAY_ENABLED=false
@@ -44,20 +80,13 @@ Then redeploy / run `deploy/update.sh` so runtime `.env` syncs.
 - Atmos amount = UZS × 100 (**tiyins**)
 - OFD line uses `ATMOS_IKPU`
 
-## API surface
-
-- `POST /billing/imports/quote`
-- `POST /billing/imports/checkout`
-- `GET /billing/imports/payments/:id`
-- `POST /billing/atmos/webhook` (public)
-- Import create endpoints accept `paymentId` when gateway is on
-
 ## Live Deployment Checklist
 
 Before payments work in production, complete all steps:
 
 ### 1. Atmos Merchant Setup (one-time)
 - [ ] Obtain merchant credentials from Atmos: `ATMOS_CONSUMER_KEY`, `ATMOS_CONSUMER_SECRET`, `ATMOS_STORE_ID`
+- [ ] **Ensure Merchant Pay API is enabled** for your store (not just Hosted Checkout)
 - [ ] Register callback URL with Atmos: `https://YOUR_DOMAIN/api/v1/billing/atmos/webhook`
 - [ ] Obtain callback MD5 key (`ATMOS_API_KEY`) when Atmos issues it
 - [ ] Confirm IKPU code with your accountant (`ATMOS_IKPU`)
@@ -83,7 +112,7 @@ IMPORTS_UNLIMITED=false
 - [ ] Run `npm run deploy:vps:env` to regenerate `deploy/.env` (preserves existing credentials)
 - [ ] Run `npm run deploy:vps` or `deploy/update.sh` on VPS to sync runtime env
 - [ ] Verify admin panel: Admin → Import & Pricing shows "Gateway: enabled" badge
-- [ ] Verify learner panel: Import page shows "Paid imports use page-tier prices… via Atmos"
+- [ ] Verify `GET /billing/gateway-status` returns `flow: "merchant-api"`
 
 ### 4. Configure Pricing (Admin Panel)
 - [ ] Admin → **Import & Pricing** → **Page Tiers** — set prices in UZS (soʻm)
@@ -91,30 +120,53 @@ IMPORTS_UNLIMITED=false
 
 ### 5. Test End-to-End
 - [ ] As learner, exceed free allowance or import a large PDF
-- [ ] Confirm Atmos checkout page opens with correct amount
-- [ ] Pay with test card (UzCard/Humo sandbox)
-- [ ] Confirm payment callback marks `ImportPayment` as `paid`
+- [ ] Confirm card input modal appears with UzCard/Humo fields
+- [ ] Enter card number + expiry → OTP should arrive via SMS
+- [ ] Enter OTP → payment confirms
 - [ ] Confirm import proceeds after payment
 - [ ] Check OFD/fiscal receipt (if IKPU/TIN are set)
 
-### Troubleshooting
+## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "Imports are free right now" on Import page | `PAYMENT_GATEWAY_ENABLED=false` or `IMPORTS_UNLIMITED=true` | Set both flags correctly in `deploy/.env`, redeploy |
 | "Atmos is not configured" error | Missing `ATMOS_CONSUMER_KEY/SECRET/STORE_ID` | Fill credentials in `deploy/.env`, run `deploy/update.sh` |
-| Webhook returns 401/invalid signature | Missing/wrong `ATMOS_API_KEY` | Obtain correct key from Atmos, update `deploy/.env` |
-| Payment stuck on pending | Webhook URL not registered with Atmos | Register `https://YOUR_DOMAIN/api/v1/billing/atmos/webhook` in Atmos cabinet |
+| pre-apply 403 / API Subscription validation failed | OAuth client not subscribed to Merchant Pay API | Ask Atmos to enable Merchant Pay endpoints for your store |
+| "Card verification failed" | Card number/expiry rejected by Atmos | Check card is valid UzCard/Humo, not expired |
+| OTP not arriving | Phone number not linked to card, or SMS delay | User should check SMS, retry OTP |
+| Webhook returns invalid signature | Missing/wrong `ATMOS_API_KEY` | Obtain correct callback MD5 key from Atmos |
 
-## Sandbox Testing
+### Verify token from the VPS (redact secrets)
 
-For development/staging without real charges:
-1. Use Atmos sandbox credentials (same `apigw.atmos.uz` endpoint, different store)
-2. Set `PAYMENT_GATEWAY_ENABLED=true`, `IMPORTS_UNLIMITED=false` in local `.env`
-3. Run API locally, test checkout flow with sandbox cards
+```bash
+# Must return HTTP 200 + access_token. 401 invalid_client = Atmos rejected the OAuth client.
+curl -sS -X POST 'https://apigw.atmos.uz/token?grant_type=client_credentials' \
+  -H "Authorization: Basic $(printf '%s' \"$ATMOS_CONSUMER_KEY:$ATMOS_CONSUMER_SECRET\" | base64 -w0)" \
+  -H 'Accept: application/json'
+```
 
-## Security
+### Verify Merchant Pay API access
 
+```bash
+# After getting token, test create transaction (use a test amount):
+curl -sS -X POST 'https://apigw.atmos.uz/merchant/pay/create' \
+  -H "Authorization: Bearer $TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"amount": 100, "account": "test123", "store_id": '"$ATMOS_STORE_ID"'}'
+```
+
+## Security Notes
+
+- Card data (number, expiry) is **passed through** to Atmos, never stored in Gotcha database
+- All communication uses HTTPS (TLS)
+- OTP verification happens on Atmos side
+- Callback signature validated with MD5 when `ATMOS_API_KEY` is set
 - Secrets only in gitignored env files
-- No card PAN on Gotcha servers (hosted invoice page)
-- Webhook verifies `MD5(store_id + transaction_id + invoice + amount + api_key)` when `ATMOS_API_KEY` is set
+
+## Android Integration
+
+The Android app (`ImportScreen.kt`) uses the same API endpoints:
+1. `POST /billing/imports/checkout` → returns `step: "card"`
+2. `POST /billing/imports/payments/:id/pre-apply` with card data
+3. `POST /billing/imports/payments/:id/apply` with OTP

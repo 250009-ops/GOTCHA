@@ -1,13 +1,62 @@
-import { createHash, randomUUID } from 'crypto';
+import { createHash } from 'crypto';
 import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 type TokenCache = { accessToken: string; expiresAt: number };
 
-export type AtmosInvoiceCreateResult = {
-  paymentId: string | number;
-  token: string;
-  url: string;
+export type AtmosTransactionCreateResult = {
+  transactionId: number;
+  storeTransactionId: number;
+  amount: number;
+  account: string;
   raw: unknown;
+};
+
+export type AtmosPreApplyResult = {
+  transactionId: number;
+  maskedPhone?: string;
+  raw: unknown;
+};
+
+export type AtmosApplyResult = {
+  transactionId: number;
+  successTransId?: number;
+  confirmed: boolean;
+  ofdUrl?: string;
+  statusCode?: string;
+  statusMessage?: string;
+  raw: unknown;
+};
+
+export type AtmosTransactionStatus = {
+  transactionId: number;
+  successTransId?: number;
+  confirmed: boolean;
+  amount: number;
+  account: string;
+  statusCode?: string;
+  statusMessage?: string;
+  prepayTime?: number;
+  confirmTime?: number;
+  ofdUrl?: string;
+  raw: unknown;
+};
+
+type AtmosMerchantResponse = {
+  result?: { code?: string; description?: string };
+  transaction_id?: string | number;
+  store_transaction?: {
+    trans_id?: string | number;
+    success_trans_id?: string | number | null;
+    confirmed?: boolean;
+    amount?: number;
+    account?: string;
+    status_code?: string | null;
+    status_message?: string | null;
+    prepay_time?: number | null;
+    confirm_time?: number | null;
+  };
+  ofd_url?: string;
+  phone?: string;
 };
 
 @Injectable()
@@ -72,7 +121,10 @@ export class AtmosClient {
     };
     if (!res.ok || !body.access_token) {
       this.logger.error(`Atmos token failed: ${res.status} ${JSON.stringify(body)}`);
-      throw new ServiceUnavailableException('Unable to authenticate with Atmos');
+      const detail = body.error_description || body.error || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(
+        `Unable to authenticate with Atmos (${detail}). Check ATMOS_CONSUMER_KEY/SECRET for this store.`,
+      );
     }
     const expiresIn = Number(body.expires_in ?? 3600);
     this.tokenCache = {
@@ -82,46 +134,31 @@ export class AtmosClient {
     return body.access_token;
   }
 
-  async createInvoice(params: {
+  /**
+   * 1. Create Transaction
+   * POST /merchant/pay/create
+   * Creates a draft transaction for the given amount (in tiyins).
+   */
+  async createTransaction(params: {
     account: string;
     amountTiyins: number;
-    successUrl: string;
-    itemName: string;
-    itemId?: string;
-  }): Promise<AtmosInvoiceCreateResult> {
+  }): Promise<AtmosTransactionCreateResult> {
     if (!this.configured()) {
       throw new ServiceUnavailableException('Atmos is not configured');
     }
     const token = await this.getAccessToken();
     const storeId = this.storeId();
-    const ikpu = this.ikpu();
-    const tin = this.merchantTin();
+    const terminalId = process.env.ATMOS_TERMINAL_ID?.trim();
 
-    const details: Array<{ name: string; values: string }> = [
-      { name: 'quantity', values: '1' },
-    ];
-    if (tin) details.push({ name: 'tin', values: tin });
-
-    const payload = {
-      request_id: randomUUID(),
-      store_id: storeId,
-      account: params.account,
+    const payload: Record<string, unknown> = {
       amount: params.amountTiyins,
-      success_url: params.successUrl,
-      expiration_time: 60,
-      items: [
-        {
-          items_id: params.itemId || 'gotcha-import',
-          code: ikpu,
-          name: params.itemName,
-          amount: params.amountTiyins,
-          quantity: 1,
-          details,
-        },
-      ],
+      account: params.account,
+      store_id: storeId,
+      lang: process.env.ATMOS_LANG?.trim() || 'ru',
     };
+    if (terminalId) payload.terminal_id = terminalId;
 
-    const res = await fetch(`${this.baseUrl()}/checkout/invoice/create`, {
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/create`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -130,57 +167,288 @@ export class AtmosClient {
       },
       body: JSON.stringify(payload),
     });
-    const raw = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      this.logger.error(`Atmos invoice create failed: ${res.status} ${JSON.stringify(raw)}`);
-      throw new ServiceUnavailableException('Unable to create Atmos payment invoice');
-    }
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+    const transactionId = Number(raw.transaction_id ?? raw.store_transaction?.trans_id);
 
-    const data = raw as {
-      payment_id?: string | number;
-      token?: string;
-      url?: string;
-      status?: { code?: string; description?: string };
-    };
-    if (!data.url || data.payment_id == null || !data.token) {
-      this.logger.error(`Atmos invoice create unexpected body: ${JSON.stringify(raw)}`);
-      throw new ServiceUnavailableException('Atmos invoice response incomplete');
+    if (!res.ok || resultCode !== 'OK' || !Number.isFinite(transactionId)) {
+      this.logger.error(`Atmos merchant/pay/create failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Unable to create Atmos transaction (${detail}).`);
     }
 
     return {
-      paymentId: data.payment_id,
-      token: data.token,
-      url: data.url,
+      transactionId,
+      storeTransactionId: Number(raw.store_transaction?.trans_id ?? transactionId),
+      amount: Number(raw.store_transaction?.amount ?? params.amountTiyins),
+      account: String(raw.store_transaction?.account ?? params.account),
       raw,
     };
   }
 
-  async getInvoiceStatus(paymentId: string | number) {
+  /**
+   * 2. Pre-confirm Transaction
+   * POST /merchant/pay/pre-apply
+   * Sends OTP to cardholder. Requires card number and expiry (YYmm).
+   */
+  async preApplyTransaction(params: {
+    transactionId: number;
+    cardNumber: string;
+    expiry: string;
+  }): Promise<AtmosPreApplyResult> {
     const token = await this.getAccessToken();
-    const res = await fetch(`${this.baseUrl()}/checkout/invoice/get`, {
+    const storeId = this.storeId();
+
+    const payload = {
+      transaction_id: params.transactionId,
+      card_number: params.cardNumber.replace(/\s+/g, ''),
+      expiry: params.expiry.replace(/\//g, ''),
+      store_id: storeId,
+    };
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/pre-apply`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ payment_id: paymentId }),
+      body: JSON.stringify(payload),
     });
-    const raw = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      this.logger.warn(`Atmos invoice get failed: ${res.status} ${JSON.stringify(raw)}`);
-      return null;
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse & { phone?: string };
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+
+    if (!res.ok || resultCode !== 'OK') {
+      this.logger.error(`Atmos merchant/pay/pre-apply failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Card verification failed (${detail}).`);
     }
-    return raw;
+
+    return {
+      transactionId: Number(raw.transaction_id ?? params.transactionId),
+      maskedPhone: raw.phone,
+      raw,
+    };
   }
 
   /**
-   * Atmos callback sign = MD5(store_id + transaction_id + invoice + amount + api_key)
+   * 2b. Pre-confirm Transaction with saved card token
+   * POST /merchant/pay/pre-apply
+   * Uses card_token instead of card_number/expiry for saved cards.
+   */
+  async preApplyWithToken(params: {
+    transactionId: number;
+    cardToken: string;
+  }): Promise<AtmosPreApplyResult> {
+    const token = await this.getAccessToken();
+    const storeId = this.storeId();
+
+    const payload = {
+      transaction_id: params.transactionId,
+      card_token: params.cardToken,
+      store_id: storeId,
+    };
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/pre-apply`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse & { phone?: string };
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+
+    if (!res.ok || resultCode !== 'OK') {
+      this.logger.error(`Atmos merchant/pay/pre-apply (token) failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Card token verification failed (${detail}).`);
+    }
+
+    return {
+      transactionId: Number(raw.transaction_id ?? params.transactionId),
+      maskedPhone: raw.phone,
+      raw,
+    };
+  }
+
+  /**
+   * 3. Confirm Transaction (Apply)
+   * POST /merchant/pay/apply
+   * Confirms the transaction with the OTP received by cardholder.
+   */
+  async applyTransaction(params: {
+    transactionId: number;
+    otp: string;
+  }): Promise<AtmosApplyResult> {
+    const token = await this.getAccessToken();
+    const storeId = this.storeId();
+
+    const payload = {
+      transaction_id: params.transactionId,
+      otp: params.otp.replace(/\s+/g, ''),
+      store_id: storeId,
+    };
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/apply`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+
+    if (!res.ok || resultCode !== 'OK') {
+      this.logger.error(`Atmos merchant/pay/apply failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Payment confirmation failed (${detail}).`);
+    }
+
+    const storeTx = raw.store_transaction;
+    return {
+      transactionId: Number(raw.transaction_id ?? params.transactionId),
+      successTransId: storeTx?.success_trans_id != null ? Number(storeTx.success_trans_id) : undefined,
+      confirmed: storeTx?.confirmed === true,
+      ofdUrl: raw.ofd_url,
+      statusCode: storeTx?.status_code ?? undefined,
+      statusMessage: storeTx?.status_message ?? undefined,
+      raw,
+    };
+  }
+
+  /**
+   * 4. Get Transaction Info
+   * POST /merchant/pay/get
+   * Retrieves current status of a transaction.
+   */
+  async getTransaction(transactionId: number): Promise<AtmosTransactionStatus | null> {
+    const token = await this.getAccessToken();
+    const storeId = this.storeId();
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/get`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        store_id: storeId,
+      }),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+
+    if (!res.ok) {
+      this.logger.warn(`Atmos merchant/pay/get failed: ${res.status} ${JSON.stringify(raw)}`);
+      return null;
+    }
+
+    const storeTx = raw.store_transaction;
+    return {
+      transactionId: Number(raw.transaction_id ?? storeTx?.trans_id ?? transactionId),
+      successTransId: storeTx?.success_trans_id != null ? Number(storeTx.success_trans_id) : undefined,
+      confirmed: storeTx?.confirmed === true,
+      amount: Number(storeTx?.amount ?? 0),
+      account: String(storeTx?.account ?? ''),
+      statusCode: storeTx?.status_code ?? undefined,
+      statusMessage: storeTx?.status_message ?? undefined,
+      prepayTime: storeTx?.prepay_time ?? undefined,
+      confirmTime: storeTx?.confirm_time ?? undefined,
+      ofdUrl: raw.ofd_url,
+      raw,
+    };
+  }
+
+  /**
+   * 5. Cancel Transaction (Reverse)
+   * POST /merchant/pay/reverse
+   * Cancels a transaction and refunds the card.
+   */
+  async reverseTransaction(params: {
+    transactionId: number;
+    reason?: string;
+  }): Promise<{ transactionId: number; raw: unknown }> {
+    const token = await this.getAccessToken();
+
+    const payload: Record<string, unknown> = {
+      transaction_id: params.transactionId,
+    };
+    if (params.reason) payload.reason = params.reason;
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/reverse`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+
+    if (!res.ok || resultCode !== 'OK') {
+      this.logger.error(`Atmos merchant/pay/reverse failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Unable to cancel transaction (${detail}).`);
+    }
+
+    return {
+      transactionId: Number(raw.transaction_id ?? params.transactionId),
+      raw,
+    };
+  }
+
+  /**
+   * Retry OTP
+   * POST /merchant/pay/retry-otp
+   * Resends the OTP SMS to the cardholder.
+   */
+  async retryOtp(transactionId: number): Promise<{ transactionId: number; raw: unknown }> {
+    const token = await this.getAccessToken();
+    const storeId = this.storeId();
+
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/retry-otp`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({
+        transaction_id: transactionId,
+        store_id: storeId,
+      }),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+    const resultCode = String(raw.result?.code ?? '').toUpperCase();
+
+    if (!res.ok || resultCode !== 'OK') {
+      this.logger.error(`Atmos merchant/pay/retry-otp failed: ${res.status} ${JSON.stringify(raw)}`);
+      const detail = raw.result?.description || `HTTP ${res.status}`;
+      throw new ServiceUnavailableException(`Unable to resend OTP (${detail}).`);
+    }
+
+    return {
+      transactionId: Number(raw.transaction_id ?? transactionId),
+      raw,
+    };
+  }
+
+  /**
+   * Atmos callback signature validation
+   * sign = MD5(store_id + transaction_id + invoice + amount + api_key)
    */
   validateCallbackSignature(data: Record<string, unknown>): boolean {
     const apiKey = process.env.ATMOS_API_KEY?.trim();
     if (!apiKey) {
-      // Sandbox often ships without a separate callback key; fall back to store_id match only.
       this.logger.warn('ATMOS_API_KEY not set — verifying store_id only');
       return String(data.store_id) === String(this.storeId());
     }

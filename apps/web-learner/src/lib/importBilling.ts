@@ -19,9 +19,24 @@ export type ImportQuote = {
 export type ImportCheckout = {
   quote: ImportQuote;
   paymentId: string;
-  paymentUrl: string | null;
+  account: string;
+  transactionId: number | null;
   status: string;
   isFree: boolean;
+  step: 'done' | 'card' | 'otp' | 'paid';
+};
+
+export type PreApplyResult = {
+  paymentId: string;
+  maskedPhone?: string;
+  step: 'otp';
+};
+
+export type ApplyResult = {
+  paymentId: string;
+  status: string;
+  ofdUrl?: string;
+  step: 'paid' | 'card';
 };
 
 const PENDING_KEY = 'gotcha_pending_import';
@@ -44,7 +59,6 @@ export type PendingImport =
   | {
       kind: 'file';
       paymentId: string;
-      /** Stored as base64 — only for small files after pay redirect; large PDFs pay then re-upload. */
       fileName: string;
       fileType: string;
       fileBase64?: string;
@@ -102,39 +116,37 @@ export async function checkoutImport(body: {
   });
 }
 
-export async function getImportPayment(paymentId: string) {
-  return api<{ id: string; status: string; paymentUrl?: string | null; amountTiyins: number }>(
-    `/billing/imports/payments/${paymentId}`,
-  );
+export async function preApplyPayment(paymentId: string, cardNumber: string, expiry: string) {
+  return api<PreApplyResult>(`/billing/imports/payments/${paymentId}/pre-apply`, {
+    method: 'POST',
+    body: JSON.stringify({ cardNumber, expiry }),
+  });
 }
 
-/** Quote + checkout; redirects to Atmos when payment is required. Returns paymentId when ready to import. */
-export async function ensureImportPayment(opts: {
-  importType: ImportType;
-  contentFormat?: string;
-  textLength?: number;
-  wordCount?: number;
-  pageCount?: number;
-  onRedirect?: () => void;
-  confirmPay?: (quote: ImportQuote) => boolean | Promise<boolean>;
-}): Promise<{ paymentId: string | null; redirected: boolean }> {
-  const quote = await quoteImport(opts);
-  if (!quote.gatewayEnabled) {
-    return { paymentId: null, redirected: false };
-  }
+export async function applyPayment(paymentId: string, otp: string) {
+  return api<ApplyResult>(`/billing/imports/payments/${paymentId}/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ otp }),
+  });
+}
 
-  if (quote.requiresPayment) {
-    const ok = opts.confirmPay ? await opts.confirmPay(quote) : true;
-    if (!ok) throw new Error('Payment cancelled');
-  }
+export async function retryOtp(paymentId: string) {
+  return api<{ paymentId: string; step: 'otp' }>(`/billing/imports/payments/${paymentId}/retry-otp`, {
+    method: 'POST',
+  });
+}
 
-  const checkout = await checkoutImport({ ...opts, platform: 'web' });
-  if (checkout.paymentUrl) {
-    opts.onRedirect?.();
-    window.location.href = checkout.paymentUrl;
-    return { paymentId: checkout.paymentId, redirected: true };
-  }
-  return { paymentId: checkout.paymentId, redirected: false };
+export async function cancelPayment(paymentId: string, reason?: string) {
+  return api<{ paymentId: string; status: string }>(`/billing/imports/payments/${paymentId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
+  });
+}
+
+export async function getImportPayment(paymentId: string) {
+  return api<{ id: string; status: string; paymentUrl?: string | null; amountTiyins: number; ofdUrl?: string }>(
+    `/billing/imports/payments/${paymentId}`,
+  );
 }
 
 export function wordCountOf(text: string) {
