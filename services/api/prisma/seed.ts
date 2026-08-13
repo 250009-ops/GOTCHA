@@ -207,19 +207,67 @@ async function main() {
   }
 
   const demoPassword = await bcrypt.hash('Learner2026!', 12);
+  const learnerCreatedAt = new Date('2025-10-12T10:00:00.000Z');
   const demoUser = await prisma.user.upsert({
     where: { email: 'learner@gotcha.app' },
-    update: {},
+    update: {
+      displayName: 'Alex Chen',
+      passwordHash: demoPassword,
+      nativeLanguage: 'en',
+      uiLanguage: 'en',
+      streakCount: 7,
+      streakLastDate: new Date(),
+      emailVerifiedAt: new Date(),
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
+      createdAt: learnerCreatedAt,
+    },
     create: {
       email: 'learner@gotcha.app',
       passwordHash: demoPassword,
-      displayName: 'Demo Learner',
-      nativeLanguage: 'uz',
-      preferences: { create: {} },
+      displayName: 'Alex Chen',
+      nativeLanguage: 'en',
+      uiLanguage: 'en',
+      streakCount: 7,
+      streakLastDate: new Date(),
+      emailVerifiedAt: new Date(),
+      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
+      createdAt: learnerCreatedAt,
+      preferences: {
+        create: {
+          dailyGoalMinutes: 20,
+          notificationsEnabled: true,
+          readerFontScale: 1,
+          readerTheme: 'light',
+        },
+      },
       targetLanguages: {
-        create: [{ targetLanguage: 'en', isPrimary: true, cefrLevel: 'a2' }],
+        create: [
+          { targetLanguage: 'ru', isPrimary: true, cefrLevel: 'b1' },
+          { targetLanguage: 'en', isPrimary: false, cefrLevel: 'b2' },
+          { targetLanguage: 'uz', isPrimary: false, cefrLevel: 'a2' },
+        ],
       },
     },
+  });
+
+  await prisma.userPreferences.upsert({
+    where: { userId: demoUser.id },
+    update: { dailyGoalMinutes: 20, notificationsEnabled: true },
+    create: {
+      userId: demoUser.id,
+      dailyGoalMinutes: 20,
+      notificationsEnabled: true,
+    },
+  });
+
+  // Figma Profile: RU B1 / EN B2 / UZ A2
+  await prisma.userTargetLanguage.deleteMany({ where: { userId: demoUser.id } });
+  await prisma.userTargetLanguage.createMany({
+    data: [
+      { userId: demoUser.id, targetLanguage: 'ru', isPrimary: true, cefrLevel: 'b1' },
+      { userId: demoUser.id, targetLanguage: 'en', isPrimary: false, cefrLevel: 'b2' },
+      { userId: demoUser.id, targetLanguage: 'uz', isPrimary: false, cefrLevel: 'a2' },
+    ],
   });
 
   // Demo learner gets Premium so import / AI testing is not blocked by Free quotas.
@@ -250,9 +298,18 @@ async function main() {
     const slug = slugify(story.title);
     const { tokenMap, sentenceMap, wordCount } = tokenizeText(story.text);
 
+    const sampleCover =
+      story.language === 'ru'
+        ? 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=560&fit=crop'
+        : story.language === 'uz'
+          ? 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=560&fit=crop'
+          : 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=560&fit=crop';
     const item = await prisma.contentItem.upsert({
       where: { slug },
-      update: {},
+      update: {
+        coverImageKey: sampleCover,
+        publishStatus: PublishStatus.published,
+      },
       create: {
         slug,
         title: story.title,
@@ -262,11 +319,12 @@ async function main() {
         contentSource: story.source,
         cefrLevel: story.level,
         genre: story.genre,
+        coverImageKey: sampleCover,
         licenseId: story.source === ContentSource.licensed ? license.id : undefined,
         wordCount,
         uniqueWordCount: uniqueWordCount(tokenMap as never),
         publishStatus: PublishStatus.published,
-        publishedAt: new Date(),
+        publishedAt: new Date('2026-06-01'),
         createdById: admin.id,
         segments: {
           create: {
@@ -314,6 +372,8 @@ async function main() {
   const lighthouseAllTokens = chapterPayloads.flatMap((c) => c.tokenMap as Array<{ isWord?: boolean; lemma?: string | null }>);
   const lighthouseUnique = uniqueWordCount(lighthouseAllTokens as never);
 
+  const lighthouseCover =
+    'https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=400&h=560&fit=crop';
   const lighthouse = await prisma.contentItem.upsert({
     where: { slug: 'the-lighthouse-keeper' },
     update: {
@@ -325,10 +385,11 @@ async function main() {
       contentSource: ContentSource.public_domain,
       cefrLevel: 'b1',
       genre: 'fiction',
+      coverImageKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,
-      publishedAt: new Date(),
+      publishedAt: new Date('2026-07-20T12:00:00.000Z'),
     },
     create: {
       slug: 'the-lighthouse-keeper',
@@ -340,10 +401,11 @@ async function main() {
       contentSource: ContentSource.public_domain,
       cefrLevel: 'b1',
       genre: 'fiction',
+      coverImageKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,
-      publishedAt: new Date(),
+      publishedAt: new Date('2026-07-20T12:00:00.000Z'),
       createdById: admin.id,
     },
   });
@@ -396,27 +458,539 @@ async function main() {
     });
   }
 
-  // Seed a little progress so Library "Continue reading" can surface the story.
+  // Figma learner library / home catalog (covers + authors in subtitle).
+  const FIGMA_LEARNER_CONTENT: Array<{
+    slug: string;
+    title: string;
+    author: string;
+    language: AppLanguage;
+    level: CefrLevel;
+    type: ContentType;
+    genre: string;
+    cover: string;
+    text: string;
+  }> = [
+    {
+      slug: 'the-master-and-margarita',
+      title: 'The Master and Margarita',
+      author: 'Mikhail Bulgakov',
+      language: 'ru',
+      level: 'c1',
+      type: ContentType.book,
+      genre: 'novel',
+      cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=560&fit=crop',
+      text: `Мастер и Маргарита — роман о любви, творчестве и дьяволе, который посещает Москву. Однажды весной, в час небывало жаркого заката, в Москве, на Патриарших прудах, появились два гражданина.`,
+    },
+    {
+      slug: 'sherlock-holmes',
+      title: 'Sherlock Holmes',
+      author: 'Arthur Conan Doyle',
+      language: 'en',
+      level: 'b2',
+      type: ContentType.book,
+      genre: 'mystery',
+      cover: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=560&fit=crop',
+      text: `To Sherlock Holmes she is always the woman. I have seldom heard him mention her under any other name. In his eyes she eclipses and predominates the whole of her sex.`,
+    },
+    {
+      slug: 'uzbek-folk-tales',
+      title: 'Uzbek Folk Tales',
+      author: 'Traditional',
+      language: 'uz',
+      level: 'a2',
+      type: ContentType.book,
+      genre: 'folklore',
+      cover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=560&fit=crop',
+      text: `Qadim zamonlarda bir podshoh yashagan ekan. Uning uch o'g'li bor edi. Bir kuni podshoh o'g'illarini chaqirib, ularga aqldan darak beradigan vazifa berdi.`,
+    },
+    {
+      slug: 'anna-karenina',
+      title: 'Anna Karenina',
+      author: 'Leo Tolstoy',
+      language: 'ru',
+      level: 'c1',
+      type: ContentType.book,
+      genre: 'novel',
+      cover: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=560&fit=crop',
+      text: `Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему. Все смешалось в доме Облонских.`,
+    },
+    {
+      slug: 'first-space-news',
+      title: 'First Space News',
+      author: 'BBC News',
+      language: 'en',
+      level: 'b1',
+      type: ContentType.news,
+      genre: 'news',
+      cover: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&h=560&fit=crop',
+      text: `Astronomers have detected signals from a distant galaxy that may reshape how we understand star formation. Scientists say the discovery opens a new chapter in space observation for learners around the world.`,
+    },
+    {
+      slug: 'uzbek-cuisine-history',
+      title: 'Uzbek Cuisine History',
+      author: 'Tashkent News',
+      language: 'uz',
+      level: 'a2',
+      type: ContentType.article,
+      genre: 'culture',
+      cover: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=560&fit=crop',
+      text: `O'zbek oshxonasi asrlar davomida shakllangan. Palov, somsa va non — milliy taomlarimizning yuragi. Har bir viloyatning o'z retsepti bor.`,
+    },
+    {
+      slug: 'the-great-gatsby',
+      title: 'The Great Gatsby',
+      author: 'F. Scott Fitzgerald',
+      language: 'en',
+      level: 'b2',
+      type: ContentType.book,
+      genre: 'classic',
+      cover: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=560&fit=crop',
+      text: `In my younger and more vulnerable years my father gave me some advice that I've been turning over in my mind ever since. Whenever you feel like criticizing anyone, he told me, just remember that all the people in this world haven't had the advantages that you've had.`,
+    },
+    {
+      slug: 'war-and-peace',
+      title: 'War and Peace',
+      author: 'Leo Tolstoy',
+      language: 'ru',
+      level: 'c2',
+      type: ContentType.book,
+      genre: 'novel',
+      cover: 'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&h=560&fit=crop',
+      text: `Well, Prince, so Genoa and Lucca are now just family estates of the Buonapartes. But I warn you, if you don't tell me that this means war, if you still try to defend the infamies and horrors perpetrated by that Antichrist...`,
+    },
+  ];
+
+  const figmaContentIds: Record<string, string> = {};
+  for (const row of FIGMA_LEARNER_CONTENT) {
+    const { tokenMap, sentenceMap, wordCount } = tokenizeText(row.text);
+    const item = await prisma.contentItem.upsert({
+      where: { slug: row.slug },
+      update: {
+        title: row.title,
+        subtitle: row.author,
+        description: `${row.author} · ${row.level.toUpperCase()} ${row.genre}`,
+        language: row.language,
+        contentType: row.type,
+        contentSource: ContentSource.public_domain,
+        cefrLevel: row.level,
+        genre: row.genre,
+        coverImageKey: row.cover,
+        wordCount,
+        uniqueWordCount: uniqueWordCount(tokenMap as never),
+        publishStatus: PublishStatus.published,
+        publishedAt: new Date(),
+      },
+      create: {
+        slug: row.slug,
+        title: row.title,
+        subtitle: row.author,
+        description: `${row.author} · ${row.level.toUpperCase()} ${row.genre}`,
+        language: row.language,
+        contentType: row.type,
+        contentSource: ContentSource.public_domain,
+        cefrLevel: row.level,
+        genre: row.genre,
+        coverImageKey: row.cover,
+        wordCount,
+        uniqueWordCount: uniqueWordCount(tokenMap as never),
+        publishStatus: PublishStatus.published,
+        publishedAt: new Date(),
+        createdById: admin.id,
+        segments: {
+          create: {
+            segmentIndex: 0,
+            title: 'Chapter 1',
+            plainText: row.text,
+            tokenMap: tokenMap as never,
+            sentenceMap: sentenceMap as never,
+            wordCount,
+          },
+        },
+      },
+    });
+    figmaContentIds[row.slug] = item.id;
+    // Ensure a segment exists even when the item was created earlier without one.
+    const segCount = await prisma.contentSegment.count({ where: { contentId: item.id } });
+    if (segCount === 0) {
+      await prisma.contentSegment.create({
+        data: {
+          contentId: item.id,
+          segmentIndex: 0,
+          title: 'Chapter 1',
+          plainText: row.text,
+          tokenMap: tokenMap as never,
+          sentenceMap: sentenceMap as never,
+          wordCount,
+        },
+      });
+    }
+    await prisma.contentCollectionItem.upsert({
+      where: {
+        collectionId_contentId: {
+          collectionId: starterCollection.id,
+          contentId: item.id,
+        },
+      },
+      update: {},
+      create: {
+        collectionId: starterCollection.id,
+        contentId: item.id,
+        sortOrder: collectionSort++,
+      },
+    });
+  }
+
+  // Clear prior demo progress/sessions so Home Continue Reading matches Figma only.
+  await prisma.readingSession.deleteMany({ where: { userId: demoUser.id } });
+  await prisma.readingProgress.deleteMany({ where: { userId: demoUser.id } });
+
+  // Continue Reading (Figma Home): Master 64%, Sherlock 32%.
+  async function upsertProgress(
+    contentId: string,
+    progressPct: number,
+    opts?: { completed?: boolean; readSeconds?: number; lastReadAt?: Date },
+  ) {
+    const segment = await prisma.contentSegment.findFirst({
+      where: { contentId },
+      orderBy: { segmentIndex: 'asc' },
+    });
+    await prisma.readingProgress.upsert({
+      where: { userId_contentId: { userId: demoUser.id, contentId } },
+      create: {
+        userId: demoUser.id,
+        contentId,
+        segmentId: segment?.id,
+        progressPct,
+        totalReadSeconds: opts?.readSeconds ?? Math.round(progressPct * 12),
+        lastReadAt: opts?.lastReadAt ?? new Date(),
+        completedAt: opts?.completed ? new Date() : null,
+      },
+      update: {
+        segmentId: segment?.id,
+        progressPct,
+        totalReadSeconds: opts?.readSeconds ?? Math.round(progressPct * 12),
+        lastReadAt: opts?.lastReadAt ?? new Date(),
+        completedAt: opts?.completed ? new Date() : null,
+      },
+    });
+  }
+
+  const masterId = figmaContentIds['the-master-and-margarita'];
+  const sherlockId = figmaContentIds['sherlock-holmes'];
+  if (masterId) await upsertProgress(masterId, 64, { readSeconds: 2400, lastReadAt: new Date() });
+  if (sherlockId) {
+    await upsertProgress(sherlockId, 32, {
+      readSeconds: 1200,
+      lastReadAt: new Date(Date.now() - 3600_000),
+    });
+  }
+
+  // Keep lighthouse as a completed story so Reader demos still work.
   const firstSegment = await prisma.contentSegment.findFirst({
     where: { contentId: lighthouse.id },
     orderBy: { segmentIndex: 'asc' },
   });
   if (firstSegment) {
-    await prisma.readingProgress.upsert({
+    await upsertProgress(lighthouse.id, 100, {
+      completed: true,
+      readSeconds: 1800,
+      lastReadAt: new Date(Date.now() - 86400_000 * 2),
+    });
+  }
+
+  // Profile "23 articles read" — complete additional catalog + sample stories.
+  const extraCompleteSlugs = [
+    'anna-karenina',
+    'first-space-news',
+    'uzbek-cuisine-history',
+    'the-great-gatsby',
+    'war-and-peace',
+    'uzbek-folk-tales',
+    'a-morning-in-tashkent',
+    'utro-v-gorode',
+    'bahor-tongi',
+    'the-little-prince-opening',
+    'tech-news-language-apps-grow',
+  ];
+  let completedCount = 1; // lighthouse
+  for (const slug of extraCompleteSlugs) {
+    const id =
+      figmaContentIds[slug] ??
+      (await prisma.contentItem.findUnique({ where: { slug } }))?.id;
+    if (!id || id === masterId || id === sherlockId) continue;
+    await upsertProgress(id, 100, {
+      completed: true,
+      readSeconds: 600 + completedCount * 40,
+      lastReadAt: new Date(Date.now() - completedCount * 3600_000),
+    });
+    completedCount += 1;
+  }
+  // Pad to 23 completed with synthetic short articles if needed.
+  while (completedCount < 23) {
+    const slug = `figma-completed-article-${completedCount}`;
+    const sample = `Completed sample article ${completedCount} for GOTCHA Figma profile stats.`;
+    const { tokenMap, sentenceMap, wordCount } = tokenizeText(sample);
+    const item = await prisma.contentItem.upsert({
+      where: { slug },
+      // Keep below featured learner catalog in Library (publishedAt desc).
+      update: {
+        publishStatus: PublishStatus.published,
+        publishedAt: new Date('2026-05-01T12:00:00.000Z'),
+        coverImageKey: 'https://images.unsplash.com/photo-14565130808-af32db8c1b38?w=400&h=560&fit=crop',
+      },
+      create: {
+        slug,
+        title: `Practice Article ${completedCount}`,
+        subtitle: 'GOTCHA Library',
+        description: 'Seeded completed reading for Figma profile stats.',
+        language: 'en',
+        contentType: ContentType.article,
+        contentSource: ContentSource.public_domain,
+        cefrLevel: 'b1',
+        genre: 'article',
+        coverImageKey: 'https://images.unsplash.com/photo-14565130808-af32db8c1b38?w=400&h=560&fit=crop',
+        wordCount,
+        uniqueWordCount: uniqueWordCount(tokenMap as never),
+        publishStatus: PublishStatus.published,
+        publishedAt: new Date('2026-05-01T12:00:00.000Z'),
+        createdById: admin.id,
+        segments: {
+          create: {
+            segmentIndex: 0,
+            title: 'Part 1',
+            plainText: sample,
+            tokenMap: tokenMap as never,
+            sentenceMap: sentenceMap as never,
+            wordCount,
+          },
+        },
+      },
+    });
+    await upsertProgress(item.id, 100, {
+      completed: true,
+      readSeconds: 300,
+      lastReadAt: new Date(Date.now() - completedCount * 7200_000),
+    });
+    completedCount += 1;
+  }
+
+  // Align session history with streakCount=7 (heatmap / bestStreak / calendar).
+  // Today: 15 / 20 min daily goal + 12 new words; prior 6 days lighter sessions.
+  const streakDayStart = new Date();
+  streakDayStart.setHours(0, 0, 0, 0);
+  streakDayStart.setDate(streakDayStart.getDate() - 6);
+  await prisma.readingSession.deleteMany({
+    where: {
+      userId: demoUser.id,
+      startedAt: { gte: streakDayStart },
+    },
+  });
+  if (masterId) {
+    for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
+      const startedAt = new Date();
+      startedAt.setHours(10, 0, 0, 0);
+      startedAt.setDate(startedAt.getDate() - dayOffset);
+      const isToday = dayOffset === 0;
+      await prisma.readingSession.create({
+        data: {
+          userId: demoUser.id,
+          contentId: masterId,
+          startedAt,
+          endedAt: new Date(startedAt.getTime() + (isToday ? 15 : 12) * 60_000),
+          durationSeconds: (isToday ? 15 : 12) * 60,
+          wordsSaved: isToday ? 12 : 3,
+          wordsTapped: isToday ? 28 : 8,
+        },
+      });
+    }
+  }
+
+  // Vocabulary: Figma showcase words first; pad count to 1,247 without lemma_N junk in Recent.
+  await prisma.userVocabulary.deleteMany({
+    where: { userId: demoUser.id, lemma: { startsWith: 'lemma_' } },
+  });
+  const vocabSeedWords: Array<{
+    lemma: string;
+    translation: string;
+    source: AppLanguage;
+    target: AppLanguage;
+    due?: boolean;
+  }> = [
+    { lemma: 'солнце', translation: 'sun', source: 'ru', target: 'en', due: true },
+    { lemma: 'magnificently', translation: 'величественно', source: 'en', target: 'ru', due: true },
+    { lemma: 'treacherous', translation: 'опасный', source: 'en', target: 'ru', due: true },
+    { lemma: 'solitary', translation: 'одинокий', source: 'en', target: 'ru', due: true },
+    { lemma: 'illuminate', translation: 'освещать', source: 'en', target: 'ru', due: true },
+    { lemma: 'vessel', translation: 'судно', source: 'en', target: 'ru', due: true },
+    { lemma: 'horizon', translation: 'горизонт', source: 'en', target: 'ru', due: true },
+    { lemma: 'мастер', translation: 'master', source: 'ru', target: 'en', due: true },
+    { lemma: 'любовь', translation: 'love', source: 'ru', target: 'en' },
+    { lemma: 'дьявол', translation: 'devil', source: 'ru', target: 'en' },
+    { lemma: 'podshoh', translation: 'king', source: 'uz', target: 'en' },
+    { lemma: 'palov', translation: 'pilaf', source: 'uz', target: 'en' },
+    { lemma: 'non', translation: 'bread', source: 'uz', target: 'en' },
+  ];
+  const WORD_BANK: Array<{ lemma: string; translation: string; source: AppLanguage; target: AppLanguage }> = [
+    { lemma: 'ephemeral', translation: 'эфемерный', source: 'en', target: 'ru' },
+    { lemma: 'resilient', translation: 'стойкий', source: 'en', target: 'ru' },
+    { lemma: 'luminous', translation: 'светящийся', source: 'en', target: 'ru' },
+    { lemma: 'whisper', translation: 'шёпот', source: 'en', target: 'ru' },
+    { lemma: 'threshold', translation: 'порог', source: 'en', target: 'ru' },
+    { lemma: 'рассвет', translation: 'dawn', source: 'ru', target: 'en' },
+    { lemma: 'судьба', translation: 'fate', source: 'ru', target: 'en' },
+    { lemma: 'память', translation: 'memory', source: 'ru', target: 'en' },
+    { lemma: 'kitob', translation: 'book', source: 'uz', target: 'en' },
+    { lemma: 'dost', translation: 'friend', source: 'uz', target: 'en' },
+    { lemma: 'bahor', translation: 'spring', source: 'uz', target: 'en' },
+    { lemma: 'serenity', translation: 'спокойствие', source: 'en', target: 'ru' },
+  ];
+  for (const [i, w] of vocabSeedWords.entries()) {
+    await prisma.userVocabulary.upsert({
       where: {
-        userId_contentId: { userId: demoUser.id, contentId: lighthouse.id },
+        userId_lemma_sourceLang_targetLang: {
+          userId: demoUser.id,
+          lemma: w.lemma,
+          sourceLang: w.source,
+          targetLang: w.target,
+        },
       },
       create: {
         userId: demoUser.id,
-        contentId: lighthouse.id,
-        segmentId: firstSegment.id,
-        progressPct: 12,
-        lastReadAt: new Date(),
+        lemma: w.lemma,
+        sourceLang: w.source,
+        targetLang: w.target,
+        translation: w.translation,
+        dueAt: new Date(Date.now() + (w.due ? -60_000 : (i + 1) * 3600_000)),
+        mastered: !w.due && i > 8,
+        easeFactor: 2.5,
+        intervalDays: !w.due && i > 8 ? 21 : 1,
+        repetitions: !w.due && i > 8 ? 4 : 1,
+        createdAt: new Date(Date.now() - i * 120_000),
       },
       update: {
-        segmentId: firstSegment.id,
-        progressPct: 12,
-        lastReadAt: new Date(),
+        translation: w.translation,
+        dueAt: new Date(Date.now() + (w.due ? -60_000 : (i + 1) * 3600_000)),
+        mastered: !w.due && i > 8,
+        createdAt: new Date(Date.now() - i * 120_000),
+      },
+    });
+  }
+  const currentVocab = await prisma.userVocabulary.count({ where: { userId: demoUser.id } });
+  const TARGET_VOCAB = 1247;
+  if (currentVocab < TARGET_VOCAB) {
+    const pad: Array<{
+      userId: string;
+      lemma: string;
+      sourceLang: AppLanguage;
+      targetLang: AppLanguage;
+      translation: string;
+      dueAt: Date;
+      mastered: boolean;
+      easeFactor: number;
+      intervalDays: number;
+      repetitions: number;
+      createdAt: Date;
+    }> = [];
+    for (let i = currentVocab; i < TARGET_VOCAB; i++) {
+      const bank = WORD_BANK[i % WORD_BANK.length];
+      pad.push({
+        userId: demoUser.id,
+        lemma: `${bank.lemma}_${i}`,
+        sourceLang: bank.source,
+        targetLang: bank.target,
+        translation: bank.translation,
+        dueAt: new Date(Date.now() + (i + 20) * 3600_000),
+        mastered: i % 5 === 0,
+        easeFactor: 2.5,
+        intervalDays: i % 5 === 0 ? 30 : 2,
+        repetitions: i % 5 === 0 ? 5 : 1,
+        // Older than showcase words so Recent list shows Figma lemmas first.
+        createdAt: new Date(Date.now() - (30 + i) * 86_400_000),
+      });
+    }
+    const chunk = 200;
+    for (let i = 0; i < pad.length; i += chunk) {
+      await prisma.userVocabulary.createMany({
+        data: pad.slice(i, i + chunk),
+        skipDuplicates: true,
+      });
+    }
+  }
+
+  // Cap due-for-review to Figma "8 words".
+  const dueNow = await prisma.userVocabulary.findMany({
+    where: { userId: demoUser.id, mastered: false, dueAt: { lte: new Date() } },
+    orderBy: { createdAt: 'desc' },
+    select: { id: true },
+  });
+  for (const [i, row] of dueNow.entries()) {
+    if (i >= 8) {
+      await prisma.userVocabulary.update({
+        where: { id: row.id },
+        data: { dueAt: new Date(Date.now() + (i + 1) * 86_400_000) },
+      });
+    }
+  }
+
+  // Recent imports for Import screen (Figma 29:7).
+  await prisma.userImport.deleteMany({ where: { userId: demoUser.id } });
+  const importSamples = [
+    {
+      title: 'The Art of Translation & Context',
+      importType: 'url' as const,
+      sourceUrl: 'https://example.com/translation-context',
+      language: 'en' as AppLanguage,
+      createdAt: new Date(Date.now() - 2 * 3600_000),
+    },
+    {
+      title: 'Sapiens - Chapter 3.pdf',
+      importType: 'pdf' as const,
+      sourceUrl: null as string | null,
+      language: 'es' as AppLanguage,
+      createdAt: new Date(Date.now() - 86400_000),
+    },
+  ];
+  for (const imp of importSamples) {
+    const { tokenMap, sentenceMap, wordCount } = tokenizeText(
+      `${imp.title}. Sample imported text for the GOTCHA learner import screen.`,
+    );
+    const content = await prisma.contentItem.create({
+      data: {
+        slug: `import-${slugify(imp.title)}-${imp.createdAt.getTime()}`,
+        title: imp.title,
+        subtitle: imp.importType.toUpperCase(),
+        language: imp.language,
+        contentType: ContentType.user_import,
+        contentSource: ContentSource.user_import,
+        cefrLevel: imp.language === 'es' ? 'c1' : 'b2',
+        genre: 'import',
+        wordCount,
+        uniqueWordCount: uniqueWordCount(tokenMap as never),
+        publishStatus: PublishStatus.published,
+        publishedAt: imp.createdAt,
+        createdById: demoUser.id,
+        segments: {
+          create: {
+            segmentIndex: 0,
+            title: 'Imported',
+            plainText: `${imp.title}. Sample imported text for the GOTCHA learner import screen.`,
+            tokenMap: tokenMap as never,
+            sentenceMap: sentenceMap as never,
+            wordCount,
+          },
+        },
+      },
+    });
+    await prisma.userImport.create({
+      data: {
+        userId: demoUser.id,
+        contentId: content.id,
+        importType: imp.importType,
+        sourceUrl: imp.sourceUrl,
+        title: imp.title,
+        language: imp.language,
+        ingestionStatus: 'ready',
+        createdAt: imp.createdAt,
       },
     });
   }
@@ -527,7 +1101,17 @@ async function main() {
   }
 
   // Real ContentItem rows (stable slugs) for admin Content Library Publish/Archive.
-  for (const row of FIGMA_ADMIN_METRICS.content.seedCurriculum) {
+  const curriculumCovers = [
+    'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=560&fit=crop',
+    'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&h=560&fit=crop',
+  ];
+  for (const [curriculumIdx, row] of FIGMA_ADMIN_METRICS.content.seedCurriculum.entries()) {
     const slug = slugify(row.title);
     const sample = `${row.title}. Sample graded text for GOTCHA admin curriculum seeding.`;
     const { tokenMap, sentenceMap, wordCount } = tokenizeText(sample);
@@ -543,6 +1127,14 @@ async function main() {
         : row.status === 'review' ? PublishStatus.review
           : PublishStatus.draft;
 
+    const priceUsd = Number((row as { priceUsd?: number }).priceUsd ?? 0);
+    const salesCount = Number((row as { salesCount?: number }).salesCount ?? 0);
+    const isFree = Boolean((row as { isFree?: boolean }).isFree ?? priceUsd <= 0);
+
+    const coverImageKey = curriculumCovers[curriculumIdx % curriculumCovers.length];
+    // Keep admin curriculum below Figma learner catalog in Library sort (publishedAt desc).
+    const curriculumPublishedAt =
+      status === PublishStatus.published ? new Date('2026-07-15T12:00:00.000Z') : null;
     await prisma.contentItem.upsert({
       where: { slug },
       update: {
@@ -552,7 +1144,11 @@ async function main() {
         cefrLevel: row.level as CefrLevel,
         wordCount: row.wordCount || wordCount,
         publishStatus: status,
-        publishedAt: status === PublishStatus.published ? new Date() : null,
+        publishedAt: curriculumPublishedAt,
+        coverImageKey,
+        isFree,
+        priceUsd,
+        salesCount,
       },
       create: {
         slug,
@@ -563,10 +1159,14 @@ async function main() {
         contentSource: ContentSource.public_domain,
         cefrLevel: row.level as CefrLevel,
         genre: row.type,
+        coverImageKey,
         wordCount: row.wordCount || wordCount,
         uniqueWordCount: uniqueWordCount(tokenMap as never),
         publishStatus: status,
-        publishedAt: status === PublishStatus.published ? new Date() : undefined,
+        publishedAt: curriculumPublishedAt ?? undefined,
+        isFree,
+        priceUsd,
+        salesCount,
         createdById: admin.id,
         segments: {
           create: {
@@ -577,6 +1177,95 @@ async function main() {
             sentenceMap: sentenceMap as never,
             wordCount,
           },
+        },
+      },
+    });
+  }
+
+  // Learner Library: Figma catalog sorts above admin curriculum samples.
+  for (const [i, slug] of Object.keys(figmaContentIds).entries()) {
+    await prisma.contentItem.update({
+      where: { slug },
+      data: { publishedAt: new Date(Date.now() - i * 60_000) },
+    });
+  }
+
+  // Import & Pricing controls (Figma 47:1091)
+  // Prices stored as UZS (soʻm). Atmos charges tiyins = UZS × 100.
+  //
+  // IDEMPOTENT: Do NOT overwrite admin-edited prices on redeploy.
+  // Update clause only includes non-price metadata; prices are set only on initial create.
+  const importRules = [
+    { key: 'ebook', label: 'E-Book / Novel', pricePerImport: 49000, pricePerPage: 500, isActive: true, sortOrder: 1 },
+    { key: 'article', label: 'Article / Webpage', pricePerImport: 12000, pricePerPage: 1000, isActive: true, sortOrder: 2 },
+    { key: 'news', label: 'News Feed', pricePerImport: 15000, pricePerPage: 800, isActive: true, sortOrder: 3 },
+    { key: 'research', label: 'Research Paper', pricePerImport: 39000, pricePerPage: 1500, isActive: true, sortOrder: 4 },
+    { key: 'custom', label: 'Custom Document Upload', pricePerImport: 25000, pricePerPage: 1200, isActive: false, sortOrder: 5 },
+  ];
+  for (const rule of importRules) {
+    await prisma.importPricingRule.upsert({
+      where: { key: rule.key },
+      // IDEMPOTENT: Only update labels/status/sort — preserve admin-edited prices
+      update: {
+        label: rule.label,
+        isActive: rule.isActive,
+        sortOrder: rule.sortOrder,
+      },
+      create: rule,
+    });
+  }
+
+  const pageTiers = [
+    { id: '00000000-0000-4000-8000-000000000041', label: '1 - 10 pages', minPages: 1, maxPages: 10, priceUsd: 12000, sortOrder: 1 },
+    { id: '00000000-0000-4000-8000-000000000042', label: '11 - 50 pages', minPages: 11, maxPages: 50, priceUsd: 29000, sortOrder: 2 },
+    { id: '00000000-0000-4000-8000-000000000043', label: '51 - 100 pages', minPages: 51, maxPages: 100, priceUsd: 49000, sortOrder: 3 },
+    { id: '00000000-0000-4000-8000-000000000044', label: '100+ pages', minPages: 101, maxPages: null, priceUsd: 79000, sortOrder: 4 },
+  ];
+  for (const tier of pageTiers) {
+    await prisma.importPageTier.upsert({
+      where: { id: tier.id },
+      // IDEMPOTENT: Only update labels/ranges/sort — preserve admin-edited priceUsd
+      update: {
+        label: tier.label,
+        minPages: tier.minPages,
+        maxPages: tier.maxPages,
+        sortOrder: tier.sortOrder,
+        // NOTE: priceUsd intentionally NOT included — admin edits are the source of truth
+      },
+      create: tier,
+    });
+  }
+
+  // IDEMPOTENT: Only create importFreeLimits if missing — do not overwrite admin edits
+  const existingFreeLimits = await prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
+  if (!existingFreeLimits) {
+    await prisma.platformSetting.create({
+      data: {
+        key: 'importFreeLimits',
+        value: {
+          dailyFreeImportsPerUser: 3,
+          monthlyFreePageLimit: 50,
+          allowedFormats: ['article', 'news'],
+          resetCycle: 'monthly',
+          allowRollover: true,
+        },
+      },
+    });
+  }
+
+  // IDEMPOTENT: Only create catalogPricingRules if missing — do not overwrite admin edits
+  const existingCatalogRules = await prisma.platformSetting.findUnique({ where: { key: 'catalogPricingRules' } });
+  if (!existingCatalogRules) {
+    await prisma.platformSetting.create({
+      data: {
+        key: 'catalogPricingRules',
+        value: {
+          contentType: 'book',
+          basePriceUsd: 4.99,
+          perPageSurchargeUsd: 0.02,
+          volumeDiscountsEnabled: true,
+          buy3PctOff: 10,
+          buy5PctOff: 20,
         },
       },
     });
@@ -625,6 +1314,22 @@ async function main() {
     where: { key: 'aiQuizModel' },
     update: { value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini' },
     create: { key: 'aiQuizModel', value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini' },
+  });
+  await prisma.platformSetting.upsert({
+    where: { key: 'aiImportCleanupModel' },
+    update: {
+      value:
+        process.env.OPENAI_MODEL_IMPORT ??
+        process.env.OPENAI_MODEL_LOOKUP ??
+        'gpt-4.1-mini',
+    },
+    create: {
+      key: 'aiImportCleanupModel',
+      value:
+        process.env.OPENAI_MODEL_IMPORT ??
+        process.env.OPENAI_MODEL_LOOKUP ??
+        'gpt-4.1-mini',
+    },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiDefaultUserQuota' },
@@ -752,6 +1457,113 @@ async function main() {
       tokensUsed: remainder * 32,
     },
   });
+
+  // Demo messaging: conversations between learner and showcase peers (idempotent).
+  const existingConversations = await prisma.conversation.count();
+  if (existingConversations === 0) {
+    const elena = await prisma.user.findUnique({ where: { email: 'elena@rostov.ru' } });
+    const yuki = await prisma.user.findUnique({ where: { email: 'yuki.t@tokyo.jp' } });
+    const marc = await prisma.user.findUnique({ where: { email: 'm.andre@quebec.ca' } });
+    const peers = [elena, yuki, marc].filter(Boolean) as Array<{ id: string }>;
+    const anyContent = await prisma.contentItem.findFirst({
+      where: { publishStatus: 'published' },
+      select: { id: true },
+    });
+
+    for (const peer of peers) {
+      const pairKey = [demoUser.id, peer.id].sort().join(':');
+      const conversation = await prisma.conversation.create({
+        data: {
+          pairKey,
+          language: 'ru',
+          contentId: anyContent?.id,
+          lastMessageAt: new Date(),
+          participants: {
+            create: [
+              { userId: demoUser.id, lastReadAt: new Date(Date.now() - 3600_000) },
+              { userId: peer.id, lastReadAt: new Date() },
+            ],
+          },
+        },
+      });
+
+      const seedMsgs =
+        peer.id === elena?.id
+          ? [
+              {
+                senderId: peer.id,
+                body: 'Привет, Алекс! Как проходит твое изучение русского?',
+                translation: 'Hello, Alex! How is your Russian learning going?',
+                bodyLang: 'ru' as const,
+                hoursAgo: 3,
+              },
+              {
+                senderId: demoUser.id,
+                body: 'Привет! Все отлично. Сегодня прочитал главу Мастера и Маргариты.',
+                translation: 'Hi! Everything is great. Today I read a chapter of The Master and Margarita.',
+                bodyLang: 'ru' as const,
+                hoursAgo: 2.9,
+              },
+              {
+                senderId: peer.id,
+                body: "Ого, классика! Если возникнут трудные слова, пиши",
+                translation: 'Wow, a classic! If you find difficult words, write to me',
+                bodyLang: 'ru' as const,
+                hoursAgo: 2.8,
+              },
+              {
+                senderId: demoUser.id,
+                body: 'Спасибо! Я как раз добавил несколько новых слов в свой словарь.',
+                translation: 'Thanks! I just added some new words to my vocabulary.',
+                bodyLang: 'ru' as const,
+                hoursAgo: 2.7,
+              },
+              {
+                senderId: peer.id,
+                body: "Thanks! That translation of 'книга' makes sense now.",
+                translation: null,
+                bodyLang: 'en' as const,
+                hoursAgo: 2,
+              },
+            ]
+          : peer.id === yuki?.id
+            ? [
+                {
+                  senderId: peer.id,
+                  body: 'Would you like to do a speaking practice session tomorrow?',
+                  translation: null,
+                  bodyLang: 'en' as const,
+                  hoursAgo: 5,
+                },
+              ]
+            : [
+                {
+                  senderId: peer.id,
+                  body: "O'zbek tilini o'rganish juda qiziqarli!",
+                  translation: 'Learning Uzbek is very interesting!',
+                  bodyLang: 'uz' as const,
+                  hoursAgo: 26,
+                },
+              ];
+
+      for (const m of seedMsgs) {
+        await prisma.message.create({
+          data: {
+            conversationId: conversation.id,
+            senderId: m.senderId,
+            body: m.body,
+            translation: m.translation,
+            bodyLang: m.bodyLang,
+            createdAt: new Date(Date.now() - m.hoursAgo * 3600_000),
+          },
+        });
+      }
+      await prisma.conversation.update({
+        where: { id: conversation.id },
+        data: { lastMessageAt: new Date(Date.now() - seedMsgs[seedMsgs.length - 1]!.hoursAgo * 3600_000) },
+      });
+    }
+  }
 
   console.log('Seed complete.');
   console.log('Admin: admin@gotcha.app / GotchaAdmin2026!');
