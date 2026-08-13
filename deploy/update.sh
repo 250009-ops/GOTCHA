@@ -133,9 +133,13 @@ sed "s/__DOMAIN__/${DOMAIN}/g" deploy/nginx/gotcha.conf > "/etc/nginx/sites-avai
 ln -sf /etc/nginx/sites-available/gotcha /etc/nginx/sites-enabled/gotcha
 nginx -t && systemctl reload nginx
 if [[ -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
-  certbot install --cert-name "${DOMAIN}" --nginx --non-interactive --redirect \
-    || certbot --nginx -d "${DOMAIN}" -d "www.${DOMAIN}" --non-interactive --agree-tos \
-         -m "admin@${DOMAIN}" --redirect --reinstall || true
+  # CRITICAL: Do NOT swallow certbot failures — silent SSL failure causes login 500s.
+  # Try install first (fast, uses existing cert); fall back to full renewal if needed.
+  if ! certbot install --cert-name "${DOMAIN}" --nginx --non-interactive --redirect; then
+    echo "certbot install failed, attempting full renewal..."
+    certbot --nginx -d "${DOMAIN}" -d "www.${DOMAIN}" --non-interactive --agree-tos \
+      -m "admin@${DOMAIN}" --redirect --reinstall
+  fi
   nginx -t && systemctl reload nginx
 fi
 
