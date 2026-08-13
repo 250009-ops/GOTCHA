@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
@@ -8,7 +8,6 @@ import {
   ExternalLink,
   FileText,
   Globe,
-  Info,
   Link,
   Loader2,
   Trash2,
@@ -18,9 +17,10 @@ import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/ui/button';
+import { Dialog } from '../components/ui/dialog';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
-import { quoteImport } from '../lib/importBilling';
+import { quoteImport, formatUzs, type ImportQuote } from '../lib/importBilling';
 
 interface ImportItem {
   id: string;
@@ -333,12 +333,6 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />{fileError}
         </p>
       )}
-      <div className="flex items-start gap-2 p-3 mt-4 bg-[#eff6ff] border border-[#bedbff] rounded-[14px]">
-        <Info className="w-4 h-4 text-[#1447e6] shrink-0 mt-0.5" />
-        <p className="text-xs text-[#1447e6]">
-          Text PDFs extract up to ~500 pages. Scanned PDFs use chunked OCR (English best; Russian/Uzbek less accurate). Large files process in the background — watch progress in history. Password-protected PDFs are not supported.
-        </p>
-      </div>
       <div className="pt-4">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
         <input
@@ -371,6 +365,130 @@ function ImportLogoMark() {
   );
 }
 
+type PaymentModalState = {
+  open: boolean;
+  quote: ImportQuote | null;
+  importTitle: string;
+  importType: string;
+  onConfirm: (() => void) | null;
+};
+
+function PaymentConfirmModal({
+  state,
+  onClose,
+  loading,
+}: {
+  state: PaymentModalState;
+  onClose: () => void;
+  loading: boolean;
+}) {
+  if (!state.quote) return null;
+
+  const { quote, onConfirm, importTitle, importType } = state;
+  const displayTitle = importTitle || 'Your Import';
+  const typeLabel = importType === 'pdf' || importType === 'epub'
+    ? importType.toUpperCase()
+    : importType === 'url'
+    ? 'URL'
+    : 'Text';
+
+  return (
+    <Dialog open={state.open} onOpenChange={(open) => !open && onClose()}>
+      <div className="flex flex-col gap-5 items-center px-5 pb-6 pt-2">
+        {/* Drag handle indicator */}
+        <div className="w-9 h-[5px] rounded-full bg-[#d1d5db]" />
+
+        {/* Cover placeholder with book icon */}
+        <div
+          className="w-20 h-[110px] rounded-lg flex items-center justify-center"
+          style={{ background: 'linear-gradient(to right, #8b5cf6, #7008e7)', boxShadow: '0 8px 8px rgba(112, 8, 231, 0.2)' }}
+        >
+          <FileText className="w-8 h-8 text-white" />
+        </div>
+
+        {/* Title + badges */}
+        <div className="flex flex-col gap-2 items-center w-full">
+          <h2 className="text-[#101828] text-xl font-bold text-center leading-tight">{displayTitle}</h2>
+          <div className="flex gap-2 items-center pt-1">
+            <span className="bg-[#f3f4f6] text-[#101828] text-xs font-semibold px-2.5 py-1 rounded-full">
+              {typeLabel}
+            </span>
+          </div>
+        </div>
+
+        {/* Stats row: pages */}
+        <div className="flex items-center justify-center gap-4 w-full px-4 py-0.5">
+          <span className="text-[#101828] text-[13px] font-semibold">
+            ~{quote.estimatedPages.toLocaleString()} {quote.estimatedPages === 1 ? 'page' : 'pages'}
+          </span>
+          {quote.tier && (
+            <>
+              <span className="w-px h-3 bg-[#d1d5db]" />
+              <span className="text-[#101828] text-[13px] font-semibold">{quote.tier.label}</span>
+            </>
+          )}
+        </div>
+
+        {/* Pricing card */}
+        <div className="w-full border border-[#e4e7ec] rounded-xl p-4 flex flex-col gap-3 bg-white">
+          {quote.tier && (
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-[#6a7282]">Page tier ({quote.tier.label})</span>
+              <span className="text-[#101828] font-medium">{formatUzs(quote.tier.priceUzs)}</span>
+            </div>
+          )}
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-[#6a7282]">Estimated pages</span>
+            <span className="text-[#101828] font-medium">~{quote.estimatedPages}</span>
+          </div>
+          <div className="h-px bg-[#e4e7ec]" />
+          <div className="flex justify-between items-center">
+            <span className="text-[#101828] text-sm font-semibold">Total</span>
+            <span className="text-[#7008e7] text-base font-bold">{formatUzs(quote.amountUzs)}</span>
+          </div>
+        </div>
+
+        {/* CTA button */}
+        <button
+          type="button"
+          onClick={onConfirm ?? undefined}
+          disabled={loading || !onConfirm}
+          className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
+          style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
+        >
+          {loading ? (
+            <>
+              <Loader2 className="w-5 h-5 animate-spin" />
+              Processing…
+            </>
+          ) : (
+            <>Purchase for {formatUzs(quote.amountUzs)}</>
+          )}
+        </button>
+
+        {/* Cancel link */}
+        <button
+          type="button"
+          onClick={onClose}
+          disabled={loading}
+          className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
+        >
+          Cancel
+        </button>
+
+        {/* Terms footer */}
+        <p className="text-[#6a7282] text-[11px] text-center leading-relaxed">
+          By purchasing, you agree to our{' '}
+          <a href="/terms" className="text-[#7008e7] underline underline-offset-2">
+            Terms of Service
+          </a>
+          . Payment via Atmos.
+        </p>
+      </div>
+    </Dialog>
+  );
+}
+
 export default function ImportPage() {
   const navigate = useNavigate();
   const [tab, setTab] = useState<ImportTab>('url');
@@ -384,9 +502,8 @@ export default function ImportPage() {
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  // Reflects the real PAYMENT_GATEWAY_ENABLED state instead of hardcoded Atmos copy
-  // (see docs/E2E_AUDIT_REPORT.md's stale-paid-import-messaging finding).
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  const [paymentModal, setPaymentModal] = useState<PaymentModalState>({ open: false, quote: null, importTitle: '', importType: '', onConfirm: null });
 
   const atImportLimit = !importsUnlimited && importRemaining !== null && importRemaining <= 0;
 
@@ -409,7 +526,6 @@ export default function ImportPage() {
       .catch(() => undefined);
   }, []);
 
-  // Poll while any import is still processing
   useEffect(() => {
     const pending = imports.some((i) => isPendingStatus(i.ingestionStatus));
     if (!pending) return;
@@ -447,54 +563,77 @@ export default function ImportPage() {
     return false;
   };
 
-  const confirmPay = async (quote: { amountUzs: number; estimatedPages: number; tier: { label: string } | null }) => {
-    const { formatUzs } = await import('../lib/importBilling');
-    return window.confirm(
-      `This import is ~${quote.estimatedPages} pages (${quote.tier?.label ?? 'custom'}).\n` +
-        `Pay ${formatUzs(quote.amountUzs)} via Atmos to continue?`,
-    );
-  };
+  const closePaymentModal = useCallback(() => {
+    setPaymentModal({ open: false, quote: null, importTitle: '', importType: '', onConfirm: null });
+    setLoading(false);
+  }, []);
 
   const handleUrlImport = async (data: { url: string; title: string; lang: string }) => {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport, checkoutImport, savePendingImport } = await import('../lib/importBilling');
-      const quote = await quoteImport({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+      const { quoteImport: getQuote, checkoutImport, savePendingImport } = await import('../lib/importBilling');
+      const quote = await getQuote({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+
+      const proceedWithCheckout = async () => {
+        setLoading(true);
+        closePaymentModal();
+        try {
+          const checkout = await checkoutImport({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+          if (checkout.paymentUrl) {
+            savePendingImport({
+              kind: 'url',
+              paymentId: checkout.paymentId,
+              url: data.url,
+              title: data.title,
+              lang: data.lang,
+            });
+            window.location.href = checkout.paymentUrl;
+            return;
+          }
+          const item = await api<ImportItem>('/imports/url', {
+            method: 'POST',
+            body: JSON.stringify({
+              url: data.url,
+              language: data.lang,
+              title: data.title || undefined,
+              paymentId: checkout.paymentId,
+            }),
+          });
+          toastReady(item);
+          await load(1);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Import failed');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (quote.gatewayEnabled && quote.requiresPayment) {
+        setPaymentModal({ open: true, quote, importTitle: data.title || data.url, importType: 'url', onConfirm: proceedWithCheckout });
+        return;
+      }
+
       let paymentId: string | null = null;
       if (quote.gatewayEnabled) {
-        if (quote.requiresPayment && !(await confirmPay(quote))) {
-          throw new Error('Payment cancelled');
-        }
         const checkout = await checkoutImport({ importType: 'url', contentFormat: 'article', textLength: 6000 });
         paymentId = checkout.paymentId;
         if (checkout.paymentUrl) {
-          savePendingImport({
-            kind: 'url',
-            paymentId: checkout.paymentId,
-            url: data.url,
-            title: data.title,
-            lang: data.lang,
-          });
+          savePendingImport({ kind: 'url', paymentId: checkout.paymentId, url: data.url, title: data.title, lang: data.lang });
           window.location.href = checkout.paymentUrl;
           return;
         }
       }
       const item = await api<ImportItem>('/imports/url', {
         method: 'POST',
-        body: JSON.stringify({
-          url: data.url,
-          language: data.lang,
-          title: data.title || undefined,
-          ...(paymentId ? { paymentId } : {}),
-        }),
+        body: JSON.stringify({ url: data.url, language: data.lang, title: data.title || undefined, ...(paymentId ? { paymentId } : {}) }),
       });
       toastReady(item);
       await load(1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed');
     } finally {
-      setLoading(false);
+      if (!paymentModal.open) setLoading(false);
     }
   };
 
@@ -502,53 +641,59 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport, checkoutImport, savePendingImport, wordCountOf } = await import('../lib/importBilling');
+      const { quoteImport: getQuote, checkoutImport, savePendingImport, wordCountOf } = await import('../lib/importBilling');
       const words = wordCountOf(data.text);
-      const quote = await quoteImport({
-        importType: 'paste',
-        contentFormat: 'article',
-        textLength: data.text.length,
-        wordCount: words,
-      });
+      const quoteParams = { importType: 'paste' as const, contentFormat: 'article', textLength: data.text.length, wordCount: words };
+      const quote = await getQuote(quoteParams);
+
+      const proceedWithCheckout = async () => {
+        setLoading(true);
+        closePaymentModal();
+        try {
+          const checkout = await checkoutImport(quoteParams);
+          if (checkout.paymentUrl) {
+            savePendingImport({ kind: 'paste', paymentId: checkout.paymentId, title: data.title, text: data.text, lang: data.lang });
+            window.location.href = checkout.paymentUrl;
+            return;
+          }
+          const item = await api<ImportItem>('/imports/paste', {
+            method: 'POST',
+            body: JSON.stringify({ title: data.title, text: data.text, language: data.lang, paymentId: checkout.paymentId }),
+          });
+          toastReady(item);
+          await load(1);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Import failed');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (quote.gatewayEnabled && quote.requiresPayment) {
+        setPaymentModal({ open: true, quote, importTitle: data.title, importType: 'paste', onConfirm: proceedWithCheckout });
+        return;
+      }
+
       let paymentId: string | null = null;
       if (quote.gatewayEnabled) {
-        if (quote.requiresPayment && !(await confirmPay(quote))) {
-          throw new Error('Payment cancelled');
-        }
-        const checkout = await checkoutImport({
-          importType: 'paste',
-          contentFormat: 'article',
-          textLength: data.text.length,
-          wordCount: words,
-        });
+        const checkout = await checkoutImport(quoteParams);
         paymentId = checkout.paymentId;
         if (checkout.paymentUrl) {
-          savePendingImport({
-            kind: 'paste',
-            paymentId: checkout.paymentId,
-            title: data.title,
-            text: data.text,
-            lang: data.lang,
-          });
+          savePendingImport({ kind: 'paste', paymentId: checkout.paymentId, title: data.title, text: data.text, lang: data.lang });
           window.location.href = checkout.paymentUrl;
           return;
         }
       }
       const item = await api<ImportItem>('/imports/paste', {
         method: 'POST',
-        body: JSON.stringify({
-          title: data.title,
-          text: data.text,
-          language: data.lang,
-          ...(paymentId ? { paymentId } : {}),
-        }),
+        body: JSON.stringify({ title: data.title, text: data.text, language: data.lang, ...(paymentId ? { paymentId } : {}) }),
       });
       toastReady(item);
       await load(1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Import failed');
     } finally {
-      setLoading(false);
+      if (!paymentModal.open) setLoading(false);
     }
   };
 
@@ -556,26 +701,72 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport, checkoutImport, savePendingImport } = await import('../lib/importBilling');
+      const { quoteImport: getQuote, checkoutImport, savePendingImport } = await import('../lib/importBilling');
       const isEpub = data.file.name.toLowerCase().endsWith('.epub');
       const importType = isEpub ? 'epub' : 'pdf';
-      // Rough page estimate from size until server OCR reports real pages (~50KB/page).
       const pageCount = Math.max(1, Math.min(500, Math.ceil(data.file.size / 50_000)));
-      const quote = await quoteImport({
-        importType,
-        contentFormat: 'ebook',
-        pageCount,
-      });
+      const quoteParams = { importType: importType as 'pdf' | 'epub', contentFormat: 'ebook', pageCount };
+      const quote = await getQuote(quoteParams);
+
+      const proceedWithCheckout = async () => {
+        setLoading(true);
+        closePaymentModal();
+        try {
+          const checkout = await checkoutImport(quoteParams);
+          if (checkout.paymentUrl) {
+            const MAX_INLINE = 1.5 * 1024 * 1024;
+            if (data.file.size <= MAX_INLINE) {
+              const buf = await data.file.arrayBuffer();
+              const bytes = new Uint8Array(buf);
+              let binary = '';
+              for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
+              savePendingImport({
+                kind: 'file',
+                paymentId: checkout.paymentId,
+                fileName: data.file.name,
+                fileType: data.file.type,
+                fileBase64: btoa(binary),
+                title: data.title,
+                lang: data.lang,
+              });
+            } else {
+              savePendingImport({
+                kind: 'file',
+                paymentId: checkout.paymentId,
+                fileName: data.file.name,
+                fileType: data.file.type,
+                title: data.title,
+                lang: data.lang,
+                needsReupload: true,
+              });
+              sessionStorage.setItem('gotcha_paid_payment_id', checkout.paymentId);
+            }
+            window.location.href = checkout.paymentUrl;
+            return;
+          }
+          const form = new FormData();
+          form.append('file', data.file);
+          form.append('language', data.lang);
+          if (data.title.trim()) form.append('title', data.title.trim());
+          form.append('paymentId', checkout.paymentId);
+          const item = await api<ImportItem>('/imports/file', { method: 'POST', body: form });
+          toastReady(item);
+          await load(1);
+        } catch (err) {
+          toast.error(err instanceof Error ? err.message : 'Upload failed');
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      if (quote.gatewayEnabled && quote.requiresPayment) {
+        setPaymentModal({ open: true, quote, importTitle: data.title || data.file.name, importType: importType, onConfirm: proceedWithCheckout });
+        return;
+      }
+
       let paymentId: string | null = null;
       if (quote.gatewayEnabled) {
-        if (quote.requiresPayment && !(await confirmPay(quote))) {
-          throw new Error('Payment cancelled');
-        }
-        const checkout = await checkoutImport({
-          importType,
-          contentFormat: 'ebook',
-          pageCount,
-        });
+        const checkout = await checkoutImport(quoteParams);
         paymentId = checkout.paymentId;
         if (checkout.paymentUrl) {
           const MAX_INLINE = 1.5 * 1024 * 1024;
@@ -584,25 +775,9 @@ export default function ImportPage() {
             const bytes = new Uint8Array(buf);
             let binary = '';
             for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]!);
-            savePendingImport({
-              kind: 'file',
-              paymentId: checkout.paymentId,
-              fileName: data.file.name,
-              fileType: data.file.type,
-              fileBase64: btoa(binary),
-              title: data.title,
-              lang: data.lang,
-            });
+            savePendingImport({ kind: 'file', paymentId: checkout.paymentId, fileName: data.file.name, fileType: data.file.type, fileBase64: btoa(binary), title: data.title, lang: data.lang });
           } else {
-            savePendingImport({
-              kind: 'file',
-              paymentId: checkout.paymentId,
-              fileName: data.file.name,
-              fileType: data.file.type,
-              title: data.title,
-              lang: data.lang,
-              needsReupload: true,
-            });
+            savePendingImport({ kind: 'file', paymentId: checkout.paymentId, fileName: data.file.name, fileType: data.file.type, title: data.title, lang: data.lang, needsReupload: true });
             sessionStorage.setItem('gotcha_paid_payment_id', checkout.paymentId);
           }
           window.location.href = checkout.paymentUrl;
@@ -614,16 +789,13 @@ export default function ImportPage() {
       form.append('language', data.lang);
       if (data.title.trim()) form.append('title', data.title.trim());
       if (paymentId) form.append('paymentId', paymentId);
-      const item = await api<ImportItem>('/imports/file', {
-        method: 'POST',
-        body: form,
-      });
+      const item = await api<ImportItem>('/imports/file', { method: 'POST', body: form });
       toastReady(item);
       await load(1);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'Upload failed');
     } finally {
-      setLoading(false);
+      if (!paymentModal.open) setLoading(false);
     }
   };
 
@@ -808,6 +980,12 @@ export default function ImportPage() {
           )}
         </div>
       </div>
+
+      <PaymentConfirmModal
+        state={paymentModal}
+        onClose={closePaymentModal}
+        loading={loading}
+      />
     </div>
   );
 }
