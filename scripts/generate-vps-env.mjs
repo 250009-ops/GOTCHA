@@ -38,9 +38,12 @@ const atmosApiBase = get(existing, 'ATMOS_API_BASE') || get(rootEnv, 'ATMOS_API_
 const atmosIkpu = get(existing, 'ATMOS_IKPU') || get(rootEnv, 'ATMOS_IKPU') || '10899001001000000';
 const atmosMerchantTin = get(existing, 'ATMOS_MERCHANT_TIN') || get(rootEnv, 'ATMOS_MERCHANT_TIN');
 
-// Payment gateway settings — preserve existing or default to disabled
+// Payment gateway settings — preserve existing values; default to 'false' for safety.
+// CRITICAL: If Atmos is configured but gateway is disabled, warn loudly — see end of script.
 const importsUnlimited = get(existing, 'IMPORTS_UNLIMITED') || get(rootEnv, 'IMPORTS_UNLIMITED') || 'false';
 const paymentGatewayEnabled = get(existing, 'PAYMENT_GATEWAY_ENABLED') || get(rootEnv, 'PAYMENT_GATEWAY_ENABLED') || 'false';
+
+const atmosConfigured = Boolean(atmosStoreId && atmosConsumerKey && atmosConsumerSecret);
 
 const publicHost = domain || 'YOUR_DOMAIN';
 
@@ -131,3 +134,22 @@ fs.writeFileSync(rootEnvPath, env);
 
 console.log('Wrote deploy/.env (secrets ready; host fields left blank until VPS is provided)');
 console.log(`IP=${ip || '(empty)'} DOMAIN=${domain || '(empty)'} OPENAI=${openai ? 'set' : 'empty'}`);
+
+// CRITICAL: Warn if Atmos is configured but payment gateway is disabled — this is likely a misconfiguration.
+// Paid imports won't work until PAYMENT_GATEWAY_ENABLED=true is set in deploy/.env.
+if (atmosConfigured && paymentGatewayEnabled !== 'true') {
+  console.log('');
+  console.log('⚠️  WARNING: ATMOS PAYMENT GATEWAY MISCONFIGURATION DETECTED');
+  console.log('   Atmos credentials are present (store ' + atmosStoreId + '), but PAYMENT_GATEWAY_ENABLED=' + paymentGatewayEnabled);
+  console.log('   Learners will see "Imports are free" instead of paid pricing.');
+  console.log('   To enable paid imports, set in deploy/.env:');
+  console.log('     PAYMENT_GATEWAY_ENABLED=true');
+  console.log('     IMPORTS_UNLIMITED=false');
+  console.log('');
+}
+if (atmosConfigured && importsUnlimited === 'true') {
+  console.log('');
+  console.log('⚠️  WARNING: IMPORTS_UNLIMITED=true with Atmos configured');
+  console.log('   All imports will be free (no payment required). Set IMPORTS_UNLIMITED=false to charge.');
+  console.log('');
+}

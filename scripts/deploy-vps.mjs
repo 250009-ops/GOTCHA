@@ -34,6 +34,31 @@ if (!DOMAIN) {
   process.exit(1);
 }
 
+// CRITICAL: Warn if Atmos is configured but payment gateway is disabled.
+// This is the most common cause of "imports are free" regression on prod.
+const atmosStoreId = process.env.ATMOS_STORE_ID?.trim();
+const atmosConsumerKey = process.env.ATMOS_CONSUMER_KEY?.trim();
+const atmosConsumerSecret = process.env.ATMOS_CONSUMER_SECRET?.trim();
+const paymentGatewayEnabled = process.env.PAYMENT_GATEWAY_ENABLED?.trim()?.toLowerCase();
+const importsUnlimited = process.env.IMPORTS_UNLIMITED?.trim()?.toLowerCase();
+
+const atmosConfigured = Boolean(atmosStoreId && atmosConsumerKey && atmosConsumerSecret);
+
+if (atmosConfigured && paymentGatewayEnabled !== 'true') {
+  console.log('');
+  console.log('⚠️  WARNING: ATMOS CONFIGURED BUT PAYMENT_GATEWAY_ENABLED=' + (paymentGatewayEnabled || '(empty)'));
+  console.log('   Learners will see "Imports are free" after this deploy.');
+  console.log('   If this is intentional (e.g. promo period), continue. Otherwise:');
+  console.log('   Set PAYMENT_GATEWAY_ENABLED=true and IMPORTS_UNLIMITED=false in deploy/.env');
+  console.log('');
+  // Don't exit — allow deploy to proceed with warning. User may want free imports temporarily.
+}
+if (atmosConfigured && importsUnlimited === 'true') {
+  console.log('');
+  console.log('⚠️  WARNING: IMPORTS_UNLIMITED=true — all imports will be free (Atmos not charged).');
+  console.log('');
+}
+
 function runLocal(cmd, args, opts = {}) {
   // Avoid shell:true so paths with spaces (e.g. "GOTCHA_android app") stay intact.
   const r = spawnSync(cmd, args, { stdio: 'inherit', cwd: root, shell: false, ...opts });
