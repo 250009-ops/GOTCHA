@@ -13,13 +13,22 @@ import ProtectedRoute from './pages/ProtectedRoute';
 import SettingsPage from './pages/SettingsPage';
 import SupportPage from './pages/SupportPage';
 import UsersPage from './pages/UsersPage';
+import { useAuth } from './lib/auth';
+
+/** Dashboard is superadmin/analyst/editor only — moderators would otherwise land
+ *  on a hard "Forbidden resource" error immediately after logging in. */
+function HomeRedirect() {
+  const { user } = useAuth();
+  if (user?.role === 'moderator') return <Navigate to="/content/user-imports" replace />;
+  return <DashboardPage />;
+}
 
 export default function App() {
   return (
     <Routes>
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminShell />}>
-          <Route index element={<DashboardPage />} />
+          <Route index element={<HomeRedirect />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="content" element={<ContentPage />} />
           <Route path="content/:directory" element={<ContentPage />} />

@@ -86,7 +86,10 @@ export async function api<T>(
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({ message: res.statusText }));
-    throw new Error(Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Request failed'));
+    const message = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Request failed');
+    const apiError = new Error(message) as Error & { status?: number };
+    apiError.status = res.status;
+    throw apiError;
   }
 
   if (res.status === 204) return undefined as T;

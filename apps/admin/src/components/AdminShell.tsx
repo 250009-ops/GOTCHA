@@ -10,32 +10,46 @@ import {
   LogOut,
   Menu,
   Settings,
+  ShieldCheck,
   Sparkles,
   Ticket,
   TrendingUp,
   Users,
   X,
 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import avatarUrl from '../assets/avatar.png';
 import { AdminNotifications } from './AdminNotifications';
 import { AdminSearch } from './AdminSearch';
 import { redirectToSharedLogin, useAuth } from '../lib/auth';
 import { cn, initials } from '../lib/utils';
 
-const nav = [
-  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true },
-  { to: '/users', label: 'Users', icon: Users },
-  { to: '/content', label: 'Content Library', icon: BookOpen },
-  { to: '/languages', label: 'Languages', icon: Globe2 },
-  { to: '/level-tests', label: 'Level Tests', icon: ClipboardCheck },
-  { to: '/ai-usage', label: 'AI Usage', icon: Cpu },
-  { to: '/gamification', label: 'Gamification', icon: Sparkles },
-  { to: '/notifications', label: 'Notifications', icon: Bell },
-  { to: '/subscriptions', label: 'Subscriptions', icon: CreditCard },
-  { to: '/analytics', label: 'Analytics', icon: TrendingUp },
-  { to: '/support', label: 'Support', icon: Ticket },
-  { to: '/settings', label: 'Settings', icon: Settings },
+type AdminRole = 'superadmin' | 'editor' | 'moderator' | 'analyst';
+
+interface NavItem {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  end?: boolean;
+  roles: AdminRole[];
+}
+
+const nav: NavItem[] = [
+  { to: '/', label: 'Dashboard', icon: LayoutDashboard, end: true, roles: ['superadmin', 'analyst', 'editor'] },
+  { to: '/users', label: 'Users', icon: Users, roles: ['superadmin', 'analyst', 'moderator'] },
+  { to: '/content', label: 'Content Library', icon: BookOpen, roles: ['superadmin', 'editor'] },
+  // Moderators only have API access to the moderation queue (not the full curriculum/licensing
+  // catalog), so they get a dedicated link straight to that tab instead of "Content Library".
+  { to: '/content/user-imports', label: 'Moderation Queue', icon: ShieldCheck, roles: ['moderator'] },
+  { to: '/languages', label: 'Languages', icon: Globe2, roles: ['superadmin', 'editor', 'analyst'] },
+  { to: '/level-tests', label: 'Level Tests', icon: ClipboardCheck, roles: ['superadmin', 'editor', 'analyst'] },
+  { to: '/ai-usage', label: 'AI Usage', icon: Cpu, roles: ['superadmin', 'analyst', 'editor'] },
+  { to: '/gamification', label: 'Gamification', icon: Sparkles, roles: ['superadmin', 'editor', 'analyst'] },
+  { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['superadmin', 'editor'] },
+  { to: '/import-pricing', label: 'Import & Pricing', icon: CreditCard, roles: ['superadmin', 'analyst', 'editor'] },
+  { to: '/analytics', label: 'Analytics', icon: TrendingUp, roles: ['superadmin', 'analyst'] },
+  { to: '/support', label: 'Support', icon: Ticket, roles: ['superadmin', 'moderator'] },
+  { to: '/settings', label: 'Settings', icon: Settings, roles: ['superadmin'] },
 ];
 
 export default function AdminShell() {
@@ -43,6 +57,11 @@ export default function AdminShell() {
   const [open, setOpen] = useState(false);
   const name = user?.displayName || 'Admin';
   const role = user?.role ? user.role.replace('_', ' ') : 'Admin';
+
+  const filteredNav = useMemo(() => {
+    const userRole = (user?.role ?? 'moderator') as AdminRole;
+    return nav.filter((item) => item.roles.includes(userRole));
+  }, [user?.role]);
 
   useEffect(() => {
     document.body.style.overflow = open ? 'hidden' : '';
@@ -66,7 +85,7 @@ export default function AdminShell() {
       </div>
 
       <nav className="flex flex-col gap-1 flex-1 overflow-y-auto min-h-0">
-        {nav.map((item) => (
+        {filteredNav.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}

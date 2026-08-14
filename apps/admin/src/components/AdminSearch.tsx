@@ -42,7 +42,7 @@ const typeLabel = {
   ticket: 'Support',
   campaign: 'Campaigns',
   language: 'Languages',
-  subscription: 'Billing',
+  subscription: 'Import & Pricing',
 } as const;
 
 export function AdminSearch({ className }: { className?: string }) {

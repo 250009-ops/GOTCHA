@@ -156,6 +156,33 @@ export function LoadingBlock() {
   );
 }
 
+export function ErrorBlock({
+  title = 'Something went wrong',
+  message,
+  onRetry,
+}: {
+  title?: string;
+  message?: string;
+  onRetry?: () => void;
+}) {
+  const isForbidden = message?.includes('403') || message?.toLowerCase().includes('forbidden');
+  return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
+      <div className="font-semibold mb-2">{isForbidden ? "You don't have access" : title}</div>
+      {message && <p className="mb-4">{isForbidden ? 'Contact an administrator if you need access to this section.' : message}</p>}
+      {onRetry && !isForbidden && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="rounded-lg bg-[#6c1d95] px-4 py-2 text-white text-sm font-semibold"
+        >
+          Retry
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function DataTable({
   headers,
   children,

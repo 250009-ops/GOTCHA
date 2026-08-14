@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { BarChart, DonutChart, HorizontalBars, HourlyBars } from '../components/charts';
-import { Badge, Button, Card, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Button, Card, ErrorBlock, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber } from '../lib/utils';
 
 interface AnalyticsData {
   range?: string;
+  source?: 'live' | 'seed';
   kpis: {
     dau: number;
     dauGrowthPct: number;
@@ -27,21 +28,25 @@ export default function AnalyticsPage() {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [range, setRange] = useState('30d');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function load(nextRange = range) {
+  const load = useCallback(async (nextRange = range) => {
     setLoading(true);
+    setError(null);
     try {
       setData(await api<AnalyticsData>(`/admin/analytics?range=${encodeURIComponent(nextRange)}`));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load analytics');
     } finally {
       setLoading(false);
     }
-  }
-
-  useEffect(() => {
-    load(range).catch(console.error);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
+  useEffect(() => {
+    void load(range);
+  }, [load, range]);
+
+  if (error && !data) return <ErrorBlock message={error} onRetry={() => void load(range)} />;
   if (!data) return <LoadingBlock />;
 
   return (
@@ -66,6 +71,12 @@ export default function AnalyticsPage() {
           </div>
         }
       />
+
+      <div className="mb-4">
+        <Badge className={data.source === 'live' ? 'bg-violet-50 text-violet-700' : 'bg-slate-100 text-slate-600'}>
+          {data.source === 'live' ? 'Live platform data' : 'Demo seed metrics'}
+        </Badge>
+      </div>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard

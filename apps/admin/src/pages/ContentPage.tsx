@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
-import { BookOpen, Plus, Trash2 } from 'lucide-react';
-import { useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, Select, StatCard, Textarea } from '../components/ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BookOpen, DollarSign, Pencil, Plus, Trash2 } from 'lucide-react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard, Textarea } from '../components/ui';
 import { api } from '../lib/api';
-import { APP_LANGUAGES, cn, formatNumber, levelBadgeClass } from '../lib/utils';
+import { APP_LANGUAGES, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
 
-type Tab = 'all' | 'book' | 'article' | 'news' | 'user_imports';
+type Tab = 'all' | 'book' | 'article' | 'news' | 'user_imports' | 'pricing';
 
 interface CurriculumItem {
   id: string;
@@ -17,6 +17,9 @@ interface CurriculumItem {
   activeReads: number;
   completion: number;
   publishStatus: string;
+  isFree: boolean;
+  priceUsd: number;
+  salesCount: number;
 }
 
 interface LicenseRow {
@@ -40,12 +43,43 @@ interface IngestionRow {
   errorMessage?: string | null;
 }
 
+interface PricingRules {
+  contentType: string;
+  basePriceUsd: number;
+  perPageSurchargeUsd: number;
+  volumeDiscountsEnabled: boolean;
+  buy3PctOff: number;
+  buy5PctOff: number;
+}
+
+const DIRECTORY_TO_TAB: Record<string, Tab> = {
+  all: 'all',
+  books: 'book',
+  book: 'book',
+  articles: 'article',
+  article: 'article',
+  news: 'news',
+  'user-imports': 'user_imports',
+  user_imports: 'user_imports',
+  pricing: 'pricing',
+};
+
+const TAB_TO_PATH: Record<Tab, string> = {
+  all: '/content',
+  book: '/content/books',
+  article: '/content/articles',
+  news: '/content/news',
+  user_imports: '/content/user-imports',
+  pricing: '/content/pricing',
+};
+
 const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'all', label: 'All' },
   { id: 'book', label: 'Books' },
   { id: 'article', label: 'Articles' },
   { id: 'news', label: 'News' },
   { id: 'user_imports', label: 'User Imports' },
+  { id: 'pricing', label: 'Pricing' },
 ];
 
 const langBadge: Record<string, string> = {
@@ -67,50 +101,95 @@ const statusBadge: Record<string, string> = {
   archived: 'bg-slate-200 text-slate-500',
 };
 
+function statusLabel(status: string) {
+  if (status === 'published') return 'Active';
+  if (status === 'review') return 'Review';
+  return status[0].toUpperCase() + status.slice(1);
+}
+
 export default function ContentPage() {
-  const [params, setParams] = useSearchParams();
-  const tab = (params.get('tab') as Tab) || 'all';
-  const [stats, setStats] = useState({ total: 847, published: 723, draft: 89, review: 35, archived: 0 });
+  const navigate = useNavigate();
+  const { directory } = useParams();
+  const [params] = useSearchParams();
+  const tabFromPath = directory ? DIRECTORY_TO_TAB[directory] : undefined;
+  const tab = tabFromPath || (params.get('tab') as Tab) || 'all';
+  const [stats, setStats] = useState({
+    total: 847,
+    published: 723,
+    draft: 89,
+    review: 35,
+    archived: 0,
+    activeSalesMonthly: 12450,
+    freeItems: 34,
+  });
   const [items, setItems] = useState<CurriculumItem[] | null>(null);
   const [q, setQ] = useState(() => params.get('q') ?? '');
   const [langFilter, setLangFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
   const [showForm, setShowForm] = useState(false);
+  const [editing, setEditing] = useState<CurriculumItem | null>(null);
   const [title, setTitle] = useState('');
   const [plainText, setPlainText] = useState('');
   const [language, setLanguage] = useState('en');
   const [cefrLevel, setCefrLevel] = useState('b1');
+  const [contentType, setContentType] = useState('article');
+  const [isFree, setIsFree] = useState(true);
+  const [priceUsd, setPriceUsd] = useState('0');
   const [licenses, setLicenses] = useState<LicenseRow[]>([]);
   const [moderation, setModeration] = useState<ModerationRow[]>([]);
   const [ingestion, setIngestion] = useState<IngestionRow[]>([]);
   const [rightsHolder, setRightsHolder] = useState('');
   const [attributionText, setAttributionText] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
+  const [pricingSaving, setPricingSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Moderator-role admins can only reach /admin/moderation — the catalog endpoints below
+  // 403 for them. Track that separately so the moderation queue still renders instead of
+  // the whole page getting stuck on a permissions error.
+  const [catalogForbidden, setCatalogForbidden] = useState(false);
 
-  async function loadCurriculum() {
-    const type = tab === 'all' ? 'all' : tab === 'user_imports' ? 'user_imports' : tab;
-    const [list, s] = await Promise.all([
-      api<CurriculumItem[]>(`/admin/content/curriculum?type=${type}`),
-      api<typeof stats>('/admin/content/stats'),
-    ]);
-    setItems(list);
-    setStats(s);
-  }
+  const loadCurriculum = useCallback(async () => {
+    setError(null);
+    try {
+      const type = tab === 'all' || tab === 'pricing' ? 'all' : tab === 'user_imports' ? 'user_imports' : tab;
+      const [list, s] = await Promise.all([
+        api<CurriculumItem[]>(`/admin/content/curriculum?type=${type}`),
+        api<typeof stats>('/admin/content/stats'),
+      ]);
+      setItems(list);
+      setStats(s);
+      setCatalogForbidden(false);
+    } catch (e) {
+      const status = (e as { status?: number })?.status;
+      if (status === 403) {
+        setCatalogForbidden(true);
+        setItems([]);
+      } else {
+        setError(e instanceof Error ? e.message : 'Failed to load content');
+      }
+    }
+  }, [tab]);
 
   async function loadOps() {
-    const [lic, mod, ing] = await Promise.all([
+    const [lic, mod, ing] = await Promise.allSettled([
       api<LicenseRow[]>('/admin/licenses'),
       api<ModerationRow[]>('/admin/moderation?status=pending'),
       api<IngestionRow[]>('/admin/ingestion'),
     ]);
-    setLicenses(lic);
-    setModeration(mod);
-    setIngestion(ing);
+    setLicenses(lic.status === 'fulfilled' ? lic.value : []);
+    setModeration(mod.status === 'fulfilled' ? mod.value : []);
+    setIngestion(ing.status === 'fulfilled' ? ing.value : []);
+    if (mod.status === 'rejected') throw mod.reason;
+  }
+
+  async function loadPricingRules() {
+    setPricingRules(await api<PricingRules>('/admin/content/pricing-rules'));
   }
 
   useEffect(() => {
-    loadCurriculum().catch(console.error);
-  }, [tab]);
+    void loadCurriculum();
+  }, [loadCurriculum]);
 
   useEffect(() => {
     const fromUrl = params.get('q');
@@ -121,6 +200,16 @@ export default function ContentPage() {
     if (tab === 'user_imports') loadOps().catch(console.error);
   }, [tab]);
 
+  useEffect(() => {
+    if (tab === 'pricing' || tab !== 'user_imports') loadPricingRules().catch(console.error);
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab === 'pricing') {
+      document.getElementById('pricing-rules')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [tab, pricingRules]);
+
   const filtered = useMemo(() => {
     return (items ?? []).filter((item) => {
       if (langFilter !== 'all' && item.language !== langFilter) return false;
@@ -130,22 +219,59 @@ export default function ContentPage() {
     });
   }, [items, langFilter, levelFilter, q]);
 
-  async function createContent(e: React.FormEvent) {
-    e.preventDefault();
-    await api('/admin/content', {
-      method: 'POST',
-      body: JSON.stringify({
-        title,
-        plainText,
-        language,
-        contentType: 'article',
-        contentSource: 'public_domain',
-        cefrLevel,
-      }),
-    });
+  function resetForm() {
     setTitle('');
     setPlainText('');
+    setLanguage('en');
+    setCefrLevel('b1');
+    setContentType('article');
+    setIsFree(true);
+    setPriceUsd('0');
+    setEditing(null);
     setShowForm(false);
+  }
+
+  function openCreate() {
+    resetForm();
+    setShowForm(true);
+  }
+
+  function openEdit(item: CurriculumItem) {
+    setEditing(item);
+    setTitle(item.title);
+    setPlainText('');
+    setLanguage(item.language);
+    setCefrLevel(item.cefrLevel);
+    setContentType(item.contentType);
+    setIsFree(item.isFree);
+    setPriceUsd(String(item.priceUsd ?? 0));
+    setShowForm(true);
+  }
+
+  async function saveProduct(e: React.FormEvent) {
+    e.preventDefault();
+    const payload = {
+      title,
+      plainText: plainText || undefined,
+      language,
+      contentType,
+      contentSource: 'public_domain',
+      cefrLevel,
+      isFree,
+      priceUsd: isFree ? 0 : Number(priceUsd || 0),
+    };
+    if (editing) {
+      await api(`/admin/content/${editing.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await api('/admin/content', {
+        method: 'POST',
+        body: JSON.stringify({ ...payload, plainText: plainText || `${title}.` }),
+      });
+    }
+    resetForm();
     await loadCurriculum();
   }
 
@@ -186,49 +312,83 @@ export default function ContentPage() {
   }
 
   function setTab(next: Tab) {
-    setParams(next === 'all' ? {} : { tab: next });
+    const path = TAB_TO_PATH[next];
+    const qParam = q ? `?q=${encodeURIComponent(q)}` : '';
+    navigate(`${path}${qParam}`);
   }
 
+  async function savePricingRules(e: React.FormEvent) {
+    e.preventDefault();
+    if (!pricingRules) return;
+    setPricingSaving(true);
+    try {
+      setPricingRules(await api<PricingRules>('/admin/content/pricing-rules', {
+        method: 'PATCH',
+        body: JSON.stringify(pricingRules),
+      }));
+    } finally {
+      setPricingSaving(false);
+    }
+  }
+
+  if (error && !items) return <ErrorBlock message={error} onRetry={() => void loadCurriculum()} />;
   if (!items) return <LoadingBlock />;
+
+  const showCatalog = tab !== 'user_imports' && !catalogForbidden;
+  const showPricing = (tab === 'pricing' || tab !== 'user_imports') && !catalogForbidden;
 
   return (
     <div>
       <PageHeader
-        title="Content & Curriculum"
-        subtitle="Create, manage, and distribute learning items across levels."
+        title="Content & Reading Store"
+        subtitle={
+          catalogForbidden
+            ? 'Review user-submitted imports awaiting approval.'
+            : 'Manage learning content, set product pricing, and track sales performance.'
+        }
         actions={
-          <div className="flex flex-wrap gap-2">
-            <Select value={langFilter} onChange={(e) => setLangFilter(e.target.value)} className="w-36">
-              <option value="all">Language: All</option>
-              {APP_LANGUAGES.map((l) => (
-                <option key={l} value={l}>{l.toUpperCase()}</option>
-              ))}
-            </Select>
-            <Select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="w-36">
-              <option value="all">Level: A1-C2</option>
-              {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
-                <option key={l} value={l}>{l.toUpperCase()}</option>
-              ))}
-            </Select>
-            <Button onClick={() => setShowForm((v) => !v)}>
-              <Plus className="size-4" /> Add Content
-            </Button>
-          </div>
+          catalogForbidden ? undefined : (
+            <div className="flex flex-wrap gap-2">
+              <Select value={langFilter} onChange={(e) => setLangFilter(e.target.value)} className="w-36">
+                <option value="all">Language: All</option>
+                {APP_LANGUAGES.map((l) => (
+                  <option key={l} value={l}>{l.toUpperCase()}</option>
+                ))}
+              </Select>
+              <Select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="w-36">
+                <option value="all">Level: A1-C2</option>
+                {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
+                  <option key={l} value={l}>{l.toUpperCase()}</option>
+                ))}
+              </Select>
+              <Button onClick={openCreate}>
+                <Plus className="size-4" /> Add Product
+              </Button>
+            </div>
+          )
         }
       />
 
+      {!catalogForbidden && (
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard label="Total Items" value={formatNumber(stats.total)} icon={<BookOpen className="size-5" />} />
         <StatCard label="Published" value={formatNumber(stats.published)} accent="bg-emerald-50 text-emerald-700" />
-        <StatCard label="Draft" value={formatNumber(stats.draft)} accent="bg-slate-100 text-slate-700" />
-        <StatCard label="Under Review" value={formatNumber(stats.review)} accent="bg-orange-50 text-orange-700" />
+        <StatCard
+          label="Active Sales"
+          value={`${formatMoney(stats.activeSalesMonthly, 'USD')}/mo`}
+          accent="bg-slate-100 text-slate-700"
+          icon={<DollarSign className="size-5" />}
+        />
+        <StatCard label="Free Items" value={formatNumber(stats.freeItems)} accent="bg-amber-50 text-amber-700" />
       </div>
+      )}
 
-      {showForm && (
+      {showForm && !catalogForbidden && (
         <Card className="p-5 mb-4">
-          <form className="grid gap-3 max-w-3xl" onSubmit={createContent}>
+          <div className="font-semibold mb-3">{editing ? 'Edit Product' : 'Add Product'}</div>
+          <form className="grid gap-3 max-w-3xl" onSubmit={saveProduct}>
             <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" required />
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
                 {APP_LANGUAGES.map((l) => (
                   <option key={l} value={l}>{l.toUpperCase()}</option>
@@ -239,24 +399,57 @@ export default function ContentPage() {
                   <option key={l} value={l}>{l.toUpperCase()}</option>
                 ))}
               </Select>
+              <Select value={contentType} onChange={(e) => setContentType(e.target.value)}>
+                <option value="book">Book</option>
+                <option value="article">Article</option>
+                <option value="news">News</option>
+                <option value="story">Story</option>
+              </Select>
+              <Select
+                value={isFree ? 'free' : 'paid'}
+                onChange={(e) => {
+                  const free = e.target.value === 'free';
+                  setIsFree(free);
+                  if (free) setPriceUsd('0');
+                }}
+              >
+                <option value="free">Free</option>
+                <option value="paid">Paid</option>
+              </Select>
             </div>
-            <Textarea rows={7} value={plainText} onChange={(e) => setPlainText(e.target.value)} placeholder="Plain text content" required />
+            {!isFree && (
+              <Input
+                type="number"
+                min="0"
+                step="0.01"
+                value={priceUsd}
+                onChange={(e) => setPriceUsd(e.target.value)}
+                placeholder="Price (USD)"
+                required
+              />
+            )}
+            {!editing && (
+              <Textarea rows={6} value={plainText} onChange={(e) => setPlainText(e.target.value)} placeholder="Plain text content" required />
+            )}
             <div className="flex gap-2">
-              <Button type="submit">Create draft</Button>
-              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>Cancel</Button>
+              <Button type="submit">{editing ? 'Save changes' : 'Create draft'}</Button>
+              <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
             </div>
           </form>
         </Card>
       )}
 
-      <Card className="p-0 overflow-hidden">
+      <Card className="p-0 overflow-hidden mb-4">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-3 border-b border-slate-100">
-          <div className="flex gap-1">
-            {TABS.map((t) => (
-              <button
+          <div className="flex gap-1 flex-wrap">
+            {(catalogForbidden ? TABS.filter((t) => t.id === 'user_imports') : TABS).map((t) => (
+              <Link
                 key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
+                to={TAB_TO_PATH[t.id]}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setTab(t.id);
+                }}
                 className={cn(
                   'px-3 py-2.5 text-sm font-semibold border-b-2 -mb-px transition',
                   tab === t.id
@@ -265,74 +458,24 @@ export default function ContentPage() {
                 )}
               >
                 {t.label}
-              </button>
+              </Link>
             ))}
           </div>
-          <Input
-            className="max-w-xs mb-2"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search curriculum..."
-          />
+          {showCatalog && (
+            <Input
+              className="max-w-xs mb-2"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Search curriculum..."
+            />
+          )}
         </div>
 
-        {tab !== 'user_imports' ? (
-          <DataTable headers={['Curriculum Item', 'Language', 'Level', 'Type', 'Word Count', 'Active Reads', 'Completion', 'Status', 'Actions']}>
-            {filtered.map((item) => (
-              <tr key={item.id}>
-                <td className="px-4 py-3 text-sm font-semibold max-w-[240px] truncate">{item.title}</td>
-                <td className="px-4 py-3">
-                  <Badge className={langBadge[item.language] ?? 'bg-slate-100 text-slate-600'}>
-                    {item.language.toUpperCase()}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className={levelBadgeClass(item.cefrLevel)}>{item.cefrLevel.toUpperCase()}</Badge>
-                </td>
-                <td className="px-4 py-3 text-sm capitalize">{item.contentType.replace('_', ' ')}</td>
-                <td className="px-4 py-3 text-sm">{formatNumber(item.wordCount)}</td>
-                <td className="px-4 py-3 text-sm">{formatNumber(item.activeReads)}</td>
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-2 min-w-[110px]">
-                    <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
-                      <div className="h-full bg-sky-600" style={{ width: `${item.completion}%` }} />
-                    </div>
-                    <span className="text-xs font-semibold text-slate-600">{item.completion}%</span>
-                  </div>
-                </td>
-                <td className="px-4 py-3">
-                  <Badge className={statusBadge[item.publishStatus] ?? statusBadge.draft}>
-                    {item.publishStatus === 'review' ? 'Review' : item.publishStatus[0].toUpperCase() + item.publishStatus.slice(1)}
-                  </Badge>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-2">
-                    {item.publishStatus !== 'published' && item.publishStatus !== 'archived' && (
-                      <Button variant="ghost" disabled={busyId === item.id} onClick={() => publish(item.id)}>
-                        Publish
-                      </Button>
-                    )}
-                    {item.publishStatus !== 'archived' && (
-                      <button
-                        type="button"
-                        className="text-slate-400 hover:text-rose-500 disabled:opacity-40"
-                        aria-label="Archive"
-                        disabled={busyId === item.id}
-                        onClick={() => archive(item.id)}
-                      >
-                        <Trash2 className="size-4" />
-                      </button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </DataTable>
-        ) : (
+        {tab === 'user_imports' ? (
           <div className="p-4 space-y-6">
             <section>
               <div className="font-semibold mb-1">Moderation queue</div>
-              <div className="text-sm text-slate-500 mb-3">Review user imports awaiting approval (Figma: User Imports).</div>
+              <div className="text-sm text-slate-500 mb-3">Review user imports awaiting approval.</div>
               {moderation.length === 0 ? (
                 <Card className="p-6 text-center text-sm text-slate-500">No pending moderation items.</Card>
               ) : (
@@ -388,9 +531,182 @@ export default function ContentPage() {
                 ))}
               </DataTable>
             </section>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-sm">Need import costs & free allowances?</div>
+                <div className="text-sm text-slate-500">Configure them in Import & Pricing.</div>
+              </div>
+              <Button variant="secondary" onClick={() => navigate('/import-pricing')}>Open Import & Pricing</Button>
+            </div>
           </div>
-        )}
+        ) : showCatalog ? (
+          <DataTable headers={['Curriculum Item', 'Language', 'Level', 'Type', 'Word Count', 'Active Reads', 'Completion', 'Status', 'Price (USD)', 'Sales', 'Actions']}>
+            {filtered.map((item) => (
+              <tr key={item.id}>
+                <td className="px-4 py-3 text-sm font-semibold max-w-[240px] truncate">{item.title}</td>
+                <td className="px-4 py-3">
+                  <Badge className={langBadge[item.language] ?? 'bg-slate-100 text-slate-600'}>
+                    {item.language.toUpperCase()}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3">
+                  <Badge className={levelBadgeClass(item.cefrLevel)}>{item.cefrLevel.toUpperCase()}</Badge>
+                </td>
+                <td className="px-4 py-3 text-sm capitalize">{item.contentType.replace('_', ' ')}</td>
+                <td className="px-4 py-3 text-sm">{formatNumber(item.wordCount)}</td>
+                <td className="px-4 py-3 text-sm">{formatNumber(item.activeReads)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex items-center gap-2 min-w-[110px]">
+                    <div className="h-1.5 flex-1 rounded-full bg-slate-100 overflow-hidden">
+                      <div className="h-full bg-sky-600" style={{ width: `${item.completion}%` }} />
+                    </div>
+                    <span className="text-xs font-semibold text-slate-600">{item.completion}%</span>
+                  </div>
+                </td>
+                <td className="px-4 py-3">
+                  <Badge className={statusBadge[item.publishStatus] ?? statusBadge.draft}>
+                    {statusLabel(item.publishStatus)}
+                  </Badge>
+                </td>
+                <td className="px-4 py-3 text-sm font-medium">
+                  {item.isFree || item.priceUsd <= 0 ? 'Free' : formatMoney(item.priceUsd, 'USD')}
+                </td>
+                <td className="px-4 py-3 text-sm">{formatNumber(item.salesCount)}</td>
+                <td className="px-4 py-3">
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      aria-label="Edit"
+                      onClick={() => openEdit(item)}
+                    >
+                      <Pencil className="size-3.5" />
+                    </button>
+                    {item.publishStatus !== 'published' && item.publishStatus !== 'archived' && (
+                      <Button variant="ghost" disabled={busyId === item.id} onClick={() => publish(item.id)}>
+                        Publish
+                      </Button>
+                    )}
+                    {item.publishStatus !== 'archived' && (
+                      <button
+                        type="button"
+                        className="size-8 rounded-lg grid place-items-center text-slate-400 hover:text-rose-500 disabled:opacity-40"
+                        aria-label="Archive"
+                        disabled={busyId === item.id}
+                        onClick={() => archive(item.id)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </DataTable>
+        ) : null}
       </Card>
+
+      {showPricing && pricingRules && (
+        <Card id="pricing-rules" className="p-5">
+          <div className="mb-4">
+            <div className="text-lg font-semibold">Pricing Rules</div>
+            <div className="text-sm text-slate-500">Automate catalog price calculations and define standard incentives.</div>
+          </div>
+          <form className="grid gap-6 lg:grid-cols-2" onSubmit={savePricingRules}>
+            <div>
+              <div className="font-semibold mb-3">Bulk Price Generation</div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="text-sm space-y-1.5 block">
+                  <span className="text-slate-600">Content Type</span>
+                  <Select
+                    value={pricingRules.contentType}
+                    onChange={(e) => setPricingRules({ ...pricingRules, contentType: e.target.value })}
+                  >
+                    <option value="book">Book</option>
+                    <option value="article">Article</option>
+                    <option value="news">News</option>
+                  </Select>
+                </label>
+                <label className="text-sm space-y-1.5 block">
+                  <span className="text-slate-600">Base Price (USD)</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={pricingRules.basePriceUsd}
+                    onChange={(e) => setPricingRules({ ...pricingRules, basePriceUsd: Number(e.target.value) })}
+                  />
+                </label>
+                <label className="text-sm space-y-1.5 block">
+                  <span className="text-slate-600">Per-Page Surcharge</span>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={pricingRules.perPageSurchargeUsd}
+                    onChange={(e) => setPricingRules({ ...pricingRules, perPageSurchargeUsd: Number(e.target.value) })}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className="font-semibold">Volume Discounts</div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={pricingRules.volumeDiscountsEnabled}
+                  onClick={() =>
+                    setPricingRules({
+                      ...pricingRules,
+                      volumeDiscountsEnabled: !pricingRules.volumeDiscountsEnabled,
+                    })
+                  }
+                  className={cn(
+                    'relative h-6 w-11 rounded-full transition',
+                    pricingRules.volumeDiscountsEnabled ? 'bg-[#6c1d95]' : 'bg-slate-300',
+                  )}
+                >
+                  <span
+                    className={cn(
+                      'absolute top-0.5 size-5 rounded-full bg-white transition',
+                      pricingRules.volumeDiscountsEnabled ? 'left-[22px]' : 'left-0.5',
+                    )}
+                  />
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="text-sm space-y-1.5 block">
+                  <span className="text-slate-600">Buy 3+ Items</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={pricingRules.buy3PctOff}
+                    onChange={(e) => setPricingRules({ ...pricingRules, buy3PctOff: Number(e.target.value) })}
+                    disabled={!pricingRules.volumeDiscountsEnabled}
+                  />
+                </label>
+                <label className="text-sm space-y-1.5 block">
+                  <span className="text-slate-600">Buy 5+ Items</span>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={pricingRules.buy5PctOff}
+                    onChange={(e) => setPricingRules({ ...pricingRules, buy5PctOff: Number(e.target.value) })}
+                    disabled={!pricingRules.volumeDiscountsEnabled}
+                  />
+                </label>
+              </div>
+            </div>
+            <div className="lg:col-span-2">
+              <Button type="submit" disabled={pricingSaving}>
+                {pricingSaving ? 'Saving…' : 'Save pricing rules'}
+              </Button>
+            </div>
+          </form>
+        </Card>
+      )}
     </div>
   );
 }
