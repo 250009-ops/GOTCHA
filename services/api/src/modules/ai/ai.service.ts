@@ -1,6 +1,7 @@
 import {
   Injectable,
   ForbiddenException,
+  Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
@@ -15,6 +16,18 @@ import {
   parseAiPlatformSettings,
   AI_SETTING_KEYS,
 } from './ai-settings';
+import { ExtractedChapter } from '../imports/extract-text';
+import {
+  buildCleanupUserPrompt,
+  CleanupChunkResult,
+  IMPORT_CLEANUP_SYSTEM_PROMPT,
+  importCleanupModel,
+  isImportAiCleanupEnabled,
+  mergeChapterCleanup,
+  planImportCleanup,
+  processCleanupChunk,
+  ImportCleanupSource,
+} from '../imports/import-ai-cleanup';
 
 type MemoryLookup = {
   lemma: string;
@@ -93,8 +106,13 @@ function sanitizeGloss(raw: unknown, fallback: string): string {
   return t || fallback;
 }
 
+/** Soft timeout for import cleanup calls (production imports must not hang forever). */
+const IMPORT_CLEANUP_TIMEOUT_MS = 55_000;
+const IMPORT_CLEANUP_MAX_RETRIES = 1;
+
 @Injectable()
 export class AiService {
+  private readonly logger = new Logger(AiService.name);
   private client: OpenAI | null = null;
   private clientKey: string | null = null;
   /** Hot-path LRU (Map insertion order) shared across users — no PII, lemma glosses only. */
@@ -501,5 +519,199 @@ export class AiService {
         `AI quiz generation failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
       );
     }
+  }
+
+  /**
+   * Post-extract cleanup for URL/PDF/EPUB imports.
+   * OpenAI only selects unnecessary parts; removal is applied locally to the deterministic extract.
+   * Never throws to callers — on any failure returns the original chapters so live imports keep working.
+   * Does not consume learner per-user AI quota (platform-side pipeline step).
+   */
+  async cleanImportChapters(
+    chapters: ExtractedChapter[],
+    opts: {
+      source: ImportCleanupSource;
+      documentTitle?: string;
+      userId?: string;
+    },
+  ): Promise<ExtractedChapter[]> {
+    if (!chapters.length || !isImportAiCleanupEnabled()) return chapters;
+
+    const client = this.getClient();
+    if (!client) {
+      this.logger.debug('Import AI cleanup skipped — OPENAI_API_KEY not set');
+      return chapters;
+    }
+
+    try {
+      const settings = await this.getPlatformAiSettings();
+      if (!settings.enabled) {
+        this.logger.debug('Import AI cleanup skipped — AI disabled in platform settings');
+        return chapters;
+      }
+
+      // Soft platform budget check (do not throw — fall back to deterministic extract).
+      if (!(await this.softPlatformBudgetOk(settings))) {
+        this.logger.warn('Import AI cleanup skipped — platform daily AI limit reached');
+        return chapters;
+      }
+
+      // Platform setting (admin) wins; defaults already fall back to OPENAI_MODEL_IMPORT / LOOKUP.
+      const model = settings.importCleanupModel || importCleanupModel();
+      const plan = planImportCleanup(chapters);
+      if (plan.length === 0) return chapters;
+
+      const next = chapters.map((c) => ({ ...c }));
+      let usedOpenAi = false;
+
+      for (const item of plan) {
+        const chunkResults: CleanupChunkResult[] = [];
+        let chapterFailed = false;
+
+        for (let ci = 0; ci < item.chunks.length; ci++) {
+          const result = await this.cleanupImportChunkWithRetry(client, {
+            model,
+            source: opts.source,
+            documentTitle: opts.documentTitle,
+            chapterTitle: item.chapter.title,
+            chunkIndex: ci,
+            chunkTotal: item.chunks.length,
+            text: item.chunks[ci],
+          });
+
+          if (!result) {
+            chapterFailed = true;
+            break;
+          }
+          usedOpenAi = true;
+          chunkResults.push(result);
+        }
+
+        if (chapterFailed) continue;
+
+        const merged = mergeChapterCleanup(
+          item.chapter,
+          chunkResults,
+          item.chunks,
+          item.remainder,
+        );
+        if (merged === null) {
+          next[item.index] = { title: item.chapter.title, text: '' };
+        } else {
+          next[item.index] = merged;
+        }
+      }
+
+      const cleaned = next.filter((c) => c.text.trim().length > 0);
+      if (cleaned.length === 0) {
+        this.logger.warn('Import AI cleanup produced empty document — keeping original extract');
+        return chapters;
+      }
+
+      if (usedOpenAi && opts.userId) {
+        await this.recordImportCleanupUsage(opts.userId).catch(() => undefined);
+      }
+
+      return cleaned;
+    } catch (err) {
+      this.logger.warn(
+        `Import AI cleanup failed — using original extract: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return chapters;
+    }
+  }
+
+  private async softPlatformBudgetOk(settings: AiPlatformSettings): Promise<boolean> {
+    if (this.useMemory()) {
+      return this.memoryPlatformLookups < settings.dailyLimit;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const agg = await this.prisma.aiUsageDaily.aggregate({
+      where: { usageDate: today },
+      _sum: { lookupCount: true, quizCount: true },
+    });
+    const used = (agg._sum.lookupCount ?? 0) + (agg._sum.quizCount ?? 0);
+    return used < settings.dailyLimit;
+  }
+
+  private async recordImportCleanupUsage(userId: string) {
+    if (this.useMemory()) {
+      this.memoryPlatformLookups += 1;
+      return;
+    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    // Reuse quizCount bucket for platform metrics (no schema migration).
+    await this.prisma.aiUsageDaily.upsert({
+      where: { userId_usageDate: { userId, usageDate: today } },
+      create: { userId, usageDate: today, quizCount: 1 },
+      update: { quizCount: { increment: 1 } },
+    });
+  }
+
+  private async cleanupImportChunkWithRetry(
+    client: OpenAI,
+    opts: {
+      model: string;
+      source: ImportCleanupSource;
+      documentTitle?: string;
+      chapterTitle?: string;
+      chunkIndex: number;
+      chunkTotal: number;
+      text: string;
+    },
+  ): Promise<CleanupChunkResult | null> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= IMPORT_CLEANUP_MAX_RETRIES; attempt++) {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), IMPORT_CLEANUP_TIMEOUT_MS);
+        try {
+          const response = await client.chat.completions.create(
+            {
+              model: opts.model,
+              temperature: 0,
+              // Selection-only JSON (block indexes + optional snippets) — no rewritten body.
+              max_tokens: 1024,
+              response_format: { type: 'json_object' },
+              messages: [
+                { role: 'system', content: IMPORT_CLEANUP_SYSTEM_PROMPT },
+                {
+                  role: 'user',
+                  content: buildCleanupUserPrompt({
+                    source: opts.source,
+                    documentTitle: opts.documentTitle,
+                    chapterTitle: opts.chapterTitle,
+                    chunkIndex: opts.chunkIndex,
+                    chunkTotal: opts.chunkTotal,
+                    text: opts.text,
+                  }),
+                },
+              ],
+            },
+            { signal: controller.signal },
+          );
+          const parsed = processCleanupChunk(
+            opts.text,
+            response.choices[0]?.message?.content,
+          );
+          if (parsed) return parsed;
+          lastError = new Error('Invalid cleanup selection JSON');
+        } finally {
+          clearTimeout(timer);
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    this.logger.warn(
+      `Import cleanup chunk failed after retries: ${
+        lastError instanceof Error ? lastError.message : lastError
+      }`,
+    );
+    return null;
   }
 }

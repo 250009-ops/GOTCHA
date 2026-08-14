@@ -4,6 +4,7 @@ export const AI_SETTING_KEYS = {
   dailyLimit: 'aiDailyLimit',
   lookupModel: 'aiLookupModel',
   quizModel: 'aiQuizModel',
+  importCleanupModel: 'aiImportCleanupModel',
   defaultUserQuota: 'aiDefaultUserQuota',
 } as const;
 
@@ -12,6 +13,7 @@ export type AiPlatformSettings = {
   dailyLimit: number;
   lookupModel: string;
   quizModel: string;
+  importCleanupModel: string;
   defaultUserQuota: number;
 };
 
@@ -21,6 +23,10 @@ export function defaultAiPlatformSettings(): AiPlatformSettings {
     dailyLimit: 150_000,
     lookupModel: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-4.1-mini',
     quizModel: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini',
+    importCleanupModel:
+      process.env.OPENAI_MODEL_IMPORT ??
+      process.env.OPENAI_MODEL_LOOKUP ??
+      'gpt-4.1-mini',
     defaultUserQuota: 50,
   };
 }
@@ -31,6 +37,7 @@ export function parseAiPlatformSettings(map: Record<string, unknown>): AiPlatfor
   const dailyLimitRaw = map[AI_SETTING_KEYS.dailyLimit];
   const lookupModelRaw = map[AI_SETTING_KEYS.lookupModel];
   const quizModelRaw = map[AI_SETTING_KEYS.quizModel];
+  const importCleanupModelRaw = map[AI_SETTING_KEYS.importCleanupModel];
   const defaultQuotaRaw = map[AI_SETTING_KEYS.defaultUserQuota];
 
   return {
@@ -47,6 +54,10 @@ export function parseAiPlatformSettings(map: Record<string, unknown>): AiPlatfor
       typeof quizModelRaw === 'string' && quizModelRaw.trim()
         ? quizModelRaw.trim()
         : defaults.quizModel,
+    importCleanupModel:
+      typeof importCleanupModelRaw === 'string' && importCleanupModelRaw.trim()
+        ? importCleanupModelRaw.trim()
+        : defaults.importCleanupModel,
     defaultUserQuota:
       typeof defaultQuotaRaw === 'number' && Number.isFinite(defaultQuotaRaw)
         ? Math.max(0, Math.floor(defaultQuotaRaw))
