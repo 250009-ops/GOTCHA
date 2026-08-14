@@ -1,5 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PublishStatus, Prisma } from '@prisma/client';
+import { PublishStatus, Prisma, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES } from '@gotcha/shared';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import {
@@ -8,6 +8,7 @@ import {
   getDevSegments,
 } from '../../common/dev-auth/dev-content.data';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StreakService } from '../../services/streak.service';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 
 const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = {
@@ -22,12 +23,47 @@ const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; fla
   pt: { name: 'Portuguese', nativeName: 'Português', flagEmoji: '🇵🇹' },
 };
 
+/** Map Prisma content fields → learner app DTO (cover + author). */
+function serializeContent(item: object) {
+  const row = item as { coverImageKey?: string | null; subtitle?: string | null };
+  return {
+    ...row,
+    coverImageUrl: row.coverImageKey ?? null,
+    authorName: row.subtitle ?? null,
+  };
+}
+
 @Injectable()
 export class ContentService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private streak: StreakService,
+  ) {}
 
   private useDevContent() {
     return isDevAuthEnabled() && !this.prisma.dbAvailable;
+  }
+
+  /**
+   * Learner content APIs are published-only for the catalog, but the importer must be
+   * able to read their own `review` imports immediately (moderation only gates public
+   * visibility — not the owner's reader). Archived/rejected stays hidden.
+   */
+  private readableByLearnerWhere(id: string, userId?: string): Prisma.ContentItemWhereInput {
+    if (!userId) {
+      return { id, publishStatus: PublishStatus.published };
+    }
+    return {
+      id,
+      OR: [
+        { publishStatus: PublishStatus.published },
+        {
+          publishStatus: PublishStatus.review,
+          createdById: userId,
+          contentSource: 'user_import',
+        },
+      ],
+    };
   }
 
   /** Languages learners may select — respects admin LanguageCatalog.isEnabled. */
@@ -112,15 +148,16 @@ export class ContentService {
         orderBy: { publishedAt: 'desc' },
         take: 12,
       }),
-      // Ensure the learner's own imports surface in Library / Browse (Imports filter).
+      // Ensure the learner's own imports surface in Library / Browse (Imports filter),
+      // including those still awaiting moderation (`review`).
       this.prisma.contentItem.findMany({
         where: {
-          publishStatus: PublishStatus.published,
+          publishStatus: { in: [PublishStatus.published, PublishStatus.review] },
           createdById: userId,
           contentSource: 'user_import',
           ...(targetLang ? { language: targetLang as never } : {}),
         },
-        orderBy: { publishedAt: 'desc' },
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
         take: 24,
       }),
     ]);
@@ -133,12 +170,21 @@ export class ContentService {
 
     return {
       continueReading: progress.map((p) => ({
-        ...p.content,
+        ...serializeContent(p.content),
         progressPct: p.progressPct,
         lastReadAt: p.lastReadAt,
+        // Include the knownWordRatio so LibraryPage can show a "% known" badge
+        // for items in progress. See docs/E2E_AUDIT_REPORT.md item #7 for context.
+        knownWordRatio: p.knownWordRatio ?? null,
       })),
-      featuredCollections: featured,
-      recentlyPublished: mergedRecent,
+      featuredCollections: featured.map((c) => ({
+        ...c,
+        items: c.items.map((i) => ({
+          ...i,
+          content: serializeContent(i.content),
+        })),
+      })),
+      recentlyPublished: mergedRecent.map((item) => serializeContent(item)),
     };
   }
 
@@ -191,7 +237,7 @@ export class ContentService {
     ]);
 
     return {
-      items,
+      items: items.map((item) => serializeContent(item)),
       total,
       page,
       pageSize,
@@ -199,15 +245,20 @@ export class ContentService {
     };
   }
 
-  async getById(id: string) {
+  async getById(id: string, userId?: string) {
     if (this.useDevContent()) {
       const item = getDevContentById(id);
       if (!item) throw new NotFoundException('Content not found');
-      return item;
+      const segments = item.segments ?? [];
+      return {
+        ...serializeContent(item),
+        segmentCount: segments.length,
+        progressPct: item.progressPct ?? 0,
+      };
     }
 
     const item = await this.prisma.contentItem.findFirst({
-      where: { id, publishStatus: PublishStatus.published },
+      where: this.readableByLearnerWhere(id, userId),
       include: {
         license: true,
         segments: {
@@ -217,10 +268,26 @@ export class ContentService {
       },
     });
     if (!item) throw new NotFoundException('Content not found');
-    return item;
+
+    const progress = userId
+      ? await this.prisma.readingProgress.findUnique({
+          where: { userId_contentId: { userId, contentId: id } },
+        })
+      : null;
+
+    return {
+      ...serializeContent(item),
+      segmentCount: item.segments.length,
+      progressPct: progress?.progressPct ?? 0,
+      lastReadAt: progress?.lastReadAt ?? null,
+      // Resume-to-last-position: return the segment ID where the user left off.
+      // ReaderPage.tsx uses this to open the book at the correct chapter.
+      // See docs/E2E_AUDIT_REPORT.md item #6a for context.
+      currentSegmentId: progress?.segmentId ?? null,
+    };
   }
 
-  async getSegments(contentId: string, from = 0, limit = 5) {
+  async getSegments(contentId: string, from = 0, limit = 5, userId?: string) {
     if (this.useDevContent()) {
       const result = getDevSegments(contentId);
       if (!result) throw new NotFoundException('Content not found');
@@ -231,7 +298,7 @@ export class ContentService {
     }
 
     const content = await this.prisma.contentItem.findFirst({
-      where: { id: contentId, publishStatus: PublishStatus.published },
+      where: this.readableByLearnerWhere(contentId, userId),
     });
     if (!content) throw new NotFoundException('Content not found');
 
@@ -262,16 +329,32 @@ export class ContentService {
       where: { userId_contentId: { userId, contentId } },
     });
 
+    // Kept in parity with reading.service.ts's PUT /reading/progress/:contentId so both
+    // "update progress" endpoints drive the same streak/known-word-ratio side effects
+    // (previously only the reading module's endpoint did this — see docs/E2E_AUDIT_REPORT.md).
+    const knownCount = await this.prisma.userKnownWord.count({
+      where: { userId, status: { in: [WordStatus.known, WordStatus.learning] } },
+    });
+    const content = await this.prisma.contentItem.findUnique({ where: { id: contentId } });
+    const knownWordRatio = content?.uniqueWordCount
+      ? Math.min(1, knownCount / content.uniqueWordCount)
+      : undefined;
+
     const data = {
       segmentId: dto.segmentId,
       charOffset: dto.charOffset,
       progressPct: dto.progressPct,
+      knownWordRatio,
       lastReadAt: new Date(),
       totalReadSeconds: existing
         ? existing.totalReadSeconds + (dto.readSeconds ?? 0)
         : (dto.readSeconds ?? 0),
       completedAt: dto.completed ? new Date() : undefined,
     };
+
+    if (dto.readSeconds && dto.readSeconds > 0) {
+      await this.streak.recordActivity(userId, Math.round(dto.readSeconds / 60));
+    }
 
     return this.prisma.readingProgress.upsert({
       where: { userId_contentId: { userId, contentId } },

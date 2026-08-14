@@ -1,6 +1,21 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
+/** Current streak for display: alive if last activity was today or yesterday. */
+export function effectiveStreakCount(
+  streakCount: number,
+  streakLastDate: Date | string | null | undefined,
+): number {
+  if (!streakCount || !streakLastDate) return 0;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const last = new Date(streakLastDate);
+  last.setHours(0, 0, 0, 0);
+  const diffDays = Math.round((today.getTime() - last.getTime()) / 86400000);
+  if (diffDays <= 1) return streakCount;
+  return 0;
+}
+
 @Injectable()
 export class StreakService {
   constructor(private prisma: PrismaService) {}

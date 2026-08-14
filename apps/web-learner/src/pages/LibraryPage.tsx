@@ -476,16 +476,26 @@ export default function LibraryPage() {
     );
   }
 
+  const streakCount = stats?.streakCount ?? 0;
+  // Don't claim a streak that doesn't exist — see docs/E2E_AUDIT_REPORT.md's
+  // always-positive-streak-greeting finding.
+  const streakSubtitle =
+    streakCount === 0
+      ? 'Start reading today to begin a streak.'
+      : streakCount === 1
+        ? "You're on day 1 — keep it going tomorrow!"
+        : "Keep your streak alive — you're on a roll.";
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-8">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {firstName} 👋</h1>
-          <p className="text-gray-500 mt-0.5 text-sm">Keep your streak alive — you&apos;re on a roll.</p>
+          <p className="text-gray-500 mt-0.5 text-sm">{streakSubtitle}</p>
         </div>
         <div className="flex gap-3 shrink-0">
           {[
-            { icon: Flame, value: `${stats?.streakCount ?? 0} days`, label: 'Streak', color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
+            { icon: Flame, value: `${streakCount} days`, label: 'Streak', color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
             { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: 'Words', color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
           ].map((s) => (
             <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3.5 py-2.5 min-w-[7.5rem]', s.color)}>

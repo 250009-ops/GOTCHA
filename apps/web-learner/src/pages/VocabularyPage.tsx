@@ -24,6 +24,7 @@ import { EmptyState } from '../components/EmptyState';
 import { Button } from '../components/ui/button';
 import { Progress } from '../components/ui/progress';
 import { cn } from '../components/ui/utils';
+import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { VocabItem } from '../lib/types';
 
@@ -32,10 +33,6 @@ type SortDir = 'asc' | 'desc';
 type VocabStatus = 'learning' | 'known';
 
 const SRS_RATINGS = ['Again', 'Hard', 'Good', 'Easy'] as const;
-
-function isDue(dueAt: string) {
-  return new Date(dueAt) <= new Date();
-}
 
 function formatDate(iso: string) {
   const diff = Math.round((new Date(iso).getTime() - Date.now()) / 86400000);
@@ -253,9 +250,19 @@ export default function VocabularyPage() {
     [],
   );
   const [rowBusy, setRowBusy] = useState<string | null>(null);
+  // Server-authoritative "due for review" set — sourced from GET /vocabulary/review-queue
+  // rather than recomputing `dueAt <= now` client-side (see docs/E2E_AUDIT_REPORT.md).
+  const [reviewQueue, setReviewQueue] = useState<VocabItem[]>([]);
+
+  const loadReviewQueue = () => {
+    api<VocabItem[]>('/vocabulary/review-queue?limit=200')
+      .then(setReviewQueue)
+      .catch(() => undefined);
+  };
 
   useEffect(() => {
     void refreshVocab().catch(() => undefined);
+    loadReviewQueue();
   }, [refreshVocab]);
 
   useEffect(() => {
@@ -272,7 +279,11 @@ export default function VocabularyPage() {
     [vocabItems],
   );
 
-  const dueItems = mapped.filter((i) => i.status === 'learning' && isDue(i.dueAt));
+  const dueIds = useMemo(() => new Set(reviewQueue.map((v) => v.id)), [reviewQueue]);
+  const dueItems = useMemo(
+    () => mapped.filter((i) => dueIds.has(i.id)),
+    [mapped, dueIds],
+  );
   const totalKnown = mapped.filter((i) => i.status === 'known').length;
   const totalLearning = mapped.filter((i) => i.status === 'learning').length;
   const masteredPct = mapped.length ? Math.round((totalKnown / mapped.length) * 100) : 0;
@@ -299,7 +310,7 @@ export default function VocabularyPage() {
             item.lemma.toLowerCase().includes(q) || item.translation.toLowerCase().includes(q);
           if (!hit) return false;
         }
-        if (filter === 'due') return isDue(item.dueAt) && item.status === 'learning';
+        if (filter === 'due') return dueIds.has(item.id);
         if (filter === 'learning') return item.status === 'learning';
         if (filter === 'known') return item.status === 'known';
         return true;
@@ -312,13 +323,14 @@ export default function VocabularyPage() {
         else if (sortKey === 'repetitions') cmp = a.repetitions - b.repetitions;
         return sortDir === 'asc' ? cmp : -cmp;
       });
-  }, [mapped, search, filter, sortKey, sortDir]);
+  }, [mapped, search, filter, sortKey, sortDir, dueIds]);
 
   const onMaster = async (id: string, lemma: string) => {
     setRowBusy(id);
     try {
       await markVocabMastered(id, true);
       toast.success(`"${lemma}" marked as known`);
+      loadReviewQueue();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Update failed');
     } finally {
@@ -331,6 +343,7 @@ export default function VocabularyPage() {
     try {
       await removeVocab(id);
       toast.success(`"${lemma}" removed`);
+      loadReviewQueue();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Remove failed');
     } finally {
@@ -411,6 +424,7 @@ export default function VocabularyPage() {
           onClose={() => {
             setReviewOpen(false);
             void refreshVocab().catch(() => undefined);
+            loadReviewQueue();
           }}
           onRate={rateWord}
         />
@@ -545,7 +559,7 @@ export default function VocabularyPage() {
                 >
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
-                      {isDue(item.dueAt) && item.status === 'learning' && (
+                      {dueIds.has(item.id) && (
                         <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="Due for review" />
                       )}
                       <span className="font-semibold text-gray-900 text-sm">{item.lemma}</span>
@@ -559,11 +573,7 @@ export default function VocabularyPage() {
                   </td>
                   <td className="px-3 py-2.5 text-sm whitespace-nowrap">
                     <span
-                      className={cn(
-                        isDue(item.dueAt) && item.status === 'learning'
-                          ? 'text-amber-600 font-medium'
-                          : 'text-gray-500',
-                      )}
+                      className={cn(dueIds.has(item.id) ? 'text-amber-600 font-medium' : 'text-gray-500')}
                     >
                       {formatDate(item.dueAt)}
                     </span>
@@ -615,7 +625,7 @@ export default function VocabularyPage() {
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  {isDue(item.dueAt) && item.status === 'learning' && (
+                  {dueIds.has(item.id) && (
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
                   )}
                   <span className="font-semibold text-gray-900">{item.lemma}</span>

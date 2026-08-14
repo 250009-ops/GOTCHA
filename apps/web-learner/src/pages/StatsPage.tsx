@@ -136,7 +136,7 @@ export default function StatsPage() {
   }, [apiStats]);
   const wordsInPeriod = dailySlice.reduce((s, d) => s + d.wordsSaved, 0);
   const heatmap = apiStats?.history?.heatmap ?? [];
-  const currentStreak = stats?.streakCount ?? 0;
+  const currentStreak = apiStats?.streakCount ?? stats?.streakCount ?? 0;
   const bestStreak = apiStats?.bestStreak ?? currentStreak;
 
   const totalVocab = vocabItems.length || apiStats?.vocabularyTotal || 0;

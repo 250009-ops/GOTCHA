@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  GraduationCap,
   Loader2,
   Minus,
   PanelLeftClose,
@@ -90,7 +91,9 @@ function DictionaryPanel({
   onSave,
   onKnown,
   onIgnore,
+  onPronounce,
   loading,
+  ttsEnabled,
 }: {
   result: LookupResult | null;
   status: WordStatus;
@@ -98,7 +101,9 @@ function DictionaryPanel({
   onSave: () => void;
   onKnown: () => void;
   onIgnore: () => void;
+  onPronounce: () => void;
   loading: boolean;
+  ttsEnabled: boolean;
 }) {
   return (
     <div className="flex flex-col h-full bg-white">
@@ -122,7 +127,19 @@ function DictionaryPanel({
                 <div className="flex items-baseline gap-2 flex-wrap">
                   <span className="text-2xl font-bold text-[#101828]">{result.lemma}</span>
                 </div>
-                <button type="button" className="p-1.5 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe] transition-colors shrink-0" aria-label="Pronounce">
+                <button
+                  type="button"
+                  onClick={onPronounce}
+                  disabled={!ttsEnabled}
+                  className={cn(
+                    'p-1.5 rounded-lg transition-colors shrink-0',
+                    ttsEnabled
+                      ? 'hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]'
+                      : 'text-gray-300 cursor-not-allowed',
+                  )}
+                  aria-label="Pronounce"
+                  title={ttsEnabled ? 'Pronounce word' : 'Enable TTS in Settings'}
+                >
                   <Volume2 className="w-4 h-4" />
                 </button>
               </div>
@@ -214,6 +231,25 @@ export default function ReaderPage() {
   const segment = segments[segmentIndex];
   const targetLang = user?.nativeLanguage ?? 'en';
   const sourceLang = content?.language ?? 'en';
+  const ttsEnabled = preferences?.ttsEnabled ?? false;
+
+  const pronounceWord = useCallback(() => {
+    if (!activeWord || !ttsEnabled) return;
+    if (!('speechSynthesis' in window)) {
+      toast.error('Text-to-speech is not supported in this browser');
+      return;
+    }
+    const utterance = new SpeechSynthesisUtterance(activeWord);
+    utterance.lang = sourceLang;
+    utterance.rate = 0.9;
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(utterance);
+  }, [activeWord, sourceLang, ttsEnabled]);
+
+  // Wall-clock time spent since the last progress save, so PATCH /content/:id/progress
+  // gets a real `readSeconds` and content.service.ts's streak.recordActivity actually fires
+  // (see docs/E2E_AUDIT_REPORT.md's reading-page-never-triggers-streak finding).
+  const lastProgressAtRef = useRef<number>(Date.now());
 
   useEffect(() => {
     if (preferences?.readerFontScale != null) {
@@ -239,6 +275,7 @@ export default function ReaderPage() {
       setWordStatuses(map);
       const resumeIdx = segs.findIndex((s) => s.id === (item as ContentItem & { currentSegmentId?: string }).currentSegmentId);
       setSegmentIndex(resumeIdx >= 0 ? resumeIdx : 0);
+      lastProgressAtRef.current = Date.now();
     }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   }, [id]);
 
@@ -348,6 +385,8 @@ export default function ReaderPage() {
   const saveProgress = async (nextIndex: number, completed = false) => {
     if (!id || !segments.length) return;
     const pct = Math.round(((nextIndex + 1) / segments.length) * 100);
+    const readSeconds = Math.max(0, Math.round((Date.now() - lastProgressAtRef.current) / 1000));
+    lastProgressAtRef.current = Date.now();
     try {
       await api(`/content/${id}/progress`, {
         method: 'PUT',
@@ -355,6 +394,7 @@ export default function ReaderPage() {
           segmentId: segments[nextIndex]?.id,
           progressPct: completed ? 100 : pct,
           completed,
+          readSeconds,
         }),
       });
     } catch {
@@ -493,6 +533,16 @@ export default function ReaderPage() {
           >
             <Eye className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">Unknown only</span>
+          </button>
+          <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
+          <button
+            type="button"
+            onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment.id}`)}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
+            title="Quiz yourself on this chapter"
+          >
+            <GraduationCap className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Practice</span>
           </button>
         </div>
       </header>
@@ -685,7 +735,9 @@ export default function ReaderPage() {
               onSave={handleSave}
               onKnown={() => void markStatus('known')}
               onIgnore={() => void markStatus('ignored')}
+              onPronounce={pronounceWord}
               loading={lookupLoading}
+              ttsEnabled={ttsEnabled}
             />
           ) : (
             <button
@@ -711,7 +763,9 @@ export default function ReaderPage() {
             onSave={handleSave}
             onKnown={() => void markStatus('known')}
             onIgnore={() => void markStatus('ignored')}
+            onPronounce={pronounceWord}
             loading={lookupLoading}
+            ttsEnabled={ttsEnabled}
           />
         </div>
       )}

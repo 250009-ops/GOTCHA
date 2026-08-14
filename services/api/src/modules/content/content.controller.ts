@@ -27,17 +27,18 @@ export class ContentController {
   }
 
   @Get(':id')
-  getById(@Param('id') id: string) {
-    return this.content.getById(id);
+  getById(@CurrentUser() user: AuthUserPayload, @Param('id') id: string) {
+    return this.content.getById(id, user.sub);
   }
 
   @Get(':id/segments')
   segments(
+    @CurrentUser() user: AuthUserPayload,
     @Param('id') id: string,
     @Query('from') from?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.content.getSegments(id, Number(from ?? 0), Number(limit ?? 100));
+    return this.content.getSegments(id, Number(from ?? 0), Number(limit ?? 100), user.sub);
   }
 
   @Put(':id/progress')

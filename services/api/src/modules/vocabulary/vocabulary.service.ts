@@ -101,6 +101,7 @@ export class VocabularyService {
       },
       orderBy: { dueAt: 'asc' },
       take: limit,
+      include: { content: { select: { id: true, title: true } } },
     });
   }
 
