@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 type TokenCache = { accessToken: string; expiresAt: number };
 
@@ -50,6 +50,7 @@ type AtmosMerchantResponse = {
     confirmed?: boolean;
     amount?: number;
     account?: string;
+    terminal_id?: string | number;
     status_code?: string | null;
     status_message?: string | null;
     prepay_time?: number | null;
@@ -58,6 +59,166 @@ type AtmosMerchantResponse = {
   ofd_url?: string;
   phone?: string;
 };
+
+export function normalizeCardNumber(cardNumber: string): string {
+  return cardNumber.replace(/\s+/g, '');
+}
+
+export function normalizeExpiryToYymm(expiry: string): string {
+  const digits = expiry.replace(/\D/g, '');
+  if (digits.length !== 4) {
+    throw new BadRequestException('Expiry must be 4 digits in MM/YY format (e.g. 03/30).');
+  }
+
+  const first = Number(digits.slice(0, 2));
+  const second = Number(digits.slice(2, 4));
+
+  if (first >= 1 && first <= 12) {
+    return `${digits.slice(2, 4)}${digits.slice(0, 2)}`;
+  }
+
+  if (second >= 1 && second <= 12) {
+    return digits;
+  }
+
+  throw new BadRequestException('Invalid expiry. Use MM/YY (e.g. 03/30 for March 2030).');
+}
+
+export function validateCardForAtmos(
+  cardNumber: string,
+  expiry: string,
+): {
+  cardNumber: string;
+  expiry: string;
+} {
+  const digits = normalizeCardNumber(cardNumber);
+  if (digits.length < 16 || digits.length > 19) {
+    throw new BadRequestException('Card number must be 16–19 digits.');
+  }
+  if (!/^\d+$/.test(digits)) {
+    throw new BadRequestException('Card number must contain only digits.');
+  }
+
+  const yymm = normalizeExpiryToYymm(expiry);
+  const month = Number(yymm.slice(2, 4));
+  if (month < 1 || month > 12) {
+    throw new BadRequestException('Invalid expiry month. Use MM/YY (e.g. 03/30).');
+  }
+
+  return { cardNumber: digits, expiry: yymm };
+}
+
+function mapAtmosCardError(description: string | undefined): string {
+  const raw = (description ?? '').trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) {
+    return 'Card verification failed. Please check your card details and try again.';
+  }
+  if (
+    raw.includes('\u041d\u0435\u043f\u0440\u0430\u0432\u0438\u043b') ||
+    lower.includes('parametr') ||
+    lower.includes('invalid')
+  ) {
+    return 'Invalid card number or expiry. Check the number and use expiry as MM/YY (e.g. 03/30).';
+  }
+  if (raw.includes('\u0438\u0441\u0442\u0435\u043a') || lower.includes('expir')) {
+    return 'This card has expired. Please use a different card.';
+  }
+  if (raw.includes('\u043d\u0435\u0434\u043e\u0441\u0442\u0430\u0442') || lower.includes('insufficient')) {
+    return 'Insufficient funds on this card.';
+  }
+
+  return 'Card verification failed. Please check your card details and try again.';
+}
+
+export function normalizeOtp(otp: string): number {
+  const digits = otp.replace(/\s+/g, '');
+  if (!/^\d{4,8}$/.test(digits)) {
+    throw new BadRequestException('OTP must be 4–8 digits.');
+  }
+  return Number(digits);
+}
+
+function mapAtmosCreateError(code: string | undefined, description: string | undefined): string {
+  const resultCode = String(code ?? '').toUpperCase();
+  if (resultCode === 'STPIMS-ERR-042') {
+    return 'Payment amount is below the minimum allowed for card payments. Please contact support.';
+  }
+  if (resultCode === 'STPIMS-ERR-103') {
+    return 'Payment terminal is not configured correctly. Please try again in a few minutes or contact support.';
+  }
+  const raw = (description ?? '').trim();
+  if (raw.includes('\u0442\u0435\u0440\u043c\u0438\u043d\u0430\u043b') || raw.toLowerCase().includes('terminal')) {
+    return 'Payment terminal is not configured correctly. Please try again in a few minutes or contact support.';
+  }
+  if (raw.includes('\u0441\u0443\u043c\u043c') || raw.toLowerCase().includes('amount')) {
+    return 'Payment amount is not allowed for this transaction. Please contact support.';
+  }
+  return 'Unable to start payment. Please try again in a few minutes or contact support.';
+}
+
+function mapAtmosApplyError(code: string | undefined, description: string | undefined): string {
+  const resultCode = String(code ?? '').toUpperCase();
+  if (resultCode === 'STPIMS-ERR-098') {
+    return 'Incorrect SMS code. Please check the code and try again.';
+  }
+  if (resultCode === 'STPIMS-ERR-092') {
+    return 'This payment session has expired. Go back and start checkout again.';
+  }
+  if (resultCode === 'STPIMS-ERR-093') {
+    return 'Payment could not be completed due to a billing system error. Please try again in a few minutes or contact support.';
+  }
+  return mapAtmosOtpError(description);
+}
+
+function mapAtmosOtpError(description: string | undefined): string {
+  const raw = (description ?? '').trim();
+  const lower = raw.toLowerCase();
+
+  if (!raw) {
+    return 'Invalid or expired SMS code. Please try again or request a new code.';
+  }
+  if (
+    lower.includes('otp') ||
+    lower.includes('sms') ||
+    lower.includes('code') ||
+    raw.includes('\u043a\u043e\u0434') ||
+    raw.includes('\u043d\u0435\u0432\u0435\u0440\u043d')
+  ) {
+    return 'Incorrect SMS code. Please check the code and try again.';
+  }
+  if (raw.includes('\u0438\u0441\u0442\u0435\u043a') || lower.includes('expir')) {
+    return 'SMS code expired. Tap "Resend Code" and enter the new code.';
+  }
+  if (raw.includes('\u0437\u0430\u043a\u0440\u044b\u0442') || lower.includes('closed')) {
+    return 'This payment session has expired. Go back and start checkout again.';
+  }
+  if (lower.includes('attempt') || raw.includes('\u043f\u043e\u043f\u044b\u0442')) {
+    return 'Too many incorrect attempts. Request a new SMS code or use a different card.';
+  }
+  if (raw.includes('\u0431\u0438\u043b\u043b\u0438\u043d\u0433') || lower.includes('billing')) {
+    return 'Payment could not be completed due to a billing system error. Please try again in a few minutes or contact support.';
+  }
+
+  return 'Payment confirmation failed. Please check the SMS code and try again.';
+}
+
+/** Minimum Atmos charge in UZS (soʻm). Default 500 per Atmos tech team. */
+export function atmosMinAmountSom(): number {
+  const minSom = Number(process.env.ATMOS_MIN_AMOUNT_SOM ?? 500);
+  return Number.isFinite(minSom) ? Math.max(0, minSom) : 500;
+}
+
+/** Reject admin pricing values below the Atmos minimum (0 is allowed = free). */
+export function assertAtmosMinPriceSom(price: number, fieldLabel: string): void {
+  const min = atmosMinAmountSom();
+  if (price > 0 && price < min) {
+    throw new BadRequestException(
+      `${fieldLabel} must be at least ${min.toLocaleString()} soʻm (Atmos minimum). Current value: ${Math.round(price).toLocaleString()} soʻm.`,
+    );
+  }
+}
 
 @Injectable()
 export class AtmosClient {
@@ -88,6 +249,15 @@ export class AtmosClient {
 
   merchantTin(): string {
     return process.env.ATMOS_MERCHANT_TIN?.trim() || '';
+  }
+
+  /**
+   * Minimum transaction amount in tiyins.
+   * Atmos merchant accounts require a minimum (500 soʻm per Atmos tech team).
+   * Configure via ATMOS_MIN_AMOUNT_SOM env var; defaults to 500 soʻm.
+   */
+  minAmountTiyins(): number {
+    return atmosMinAmountSom() * 100;
   }
 
   private basicAuthHeader() {
@@ -148,15 +318,18 @@ export class AtmosClient {
     }
     const token = await this.getAccessToken();
     const storeId = this.storeId();
-    const terminalId = process.env.ATMOS_TERMINAL_ID?.trim();
 
+    // Do NOT send terminal_id — Atmos auto-selects the store's ePOS terminal.
+    // Explicit terminal_id (even the correct ID) returns STPIMS-ERR-103 on this store.
     const payload: Record<string, unknown> = {
       amount: params.amountTiyins,
       account: params.account,
       store_id: storeId,
-      lang: process.env.ATMOS_LANG?.trim() || 'ru',
     };
-    if (terminalId) payload.terminal_id = terminalId;
+
+    this.logger.log(
+      `Atmos merchant/pay/create request: ${JSON.stringify({ ...payload, account: '[redacted]' })}`,
+    );
 
     const res = await fetch(`${this.baseUrl()}/merchant/pay/create`, {
       method: 'POST',
@@ -172,10 +345,15 @@ export class AtmosClient {
     const transactionId = Number(raw.transaction_id ?? raw.store_transaction?.trans_id);
 
     if (!res.ok || resultCode !== 'OK' || !Number.isFinite(transactionId)) {
-      this.logger.error(`Atmos merchant/pay/create failed: ${res.status} ${JSON.stringify(raw)}`);
-      const detail = raw.result?.description || `HTTP ${res.status}`;
-      throw new ServiceUnavailableException(`Unable to create Atmos transaction (${detail}).`);
+      this.logger.error(
+        `Atmos merchant/pay/create failed: ${res.status} code=${resultCode} ${JSON.stringify(raw)}`,
+      );
+      throw new ServiceUnavailableException(mapAtmosCreateError(raw.result?.code, raw.result?.description));
     }
+
+    this.logger.log(
+      `Atmos merchant/pay/create ok: transactionId=${transactionId} terminal=${raw.store_transaction?.terminal_id ?? 'auto'}`,
+    );
 
     return {
       transactionId,
@@ -201,10 +379,14 @@ export class AtmosClient {
 
     const payload = {
       transaction_id: params.transactionId,
-      card_number: params.cardNumber.replace(/\s+/g, ''),
-      expiry: params.expiry.replace(/\//g, ''),
+      card_number: normalizeCardNumber(params.cardNumber),
+      expiry: normalizeExpiryToYymm(params.expiry),
       store_id: storeId,
     };
+
+    this.logger.log(
+      `Atmos merchant/pay/pre-apply request: transaction_id=${params.transactionId} store_id=${storeId}`,
+    );
 
     const res = await fetch(`${this.baseUrl()}/merchant/pay/pre-apply`, {
       method: 'POST',
@@ -220,8 +402,7 @@ export class AtmosClient {
 
     if (!res.ok || resultCode !== 'OK') {
       this.logger.error(`Atmos merchant/pay/pre-apply failed: ${res.status} ${JSON.stringify(raw)}`);
-      const detail = raw.result?.description || `HTTP ${res.status}`;
-      throw new ServiceUnavailableException(`Card verification failed (${detail}).`);
+      throw new ServiceUnavailableException(mapAtmosCardError(raw.result?.description));
     }
 
     return {
@@ -285,10 +466,11 @@ export class AtmosClient {
   }): Promise<AtmosApplyResult> {
     const token = await this.getAccessToken();
     const storeId = this.storeId();
+    const otp = normalizeOtp(params.otp);
 
     const payload = {
       transaction_id: params.transactionId,
-      otp: params.otp.replace(/\s+/g, ''),
+      otp,
       store_id: storeId,
     };
 
@@ -303,18 +485,49 @@ export class AtmosClient {
     });
     const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
+    const storeTx = raw.store_transaction;
+    const confirmed = storeTx?.confirmed === true;
+
+    if (resultCode === 'OK' || confirmed) {
+      return {
+        transactionId: Number(raw.transaction_id ?? params.transactionId),
+        successTransId: storeTx?.success_trans_id != null ? Number(storeTx.success_trans_id) : undefined,
+        confirmed: true,
+        ofdUrl: raw.ofd_url,
+        statusCode: storeTx?.status_code ?? undefined,
+        statusMessage: storeTx?.status_message ?? undefined,
+        raw,
+      };
+    }
+
+    const pollOnCodes = new Set(['STPIMS-ERR-092', 'STPIMS-ERR-093', 'STPIMS-ERR-065']);
+    if (pollOnCodes.has(resultCode)) {
+      const remote = await this.getTransaction(params.transactionId);
+      if (remote?.confirmed) {
+        this.logger.warn(
+          `Atmos merchant/pay/apply returned ${resultCode}; transaction ${params.transactionId} is confirmed via get`,
+        );
+        return {
+          transactionId: remote.transactionId,
+          successTransId: remote.successTransId,
+          confirmed: true,
+          ofdUrl: remote.ofdUrl,
+          statusCode: remote.statusCode,
+          statusMessage: remote.statusMessage,
+          raw: remote.raw,
+        };
+      }
+    }
 
     if (!res.ok || resultCode !== 'OK') {
       this.logger.error(`Atmos merchant/pay/apply failed: ${res.status} ${JSON.stringify(raw)}`);
-      const detail = raw.result?.description || `HTTP ${res.status}`;
-      throw new ServiceUnavailableException(`Payment confirmation failed (${detail}).`);
+      throw new BadRequestException(mapAtmosApplyError(raw.result?.code, raw.result?.description));
     }
 
-    const storeTx = raw.store_transaction;
     return {
       transactionId: Number(raw.transaction_id ?? params.transactionId),
       successTransId: storeTx?.success_trans_id != null ? Number(storeTx.success_trans_id) : undefined,
-      confirmed: storeTx?.confirmed === true,
+      confirmed: false,
       ofdUrl: raw.ofd_url,
       statusCode: storeTx?.status_code ?? undefined,
       statusMessage: storeTx?.status_message ?? undefined,

@@ -8,7 +8,7 @@ import {
 import { ImportPaymentStatus, ImportType, Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AtmosClient } from './atmos.client';
+import { AtmosClient, validateCardForAtmos } from './atmos.client';
 
 function envFlagTrue(value: string | undefined): boolean {
   const v = (value ?? '').trim().toLowerCase();
@@ -39,6 +39,10 @@ export type ImportQuoteResult = {
   isFree: boolean;
   freeReason: string | null;
   requiresPayment: boolean;
+  /** Minimum payment amount in UZS (soʻm) required by Atmos. */
+  minAmountUzs: number;
+  /** True if amountUzs < minAmountUzs — payment will fail. */
+  belowMinimum: boolean;
   freeLimits: {
     dailyFreeImportsPerUser: number;
     monthlyFreePageLimit: number;
@@ -182,6 +186,12 @@ export class ImportCommerceService {
       }
     }
 
+    // Minimum amount required by Atmos (configurable, default 500 soʻm)
+    const minAmountTiyins = this.atmos.minAmountTiyins();
+    const minAmountUzs = Math.ceil(minAmountTiyins / 100);
+    const effectiveAmount = isFree ? 0 : priceUzs;
+    const belowMinimum = !isFree && effectiveAmount > 0 && effectiveAmount < minAmountUzs;
+
     return {
       gatewayEnabled,
       importType,
@@ -202,6 +212,8 @@ export class ImportCommerceService {
       isFree,
       freeReason,
       requiresPayment: gatewayEnabled && !isFree,
+      minAmountUzs,
+      belowMinimum,
       freeLimits: {
         dailyFreeImportsPerUser: freeLimits.dailyFreeImportsPerUser,
         monthlyFreePageLimit: freeLimits.monthlyFreePageLimit,
@@ -253,6 +265,14 @@ export class ImportCommerceService {
     }
     if (quote.amountTiyins <= 0) {
       throw new BadRequestException('Unable to price this import — configure page tiers in admin');
+    }
+
+    // Safety net: pricing should be validated in admin; never expose Atmos minimum details to learners.
+    const minTiyins = this.atmos.minAmountTiyins();
+    if (quote.amountTiyins < minTiyins) {
+      throw new BadRequestException(
+        'Payment could not be processed for this import. Please try again later or contact support.',
+      );
     }
 
     const account = `imp_${randomUUID().replace(/-/g, '')}`;
@@ -313,11 +333,19 @@ export class ImportCommerceService {
     }
 
     const transactionId = Number(payment.providerPaymentId);
+    const normalized = validateCardForAtmos(cardNumber, expiry);
     const result = await this.atmos.preApplyTransaction({
       transactionId,
-      cardNumber,
-      expiry,
+      cardNumber: normalized.cardNumber,
+      expiry: normalized.expiry,
     });
+
+    if (result.transactionId !== transactionId) {
+      await this.prisma.importPayment.update({
+        where: { id: payment.id },
+        data: { providerPaymentId: String(result.transactionId) },
+      });
+    }
 
     return {
       paymentId,
@@ -334,7 +362,7 @@ export class ImportCommerceService {
     userId: string,
     paymentId: string,
     otp: string,
-  ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'card' }> {
+  ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'otp' | 'card' }> {
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -377,7 +405,7 @@ export class ImportCommerceService {
       throw err;
     }
 
-    return { paymentId, status: 'pending', step: 'card' };
+    return { paymentId, status: 'pending', step: 'otp' };
   }
 
   /**

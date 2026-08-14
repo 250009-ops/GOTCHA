@@ -234,6 +234,8 @@ data class ImportQuoteResponse(
     val requiresPayment: Boolean = false,
     val tier: ImportQuoteTier? = null,
     val freeReason: String? = null,
+    val minAmountUzs: Double? = null,
+    val belowMinimum: Boolean = false,
 )
 
 @Serializable

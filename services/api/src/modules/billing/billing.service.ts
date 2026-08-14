@@ -1,12 +1,44 @@
 import { Injectable } from '@nestjs/common';
+import { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+/**
+ * Synthesize the `features`, `priceLabel`, `priceUnit`, and `popular` fields
+ * that the frontend expects but aren't columns in the DB schema.
+ * See docs/E2E_AUDIT_REPORT.md item #8 for context.
+ */
+function enrichPlan(plan: SubscriptionPlan) {
+  const isPremium = plan.tier === 'premium';
+  const priceMonthly = Number(plan.priceMonthly ?? 0);
+  return {
+    ...plan,
+    priceMonthly,
+    priceLabel: priceMonthly > 0 ? `$${priceMonthly}` : 'Free',
+    priceUnit: priceMonthly > 0 ? '/mo' : '',
+    popular: isPremium,
+    features: isPremium
+      ? [
+          'Unlimited AI lookups',
+          'Unlimited content imports',
+          'Offline reading mode',
+          'Priority support',
+          'No ads',
+        ]
+      : [
+          `${plan.aiDailyQuota} AI lookups/day`,
+          `${plan.importLimit} imports/month`,
+          'Access to public library',
+        ],
+  };
+}
 
 @Injectable()
 export class BillingService {
   constructor(private prisma: PrismaService) {}
 
-  listPlans() {
-    return this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } });
+  async listPlans() {
+    const plans = await this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } });
+    return plans.map(enrichPlan);
   }
 
   async getSubscription(userId: string) {
@@ -23,7 +55,7 @@ export class BillingService {
     });
 
     return {
-      subscription: sub,
+      subscription: sub ? { ...sub, plan: enrichPlan(sub.plan) } : null,
       usage: {
         lookupsToday: usage?.lookupCount ?? 0,
         quizzesToday: usage?.quizCount ?? 0,

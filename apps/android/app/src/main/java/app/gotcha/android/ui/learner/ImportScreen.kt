@@ -170,14 +170,14 @@ fun ImportScreen(
                             "Card Number",
                             cardNumber,
                             { cardNumber = it.filter { c -> c.isDigit() }.take(16) },
-                            placeholder = "8600 1234 5678 9012",
+                            placeholder = "5614 6819 0687 2829",
                         )
                         Spacer(Modifier.height(12.dp))
                         GotchaTextField(
-                            "Expiry (YY/MM)",
+                            "Expiry (MM/YY)",
                             cardExpiry,
                             { cardExpiry = it.filter { c -> c.isDigit() || c == '/' }.take(5) },
-                            placeholder = "28/12",
+                            placeholder = "03/30",
                         )
                         Spacer(Modifier.height(16.dp))
                         GotchaPrimaryButton(
@@ -193,8 +193,12 @@ fun ImportScreen(
                                             cardNumber.replace(" ", ""),
                                             cardExpiry.replace("/", ""),
                                         )
+                                        if (result.step != null && result.step != "otp") {
+                                            throw IllegalStateException("Unexpected payment state after card verification.")
+                                        }
                                         maskedPhone = result.maskedPhone
                                         paymentStep = "otp"
+                                        otpCode = ""
                                         message = "OTP sent to ${result.maskedPhone ?: "your phone"}"
                                     } catch (e: Exception) {
                                         message = e.message ?: "Card verification failed"
@@ -254,8 +258,11 @@ fun ImportScreen(
                                             message = "Import started"
                                             recent = container.importRepository.list().items
                                             mode = null
+                                        } else if (result.step == "otp") {
+                                            otpCode = ""
+                                            message = "Check the SMS code and try again."
                                         } else {
-                                            message = "Payment failed. Please try again."
+                                            message = "Payment failed. Please try again with a different card."
                                             paymentStep = "card"
                                             cardNumber = ""
                                             cardExpiry = ""

@@ -36,7 +36,7 @@ export type ApplyResult = {
   paymentId: string;
   status: string;
   ofdUrl?: string;
-  step: 'paid' | 'card';
+  step: 'paid' | 'otp' | 'card';
 };
 
 const PENDING_KEY = 'gotcha_pending_import';
@@ -151,4 +151,16 @@ export async function getImportPayment(paymentId: string) {
 
 export function wordCountOf(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+export function isValidCardNumber(cardNumber: string) {
+  const digits = cardNumber.replace(/\s/g, '');
+  return digits.length >= 16 && digits.length <= 19 && /^\d+$/.test(digits);
+}
+
+export function isValidCardExpiry(expiry: string) {
+  const digits = expiry.replace(/\D/g, '');
+  if (digits.length !== 4) return false;
+  const month = Number(digits.slice(0, 2));
+  return month >= 1 && month <= 12;
 }

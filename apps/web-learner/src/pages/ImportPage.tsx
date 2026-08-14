@@ -427,7 +427,7 @@ function PaymentConfirmModal({
     : 'Text';
 
   const formatCardNumber = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 16);
+    const digits = value.replace(/\D/g, '').slice(0, 19);
     return digits.replace(/(.{4})/g, '$1 ').trim();
   };
 
@@ -437,7 +437,14 @@ function PaymentConfirmModal({
     return digits;
   };
 
-  const isCardValid = cardNumber.replace(/\s/g, '').length >= 16 && expiry.replace(/\//g, '').length === 4;
+  const cardDigits = cardNumber.replace(/\s/g, '');
+  const isCardValid =
+    cardDigits.length >= 16 &&
+    cardDigits.length <= 19 &&
+    (() => {
+      const d = expiry.replace(/\D/g, '');
+      return d.length === 4 && Number(d.slice(0, 2)) >= 1 && Number(d.slice(0, 2)) <= 12;
+    })();
   const isOtpValid = otp.replace(/\s/g, '').length >= 4;
 
   const handleProceedToCard = async () => {
@@ -472,8 +479,12 @@ function PaymentConfirmModal({
       const { preApplyPayment } = await import('../lib/importBilling');
       const expiryFormatted = expiry.replace(/\//g, '');
       const result = await preApplyPayment(paymentId, cardNumber.replace(/\s/g, ''), expiryFormatted);
+      if (result.step !== 'otp') {
+        throw new Error('Unexpected payment state after card verification.');
+      }
       setMaskedPhone(result.maskedPhone);
       setStep('otp');
+      setOtp('');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Card verification failed');
     } finally {
@@ -492,6 +503,9 @@ function PaymentConfirmModal({
         setStep('done');
         onPaid?.(paymentId);
         onClose();
+      } else if (result.step === 'otp') {
+        setError('Payment not confirmed yet. Check the SMS code and try again.');
+        setOtp('');
       } else {
         setError('Payment not confirmed. Please try again with a different card.');
         setStep('card');
@@ -586,16 +600,6 @@ function PaymentConfirmModal({
               </div>
             </div>
 
-            {quote.belowMinimum && quote.minAmountUzs && (
-              <div className="w-full p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-xs text-amber-700">
-                  <strong>Minimum payment:</strong> {formatUzs(quote.minAmountUzs)}.
-                  {' '}The current price ({formatUzs(quote.amountUzs)}) is below Atmos minimum.
-                  Please contact support or adjust pricing.
-                </p>
-              </div>
-            )}
-
             {error && (
               <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
                 <p className="text-xs text-red-600">{error}</p>
@@ -605,7 +609,7 @@ function PaymentConfirmModal({
             <button
               type="button"
               onClick={handleProceedToCard}
-              disabled={loading || externalLoading || quote.belowMinimum}
+              disabled={loading || externalLoading}
               className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
               style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
             >
@@ -633,7 +637,7 @@ function PaymentConfirmModal({
         {step === 'card' && (
           <>
             <h2 className="text-[#101828] text-xl font-bold text-center">Enter Card Details</h2>
-            <p className="text-[#6a7282] text-sm text-center -mt-2">UzCard or Humo accepted</p>
+            <p className="text-[#6a7282] text-sm text-center -mt-2">UzCard, Humo, Visa, or Mastercard</p>
 
             <div className="w-full space-y-4">
               <div>
@@ -644,20 +648,20 @@ function PaymentConfirmModal({
                   autoComplete="cc-number"
                   value={cardNumber}
                   onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                  placeholder="8600 1234 5678 9012"
+                  placeholder="5614 6819 0687 2829"
                   disabled={loading}
                   className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
               </div>
               <div>
-                <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Expiry (YY/MM)</label>
+                <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Expiry (MM/YY)</label>
                 <input
                   type="text"
                   inputMode="numeric"
                   autoComplete="cc-exp"
                   value={expiry}
                   onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                  placeholder="28/12"
+                  placeholder="03/30"
                   disabled={loading}
                   className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
