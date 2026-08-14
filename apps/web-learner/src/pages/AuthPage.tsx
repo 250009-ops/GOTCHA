@@ -1,13 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
-import { isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
+import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
+import { APP_LANGUAGES, LANGUAGE_META, type AppLanguage } from '../lib/types';
+import { cn } from '../components/ui/utils';
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -19,12 +21,21 @@ export default function AuthPage() {
   const fromLanding = searchParams.get('from') === 'landing';
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
 
-  // Prefill only for admin handoff demos — match Figma empty fields otherwise.
-  const [email, setEmail] = useState(adminReturnUrl ? 'admin@gotcha.app' : '');
-  const [password, setPassword] = useState(adminReturnUrl ? 'GotchaAdmin2026!' : '');
+  // Prefill is dev-only: helps local demos handed off from the admin console without
+  // exposing the seeded admin's plaintext credentials in a normal-looking learner login
+  // form in real deployments (see docs/E2E_AUDIT_REPORT.md's admin-credential-prefill finding).
+  const devPrefillEnabled = import.meta.env.DEV;
+  const [email, setEmail] = useState(adminReturnUrl && devPrefillEnabled ? 'admin@gotcha.app' : '');
+  const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? 'GotchaAdmin2026!' : '');
   const [name, setName] = useState('');
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  // Registration onboarding step: after credentials, pick native + target language(s)
+  // instead of hardcoding nativeLanguage: 'en' / targetLanguages: ['ru'] for every signup.
+  const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
+  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>('en');
+  const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(['ru']);
 
   useEffect(() => {
     // Clear leftover tokens when opening auth screens (once on mount).
@@ -32,17 +43,46 @@ export default function AuthPage() {
     clearTokens();
   }, []);
 
+  useEffect(() => {
+    setTargetLanguages((prev) => prev.filter((l) => l !== nativeLanguage));
+  }, [nativeLanguage]);
+
+  const toggleTargetLanguage = (lang: AppLanguage) => {
+    setTargetLanguages((prev) =>
+      prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang],
+    );
+  };
+
+  const goToLanguageStep = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name || !email || !password) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+    if (password.length < 8) {
+      toast.error('Password must be at least 8 characters');
+      return;
+    }
+    setStep('languages');
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
       toast.error('Please fill in all fields');
       return;
     }
+    if (!isLogin && targetLanguages.length === 0) {
+      toast.error('Pick at least one language to learn');
+      return;
+    }
     setLoading(true);
     try {
       if (isLogin) {
         const session = await login(email, password);
-        if (adminReturnUrl) {
+        // Admin accounts always go to the admin console (explicit returnUrl or default).
+        const handoffTarget = adminReturnUrl || (session.isAdmin ? adminAppUrl() : null);
+        if (handoffTarget) {
           if (!session.isAdmin) {
             toast.error('This account does not have admin access');
             navigate('/app', { replace: true });
@@ -50,7 +90,7 @@ export default function AuthPage() {
           }
           // Leave tokens only for the admin app (hash handoff); avoid a lingering learner session.
           clearTokens();
-          const handoff = new URL(adminReturnUrl);
+          const handoff = new URL(handoffTarget);
           handoff.hash = new URLSearchParams({
             accessToken: session.accessToken,
             refreshToken: session.refreshToken,
@@ -71,8 +111,8 @@ export default function AuthPage() {
           email,
           password,
           displayName: name || undefined,
-          nativeLanguage: 'en',
-          targetLanguages: ['ru'],
+          nativeLanguage,
+          targetLanguages,
         });
         if (result.requiresEmailVerification) {
           toast.success('Check your inbox to verify your email');
@@ -118,8 +158,11 @@ export default function AuthPage() {
   const switchMode = () => {
     const next = isLogin ? '/register' : '/login';
     const q = searchParams.toString();
+    setStep('credentials');
     navigate(q ? `${next}?${q}` : next);
   };
+
+  const showLanguageStep = !isLogin && step === 'languages';
 
   return (
     <AuthShell>
@@ -127,22 +170,24 @@ export default function AuthPage() {
         <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-5 sm:p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
           <div className="flex flex-col gap-1.5">
             <h2 className="text-2xl font-extrabold text-[#101828] leading-8">
-              {isLogin ? 'Welcome back' : 'Create your account'}
+              {isLogin ? 'Welcome back' : showLanguageStep ? 'What do you want to learn?' : 'Create your account'}
             </h2>
             <p className="text-[#6b7280] text-sm leading-5">
               {isLogin
                 ? 'Sign in to continue your reading journey.'
-                : plan === 'premium'
-                  ? 'Create your account to start the Premium free trial.'
-                  : 'Sign up to start your reading journey.'}
+                : showLanguageStep
+                  ? 'Pick your native language and at least one language to learn — you can add more later in Settings.'
+                  : plan === 'pay-per-import'
+                    ? 'Create your free account — pay only if you need more than your free imports.'
+                    : 'Sign up to start your reading journey.'}
             </p>
-            {!isLogin && plan === 'premium' && (
+            {!isLogin && !showLanguageStep && plan === 'pay-per-import' && (
               <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-[#ddd6fe] px-3 py-1 text-xs font-semibold text-[#7f22fe] self-start">
                 <AuthIcon src={a.sparkles} size={16} />
-                Premium trial · $9/mo after
+                No subscription — pay per import via Atmos
               </div>
             )}
-            {!isLogin && fromLanding && plan !== 'premium' && (
+            {!isLogin && !showLanguageStep && fromLanding && plan !== 'pay-per-import' && (
               <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 self-start">
                 <AuthIcon src={a.check} size={16} />
                 Free forever plan
@@ -150,77 +195,149 @@ export default function AuthPage() {
             )}
           </div>
 
-          <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-            {!isLogin && (
+          {showLanguageStep ? (
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">Full name</label>
+                <label className="text-xs font-semibold text-[#4a5565]">Your native language</label>
+                <select
+                  value={nativeLanguage}
+                  onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
+                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                >
+                  {APP_LANGUAGES.map((code) => (
+                    <option key={code} value={code}>
+                      {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-[#4a5565]">
+                  Languages you want to learn <span className="text-[#9ca3af] font-normal">(pick at least one)</span>
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {APP_LANGUAGES.filter((code) => code !== nativeLanguage).map((code) => {
+                    const selected = targetLanguages.includes(code);
+                    return (
+                      <button
+                        key={code}
+                        type="button"
+                        onClick={() => toggleTargetLanguage(code)}
+                        className={cn(
+                          'relative flex flex-col items-center gap-1 py-2.5 rounded-[14px] border text-xs font-semibold transition-all',
+                          selected
+                            ? 'border-[#7f22fe] bg-[#f5f3ff] text-[#7008e7]'
+                            : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+                        )}
+                      >
+                        {selected && (
+                          <Check className="w-3 h-3 absolute top-1.5 right-1.5 text-[#7f22fe]" />
+                        )}
+                        <span className="text-lg leading-none">{LANGUAGE_META[code].flag}</span>
+                        <span>{LANGUAGE_META[code].label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className="flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setStep('credentials')}
+                  className="h-11 rounded-[14px] font-bold text-sm px-4"
+                >
+                  Back
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={loading || targetLanguages.length === 0}
+                  className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                >
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      Creating account…
+                    </span>
+                  ) : (
+                    'Create free account'
+                  )}
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
+              {!isLogin && (
+                <div className="flex flex-col gap-2">
+                  <label className="text-xs font-semibold text-[#4a5565]">Full name</label>
+                  <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    placeholder="Alex Chen"
+                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                  />
+                </div>
+              )}
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-[#4a5565]">Email</label>
                 <input
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Alex Chen"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="you@example.com"
                   className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
                 />
               </div>
-            )}
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-[#4a5565]">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
-              />
-            </div>
-            <div className="flex flex-col gap-2">
-              <label className="text-xs font-semibold text-[#4a5565]">Password</label>
-              <div className="relative">
-                <input
-                  type={showPass ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
-                  className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPass((s) => !s)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#9ca3af] hover:text-[#4a5565]"
-                  aria-label={showPass ? 'Hide password' : 'Show password'}
-                >
-                  {showPass ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
-                </button>
+              <div className="flex flex-col gap-2">
+                <label className="text-xs font-semibold text-[#4a5565]">Password</label>
+                <div className="relative">
+                  <input
+                    type={showPass ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
+                    className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass((s) => !s)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#9ca3af] hover:text-[#4a5565]"
+                    aria-label={showPass ? 'Hide password' : 'Show password'}
+                  >
+                    {showPass ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
+                  </button>
+                </div>
               </div>
-            </div>
-            {isLogin && (
-              <div className="flex items-center justify-end">
-                <button
-                  type="button"
-                  onClick={() => navigate('/forgot-password')}
-                  className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
-                >
-                  Forgot password?
-                </button>
-              </div>
-            )}
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
-            >
-              {loading ? (
-                <span className="flex items-center gap-2">
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                  {isLogin ? 'Signing in…' : 'Creating account…'}
-                </span>
-              ) : isLogin ? (
-                'Sign in'
-              ) : (
-                'Create free account'
+              {isLogin && (
+                <div className="flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={() => navigate('/forgot-password')}
+                    className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+                  >
+                    Forgot password?
+                  </button>
+                </div>
               )}
-            </Button>
-          </form>
+              <Button
+                type="submit"
+                disabled={loading}
+                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+              >
+                {loading ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Signing in…
+                  </span>
+                ) : isLogin ? (
+                  'Sign in'
+                ) : (
+                  'Continue'
+                )}
+              </Button>
+            </form>
+          )}
 
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-[#e5e7eb]" />

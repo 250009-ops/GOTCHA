@@ -7,8 +7,10 @@ import {
   ChevronRight,
   Crown,
   Flame,
+  GraduationCap,
   Home,
   LogOut,
+  MessageSquare,
   Settings,
   Upload,
 } from 'lucide-react';
@@ -29,11 +31,13 @@ interface NavItem {
 const primaryNav: NavItem[] = [
   { path: '/app', label: 'Library', icon: Home, exact: true },
   { path: '/app/vocabulary', label: 'Vocabulary', icon: Brain },
+  { path: '/app/practice', label: 'Practice', icon: GraduationCap },
   { path: '/app/import', label: 'Import', icon: Upload },
 ];
 
 const secondaryNav: NavItem[] = [
   { path: '/app/stats', label: 'Statistics', icon: BarChart3 },
+  { path: '/app/messages', label: 'Messages', icon: MessageSquare },
 ];
 
 function prefersExpandedSidebar() {

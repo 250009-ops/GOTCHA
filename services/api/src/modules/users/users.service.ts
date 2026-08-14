@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+
+import * as bcrypt from 'bcryptjs';
 
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 
@@ -6,7 +8,16 @@ import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { UpdatePreferencesDto, UpdateProfileDto } from './dto/users.dto';
+import { effectiveStreakCount } from '../../services/streak.service';
+
+import {
+  AddTargetLanguageDto,
+  ChangePasswordDto,
+  DeleteAccountDto,
+  UpdatePreferencesDto,
+  UpdateProfileDto,
+  UpdateTargetLanguageDto,
+} from './dto/users.dto';
 
 
 
@@ -108,7 +119,8 @@ export class UsersService {
 
 
 
-    const [vocabCount, masteredCount, progress, sessions, dueCount, recentSessions, recentVocab] = await Promise.all([
+    const [vocabCount, masteredCount, progress, sessions, dueCount, recentSessions, recentVocab, userStreak] =
+      await Promise.all([
 
       this.prisma.userVocabulary.count({ where: { userId } }),
 
@@ -146,6 +158,11 @@ export class UsersService {
 
       }),
 
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { streakCount: true, streakLastDate: true },
+      }),
+
     ]);
 
 
@@ -153,10 +170,24 @@ export class UsersService {
     const totalReadSeconds = progress.reduce((s, p) => s + p.totalReadSeconds, 0);
 
     const completedCount = progress.filter((p) => p.completedAt).length;
+    const inProgressCount = progress.filter((p) => !p.completedAt).length;
 
     const history = buildStatsHistory(recentSessions, recentVocab, HEATMAP_DAYS);
+    const streakCount = effectiveStreakCount(
+      userStreak?.streakCount ?? 0,
+      userStreak?.streakLastDate,
+    );
+    // Best never below current; heatmap may miss older days outside the window.
+    const bestStreak = Math.max(history.bestStreak, streakCount);
 
-
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const todaySessions = recentSessions.filter(
+      (s) => s.startedAt.toISOString().slice(0, 10) === todayKey,
+    );
+    const todayReadMinutes = Math.round(
+      todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60,
+    );
+    const todayWordsSaved = todaySessions.reduce((s, row) => s + row.wordsSaved, 0);
 
     return {
 
@@ -166,17 +197,25 @@ export class UsersService {
 
       vocabularyDue: dueCount,
 
-      contentInProgress: progress.length,
+      contentInProgress: inProgressCount,
 
       contentCompleted: completedCount,
 
       totalReadMinutes: Math.round((totalReadSeconds + (sessions._sum.durationSeconds ?? 0)) / 60),
 
+      todayReadMinutes,
+
+      todayWordsSaved,
+
       wordsSaved: sessions._sum.wordsSaved ?? 0,
 
       wordsTapped: sessions._sum.wordsTapped ?? 0,
 
-      ...history,
+      streakCount,
+
+      bestStreak,
+
+      history: history.history,
 
     };
 
@@ -244,10 +283,211 @@ export class UsersService {
 
   }
 
+  /** Authenticated change-password — does not depend on SMTP, unlike the forgot/reset-password email flow. */
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Password change is not supported for dev/demo accounts.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.passwordHash) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect.');
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.user.update({ where: { id: userId }, data: { passwordHash } }),
+      // Invalidate existing sessions after a password change, matching resetPassword's behavior.
+      this.prisma.authRefreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return { changed: true, message: 'Password updated.' };
+  }
+
+  async addTargetLanguage(userId: string, dto: AddTargetLanguageDto) {
+    const existingCount = await this.prisma.userTargetLanguage.count({ where: { userId } });
+    if (dto.isPrimary || existingCount === 0) {
+      await this.prisma.userTargetLanguage.updateMany({
+        where: { userId },
+        data: { isPrimary: false },
+      });
+    }
+
+    return this.prisma.userTargetLanguage.upsert({
+      where: { userId_targetLanguage: { userId, targetLanguage: dto.targetLanguage } },
+      create: {
+        userId,
+        targetLanguage: dto.targetLanguage,
+        cefrLevel: dto.cefrLevel ?? 'a1',
+        isPrimary: dto.isPrimary ?? existingCount === 0,
+      },
+      update: {
+        cefrLevel: dto.cefrLevel ?? undefined,
+        isPrimary: dto.isPrimary ?? existingCount === 0,
+      },
+    });
+  }
+
+  async updateTargetLanguage(userId: string, targetLanguage: string, dto: UpdateTargetLanguageDto) {
+    const existing = await this.prisma.userTargetLanguage.findUnique({
+      where: { userId_targetLanguage: { userId, targetLanguage: targetLanguage as never } },
+    });
+    if (!existing) throw new NotFoundException('Target language not found');
+
+    if (dto.isPrimary) {
+      await this.prisma.userTargetLanguage.updateMany({
+        where: { userId },
+        data: { isPrimary: false },
+      });
+    }
+
+    return this.prisma.userTargetLanguage.update({
+      where: { userId_targetLanguage: { userId, targetLanguage: targetLanguage as never } },
+      data: {
+        cefrLevel: dto.cefrLevel ?? undefined,
+        isPrimary: dto.isPrimary ?? undefined,
+      },
+    });
+  }
+
+  async removeTargetLanguage(userId: string, targetLanguage: string) {
+    const total = await this.prisma.userTargetLanguage.count({ where: { userId } });
+    if (total <= 1) {
+      throw new BadRequestException('You must keep at least one target language.');
+    }
+
+    const existing = await this.prisma.userTargetLanguage.findUnique({
+      where: { userId_targetLanguage: { userId, targetLanguage: targetLanguage as never } },
+    });
+    if (!existing) throw new NotFoundException('Target language not found');
+
+    await this.prisma.userTargetLanguage.delete({
+      where: { userId_targetLanguage: { userId, targetLanguage: targetLanguage as never } },
+    });
+
+    if (existing.isPrimary) {
+      const next = await this.prisma.userTargetLanguage.findFirst({ where: { userId } });
+      if (next) {
+        await this.prisma.userTargetLanguage.update({
+          where: { userId_targetLanguage: { userId, targetLanguage: next.targetLanguage } },
+          data: { isPrimary: true },
+        });
+      }
+    }
+
+    return { ok: true };
+  }
+
+  /** Reasonable-scope self-service data export: own profile, preferences, vocabulary, reading progress, imports. */
+  async exportData(userId: string) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Data export is not supported for dev/demo accounts.');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { targetLanguages: true, preferences: true },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const [vocabulary, readingProgress, imports, subscriptions] = await Promise.all([
+      this.prisma.userVocabulary.findMany({ where: { userId } }),
+      this.prisma.readingProgress.findMany({ where: { userId } }),
+      this.prisma.userImport.findMany({
+        where: { userId },
+        select: {
+          id: true,
+          title: true,
+          importType: true,
+          sourceUrl: true,
+          language: true,
+          ingestionStatus: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.userSubscription.findMany({ where: { userId }, include: { plan: true } }),
+    ]);
+
+    return {
+      exportedAt: new Date().toISOString(),
+      profile: {
+        id: user.id,
+        email: user.email,
+        displayName: user.displayName,
+        nativeLanguage: user.nativeLanguage,
+        uiLanguage: user.uiLanguage,
+        timezone: user.timezone,
+        streakCount: user.streakCount,
+        streakLastDate: user.streakLastDate,
+        createdAt: user.createdAt,
+      },
+      targetLanguages: user.targetLanguages,
+      preferences: user.preferences,
+      vocabulary,
+      readingProgress,
+      imports,
+      subscriptions,
+    };
+  }
+
+  /**
+   * Self-service account deletion. Prefers a safe soft-delete over a hard cascade delete:
+   * the Prisma schema cascades most User-owned rows on hard delete, but ContentItem.createdBy
+   * and other cross-user references make a hard delete of active accounts risky. Soft-delete
+   * anonymizes PII, blocks login (auth.service.ts checks `deletedAt`), and revokes sessions —
+   * matching the `deletedAt` semantics admin.service.ts already uses for suspending users.
+   */
+  async deleteAccount(userId: string, dto: DeleteAccountDto) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Account deletion is not supported for dev/demo accounts.');
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.passwordHash) throw new NotFoundException('User not found');
+
+    const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!valid) throw new UnauthorizedException('Current password is incorrect.');
+
+    if (user.email.startsWith('deleted-')) {
+      throw new ConflictException('Account already deleted.');
+    }
+
+    const anonymizedEmail = `deleted-${userId}@deleted.gotcha.app`;
+
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          email: anonymizedEmail,
+          displayName: 'Deleted user',
+          avatarUrl: null,
+          passwordHash: null,
+          deletedAt: new Date(),
+          emailVerificationToken: null,
+          passwordResetToken: null,
+        },
+      }),
+      this.prisma.authRefreshToken.updateMany({
+        where: { userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return { deleted: true };
+  }
+
 }
 
 function dateKey(d: Date): string {
-  return d.toISOString().slice(0, 10);
+  // Local calendar day — avoid UTC ISO shifting activity off the heatmap.
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 function isoWeekStart(d: Date): string {

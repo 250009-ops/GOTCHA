@@ -1,32 +1,25 @@
-/** Keep aligned with Prisma `AppLanguage` / `@gotcha/shared`. */
-export const APP_LANGUAGES = ['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const;
-export type AppLanguage = (typeof APP_LANGUAGES)[number];
+/** Re-exported from `@gotcha/shared` — the single source of truth shared with the API. */
+import {
+  APP_LANGUAGES,
+  LANGUAGE_META,
+  CEFR_LEVELS,
+  CONTENT_TYPES,
+  type AppLanguage,
+  type CefrLevel,
+  type ContentType,
+  type CatalogLanguage,
+} from '@gotcha/shared';
 
-export const LANGUAGE_META: Record<AppLanguage, { label: string; flag: string }> = {
-  en: { label: 'English', flag: '🇬🇧' },
-  ru: { label: 'Russian', flag: '🇷🇺' },
-  uz: { label: 'Uzbek', flag: '🇺🇿' },
-  fr: { label: 'French', flag: '🇫🇷' },
-  es: { label: 'Spanish', flag: '🇪🇸' },
-  ja: { label: 'Japanese', flag: '🇯🇵' },
-  de: { label: 'German', flag: '🇩🇪' },
-  ko: { label: 'Korean', flag: '🇰🇷' },
-  pt: { label: 'Portuguese', flag: '🇵🇹' },
+export {
+  APP_LANGUAGES,
+  LANGUAGE_META,
+  CEFR_LEVELS,
+  CONTENT_TYPES,
+  type AppLanguage,
+  type CefrLevel,
+  type ContentType,
+  type CatalogLanguage,
 };
-
-export const CEFR_LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'] as const;
-export type CefrLevel = (typeof CEFR_LEVELS)[number];
-
-export const CONTENT_TYPES = ['book', 'article', 'story', 'news', 'user_import'] as const;
-export type ContentType = (typeof CONTENT_TYPES)[number];
-
-export interface CatalogLanguage {
-  code: string;
-  name: string;
-  nativeName: string;
-  flagEmoji: string;
-  isEnabled: boolean;
-}
 
 export interface UserTargetLanguage {
   targetLanguage: AppLanguage;
@@ -80,6 +73,7 @@ export interface UserStatsResponse {
   totalReadMinutes: number;
   wordsSaved: number;
   wordsTapped: number;
+  streakCount: number;
   bestStreak: number;
   history: {
     daily: StatsHistoryDay[];
@@ -111,6 +105,7 @@ export interface ContentItem {
   genre?: string | null;
   coverImageUrl?: string | null;
   wordCount: number;
+  segmentCount?: number;
   progressPct?: number;
   knownWordRatio?: number;
 }

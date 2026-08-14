@@ -6,26 +6,31 @@ import {
   BookOpen,
   Check,
   ChevronRight,
-  Crown,
   Download,
+  Eye,
+  EyeOff,
   Loader2,
   LogOut,
   Moon,
   Plus,
   Sun,
   Trash2,
+  X,
   Zap,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
-import { api } from '../lib/api';
+import { api, clearTokens } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   avatarInitials,
+  CEFR_LEVELS,
   LANGUAGE_META,
   type AppLanguage,
   type CatalogLanguage,
+  type CefrLevel,
   type SubscriptionInfo,
+  type UserTargetLanguage,
 } from '../lib/types';
 
 const READER_THEMES = [
@@ -33,10 +38,6 @@ const READER_THEMES = [
   { value: 'sepia', label: 'Sepia', icon: BookOpen },
   { value: 'dark', label: 'Dark', icon: Moon },
 ] as const;
-
-function comingSoon(feature: string) {
-  toast(`${feature} is coming soon`);
-}
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -89,9 +90,298 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
+function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+  return (
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
+          <span className="text-sm font-semibold text-gray-900">{title}</span>
+          <button type="button" onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="p-5">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [show, setShow] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    if (!currentPassword || !newPassword) {
+      toast.error('Fill in both password fields');
+      return;
+    }
+    if (newPassword.length < 8) {
+      toast.error('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api('/users/me/password', {
+        method: 'PATCH',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      toast.success('Password updated. Please sign in again.');
+      onClose();
+      // Backend revokes all refresh tokens on password change — force a fresh login.
+      clearTokens();
+      window.location.assign('/login');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not change password');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Change password" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">Current password</label>
+          <input
+            type={show ? 'text' : 'password'}
+            value={currentPassword}
+            onChange={(e) => setCurrentPassword(e.target.value)}
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">New password</label>
+          <div className="relative">
+            <input
+              type={show ? 'text' : 'password'}
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              className="w-full h-9 pl-3 pr-9 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+            />
+            <button
+              type="button"
+              onClick={() => setShow((s) => !s)}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+            >
+              {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">Confirm new password</label>
+          <input
+            type={show ? 'text' : 'password'}
+            value={confirmPassword}
+            onChange={(e) => setConfirmPassword(e.target.value)}
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={saving}
+          className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          Update password
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function TargetLanguageModal({
+  mode,
+  existing,
+  usedCodes,
+  nativeLanguage,
+  languageOptions,
+  onClose,
+  onSaved,
+}: {
+  mode: 'add' | 'edit';
+  existing?: UserTargetLanguage;
+  usedCodes: string[];
+  nativeLanguage: AppLanguage;
+  languageOptions: Array<{ code: string; name: string; flagEmoji: string }>;
+  onClose: () => void;
+  onSaved: () => Promise<void>;
+}) {
+  const available = languageOptions.filter(
+    (l) => l.code !== nativeLanguage && (mode === 'edit' || !usedCodes.includes(l.code)),
+  );
+  const [targetLanguage, setTargetLanguage] = useState<string>(
+    existing?.targetLanguage ?? available[0]?.code ?? 'en',
+  );
+  const [cefrLevel, setCefrLevel] = useState<CefrLevel>(existing?.cefrLevel ?? 'a1');
+  const [isPrimary, setIsPrimary] = useState(existing?.isPrimary ?? false);
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    setSaving(true);
+    try {
+      if (mode === 'add') {
+        await api('/users/me/target-languages', {
+          method: 'POST',
+          body: JSON.stringify({ targetLanguage, cefrLevel, isPrimary }),
+        });
+        toast.success('Language added');
+      } else if (existing) {
+        await api(`/users/me/target-languages/${existing.targetLanguage}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ cefrLevel, isPrimary }),
+        });
+        toast.success('Language updated');
+      }
+      await onSaved();
+      onClose();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save language');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <ModalShell title={mode === 'add' ? 'Add target language' : 'Edit target language'} onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">Language</label>
+          {mode === 'add' ? (
+            <select
+              value={targetLanguage}
+              onChange={(e) => setTargetLanguage(e.target.value)}
+              className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+            >
+              {available.map((l) => (
+                <option key={l.code} value={l.code}>
+                  {l.flagEmoji} {l.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <div className="h-9 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
+              {LANGUAGE_META[existing?.targetLanguage as AppLanguage]?.flag}{' '}
+              {LANGUAGE_META[existing?.targetLanguage as AppLanguage]?.label}
+            </div>
+          )}
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">CEFR level</label>
+          <select
+            value={cefrLevel}
+            onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+          >
+            {CEFR_LEVELS.map((lvl) => (
+              <option key={lvl} value={lvl}>
+                {lvl.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-[#364153] cursor-pointer">
+          <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} className="rounded" />
+          Set as primary target language
+        </label>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={saving || (mode === 'add' && available.length === 0)}
+          className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          {mode === 'add' ? 'Add language' : 'Save changes'}
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+function DeleteAccountModal({ onClose, onDeleted }: { onClose: () => void; onDeleted: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+
+  const submit = async () => {
+    if (!password) {
+      toast.error('Enter your password to confirm');
+      return;
+    }
+    if (confirmText.trim().toUpperCase() !== 'DELETE') {
+      toast.error('Type DELETE to confirm');
+      return;
+    }
+    setDeleting(true);
+    try {
+      await api('/users/me', { method: 'DELETE', body: JSON.stringify({ currentPassword: password }) });
+      toast.success('Account deleted.');
+      onDeleted();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not delete account');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  return (
+    <ModalShell title="Delete account" onClose={onClose}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start gap-2 rounded-[14px] bg-red-50 border border-red-100 px-3 py-2.5 text-xs text-red-700">
+          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          This permanently anonymizes your account and signs you out everywhere. This cannot be undone.
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">Current password</label>
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs font-semibold text-[#4a5565]">
+            Type <span className="font-mono font-bold">DELETE</span> to confirm
+          </label>
+          <input
+            type="text"
+            value={confirmText}
+            onChange={(e) => setConfirmText(e.target.value)}
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
+          />
+        </div>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          disabled={deleting}
+          className="mt-1 h-9 rounded-[14px] bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+        >
+          {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+          Permanently delete my account
+        </button>
+      </div>
+    </ModalShell>
+  );
+}
+
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, preferences, updateProfile, updatePreferences, logout } = useAuth();
+  const { user, preferences, updateProfile, updatePreferences, refreshProfile, logout } = useAuth();
+
+  const [pwModalOpen, setPwModalOpen] = useState(false);
+  const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [langBusy, setLangBusy] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
@@ -176,15 +466,73 @@ export default function SettingsPage() {
   };
 
   const plan = subscription?.subscription?.plan;
-  const isPremium = plan?.tier === 'premium';
   const quota = subscription?.usage.quota ?? plan?.aiDailyQuota ?? 50;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
   const usagePct = quota > 0 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const initials = avatarInitials(user?.displayName ?? user?.email ?? 'G');
   const targetLanguages = user?.targetLanguages ?? [];
 
+  const handleExportData = async () => {
+    setExporting(true);
+    try {
+      const data = await api('/users/me/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gotcha-data-export-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast.success('Export downloaded');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleRemoveLanguage = async (lang: string) => {
+    if (targetLanguages.length <= 1) {
+      toast.error('You must keep at least one target language');
+      return;
+    }
+    setLangBusy(lang);
+    try {
+      await api(`/users/me/target-languages/${lang}`, { method: 'DELETE' });
+      await refreshProfile();
+      toast.success('Language removed');
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not remove language');
+    } finally {
+      setLangBusy(null);
+    }
+  };
+
+  const handleAccountDeleted = () => {
+    setDeleteModalOpen(false);
+    clearTokens();
+    window.location.assign('/login');
+  };
+
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-5">
+      {pwModalOpen && <ChangePasswordModal onClose={() => setPwModalOpen(false)} />}
+      {langModal && (
+        <TargetLanguageModal
+          mode={langModal.mode}
+          existing={langModal.existing}
+          usedCodes={targetLanguages.map((tl) => tl.targetLanguage)}
+          nativeLanguage={nativeLanguage}
+          languageOptions={languageOptions}
+          onClose={() => setLangModal(null)}
+          onSaved={refreshProfile}
+        />
+      )}
+      {deleteModalOpen && (
+        <DeleteAccountModal onClose={() => setDeleteModalOpen(false)} onDeleted={handleAccountDeleted} />
+      )}
       <div className="flex items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
@@ -233,7 +581,7 @@ export default function SettingsPage() {
         <Row label="Password">
           <button
             type="button"
-            onClick={() => comingSoon('Password change')}
+            onClick={() => setPwModalOpen(true)}
             className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50"
           >
             Change password
@@ -261,7 +609,22 @@ export default function SettingsPage() {
                 {tl.isPrimary && (
                   <span className="text-[11px] font-semibold text-[#7008e7] bg-[#ede9fe] rounded-full px-2 py-0.5 shrink-0">Primary</span>
                 )}
-                <button type="button" onClick={() => comingSoon('Editing target languages')} className="p-1.5 rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0">
+                {targetLanguages.length > 1 && (
+                  <button
+                    type="button"
+                    disabled={langBusy === tl.targetLanguage}
+                    onClick={() => void handleRemoveLanguage(tl.targetLanguage)}
+                    className="p-1.5 rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
+                    title="Remove language"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setLangModal({ mode: 'edit', existing: tl })}
+                  className="p-1.5 rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
+                >
                   <ChevronRight className="w-4 h-4" />
                 </button>
               </div>
@@ -271,7 +634,7 @@ export default function SettingsPage() {
         <div className="px-5 py-3">
           <button
             type="button"
-            onClick={() => comingSoon('Adding a target language')}
+            onClick={() => setLangModal({ mode: 'add' })}
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[14px] border border-black/10 bg-white text-xs font-medium text-[#0a0a0a] hover:bg-gray-50"
           >
             <Plus className="w-4 h-4" />Add language
@@ -337,44 +700,46 @@ export default function SettingsPage() {
         </Row>
       </Section>
 
-      <Section title="Subscription">
+      <Section title="Usage & Imports">
         <div className="p-5">
           {subLoading ? (
-            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">Loading plan…</div>
+            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">Loading usage…</div>
           ) : (
             <>
+              {/* GOTCHA has no recurring subscription — every account gets a free daily/monthly
+                  allowance, and imports beyond that are billed per-document via Atmos (see the
+                  Import page). This card reports real usage, not a "plan" tier. */}
               <div
                 className="rounded-[14px] p-5"
-                style={{ backgroundImage: isPremium ? undefined : 'linear-gradient(161deg, #7f22fe 0%, #432dd7 100%)' }}
+                style={{ backgroundImage: 'linear-gradient(161deg, #7f22fe 0%, #432dd7 100%)' }}
               >
-                <div className={cn('rounded-[14px]', !isPremium && 'text-white')}>
+                <div className="rounded-[14px] text-white">
                   <div className="flex items-start justify-between">
                     <div>
-                      <div className={cn('text-xs font-semibold uppercase tracking-wide', isPremium ? 'text-violet-500' : 'text-[#ddd6ff]')}>Current plan</div>
-                      <div className="text-2xl font-bold mt-1">{plan?.name ?? 'Free'}</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[#ddd6ff]">Free allowance</div>
+                      <div className="text-2xl font-bold mt-1">Pay per import</div>
                     </div>
-                    <Crown className={cn('w-6 h-6', isPremium ? 'text-amber-500' : 'text-white')} />
+                    <Zap className="w-6 h-6 text-white" />
                   </div>
                   <div className="space-y-1.5 py-4">
-                    {(isPremium
-                      ? plan?.features?.slice(0, 3) ?? ['Unlimited AI', 'Imports', 'Offline']
-                      : [`AI lookups: ${lookupsToday}/${quota} today`, `Up to ${plan?.importLimit ?? 3} imports per month`, 'Access to public library']
-                    ).map((f) => (
+                    {[
+                      `AI lookups: ${lookupsToday}/${quota >= 1_000_000 ? '∞' : quota} today`,
+                      `${plan?.importLimit && plan.importLimit < 1_000_000 ? `Up to ${plan.importLimit} free imports per month` : 'Free import allowance applies monthly'}`,
+                      'Access to the public library',
+                    ].map((f) => (
                       <div key={f} className="flex items-center gap-2 text-sm">
-                        <Check className={cn('w-3.5 h-3.5 shrink-0', isPremium ? 'text-emerald-500' : 'text-[#ddd6ff]')} />
-                        <span className={isPremium ? 'text-gray-600' : 'text-[#ddd6ff]'}>{f}</span>
+                        <Check className="w-3.5 h-3.5 shrink-0 text-[#ddd6ff]" />
+                        <span className="text-[#ddd6ff]">{f}</span>
                       </div>
                     ))}
                   </div>
-                  {!isPremium && (
-                    <button
-                      type="button"
-                      onClick={() => comingSoon('Upgrading to Premium')}
-                      className="w-full h-9 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
-                    >
-                      <Zap className="w-4 h-4" />Upgrade to Premium — $9/mo
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/import')}
+                    className="w-full h-9 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
+                  >
+                    <Zap className="w-4 h-4" />Import more content
+                  </button>
                 </div>
               </div>
 
@@ -396,16 +761,18 @@ export default function SettingsPage() {
         <Row label="Export my data" description="Download all your vocabulary and reading history">
           <button
             type="button"
-            onClick={() => comingSoon('Data export')}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50"
+            disabled={exporting}
+            onClick={() => void handleExportData()}
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
           >
-            <Download className="w-3.5 h-3.5" />Export
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+            Export
           </button>
         </Row>
         <Row label="Delete account" description="Permanently delete your account and all data">
           <button
             type="button"
-            onClick={() => comingSoon('Account deletion')}
+            onClick={() => setDeleteModalOpen(true)}
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[14px] border border-[#ffc9c9] bg-white text-sm font-medium text-[#e7000b] hover:bg-red-50"
           >
             <Trash2 className="w-3.5 h-3.5" />Delete

@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -67,6 +68,14 @@ export class AuthService {
     return verifyUrl;
   }
 
+  /**
+   * NOTE: `adminRole` is stamped into the JWT here and never re-checked against the
+   * `AdminUser` table per-request (see common/guards.ts's RolesGuard, which authorizes
+   * purely from the token payload). Promoting/demoting/revoking an admin's role in the DB
+   * therefore has no effect on that admin's access until they log out and back in
+   * (or their refresh token is used to re-issue a fresh access token). This is a deliberate
+   * perf/simplicity tradeoff, not a bug — flagged here per docs/E2E_AUDIT_REPORT.md low-severity #13.
+   */
   private async issueTokens(userId: string, email: string, deviceName?: string) {
     const admin = await this.prisma.adminUser.findUnique({ where: { userId } });
 
@@ -181,6 +190,10 @@ export class AuthService {
     const valid = await bcrypt.compare(dto.password, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Invalid credentials');
 
+    if (user.deletedAt) {
+      throw new UnauthorizedException('This account has been deleted or suspended.');
+    }
+
     if (!user.emailVerifiedAt) {
       throw new UnauthorizedException({
         statusCode: 401,
@@ -208,6 +221,10 @@ export class AuthService {
 
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
       throw new UnauthorizedException('Invalid refresh token');
+    }
+
+    if (stored.user.deletedAt) {
+      throw new UnauthorizedException('This account has been deleted or suspended.');
     }
 
     if (!stored.user.emailVerifiedAt) {
@@ -311,6 +328,21 @@ export class AuthService {
     return {
       sent: true,
       message: 'If an account exists for that email, we sent a password reset link.',
+    };
+  }
+
+  /** Admin-triggered reset email (same token/mail path as forgotPassword). */
+  async adminTriggerPasswordReset(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!user.passwordHash) {
+      throw new BadRequestException('User has no password login to reset.');
+    }
+    await this.sendPasswordReset(user);
+    return {
+      sent: true,
+      email: user.email,
+      message: 'Password reset email sent.',
     };
   }
 

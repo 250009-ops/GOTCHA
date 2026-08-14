@@ -19,6 +19,11 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 }
 
+/**
+ * NOTE: authorizes purely from `user.adminRole`, which is baked into the JWT at login
+ * (see auth.service.ts's `issueTokens`) and never re-checked against the live `AdminUser`
+ * row. Admin role changes require the affected admin to re-login before they take effect.
+ */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private reflector: Reflector) {}

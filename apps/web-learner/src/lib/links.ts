@@ -24,6 +24,18 @@ export const ADMIN_APP_BASES = (
   .map((s) => s.trim().replace(/\/$/, ''))
   .filter(Boolean);
 
+/** Default admin console URL for post-login handoff (path-aware in production). */
+export function adminAppUrl(): string {
+  const fromEnv = ADMIN_APP_BASES[0];
+  if (fromEnv) {
+    return fromEnv.endsWith('/') ? fromEnv : `${fromEnv}/`;
+  }
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/admin/`;
+  }
+  return 'http://localhost:5173/';
+}
+
 /**
  * Validate `returnUrl` from the admin app.
  * Accepts same-origin path bases (production `/admin`) and distinct origins (local ports).
@@ -41,6 +53,13 @@ export function isAllowedAdminReturnUrl(raw: string | null): string | null {
     for (const base of ADMIN_APP_BASES) {
       // Exact origin allow-list (local multi-port), or path-prefix under a shared origin.
       if (origin === base || hrefNoHash === base || hrefNoHash.startsWith(`${base}/`)) {
+        return hrefNoHash;
+      }
+    }
+
+    // Single-host deploys: allow same-origin /admin even if env allow-list is stale.
+    if (typeof window !== 'undefined' && origin === window.location.origin) {
+      if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
         return hrefNoHash;
       }
     }
