@@ -36,6 +36,7 @@ const atmosStoreId = get(existing, 'ATMOS_STORE_ID') || get(rootEnv, 'ATMOS_STOR
 const atmosApiKey = get(existing, 'ATMOS_API_KEY') || get(rootEnv, 'ATMOS_API_KEY');
 const atmosApiBase = get(existing, 'ATMOS_API_BASE') || get(rootEnv, 'ATMOS_API_BASE') || 'https://apigw.atmos.uz';
 const atmosIkpu = get(existing, 'ATMOS_IKPU') || get(rootEnv, 'ATMOS_IKPU') || '10899001001000000';
+const atmosMinAmountSom = get(existing, 'ATMOS_MIN_AMOUNT_SOM') || get(rootEnv, 'ATMOS_MIN_AMOUNT_SOM') || '500';
 const atmosMerchantTin = get(existing, 'ATMOS_MERCHANT_TIN') || get(rootEnv, 'ATMOS_MERCHANT_TIN');
 
 // Payment gateway settings — preserve existing values; default to 'false' for safety.
@@ -96,6 +97,7 @@ ATMOS_STORE_ID=${atmosStoreId}
 ATMOS_API_KEY=${atmosApiKey}
 ATMOS_API_BASE=${atmosApiBase}
 ATMOS_IKPU=${atmosIkpu}
+ATMOS_MIN_AMOUNT_SOM=${atmosMinAmountSom}
 ATMOS_MERCHANT_TIN=${atmosMerchantTin}
 IMPORTS_UNLIMITED=${importsUnlimited}
 PAYMENT_GATEWAY_ENABLED=${paymentGatewayEnabled}

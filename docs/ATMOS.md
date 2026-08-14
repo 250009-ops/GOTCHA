@@ -1,6 +1,6 @@
 # Atmos Merchant API Integration (Gotcha)
 
-Local card payments (UzCard/Humo) for **import-by-size** via Atmos Merchant API.
+Local card payments (UzCard, Humo, Visa, Mastercard) for **import-by-size** via Atmos Merchant API.
 
 ## API Flow (Merchant API — NOT Hosted Checkout)
 
@@ -55,8 +55,9 @@ ATMOS_STORE_ID=…
 ATMOS_API_KEY=…              # callback MD5 key (when Atmos provides it)
 ATMOS_API_BASE=https://apigw.atmos.uz
 ATMOS_IKPU=10899001001000000
+ATMOS_MIN_AMOUNT_SOM=500
 ATMOS_MERCHANT_TIN=…         # YaTT PINFL for OFD
-# ATMOS_TERMINAL_ID=…        # optional if the store has a single terminal
+# ATMOS_TERMINAL_ID=…        # DO NOT SET for store 100696 — sending terminal_id on create returns STPIMS-ERR-103; Atmos auto-selects terminal 101157 when omitted.
 # ATMOS_LANG=ru
 
 # Keep false until sandbox E2E works:
@@ -76,9 +77,11 @@ Then redeploy / run `deploy/update.sh` so runtime `.env` syncs.
 ## Pricing
 
 - Admin → **Import & Pricing** → **Page Tiers** (amounts in **UZS / soʻm**)
+- Prices below **500 soʻm** (Atmos minimum) cannot be saved — validation runs in admin only
 - Free pool: **Free Limits** (daily imports, monthly pages, allowed formats)
 - Atmos amount = UZS × 100 (**tiyins**)
 - OFD line uses `ATMOS_IKPU`
+- Optional: `ATMOS_MIN_AMOUNT_SOM=500` (default 500 soʻm)
 
 ## Live Deployment Checklist
 
@@ -120,20 +123,31 @@ IMPORTS_UNLIMITED=false
 
 ### 5. Test End-to-End
 - [ ] As learner, exceed free allowance or import a large PDF
-- [ ] Confirm card input modal appears with UzCard/Humo fields
-- [ ] Enter card number + expiry → OTP should arrive via SMS
+- [ ] Confirm card input modal appears with card number + expiry fields
+- [ ] Enter card number + expiry → OTP should arrive via SMS (or use sandbox OTP below)
 - [ ] Enter OTP → payment confirms
 - [ ] Confirm import proceeds after payment
 - [ ] Check OFD/fiscal receipt (if IKPU/TIN are set)
+
+**Sandbox (confirm PAN/OTP with Atmos for your test store):**
+
+| Field | Example |
+|-------|---------|
+| Card | `5614 6819 0687 2829` |
+| Expiry | `03/30` (MM/YY) |
+| SMS OTP | `111111` |
+
+Flow: **Purchase** → card + expiry → **Continue** → **Enter SMS Code** → OTP → **Confirm Payment** → import runs.
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
 | "Imports are free right now" on Import page | `PAYMENT_GATEWAY_ENABLED=false` or `IMPORTS_UNLIMITED=true` | Set both flags correctly in `deploy/.env`, redeploy |
-| "Atmos is not configured" error | Missing `ATMOS_CONSUMER_KEY/SECRET/STORE_ID` | Fill credentials in `deploy/.env`, run `deploy/update.sh` |
+| POST `/billing/imports/checkout` → 503, terminal not found (STPIMS-ERR-103) | `ATMOS_TERMINAL_ID` set and sent on create | Remove `ATMOS_TERMINAL_ID` from env; omit `terminal_id` on `/merchant/pay/create` — Atmos auto-selects the store terminal |
 | pre-apply 403 / API Subscription validation failed | OAuth client not subscribed to Merchant Pay API | Ask Atmos to enable Merchant Pay endpoints for your store |
-| "Card verification failed" | Card number/expiry rejected by Atmos | Check card is valid UzCard/Humo, not expired |
+| "Card verification failed" | Card number/expiry rejected by Atmos | Check card details and expiry (MM/YY); Atmos validates supported card types |
+| Incorrect SMS code | Wrong or expired OTP | Re-enter code or tap **Resend Code** (30s cooldown on web) |
 | OTP not arriving | Phone number not linked to card, or SMS delay | User should check SMS, retry OTP |
 | Webhook returns invalid signature | Missing/wrong `ATMOS_API_KEY` | Obtain correct callback MD5 key from Atmos |
 
