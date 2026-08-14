@@ -221,6 +221,8 @@ model User {
   bookmarks         ContentBookmark[]
   contentPurchases  ContentPurchase[]
   importPayments    ImportPayment[]
+  conversationParticipants ConversationParticipant[]
+  sentMessages      Message[]
 
   @@map("users")
 }
@@ -388,6 +390,7 @@ model ContentItem {
   moderationItems  ModerationQueue[]
   bookmarks        ContentBookmark[]
   purchases        ContentPurchase[]
+  conversations    Conversation[]
 
   @@index([publishStatus, language, cefrLevel])
   @@map("content_items")
@@ -852,4 +855,52 @@ model LanguageCatalog {
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("language_catalog")
+}
+
+/** Direct (1:1) learner conversation. Pair key is sorted participant user ids. */
+model Conversation {
+  id            String       @id @default(uuid()) @db.Uuid
+  pairKey       String       @unique @map("pair_key")
+  language      AppLanguage?
+  contentId     String?      @map("content_id") @db.Uuid
+  lastMessageAt DateTime?    @map("last_message_at")
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+
+  content      ContentItem?              @relation(fields: [contentId], references: [id], onDelete: SetNull)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([lastMessageAt])
+  @@map("conversations")
+}
+
+model ConversationParticipant {
+  conversationId String    @map("conversation_id") @db.Uuid
+  userId         String    @map("user_id") @db.Uuid
+  lastReadAt     DateTime? @map("last_read_at")
+  joinedAt       DateTime  @default(now()) @map("joined_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId])
+  @@map("conversation_participants")
+}
+
+model Message {
+  id             String       @id @default(uuid()) @db.Uuid
+  conversationId String       @map("conversation_id") @db.Uuid
+  senderId       String       @map("sender_id") @db.Uuid
+  body           String
+  translation    String?
+  bodyLang       AppLanguage? @map("body_lang")
+  createdAt      DateTime     @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@map("messages")
 }
