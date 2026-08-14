@@ -14,7 +14,7 @@ import { AdminRole, LicenseStatus, ModerationStatus, PublishStatus } from '@pris
 import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
-import { UpdateAdminProfileDto } from './dto/admin.dto';
+import { CreateContentDto, UpdateAdminProfileDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -116,14 +116,14 @@ export class AdminController {
 
   @Post('content')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  createContent(@CurrentUser() user: AuthUserPayload, @Body() body: Record<string, unknown>) {
-    return this.admin.createContent(user.sub, body);
+  createContent(@CurrentUser() user: AuthUserPayload, @Body() body: CreateContentDto) {
+    return this.admin.createContent(user.sub, body as unknown as Record<string, unknown>);
   }
 
   @Patch('content/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateContent(@Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.admin.updateContent(id, body);
+  updateContent(@Param('id') id: string, @Body() body: UpdateContentDto) {
+    return this.admin.updateContent(id, body as unknown as Record<string, unknown>);
   }
 
   @Patch('content/:id/publish')
@@ -312,7 +312,7 @@ export class AdminController {
 
   @Patch('settings')
   @Roles(AdminRole.superadmin)
-  updateSettings(@Body() body: Record<string, unknown>) {
-    return this.admin.updateSettings(body);
+  updateSettings(@Body() body: UpdateSettingsDto) {
+    return this.admin.updateSettings(body as unknown as Record<string, unknown>);
   }
 }

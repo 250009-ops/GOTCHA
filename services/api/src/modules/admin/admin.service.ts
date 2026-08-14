@@ -32,6 +32,7 @@ import {
 } from '../ai/ai-settings';
 import { AuthService } from '../auth/auth.service';
 import { UpdateAdminProfileDto } from './dto/admin.dto';
+import { assertAtmosMinPriceSom, atmosMinAmountSom } from '../billing/atmos.client';
 
 @Injectable()
 export class AdminService {
@@ -104,7 +105,7 @@ export class AdminService {
         _sum: { lookupCount: true, quizCount: true, tokensUsed: true },
       }),
       // Real revenue only: completed/paid Atmos import payments (UZS). Never blend in
-      // UserSubscription.plan.priceMonthly here -- those rows only exist from seed data or
+      // UserSubscription.plan.priceMonthly here — those rows only exist from seed data or
       // a manual admin "adjust tier" override, never from an actual user purchase.
       this.prisma.importPayment
         .aggregate({
@@ -198,7 +199,7 @@ export class AdminService {
       })),
     );
 
-    // Real revenue trend only -- sums of paid Atmos import payments per month, in UZS.
+    // Real revenue trend only — sums of paid Atmos import payments per month, in UZS.
     const revenueTrend = await Promise.all(
       months.map(async (m) => {
         const paid = await this.prisma.importPayment
@@ -300,10 +301,10 @@ export class AdminService {
       activeSubscribers,
       activeToday,
       engagementPct,
-      // Real revenue only -- sum of paid Atmos import payments (UZS). This intentionally
+      // Real revenue only — sum of paid Atmos import payments (UZS). This intentionally
       // excludes UserSubscription.plan.priceMonthly, which only reflects seed data or a
       // manual admin "adjust tier" override, never an actual user purchase (see
-      // docs/E2E_AUDIT_REPORT.md section 7.2).
+      // docs/E2E_AUDIT_REPORT.md §7.2).
       revenue: revenueMonthUzs,
       revenueGrowthPct,
       aiLookupsToday,
@@ -921,6 +922,7 @@ export class AdminService {
       paymentGatewayEnabled: ['true', '1', 'yes', 'on'].includes(
         (process.env.PAYMENT_GATEWAY_ENABLED ?? '').trim().toLowerCase(),
       ),
+      atmosMinAmountSom: atmosMinAmountSom(),
       stats: {
         // Prefer live DB aggregates (incl. 0) — do not fall back to Figma seed metrics.
         totalImportsToday: importsToday,
@@ -944,12 +946,18 @@ export class AdminService {
         isActive: r.isActive,
         sortOrder: r.sortOrder,
       })),
+      // NOTE: ImportPageTier.priceUsd column actually stores UZS (soʻm) amounts, not USD.
+      // The column name is a legacy misnomer kept for backward compatibility.
+      // Always use `priceUzs` in new code — `priceUsd` is exposed only for legacy clients.
+      // See schema.prisma doc-comment and docs/E2E_AUDIT_REPORT.md #9 for context.
       tiers: tiers.map((t) => ({
         id: t.id,
         label: t.label,
         minPages: t.minPages,
         maxPages: t.maxPages,
+        /** @deprecated Use priceUzs — this field name is misleading (stores UZS, not USD). */
         priceUsd: Number(t.priceUsd),
+        /** Amount in UZS (soʻm) — the correct accessor for this tier's price. */
         priceUzs: Number(t.priceUsd),
         sortOrder: t.sortOrder,
       })),
@@ -959,6 +967,15 @@ export class AdminService {
 
   async updateImportPricingRules(body: { rules?: Array<Record<string, unknown>> }) {
     const rules = body.rules ?? [];
+    for (const rule of rules) {
+      const label = String(rule.label ?? rule.key ?? 'Price');
+      if (rule.pricePerImport !== undefined) {
+        assertAtmosMinPriceSom(Number(rule.pricePerImport), `${label} — price per import`);
+      }
+      if (rule.pricePerPage !== undefined) {
+        assertAtmosMinPriceSom(Number(rule.pricePerPage), `${label} — price per page`);
+      }
+    }
     await Promise.all(
       rules.map((rule) =>
         this.prisma.importPricingRule.update({
@@ -978,6 +995,15 @@ export class AdminService {
   async updateImportPageTier(id: string, body: Record<string, unknown>) {
     const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Page tier not found');
+    const price =
+      body.priceUzs !== undefined
+        ? Number(body.priceUzs)
+        : body.priceUsd !== undefined
+          ? Number(body.priceUsd)
+          : undefined;
+    if (price !== undefined) {
+      assertAtmosMinPriceSom(price, `Page tier "${existing.label}"`);
+    }
     return this.prisma.importPageTier.update({
       where: { id },
       data: {
@@ -1656,6 +1682,10 @@ export class AdminService {
   }
 
   async analytics(range = '30d') {
+    // NOTE: This method currently returns synthetic seed metrics (scaled by range factor),
+    // not real aggregation queries against user/session tables. See docs/E2E_AUDIT_REPORT.md
+    // item #11 for context. The `source: 'seed'` field lets the frontend display an honest
+    // "Demo data" badge, matching the pattern AI Usage already uses.
     const metrics = await this.getMetrics();
     const a = metrics.analytics;
     const factor = this.analyticsRangeFactor(range);
@@ -1663,6 +1693,7 @@ export class AdminService {
 
     return {
       range,
+      source: 'seed' as const,
       kpis: {
         dau,
         dauGrowthPct: Number((a.dauGrowthPct * (range === '7d' ? 0.6 : range === '90d' ? 1.4 : 1)).toFixed(1)),
