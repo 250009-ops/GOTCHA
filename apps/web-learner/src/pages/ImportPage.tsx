@@ -448,6 +448,7 @@ function PaymentConfirmModal({
       const checkout = await checkoutImport({
         importType: quote.importType as 'paste' | 'url' | 'pdf' | 'epub',
         contentFormat: quote.contentFormat,
+        pageCount: quote.estimatedPages,
       });
       setPaymentId(checkout.paymentId);
       if (checkout.step === 'done' || checkout.isFree) {
@@ -585,6 +586,16 @@ function PaymentConfirmModal({
               </div>
             </div>
 
+            {quote.belowMinimum && quote.minAmountUzs && (
+              <div className="w-full p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                <p className="text-xs text-amber-700">
+                  <strong>Minimum payment:</strong> {formatUzs(quote.minAmountUzs)}.
+                  {' '}The current price ({formatUzs(quote.amountUzs)}) is below Atmos minimum.
+                  Please contact support or adjust pricing.
+                </p>
+              </div>
+            )}
+
             {error && (
               <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
                 <p className="text-xs text-red-600">{error}</p>
@@ -594,7 +605,7 @@ function PaymentConfirmModal({
             <button
               type="button"
               onClick={handleProceedToCard}
-              disabled={loading || externalLoading}
+              disabled={loading || externalLoading || quote.belowMinimum}
               className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
               style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
             >
