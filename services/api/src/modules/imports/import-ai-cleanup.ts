@@ -14,6 +14,11 @@ export const IMPORT_AI_MIN_CHAPTER_WORDS = 60;
 export const IMPORT_AI_MAX_TOTAL_CHARS = 220_000;
 /** If removal leaves far less than the original, treat as over-deletion. */
 export const IMPORT_AI_MIN_RETAIN_RATIO = 0.22;
+/**
+ * If cleaned text loses the original ending fingerprint, treat as over-trim
+ * (common when the model drops listening-test wrap-ups / last page body).
+ */
+export const IMPORT_AI_ENDING_PROBE_CHARS = 48;
 /** Soft ceiling on model calls per import (chunks). */
 export const IMPORT_AI_MAX_CHUNKS = 28;
 /** Ignore short snippet suggestions (too easy to over-match). */
@@ -24,8 +29,22 @@ export const IMPORT_AI_MAX_SNIPPET_OCCURRENCES = 12;
 export const IMPORT_AI_MAX_SNIPPETS = 40;
 
 /**
+ * Phrases that look instructional but are part of listening/exam transcripts.
+ * Local removal must never drop blocks/snippets matching these.
+ */
+export const LEARNING_CONTENT_WRAPUP_RE =
+  /\b(end of (the )?section|that is the end|check your answers|now (listen|turn|look) and answer|you now have .{0,40}(minute|second)s? to check|questions? \d+\s*(to|–|-)\s*\d+)\b/i;
+
+/** True when text is learner-facing exam/listening content, not site chrome. */
+export function isProtectedLearningText(text: string): boolean {
+  return LEARNING_CONTENT_WRAPUP_RE.test(text);
+}
+
+/**
  * OpenAI only identifies unnecessary parts. Local code removes them.
  * Blocks are 1-based indexes matching the [B#] labels in the user prompt.
+ * When unsure, leave text alone — false negatives (keeping chrome) are better than
+ * deleting transcript endings or other learner content.
  */
 export const IMPORT_CLEANUP_SYSTEM_PROMPT = `You identify unnecessary parts in imported reading material for a language-learning app.
 Return ONLY JSON:
@@ -34,10 +53,12 @@ Return ONLY JSON:
 Rules:
 - You do NOT rewrite, summarize, translate, paraphrase, or invent text.
 - Only select parts that should be removed. Our code deletes your selections from the original extract.
-- removeBlocks: 1-based [B#] block indexes that are pure chrome/junk (nav, menus, sidebars, ads, cookie/GDPR banners, share buttons, related/recommended links, comment widgets, newsletter CTAs, author bio footers that are not part of the work, site chrome, legal/cookie policy blurbs, bare page numbers, repeated running headers/footers, "this page intentionally left blank", publisher marketing, standalone TOC chrome).
+- When unsure whether something is chrome or content, leave it (empty remove lists). Prefer keeping text over deleting.
+- removeBlocks: 1-based [B#] block indexes that are pure chrome/junk ONLY (nav, menus, sidebars, ads, cookie/GDPR banners, share buttons, related/recommended links, comment widgets, newsletter CTAs, author bio footers that are not part of the work, site chrome, legal/cookie policy blurbs, bare page numbers, repeated running headers/footers, "this page intentionally left blank", publisher marketing, standalone TOC chrome).
 - removeSnippets: exact substrings copied VERBATIM from the blocks when only part of a kept block is junk. Must match the source text exactly. Prefer removeBlocks when a whole block is junk. Use [] when unsure.
-- Keep the main body: headings, paragraphs, lists, dialogue, quotes, and content image markers like [Image: …]. Never select those for removal unless the whole block is clearly non-content chrome.
-- If every block is boilerplate with no readable main content, set dropChapter=true and removeBlocks to all block indexes.
+- Keep the main body: headings, paragraphs, lists, dialogue, quotes, transcripts, exam/listening passages, and content image markers like [Image: …].
+- NEVER remove exam/listening/IELTS-style instructional lines that belong to the document — even if they sound like UI. Always KEEP examples such as: "That is the end of section four", "You now have half a minute to check your answers", "Now listen and answer questions five to ten", "Now turn to section…". These are learner content, not chrome.
+- dropChapter=true ONLY when this entire chunk is pure site/publisher chrome with zero readable main content. Never drop a chunk because it contains section endings, answer-check timing, or other transcript wrap-up lines.
 - title = short chapter/section title if obvious from the body, else "".
 - When nothing should be removed, return {"removeBlocks":[],"removeSnippets":[],"dropChapter":false,"title":""}.`;
 
@@ -92,6 +113,39 @@ export function formatBlocksForPrompt(blocks: string[]): string {
   return blocks.map((block, i) => `[B${i + 1}]\n${block}`).join('\n\n');
 }
 
+/** Collapse whitespace for ending / fingerprint compares. */
+export function normalizeForCompare(text: string): string {
+  return text.replace(/\s+/g, ' ').trim().toLowerCase();
+}
+
+/**
+ * True when cleaned text still contains a fingerprint of the original ending.
+ * Protects against AI dropping the last page / section wrap-up while retaining
+ * enough earlier body that the retain-ratio check would still pass.
+ */
+export function originalEndingPreserved(original: string, cleaned: string): boolean {
+  const o = normalizeForCompare(original);
+  const c = normalizeForCompare(cleaned);
+  if (o.length < IMPORT_AI_ENDING_PROBE_CHARS) return true;
+  if (!c) return false;
+
+  const probeLen = Math.min(IMPORT_AI_ENDING_PROBE_CHARS, Math.floor(o.length / 3));
+  const probe = o.slice(-probeLen);
+  if (c.includes(probe)) return true;
+
+  // Allow mild OCR/cleanup whitespace drift: try a shorter interior probe.
+  const short = probe.slice(Math.floor(probeLen * 0.2), Math.floor(probeLen * 0.8));
+  if (short.length >= 16 && c.includes(short)) return true;
+
+  // Last-resort: distinctive trailing words (length>=5) still appear near cleaned end.
+  const oWords = o.split(' ').filter(Boolean);
+  const cTail = c.slice(-Math.min(c.length, 320));
+  const trail = oWords.slice(-16).filter((w) => w.length >= 5);
+  if (trail.length < 3) return true;
+  const hits = trail.filter((w) => cTail.includes(w)).length;
+  return hits / trail.length >= 0.75;
+}
+
 export function shouldKeepCleanedText(original: string, cleaned: string): boolean {
   const cleanedText = cleanImportPlainText(cleaned);
   if (!cleanedText) return false;
@@ -101,6 +155,9 @@ export function shouldKeepCleanedText(original: string, cleaned: string): boolea
     return false;
   }
   if (origWords > 0 && cleanedWords / origWords < IMPORT_AI_MIN_RETAIN_RATIO) {
+    return false;
+  }
+  if (!originalEndingPreserved(original, cleanedText)) {
     return false;
   }
   return true;
@@ -199,6 +256,8 @@ function applySnippets(text: string, snippets: string[]): string {
 /**
  * Apply AI selection to one original chunk. Never rewrites via the model —
  * only deletes selected blocks/snippets from the deterministic extract.
+ * Fail-open: if the model is aggressive or targets protected learning wrap-ups,
+ * keep the original chunk text rather than deleting learner content.
  */
 export function applyCleanupSelection(
   chunkText: string,
@@ -206,7 +265,15 @@ export function applyCleanupSelection(
 ): CleanupChunkResult {
   const blocks = splitIntoCleanupBlocks(chunkText);
 
+  // Never honor dropChapter on chunks that still look like real reading/listening material.
   if (selection.dropChapter) {
+    const words = countWords(chunkText);
+    if (words >= IMPORT_AI_MIN_CHAPTER_WORDS || isProtectedLearningText(chunkText)) {
+      logger.debug(
+        'Ignoring dropChapter — chunk looks like learner content (fail-open keep)',
+      );
+      return { title: selection.title, text: chunkText, dropChapter: false };
+    }
     return { title: selection.title, text: '', dropChapter: true };
   }
 
@@ -218,16 +285,31 @@ export function applyCleanupSelection(
   }
 
   const remove = new Set(
-    selection.removeBlocks.filter((n) => n >= 1 && n <= blocks.length),
+    selection.removeBlocks.filter((n) => {
+      if (n < 1 || n > blocks.length) return false;
+      // Never delete blocks that contain exam/listening wrap-up content.
+      if (isProtectedLearningText(blocks[n - 1])) return false;
+      return true;
+    }),
   );
 
   const kept = blocks.filter((_, i) => !remove.has(i + 1));
   let next = kept.join('\n\n');
   if (selection.removeSnippets.length > 0) {
-    next = applySnippets(next, selection.removeSnippets);
+    const safeSnippets = selection.removeSnippets.filter(
+      (s) => !isProtectedLearningText(s),
+    );
+    next = applySnippets(next, safeSnippets);
   }
 
   const cleaned = cleanImportPlainText(next);
+  // Per-chunk fail-open: if removal wiped the chunk ending / most body / wrap-ups, keep original.
+  if (!shouldKeepCleanedText(chunkText, cleaned)) {
+    return { title: selection.title, text: chunkText, dropChapter: false };
+  }
+  if (isProtectedLearningText(chunkText) && !isProtectedLearningText(cleaned)) {
+    return { title: selection.title, text: chunkText, dropChapter: false };
+  }
   return { title: selection.title, text: cleaned, dropChapter: false };
 }
 
@@ -251,11 +333,12 @@ export function buildCleanupUserPrompt(opts: {
 }): string {
   const sourceHint =
     opts.source === 'url'
-      ? 'Source: web page URL import. Prefer main article body; drop site chrome.'
+      ? 'Source: web page URL import. Prefer main article body; drop site chrome. Keep article endings.'
       : opts.source === 'pdf'
-        ? 'Source: PDF file import. Prefer document body; drop running headers/footers and page chrome.'
+        ? 'Source: PDF file import. Prefer document body; drop only repeated running headers/footers and bare page numbers. Keep transcript/exam body and section wrap-ups.'
         : 'Source: EPUB file import. Prefer chapter body; drop publisher/front-matter chrome.';
 
+  const isFinalChunk = opts.chunkTotal > 0 && opts.chunkIndex === opts.chunkTotal - 1;
   const blocks = splitIntoCleanupBlocks(opts.text);
   const labeled = formatBlocksForPrompt(blocks);
 
@@ -264,8 +347,11 @@ export function buildCleanupUserPrompt(opts: {
     opts.documentTitle ? `Document title: ${opts.documentTitle}` : null,
     opts.chapterTitle ? `Chapter title: ${opts.chapterTitle}` : null,
     `Chunk ${opts.chunkIndex + 1} of ${opts.chunkTotal}`,
+    isFinalChunk
+      ? 'FINAL CHUNK: keep the last paragraphs in full, including "end of section" / "check your answers" lines — they are document content.'
+      : null,
     `Blocks: ${blocks.length} (labels [B1]…[B${blocks.length || 1}])`,
-    'Select unnecessary parts only. Do not rewrite the text.',
+    'Select unnecessary chrome only. If unsure, remove nothing. Do not rewrite the text.',
     'Return JSON: {"removeBlocks":[],"removeSnippets":[],"dropChapter":false,"title":""}',
     '---',
     labeled || opts.text,
@@ -278,14 +364,31 @@ export function buildCleanupUserPrompt(opts: {
 export function mergeChapterCleanup(
   original: ExtractedChapter,
   chunkResults: CleanupChunkResult[],
+  originalChunks: string[] = [],
+  remainder = '',
 ): ExtractedChapter | null {
   if (chunkResults.length === 0) return original;
+
+  // Whole-chapter drop only when every chunk is empty/dropped.
   if (chunkResults.every((r) => r.dropChapter && !r.text.trim())) return null;
 
-  const parts = chunkResults
-    .filter((r) => !r.dropChapter || r.text.trim())
-    .map((r) => cleanImportPlainText(r.text))
-    .filter(Boolean);
+  const parts: string[] = [];
+  for (let i = 0; i < chunkResults.length; i++) {
+    const r = chunkResults[i];
+    // Partial dropChapter must not erase trailing body — keep original chunk.
+    if (r.dropChapter && !r.text.trim()) {
+      const fallback = originalChunks[i];
+      if (fallback?.trim()) {
+        parts.push(cleanImportPlainText(fallback));
+      }
+      continue;
+    }
+    const cleaned = cleanImportPlainText(r.text);
+    if (cleaned) parts.push(cleaned);
+  }
+
+  const rem = cleanImportPlainText(remainder);
+  if (rem) parts.push(rem);
 
   if (parts.length === 0) return null;
 
@@ -293,6 +396,12 @@ export function mergeChapterCleanup(
   if (!shouldKeepCleanedText(original.text, merged)) {
     logger.debug(
       `Keeping original chapter "${original.title}" — AI removal looked over-trimmed`,
+    );
+    return original;
+  }
+  if (isProtectedLearningText(original.text) && !isProtectedLearningText(merged)) {
+    logger.debug(
+      `Keeping original chapter "${original.title}" — protected learning wrap-up was removed`,
     );
     return original;
   }
@@ -304,12 +413,18 @@ export function mergeChapterCleanup(
   };
 }
 
-export function planImportCleanup(
-  chapters: ExtractedChapter[],
-): Array<{ chapter: ExtractedChapter; index: number; chunks: string[] }> {
+export type ImportCleanupPlanItem = {
+  chapter: ExtractedChapter;
+  index: number;
+  chunks: string[];
+  /** Text after AI-covered chunks (budget / chunk-cap leftover). Always kept as-is. */
+  remainder: string;
+};
+
+export function planImportCleanup(chapters: ExtractedChapter[]): ImportCleanupPlanItem[] {
   let budget = IMPORT_AI_MAX_TOTAL_CHARS;
   let chunkBudget = IMPORT_AI_MAX_CHUNKS;
-  const plan: Array<{ chapter: ExtractedChapter; index: number; chunks: string[] }> = [];
+  const plan: ImportCleanupPlanItem[] = [];
 
   for (let i = 0; i < chapters.length; i++) {
     const chapter = chapters[i];
@@ -317,13 +432,22 @@ export function planImportCleanup(
     if (words < IMPORT_AI_MIN_CHAPTER_WORDS) continue;
     if (budget <= 0 || chunkBudget <= 0) break;
 
-    const text =
+    const withinBudget =
       chapter.text.length > budget ? chapter.text.slice(0, budget) : chapter.text;
-    const chunks = splitForImportAi(text).slice(0, chunkBudget);
+    const afterBudget =
+      chapter.text.length > budget ? chapter.text.slice(budget) : '';
+    const allChunks = splitForImportAi(withinBudget);
+    const chunks = allChunks.slice(0, chunkBudget);
     if (chunks.length === 0) continue;
 
-    plan.push({ chapter, index: i, chunks });
-    budget -= text.length;
+    const unusedChunks = allChunks.slice(chunks.length);
+    const remainder = [...unusedChunks, afterBudget]
+      .map((t) => t.trim())
+      .filter(Boolean)
+      .join('\n\n');
+
+    plan.push({ chapter, index: i, chunks, remainder });
+    budget -= withinBudget.length;
     chunkBudget -= chunks.length;
   }
 

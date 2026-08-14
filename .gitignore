@@ -17,6 +17,8 @@ coverage/
 .turbo/
 uploads/
 **/uploads/
+tmp/
+*.traineddata
 services/api/prisma/migrations/**/migration_lock.toml
 apps/mobile/.dart_tool/
 apps/mobile/build/
