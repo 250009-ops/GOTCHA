@@ -11,7 +11,17 @@ interface GamificationData {
     streakers: number;
     vocabMasters: number;
     activeReaders: number;
+    catalogPoints?: number;
+    avgStreakDays?: number;
+    totalEarned?: number;
   };
+  seasons?: Array<{
+    id: string;
+    title: string;
+    status: string;
+    endsInDays: number | null;
+    participants: number;
+  }>;
   achievements: Array<{
     id: string;
     code: string;
@@ -75,11 +85,16 @@ export default function GamificationPage() {
       />
 
       <div className="grid grid-cols-2 xl:grid-cols-5 gap-4 mb-6">
-        <StatCard label="Achievements" value={data.stats.achievements} icon={<Sparkles className="size-5" />} />
+        <StatCard
+          label="Total Points"
+          value={formatNumber(data.stats.catalogPoints ?? data.stats.totalEarned ?? 0)}
+          icon={<Sparkles className="size-5" />}
+          accent="bg-violet-50 text-[#6c1d95]"
+        />
+        <StatCard label="Avg Streak" value={`${data.stats.avgStreakDays ?? 0} days`} icon={<Flame className="size-5" />} accent="bg-orange-50 text-orange-600" />
+        <StatCard label="Achievements" value={data.stats.achievements} />
         <StatCard label="Active" value={data.stats.activeAchievements} accent="bg-emerald-50 text-emerald-700" />
-        <StatCard label="Streakers (7d+)" value={formatNumber(data.stats.streakers)} icon={<Flame className="size-5" />} accent="bg-orange-50 text-orange-600" />
-        <StatCard label="Vocab Masters" value={formatNumber(data.stats.vocabMasters)} />
-        <StatCard label="Active Readers" value={formatNumber(data.stats.activeReaders)} />
+        <StatCard label="Streakers (7d+)" value={formatNumber(data.stats.streakers)} />
       </div>
 
       {showForm && (

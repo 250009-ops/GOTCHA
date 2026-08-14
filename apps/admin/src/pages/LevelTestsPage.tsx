@@ -7,8 +7,9 @@ import { formatNumber, levelBadgeClass, relativeTime } from '../lib/utils';
 interface LevelTestsData {
   stats: {
     total: number;
+    monthTotal: number;
     avgScore: number;
-    byLevel: Array<{ level: string; count: number; avgScore: number }>;
+    byLevel: Array<{ level: string; count: number; avgScore: number; pct: number }>;
   };
   results: Array<{
     id: string;
@@ -37,20 +38,22 @@ export default function LevelTestsPage() {
       />
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <StatCard label="Total Assessments" value={formatNumber(data.stats.total)} icon={<ClipboardCheck className="size-5" />} />
+        <StatCard label="Tests This Month" value={formatNumber(data.stats.monthTotal)} icon={<ClipboardCheck className="size-5" />} />
         <StatCard label="Average Score" value={data.stats.avgScore.toFixed(1)} accent="bg-sky-50 text-sky-700" />
-        <StatCard label="Levels Covered" value={data.stats.byLevel.length} />
+        <StatCard label="Total Assessments" value={formatNumber(data.stats.total)} />
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
-        {data.stats.byLevel.map((row) => (
-          <Card key={row.level} className="p-4 text-center">
-            <Badge className={levelBadgeClass(row.level)}>{row.level.toUpperCase()}</Badge>
-            <div className="text-2xl font-bold mt-2">{row.count}</div>
-            <div className="text-xs text-slate-500">avg {row.avgScore}</div>
-          </Card>
-        ))}
-      </div>
+      {data.stats.byLevel.length > 0 && (
+        <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3 mb-6">
+          {data.stats.byLevel.map((row) => (
+            <Card key={row.level} className="p-4 text-center">
+              <Badge className={levelBadgeClass(row.level)}>{row.level.toUpperCase()}</Badge>
+              <div className="text-2xl font-bold mt-2">{row.count}</div>
+              <div className="text-xs text-slate-500">{row.pct}% · avg {row.avgScore}</div>
+            </Card>
+          ))}
+        </div>
+      )}
 
       <Card className="p-2">
         <DataTable headers={['Learner', 'Language', 'Suggested Level', 'Score', 'Taken']}>

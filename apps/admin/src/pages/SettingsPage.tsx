@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button, Card, Input, LoadingBlock, PageHeader, Select } from '../components/ui';
-import { api } from '../lib/api';
+import { api, clearToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
 interface Settings {
@@ -10,6 +10,7 @@ interface Settings {
   aiEnabled: boolean;
   aiLookupModel: string;
   aiQuizModel: string;
+  aiImportCleanupModel: string;
   aiDefaultUserQuota: number;
   aiConfigured?: boolean;
   maintenanceMode: boolean;
@@ -28,14 +29,90 @@ const MODEL_OPTIONS = [
 ];
 
 export default function SettingsPage() {
-  const { user } = useAuth();
+  const { user, refresh } = useAuth();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
+  const [profileName, setProfileName] = useState('');
+  const [profileEmail, setProfileEmail] = useState('');
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwSaving, setPwSaving] = useState(false);
+  const [pwError, setPwError] = useState<string | null>(null);
+  const [pwSuccess, setPwSuccess] = useState(false);
+
   useEffect(() => {
     api<Settings>('/admin/settings').then(setSettings).catch(console.error);
   }, []);
+
+  useEffect(() => {
+    setProfileName(user?.displayName ?? '');
+    setProfileEmail(user?.email ?? '');
+  }, [user]);
+
+  async function saveProfile(e: React.FormEvent) {
+    e.preventDefault();
+    setProfileSaving(true);
+    setProfileSaved(false);
+    try {
+      await api('/admin/me', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          displayName: profileName.trim() || undefined,
+          email: profileEmail.trim() || undefined,
+        }),
+      });
+      await refresh();
+      setProfileSaved(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not update profile');
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  async function changePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setPwError(null);
+    setPwSuccess(false);
+    if (!currentPassword || !newPassword) {
+      setPwError('Fill in both password fields');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setPwError('New password must be at least 8 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setPwError('Passwords do not match');
+      return;
+    }
+    setPwSaving(true);
+    try {
+      await api('/users/me/password', {
+        method: 'PATCH',
+        body: JSON.stringify({ currentPassword, newPassword }),
+      });
+      setPwSuccess(true);
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      // Backend revokes all refresh tokens on password change — force a fresh login.
+      setTimeout(() => {
+        clearToken();
+        window.location.reload();
+      }, 1200);
+    } catch (e) {
+      setPwError(e instanceof Error ? e.message : 'Could not change password');
+    } finally {
+      setPwSaving(false);
+    }
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -63,6 +140,9 @@ export default function SettingsPage() {
   const quizModels = MODEL_OPTIONS.includes(settings.aiQuizModel)
     ? MODEL_OPTIONS
     : [settings.aiQuizModel, ...MODEL_OPTIONS];
+  const importCleanupModels = MODEL_OPTIONS.includes(settings.aiImportCleanupModel)
+    ? MODEL_OPTIONS
+    : [settings.aiImportCleanupModel || 'gpt-4.1-mini', ...MODEL_OPTIONS];
 
   return (
     <div>
@@ -128,8 +208,10 @@ export default function SettingsPage() {
           <Card className="p-5">
             <div className="font-semibold mb-1">AI controls</div>
             <p className="text-sm text-slate-500 mb-4">
-              These settings gate learner lookups and quizzes. API key is read from server env
+              These settings gate learner lookups, quizzes, and URL/PDF/EPUB import cleanup.
+              API key is read from server env
               ({settings.aiConfigured ? 'configured' : 'missing — set OPENAI_API_KEY and restart API'}).
+              Toggle import cleanup with IMPORT_AI_CLEANUP_ENABLED in server env.
             </p>
             <form className="grid gap-3" onSubmit={save}>
               <label className="flex items-center gap-2 text-sm">
@@ -176,6 +258,17 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, aiQuizModel: e.target.value })}
                 >
                   {quizModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </Select>
+              </label>
+              <label className="text-sm">
+                <span className="text-slate-500 block mb-1">Import cleanup model</span>
+                <Select
+                  value={String(settings.aiImportCleanupModel ?? 'gpt-4.1-mini')}
+                  onChange={(e) => setSettings({ ...settings, aiImportCleanupModel: e.target.value })}
+                >
+                  {importCleanupModels.map((m) => (
                     <option key={m} value={m}>{m}</option>
                   ))}
                 </Select>
@@ -233,20 +326,70 @@ export default function SettingsPage() {
 
           <Card className="p-5">
             <div className="font-semibold mb-4">Admin account</div>
-            <div className="space-y-3 text-sm">
-              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Name</span>
-                <span className="font-medium">{user?.displayName || '—'}</span>
-              </div>
-              <div className="flex justify-between border-b border-slate-100 pb-2">
-                <span className="text-slate-500">Email</span>
-                <span className="font-medium">{user?.email}</span>
-              </div>
+            <form className="grid gap-3 text-sm" onSubmit={saveProfile}>
+              <label>
+                <span className="text-slate-500 block mb-1">Name</span>
+                <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} />
+              </label>
+              <label>
+                <span className="text-slate-500 block mb-1">Email</span>
+                <Input
+                  type="email"
+                  value={profileEmail}
+                  onChange={(e) => setProfileEmail(e.target.value)}
+                />
+              </label>
               <div className="flex justify-between border-b border-slate-100 pb-2">
                 <span className="text-slate-500">Role</span>
                 <span className="font-medium capitalize">{user?.role?.replace('_', ' ')}</span>
               </div>
-            </div>
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={profileSaving}>
+                  {profileSaving ? 'Saving…' : 'Save profile'}
+                </Button>
+                {profileSaved && <span className="text-sm text-emerald-600">Saved</span>}
+              </div>
+            </form>
+
+            <div className="h-px bg-slate-100 my-4" />
+
+            <div className="font-semibold mb-3">Change password</div>
+            <form className="grid gap-3 text-sm" onSubmit={changePassword}>
+              <label>
+                <span className="text-slate-500 block mb-1">Current password</span>
+                <Input
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
+              </label>
+              <label>
+                <span className="text-slate-500 block mb-1">New password</span>
+                <Input
+                  type="password"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                />
+              </label>
+              <label>
+                <span className="text-slate-500 block mb-1">Confirm new password</span>
+                <Input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </label>
+              {pwError && <p className="text-sm text-red-600">{pwError}</p>}
+              {pwSuccess && (
+                <p className="text-sm text-emerald-600">Password updated. Signing you out to re-authenticate…</p>
+              )}
+              <div className="flex items-center gap-3">
+                <Button type="submit" disabled={pwSaving}>
+                  {pwSaving ? 'Updating…' : 'Update password'}
+                </Button>
+              </div>
+            </form>
           </Card>
         </div>
       </div>

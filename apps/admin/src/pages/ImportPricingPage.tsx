@@ -22,7 +22,8 @@ interface PageTier {
   label: string;
   minPages: number;
   maxPages: number | null;
-  priceUsd: number;
+  /** Amount in UZS (soʻm) — NOTE: column is named priceUsd in DB but stores UZS. */
+  priceUzs: number;
   sortOrder: number;
 }
 
@@ -39,6 +40,8 @@ interface ImportPricingData {
   currency?: string;
   atmosConfigured?: boolean;
   paymentGatewayEnabled?: boolean;
+  /** Atmos minimum charge in UZS (soʻm) — prices below this cannot be saved. */
+  atmosMinAmountSom?: number;
   stats: {
     totalImportsToday: number;
     importsGrowthPct: number;
@@ -88,6 +91,16 @@ export default function ImportPricingPage() {
   const [editingTier, setEditingTier] = useState<PageTier | null>(null);
   const [tierPrice, setTierPrice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [pricingError, setPricingError] = useState<string | null>(null);
+
+  const atmosMinSom = data?.atmosMinAmountSom ?? 500;
+
+  function validateAtmosMin(price: number, fieldLabel: string): string | null {
+    if (price > 0 && price < atmosMinSom) {
+      return `${fieldLabel} must be at least ${formatMoney(atmosMinSom)} (Atmos minimum). Current value: ${formatMoney(price)}.`;
+    }
+    return null;
+  }
 
   async function load(nextRange = range) {
     const res = await api<ImportPricingData>(`/admin/import-pricing?range=${encodeURIComponent(nextRange)}`);
@@ -111,6 +124,16 @@ export default function ImportPricingPage() {
   }, [section, data]);
 
   async function saveRules() {
+    setPricingError(null);
+    for (const rule of rules) {
+      const err =
+        validateAtmosMin(rule.pricePerImport, `${rule.label} — price per import`) ??
+        validateAtmosMin(rule.pricePerPage, `${rule.label} — price per page`);
+      if (err) {
+        setPricingError(err);
+        return;
+      }
+    }
     setSaving(true);
     try {
       const res = await api<ImportPricingData>('/admin/import-pricing/rules', {
@@ -119,6 +142,8 @@ export default function ImportPricingPage() {
       });
       setData(res);
       setRules(res.rules);
+    } catch (e) {
+      setPricingError(e instanceof Error ? e.message : 'Could not save type prices');
     } finally {
       setSaving(false);
     }
@@ -140,14 +165,23 @@ export default function ImportPricingPage() {
 
   async function saveTier() {
     if (!editingTier) return;
+    const price = Number(tierPrice);
+    const err = validateAtmosMin(price, `Page tier "${editingTier.label}"`);
+    if (err) {
+      setPricingError(err);
+      return;
+    }
+    setPricingError(null);
     setSaving(true);
     try {
       await api(`/admin/import-pricing/tiers/${editingTier.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ priceUsd: Number(tierPrice) }),
+        body: JSON.stringify({ priceUzs: price }),
       });
       setEditingTier(null);
       await load();
+    } catch (e) {
+      setPricingError(e instanceof Error ? e.message : 'Could not save tier price');
     } finally {
       setSaving(false);
     }
@@ -198,7 +232,14 @@ export default function ImportPricingPage() {
           Gateway: {data.paymentGatewayEnabled ? 'enabled' : 'disabled (imports unlimited)'}
         </Badge>
         <Badge className="bg-slate-50 text-slate-600">Currency: {data.currency || 'UZS'}</Badge>
+        <Badge className="bg-slate-50 text-slate-600">Atmos minimum: {formatMoney(atmosMinSom)}</Badge>
       </div>
+
+      {pricingError && (
+        <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {pricingError}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
@@ -442,14 +483,15 @@ export default function ImportPricingPage() {
                     </>
                   ) : (
                     <>
-                      <span className="text-sm font-semibold">{formatMoney(tier.priceUsd)}</span>
+                      <span className="text-sm font-semibold">{formatMoney(tier.priceUzs)}</span>
                       <button
                         type="button"
                         className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
                         aria-label={`Edit ${tier.label}`}
                         onClick={() => {
+                          setPricingError(null);
                           setEditingTier(tier);
-                          setTierPrice(String(tier.priceUsd));
+                          setTierPrice(String(tier.priceUzs));
                         }}
                       >
                         <Pencil className="size-3.5" />

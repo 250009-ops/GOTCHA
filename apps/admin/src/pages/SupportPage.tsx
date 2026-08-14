@@ -19,10 +19,10 @@ interface SupportData {
 }
 
 const priorityClass: Record<string, string> = {
-  low: 'bg-slate-100 text-slate-600',
-  medium: 'bg-sky-50 text-sky-700',
-  high: 'bg-amber-50 text-amber-700',
-  urgent: 'bg-rose-50 text-rose-700',
+  low: 'bg-[#ecfdf5] text-[#10b981]',
+  medium: 'bg-[#fef3c7] text-[#f59e0b]',
+  high: 'bg-[#fee2e2] text-[#ef4444]',
+  urgent: 'bg-[#fee2e2] text-[#ef4444]',
 };
 
 export default function SupportPage() {

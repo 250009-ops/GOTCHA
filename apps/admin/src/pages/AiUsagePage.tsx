@@ -129,8 +129,8 @@ export default function AiUsagePage() {
         />
         <StatCard
           label="API Cost"
-          value={formatMoney(data.today.apiCostToday)}
-          hint={<span>Avg {formatMoney(data.today.avgCostPerLookup)} per lookup</span>}
+          value={formatMoney(data.today.apiCostToday, 'USD')}
+          hint={<span>Avg {formatMoney(data.today.avgCostPerLookup, 'USD')} per lookup</span>}
           accent="bg-amber-50 text-amber-700"
         />
         <StatCard
@@ -185,7 +185,7 @@ export default function AiUsagePage() {
                 <td className="px-4 py-3 text-sm text-slate-500">{row.plan}</td>
                 <td className="px-4 py-3 text-sm font-semibold">{formatNumber(row.lookups)}</td>
                 <td className="px-4 py-3 text-sm">{formatNumber(row.monthLookups)}</td>
-                <td className="px-4 py-3 text-sm">{formatMoney(row.cost)}</td>
+                <td className="px-4 py-3 text-sm">{formatMoney(row.cost, 'USD')}</td>
                 <td className="px-4 py-3">
                   <Badge className={statusClass[row.status] ?? statusClass.Active}>{row.status}</Badge>
                 </td>

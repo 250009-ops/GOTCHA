@@ -19,14 +19,32 @@ export function formatNumber(n: number) {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
-export function formatMoney(n: number, fractionDigits?: number) {
-  const digits = fractionDigits ?? (Math.abs(n) > 0 && Math.abs(n) < 1 ? 4 : Number.isInteger(n) ? 0 : 2);
-  return new Intl.NumberFormat('en-US', {
-    style: 'currency',
-    currency: 'USD',
-    minimumFractionDigits: digits,
-    maximumFractionDigits: digits,
-  }).format(n);
+/**
+ * Format a monetary value with the appropriate currency symbol/label.
+ * @param n The numeric amount
+ * @param currency 'USD' | 'UZS' (default: 'UZS' for backward compatibility with import pricing)
+ * @param fractionDigits Override decimal places; auto-detected if omitted
+ */
+export function formatMoney(n: number, currency: 'USD' | 'UZS' = 'UZS', fractionDigits?: number) {
+  if (currency === 'USD') {
+    const digits = fractionDigits ?? (Number.isInteger(n) ? 0 : 2);
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    }).format(n);
+  }
+  // UZS (soʻm) — large whole amounts → no decimals
+  const digits =
+    fractionDigits ??
+    (Math.abs(n) >= 100 || Number.isInteger(n) ? 0 : Math.abs(n) > 0 && Math.abs(n) < 1 ? 4 : 2);
+  return (
+    new Intl.NumberFormat('uz-UZ', {
+      maximumFractionDigits: digits,
+      minimumFractionDigits: digits,
+    }).format(n) + " soʻm"
+  );
 }
 
 export function relativeTime(iso: string | Date) {
