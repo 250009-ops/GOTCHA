@@ -134,7 +134,7 @@ export default function LandingPage() {
   }, [hash]);
 
   const freePlan = plans.find((p) => p.tier === 'free') ?? FALLBACK_PLANS[0];
-  const premiumPlan = plans.find((p) => p.tier === 'premium') ?? FALLBACK_PLANS[1];
+  const payPerImportPlan = plans.find((p) => p.tier === 'pay-per-import') ?? FALLBACK_PLANS[1];
 
   return (
     <div className="relative overflow-x-clip bg-white">
@@ -365,7 +365,7 @@ export default function LandingPage() {
                 Simple, honest pricing
               </h2>
               <p className="text-sm md:text-base leading-[1.6] text-[#6a7282] max-w-[720px]">
-                Start free. Upgrade when you need more.
+                Start free. No subscription, ever — pay only for what you import.
               </p>
             </div>
 
@@ -398,25 +398,25 @@ export default function LandingPage() {
                 </a>
               </article>
 
-              {/* Premium Plan */}
+              {/* Pay-per-import Plan */}
               <article className="flex flex-col gap-4 p-6 bg-gradient-to-r from-[#2107aa] to-[#6c1d95] rounded-[20px] shadow-[0_6px_16px_-8px_rgba(0,0,0,0.08),0_18px_40px_-12px_rgba(33,7,170,0.2)] text-white overflow-hidden">
                 <div className="flex flex-col gap-2.5">
-                  {premiumPlan.popular && (
+                  {payPerImportPlan.popular && (
                     <div className="inline-flex items-center gap-2 w-fit px-2.5 py-1.5 bg-white/15 border border-white/20 rounded-full">
                       <Icon src={a.sparklesBadge} size={16} />
-                      <span className="text-xs font-bold text-white">Most popular</span>
+                      <span className="text-xs font-bold text-white">No subscription</span>
                     </div>
                   )}
-                  <p className="text-sm font-semibold text-white/80">{premiumPlan.name}</p>
+                  <p className="text-sm font-semibold text-white/80">{payPerImportPlan.name}</p>
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[40px] font-extrabold leading-[1.1] text-white">
-                      {premiumPlan.priceLabel}
+                    <span className="text-[32px] md:text-[40px] font-extrabold leading-[1.1] text-white">
+                      {payPerImportPlan.priceLabel}
                     </span>
-                    <span className="text-sm text-white/80">{premiumPlan.priceUnit}</span>
+                    <span className="text-sm text-white/80">{payPerImportPlan.priceUnit}</span>
                   </div>
                 </div>
                 <ul className="flex flex-col gap-2.5 flex-1">
-                  {premiumPlan.features.map((f) => (
+                  {payPerImportPlan.features.map((f) => (
                     <li key={f} className="flex items-center gap-2.5 text-sm leading-5 text-white/80">
                       <Icon src={a.checkWhite} size={16} />
                       {f}
@@ -425,9 +425,9 @@ export default function LandingPage() {
                 </ul>
                 <a
                   className="flex items-center justify-center h-11 bg-white text-[#2107aa] text-sm font-bold rounded-[14px] hover:translate-y-[-1px] transition-transform"
-                  href={registerUrl({ plan: 'premium' })}
+                  href={registerUrl({ plan: 'pay-per-import' })}
                 >
-                  {premiumPlan.cta}
+                  {payPerImportPlan.cta}
                 </a>
               </article>
             </div>

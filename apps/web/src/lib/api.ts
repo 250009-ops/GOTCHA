@@ -2,7 +2,7 @@ const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
 export type MarketingPlan = {
   id: string;
-  tier: 'free' | 'premium' | string;
+  tier: 'free' | 'pay-per-import' | string;
   name: string;
   priceMonthly: number;
   priceLabel: string;

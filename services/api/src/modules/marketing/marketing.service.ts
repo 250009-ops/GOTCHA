@@ -16,50 +16,68 @@ export class MarketingService {
     };
   }
 
+  /**
+   * Public marketing pricing copy. There is NO recurring subscription in this product —
+   * learners get a free allowance and pay Atmos once, per import, only when they exceed it.
+   * The `free` tier is real and reads live quotas from `SubscriptionPlan`. The second card is
+   * NOT sourced from `SubscriptionPlan.premium` (that row's `priceMonthly` is an internal-only
+   * value used by the admin "adjust tier" override / AI quota system — it was never a real,
+   * purchasable $/mo product, see docs/E2E_AUDIT_REPORT.md §7.2) — it's static, honest copy
+   * describing the real pay-per-import model instead.
+   */
   async plans() {
-    const plans = await this.prisma.subscriptionPlan.findMany({
-      orderBy: { tier: 'asc' },
-    });
+    const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    return plans.map((plan) => {
-      const unlimitedLookups = plan.aiDailyQuota >= UNLIMITED_THRESHOLD;
-      const unlimitedImports = plan.importLimit >= UNLIMITED_THRESHOLD;
-      const price = Number(plan.priceMonthly ?? 0);
+    const aiDailyQuota = freePlan?.aiDailyQuota ?? 50;
+    const importLimit = freePlan?.importLimit ?? 15;
 
-      const features =
-        plan.tier === 'free'
-          ? [
-              'Access to public library',
-              `${plan.aiDailyQuota} AI lookups / day`,
-              `${plan.importLimit} imports`,
-              'Basic SRS review',
-              '7-day reading history',
-            ]
-          : [
-              'Everything in Free',
-              unlimitedLookups ? 'Unlimited AI lookups' : `${plan.aiDailyQuota} AI lookups / day`,
-              unlimitedImports ? 'Unlimited imports' : `${plan.importLimit} imports`,
-              'Full reading analytics',
-              plan.offlineEnabled ? 'Offline reading' : 'Online reading',
-              'Priority support',
-            ];
+    const free = {
+      id: freePlan?.id ?? 'free',
+      tier: 'free' as const,
+      name: freePlan?.name ?? 'Free',
+      priceMonthly: 0,
+      priceLabel: '$0',
+      priceUnit: 'forever',
+      aiDailyQuota,
+      importLimit,
+      offlineEnabled: freePlan?.offlineEnabled ?? false,
+      unlimitedLookups: aiDailyQuota >= UNLIMITED_THRESHOLD,
+      unlimitedImports: importLimit >= UNLIMITED_THRESHOLD,
+      popular: false,
+      cta: 'Get started',
+      features: [
+        'Access to public library',
+        `${aiDailyQuota} AI lookups / day`,
+        `${importLimit} free imports / month`,
+        'Basic SRS review',
+        '7-day reading history',
+      ],
+    };
 
-      return {
-        id: plan.id,
-        tier: plan.tier,
-        name: plan.name,
-        priceMonthly: price,
-        priceLabel: plan.tier === 'free' ? '$0' : `$${Number.isInteger(price) ? price : price.toFixed(2)}`,
-        priceUnit: plan.tier === 'free' ? 'forever' : 'per month',
-        aiDailyQuota: plan.aiDailyQuota,
-        importLimit: plan.importLimit,
-        offlineEnabled: plan.offlineEnabled,
-        unlimitedLookups,
-        unlimitedImports,
-        popular: plan.tier === 'premium',
-        cta: plan.tier === 'free' ? 'Get started' : 'Start free trial',
-        features,
-      };
-    });
+    const payPerImport = {
+      id: 'pay-per-import',
+      tier: 'pay-per-import' as const,
+      name: 'Pay-per-import',
+      priceMonthly: 0,
+      priceLabel: 'Pay as you go',
+      priceUnit: 'no subscription',
+      aiDailyQuota,
+      importLimit,
+      offlineEnabled: true,
+      unlimitedLookups: false,
+      unlimitedImports: false,
+      popular: true,
+      cta: 'Start reading for free',
+      features: [
+        'Everything in Free',
+        'No monthly fee, ever',
+        'Need more than your free imports? Pay once per import via Atmos',
+        'Price shown upfront, based on document length',
+        'Full reading analytics',
+        'Offline reading',
+      ],
+    };
+
+    return [free, payPerImport];
   }
 }

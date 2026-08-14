@@ -19,7 +19,7 @@ import {
 } from 'recharts';
 
 type Point = { label: string; value: number };
-type ValueFormat = 'number' | 'money' | 'percent';
+type ValueFormat = 'number' | 'money' | 'uzs' | 'percent';
 
 const BRAND = '#6c1d95';
 const INK = '#1c1929';
@@ -35,6 +35,9 @@ function formatTipValue(value: number, format: ValueFormat = 'number') {
       maximumFractionDigits: value < 10 ? 2 : 0,
     }).format(value);
   }
+  if (format === 'uzs') {
+    return `${new Intl.NumberFormat('uz-UZ', { maximumFractionDigits: 0 }).format(value)} so'm`;
+  }
   if (format === 'percent') return `${value}%`;
   return new Intl.NumberFormat('en-US').format(Math.round(value));
 }
@@ -45,6 +48,12 @@ function formatAxisValue(value: number, format: ValueFormat = 'number') {
       return `$${new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value)}`;
     }
     return `$${Math.round(value)}`;
+  }
+  if (format === 'uzs') {
+    if (Math.abs(value) >= 1000) {
+      return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+    }
+    return String(Math.round(value));
   }
   if (format === 'percent') return `${value}%`;
   if (Math.abs(value) >= 1000) {

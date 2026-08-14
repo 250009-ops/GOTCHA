@@ -449,7 +449,7 @@ const PRIVACY_SECTIONS: SectionData[] = [
         body: 'Secure cloud servers where application databases and learning assets reside.',
       },
       { label: 'AI Providers', body: 'Processing textual segments for real-time translations and grammatical aids.' },
-      { label: 'Payment Processors', body: 'Handling subscription transactions securely (Stripe).' },
+      { label: 'Payment Processors', body: 'Handling import payments securely via Atmos (local cards / OFD).' },
       {
         label: 'Analytics Tools',
         body: 'To diagnose app crashes and understand generic user engagement patterns.',

@@ -74,14 +74,13 @@ export class AdminService {
       moderationPending,
       ingestionQueued,
       aiTodayAgg,
-      activeSubs,
-      contentRevMonth,
-      contentRevPrevMonth,
-      contentRevToday,
+      importPaidMonthAgg,
+      importPaidPrevMonthAgg,
+      importPaidTodayAgg,
       recentUsersRaw,
       recentPublished,
       recentTickets,
-      contentPurchasesSince,
+      importPaymentsSince,
     ] = await Promise.all([
       this.prisma.user.count({ where: { deletedAt: null } }),
       this.prisma.user.count({ where: { deletedAt: null, createdAt: { gte: weekAgo } } }),
@@ -104,22 +103,27 @@ export class AdminService {
         where: { usageDate: { gte: dayStart } },
         _sum: { lookupCount: true, quizCount: true, tokensUsed: true },
       }),
-      this.prisma.userSubscription.findMany({
-        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
-        include: { plan: true },
-      }),
-      this.prisma.contentPurchase.aggregate({
-        where: { status: 'completed', createdAt: { gte: monthStart } },
-        _sum: { amountUsd: true },
-      }),
-      this.prisma.contentPurchase.aggregate({
-        where: { status: 'completed', createdAt: { gte: prevMonthStart, lte: prevMonthEnd } },
-        _sum: { amountUsd: true },
-      }),
-      this.prisma.contentPurchase.aggregate({
-        where: { status: 'completed', createdAt: { gte: dayStart } },
-        _sum: { amountUsd: true },
-      }),
+      // Real revenue only: completed/paid Atmos import payments (UZS). Never blend in
+      // UserSubscription.plan.priceMonthly here -- those rows only exist from seed data or
+      // a manual admin "adjust tier" override, never from an actual user purchase.
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', paidAt: { gte: monthStart } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 as number | null } })),
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', paidAt: { gte: prevMonthStart, lte: prevMonthEnd } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 as number | null } })),
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', paidAt: { gte: dayStart } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 as number | null } })),
       this.prisma.user.findMany({
         where: { deletedAt: null },
         orderBy: { createdAt: 'desc' },
@@ -146,25 +150,26 @@ export class AdminService {
         take: 3,
         select: { id: true, subject: true, createdAt: true },
       }),
-      this.prisma.contentPurchase.findMany({
-        where: {
-          status: 'completed',
-          createdAt: { gte: new Date(dayStart.getTime() - 6 * 86_400_000) },
-        },
-        select: { amountUsd: true, createdAt: true },
-      }),
+      this.prisma.importPayment
+        .findMany({
+          where: {
+            status: 'paid',
+            paidAt: { gte: new Date(dayStart.getTime() - 6 * 86_400_000) },
+          },
+          select: { amountTiyins: true, paidAt: true },
+        })
+        .catch(() => [] as Array<{ amountTiyins: number; paidAt: Date | null }>),
     ]);
 
     const activeToday = activeTodayRows.length;
-    const mrr = activeSubs.reduce((sum, s) => sum + Number(s.plan.priceMonthly ?? 0), 0);
-    const revenueMonthUsd = Number(contentRevMonth._sum.amountUsd ?? 0);
-    const revenuePrevUsd = Number(contentRevPrevMonth._sum.amountUsd ?? 0);
-    const revenueToday = Number(contentRevToday._sum.amountUsd ?? 0);
-    const revenueMomDelta = Number((revenueMonthUsd - revenuePrevUsd).toFixed(2));
-    const mrrGrowthPct =
-      revenuePrevUsd > 0
-        ? Number((((revenueMonthUsd - revenuePrevUsd) / revenuePrevUsd) * 100).toFixed(1))
-        : revenueMonthUsd > 0
+    const revenueMonthUzs = Math.round((importPaidMonthAgg._sum.amountTiyins ?? 0) / 100);
+    const revenuePrevUzs = Math.round((importPaidPrevMonthAgg._sum.amountTiyins ?? 0) / 100);
+    const revenueTodayUzs = Math.round((importPaidTodayAgg._sum.amountTiyins ?? 0) / 100);
+    const revenueMomDelta = revenueMonthUzs - revenuePrevUzs;
+    const revenueGrowthPct =
+      revenuePrevUzs > 0
+        ? Number((((revenueMonthUzs - revenuePrevUzs) / revenuePrevUzs) * 100).toFixed(1))
+        : revenueMonthUzs > 0
           ? 100
           : 0;
     const userGrowthPct =
@@ -193,28 +198,20 @@ export class AdminService {
       })),
     );
 
+    // Real revenue trend only -- sums of paid Atmos import payments per month, in UZS.
     const revenueTrend = await Promise.all(
       months.map(async (m) => {
-        const [subs, purchases] = await Promise.all([
-          this.prisma.userSubscription.findMany({
-            where: {
-              status: { in: ['active', 'trialing'] },
-              plan: { tier: 'premium' },
-              createdAt: { lte: m.end },
-            },
-            include: { plan: true },
-          }),
-          this.prisma.contentPurchase.aggregate({
-            where: {
-              status: 'completed',
-              createdAt: { gte: m.start, lte: m.end },
-            },
-            _sum: { amountUsd: true },
-          }),
-        ]);
-        const mrrAt = subs.reduce((sum, s) => sum + Number(s.plan.priceMonthly ?? 0), 0);
-        const purchaseUsd = Number(purchases._sum.amountUsd ?? 0);
-        return { month: m.label, mrr: Number((mrrAt + purchaseUsd).toFixed(2)), users: 0 };
+        const paid = await this.prisma.importPayment
+          .aggregate({
+            where: { status: 'paid', paidAt: { gte: m.start, lte: m.end } },
+            _sum: { amountTiyins: true },
+          })
+          .catch(() => ({ _sum: { amountTiyins: 0 as number | null } }));
+        return {
+          month: m.label,
+          revenue: Math.round((paid._sum.amountTiyins ?? 0) / 100),
+          users: 0,
+        };
       }),
     );
 
@@ -224,17 +221,18 @@ export class AdminService {
       d.setDate(d.getDate() - i);
       revenueDailyMap.set(d.toISOString().slice(0, 10), 0);
     }
-    for (const p of contentPurchasesSince) {
-      const key = p.createdAt.toISOString().slice(0, 10);
+    for (const p of importPaymentsSince) {
+      if (!p.paidAt) continue;
+      const key = p.paidAt.toISOString().slice(0, 10);
       if (revenueDailyMap.has(key)) {
-        revenueDailyMap.set(key, (revenueDailyMap.get(key) ?? 0) + Number(p.amountUsd));
+        revenueDailyMap.set(key, (revenueDailyMap.get(key) ?? 0) + Math.round(p.amountTiyins / 100));
       }
     }
 
     const revenueDaily = [...revenueDailyMap.entries()].map(([date, amount]) => ({
       month: new Date(`${date}T12:00:00`).toLocaleDateString('en-US', { weekday: 'short' }),
       day: date,
-      mrr: Number(amount.toFixed(2)),
+      revenue: amount,
       users: 0,
     }));
 
@@ -293,14 +291,6 @@ export class AdminService {
     activity.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
     const recentActivity = activity.slice(0, 5);
 
-    const importPaidMonth = await this.prisma.importPayment
-      .aggregate({
-        where: { status: 'paid', paidAt: { gte: monthStart } },
-        _sum: { amountTiyins: true },
-      })
-      .catch(() => ({ _sum: { amountTiyins: 0 as number | null } }));
-    const importRevenueUzs = Math.round((importPaidMonth._sum.amountTiyins ?? 0) / 100);
-
     return {
       users,
       publishedContent,
@@ -310,14 +300,18 @@ export class AdminService {
       activeSubscribers,
       activeToday,
       engagementPct,
-      mrr: Number(mrr.toFixed(2)),
-      mrrGrowthPct,
+      // Real revenue only -- sum of paid Atmos import payments (UZS). This intentionally
+      // excludes UserSubscription.plan.priceMonthly, which only reflects seed data or a
+      // manual admin "adjust tier" override, never an actual user purchase (see
+      // docs/E2E_AUDIT_REPORT.md section 7.2).
+      revenue: revenueMonthUzs,
+      revenueGrowthPct,
       aiLookupsToday,
       aiLimit,
       aiUsagePct,
       userGrowthPct,
       conversionPct,
-      revenueToday: Number(revenueToday.toFixed(2)),
+      revenueToday: revenueTodayUzs,
       revenueMomDelta,
       aiUsageTotal: {
         tokensUsed: aiTokensToday || aiLookupsToday * 32,
@@ -339,10 +333,8 @@ export class AdminService {
       contentByLevel: [],
       recentUsers,
       recentActivity,
-      // Separate currencies — never mix UZS imports into USD MRR.
-      revenueCurrency: 'USD',
-      importCurrency: 'UZS',
-      importRevenueUzs,
+      // Revenue is real Atmos import-payment income, always UZS.
+      revenueCurrency: 'UZS',
     };
   }
 

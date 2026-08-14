@@ -14,7 +14,7 @@ function learnerPath(path: string) {
   return new URL(`${LEARNER_APP_URL}${normalized}`);
 }
 
-export type PlanTier = 'free' | 'premium';
+export type PlanTier = 'free' | 'pay-per-import';
 
 export function loginUrl(opts?: { from?: string }) {
   const url = learnerPath('/login');
@@ -56,26 +56,26 @@ export const FALLBACK_PLANS: MarketingPlan[] = [
     ],
   },
   {
-    id: 'fallback-premium',
-    tier: 'premium',
-    name: 'Premium',
-    priceMonthly: 9,
-    priceLabel: '$9',
-    priceUnit: 'per month',
-    aiDailyQuota: 1_000_000,
-    importLimit: 1_000_000,
+    id: 'fallback-pay-per-import',
+    tier: 'pay-per-import',
+    name: 'Pay-per-import',
+    priceMonthly: 0,
+    priceLabel: 'Pay as you go',
+    priceUnit: 'no subscription',
+    aiDailyQuota: 50,
+    importLimit: 15,
     offlineEnabled: true,
-    unlimitedLookups: true,
-    unlimitedImports: true,
+    unlimitedLookups: false,
+    unlimitedImports: false,
     popular: true,
-    cta: 'Start free trial',
+    cta: 'Start reading for free',
     features: [
       'Everything in Free',
-      'Unlimited AI lookups',
-      'Unlimited imports',
+      'No monthly fee, ever',
+      'Need more than your free imports? Pay once per import via Atmos',
+      'Price shown upfront, based on document length',
       'Full reading analytics',
       'Offline reading',
-      'Priority support',
     ],
   },
 ];
