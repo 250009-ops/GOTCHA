@@ -145,7 +145,8 @@ function applyReadReceipts(messages: ChatMessage[], peerLastReadAt?: string | nu
   const readAt = new Date(peerLastReadAt).getTime();
   return messages.map((m) => {
     if (!m.mine || m.status === 'sending' || m.status === 'failed' || m.id.startsWith('local-')) return m;
-    return { ...m, status: new Date(m.createdAt).getTime() <= readAt ? 'read' : 'sent' };
+    const nextStatus: ChatMessage['status'] = new Date(m.createdAt).getTime() <= readAt ? 'read' : 'sent';
+    return { ...m, status: nextStatus };
   });
 }
 
