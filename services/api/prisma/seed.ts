@@ -20,12 +20,40 @@ const DEMO_CATALOG_SLUGS = [
   'war-and-peace',
 ];
 
-async function purgeCatalogBySlugs(slugs: string[]) {
-  const unique = [...new Set(slugs.filter(Boolean))];
-  if (!unique.length) return;
+const SAMPLE_DEMO_SLUGS = [
+  'the-lighthouse-keeper',
+  'a-morning-in-tashkent',
+  'утро-в-городе',
+  'bahor-tongi',
+  'the-little-prince-opening',
+  'tech-news-language-apps-grow',
+];
+
+const DEMO_CATALOG_TITLES = [
+  'The Lighthouse Keeper',
+  'A Morning in Tashkent',
+  'Утро в городе',
+  'Bahor tongi',
+  'The Little Prince — Opening',
+  'Tech News: Language Apps Grow',
+];
+
+/** Only create Figma sample stories when explicitly requested. Production deploys must never resurrect deleted catalog. */
+const seedDemoCatalog =
+  process.env.SEED_DEMO_CATALOG === '1' || process.env.SEED_DEMO_CATALOG === 'true';
+
+async function purgeCatalogBySlugs(slugs: string[], titles: string[] = []) {
+  const uniqueSlugs = [...new Set(slugs.filter(Boolean))];
+  const uniqueTitles = [...new Set(titles.filter(Boolean))];
+  if (!uniqueSlugs.length && !uniqueTitles.length) return;
   const items = await prisma.contentItem.findMany({
-    where: { slug: { in: unique } },
-    select: { id: true, slug: true },
+    where: {
+      OR: [
+        ...(uniqueSlugs.length ? [{ slug: { in: uniqueSlugs } }] : []),
+        ...(uniqueTitles.length ? [{ title: { in: uniqueTitles } }] : []),
+      ],
+    },
+    select: { id: true, slug: true, title: true },
   });
   for (const item of items) {
     await prisma.$transaction(async (tx) => {
@@ -209,7 +237,7 @@ async function main() {
   const adminPassword = await bcrypt.hash('GotchaAdmin2026!', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@gotcha.app' },
-    update: { displayName: 'Alex Mercer', passwordHash: adminPassword },
+    update: {},
     create: {
       email: 'admin@gotcha.app',
       passwordHash: adminPassword,
@@ -318,6 +346,26 @@ async function main() {
     await ensureSubscription(demoUser.id, freePlan.id, '00000000-0000-4000-8000-000000000011');
   }
 
+  const extraCompleted = await prisma.contentItem.findMany({
+    where: { slug: { startsWith: 'figma-completed-article-' } },
+    select: { slug: true },
+  });
+  await purgeCatalogBySlugs(
+    [
+      ...DEMO_CATALOG_SLUGS,
+      ...FIGMA_ADMIN_METRICS.content.seedCurriculum.map((row) => slugify(row.title)),
+      ...extraCompleted.map((row) => row.slug),
+      ...SAMPLE_STORIES.map((story) => slugify(story.title)),
+      ...(seedDemoCatalog ? [] : SAMPLE_DEMO_SLUGS),
+    ],
+    seedDemoCatalog ? [] : DEMO_CATALOG_TITLES,
+  );
+
+  if (!seedDemoCatalog) {
+    console.log('Skipping demo catalog seed (SEED_DEMO_CATALOG is off).');
+  }
+
+  if (seedDemoCatalog) {
   const starterCollection = await prisma.contentCollection.upsert({
     where: { slug: 'starter-library' },
     update: {
@@ -498,17 +546,6 @@ async function main() {
       update: { status },
     });
   }
-
-  // Permanently drop Figma demo catalog books so deploy/seed cannot recreate them.
-  const extraCompleted = await prisma.contentItem.findMany({
-    where: { slug: { startsWith: 'figma-completed-article-' } },
-    select: { slug: true },
-  });
-  await purgeCatalogBySlugs([
-    ...DEMO_CATALOG_SLUGS,
-    ...FIGMA_ADMIN_METRICS.content.seedCurriculum.map((row) => slugify(row.title)),
-    ...extraCompleted.map((row) => row.slug),
-  ]);
 
   // Clear prior demo progress/sessions so Home Continue Reading matches Figma only.
   await prisma.readingSession.deleteMany({ where: { userId: demoUser.id } });
@@ -766,6 +803,7 @@ async function main() {
         createdAt: imp.createdAt,
       },
     });
+  }
   }
 
   // Language catalog metadata only — isEnabled is owned by admin (EN/RU/UZ live by default).

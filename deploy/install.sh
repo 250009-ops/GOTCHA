@@ -186,7 +186,8 @@ find services/api/prisma/migrations -name '*.sql' -exec sed -i '1s/^\xEF\xBB\xBF
 echo "==> Prisma migrate + seed"
 cd services/api
 npx prisma migrate deploy
-npm run db:seed || true
+# Plans/settings only — never recreate catalog items an admin already deleted.
+SEED_DEMO_CATALOG=0 NODE_ENV=production npm run db:seed || true
 cd "$APP_DIR"
 
 echo "==> Build frontends (path-based on one domain)"
