@@ -71,7 +71,9 @@ import app.gotcha.android.BuildConfig
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.R
 import app.gotcha.android.data.api.apiErrorMessage
+import app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
 import app.gotcha.android.data.model.LearnerNotification
+import app.gotcha.android.data.model.toAppLanguageOption
 import app.gotcha.android.data.resolveMediaUrl
 import app.gotcha.android.ui.components.FormFieldSkeleton
 import app.gotcha.android.ui.components.GotchaPrimaryButton
@@ -312,9 +314,21 @@ private fun SegmentedControl(
     }
 }
 
-// Reuses the single canonical language list (app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS)
-// so Settings never drifts from what Sign Up / Edit Profile offer.
 private val PROFILE_LANG_OPTIONS = app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
+
+@Composable
+private fun rememberCatalogLanguageOptions(): List<app.gotcha.android.data.model.AppLanguageOption> {
+    val container = LocalAppContainer.current
+    var options by remember { mutableStateOf(APP_LANGUAGE_OPTIONS.take(3)) }
+    LaunchedEffect(Unit) {
+        runCatching { container.contentRepository.catalogLanguages() }
+            .onSuccess { rows ->
+                val mapped = rows.filter { it.isEnabled }.map { it.toAppLanguageOption() }
+                if (mapped.isNotEmpty()) options = mapped
+            }
+    }
+    return options
+}
 
 private fun langLabel(code: String?): String =
     PROFILE_LANG_OPTIONS.firstOrNull { it.code.equals(code, ignoreCase = true) }?.englishLabel
@@ -615,7 +629,7 @@ fun EditProfileScreen(
                                     expanded = nativePickerOpen,
                                     onDismissRequest = { nativePickerOpen = false },
                                 ) {
-                                    PROFILE_LANG_OPTIONS.forEach { opt ->
+                                    rememberCatalogLanguageOptions().forEach { opt ->
                                         DropdownMenuItem(
                                             text = {
                                                 Text(
@@ -1544,10 +1558,11 @@ fun AppLanguageScreen(onBack: () -> Unit) {
         }
     }
 
-    val filtered = remember(query) {
+    val catalogOptions = rememberCatalogLanguageOptions()
+    val filtered = remember(query, catalogOptions) {
         val q = query.trim().lowercase()
-        if (q.isEmpty()) PROFILE_LANG_OPTIONS
-        else PROFILE_LANG_OPTIONS.filter {
+        if (q.isEmpty()) catalogOptions
+        else catalogOptions.filter {
             it.nativeLabel.lowercase().contains(q) ||
                 it.englishLabel.lowercase().contains(q) ||
                 it.code.contains(q)
@@ -1797,7 +1812,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
                 Text(saveError!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                PROFILE_LANG_OPTIONS.forEach { lang ->
+                rememberCatalogLanguageOptions().forEach { lang ->
                     val on = selected == lang.code
                     Row(
                         Modifier

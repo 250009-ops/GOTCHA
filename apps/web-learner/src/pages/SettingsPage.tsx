@@ -26,7 +26,6 @@ import { useAuth } from '../lib/auth';
 import {
   CEFR_LEVELS,
   LANGUAGE_META,
-  LIVE_LANGUAGES,
   type AppLanguage,
   type CatalogLanguage,
   type CefrLevel,
@@ -435,17 +434,18 @@ export default function SettingsPage() {
       .finally(() => setSubLoading(false));
   }, []);
 
-  const languageOptions = (
+  const languageOptions =
     catalogLangs.length > 0
-      ? catalogLangs
-      : LIVE_LANGUAGES.map((code) => ({
-          code,
-          name: LANGUAGE_META[code].label,
-          nativeName: LANGUAGE_META[code].nativeName,
-          flagEmoji: LANGUAGE_META[code].flag,
-          isEnabled: true,
-        }))
-  ).filter((l) => LIVE_LANGUAGES.includes(l.code as (typeof LIVE_LANGUAGES)[number]));
+      ? catalogLangs.filter((l) => l.isEnabled !== false)
+      : Object.entries(LANGUAGE_META)
+          .filter(([code]) => ['en', 'ru', 'uz'].includes(code))
+          .map(([code, meta]) => ({
+            code,
+            name: meta.label,
+            nativeName: meta.nativeName,
+            flagEmoji: meta.flag,
+            isEnabled: true,
+          }));
 
   const saveAll = async () => {
     setSaving(true);

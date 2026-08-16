@@ -368,6 +368,10 @@ function nodeToText($: CheerioAPI, node: any): string {
     inner += nodeToText($, child);
   }
 
+  if (tag === 'h1' || tag === 'h2' || tag === 'h3') {
+    const heading = inner.replace(/\s+/g, ' ').trim();
+    return heading ? `\n\n## ${heading}\n\n` : '\n';
+  }
   if (tag === 'li') return `\n• ${inner.trim()}\n`;
   if (BLOCK_TAGS.has(tag)) return `\n${inner}\n`;
   return inner;

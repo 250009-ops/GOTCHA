@@ -14,6 +14,7 @@ import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { assertEnabledLanguage } from '../../common/language-catalog';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -132,6 +133,11 @@ export class AuthService {
         code: 'EMAIL_ALREADY_REGISTERED',
         email: existing.email,
       });
+    }
+
+    await assertEnabledLanguage(this.prisma, dto.nativeLanguage, 'Native language');
+    for (const lang of dto.targetLanguages) {
+      await assertEnabledLanguage(this.prisma, lang, 'Target language');
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);

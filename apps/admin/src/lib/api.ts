@@ -96,11 +96,21 @@ export async function api<T>(
   return res.json();
 }
 
-export async function apiUpload<T>(path: string, file: File, field = 'file'): Promise<T> {
+export async function apiUpload<T>(
+  path: string,
+  file: File,
+  field = 'file',
+  extra?: Record<string, string>,
+): Promise<T> {
   const accessToken = getToken();
   const send = async (token: string | null) => {
     const form = new FormData();
     form.append(field, file);
+    if (extra) {
+      for (const [key, value] of Object.entries(extra)) {
+        if (value) form.append(key, value);
+      }
+    }
     const headers: Record<string, string> = {};
     if (token) headers.Authorization = `Bearer ${token}`;
     return fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form });

@@ -21,6 +21,7 @@ import { Dialog } from '../components/ui/dialog';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { quoteImport, formatUzs, type ImportQuote } from '../lib/importBilling';
+import { useCatalogLanguages } from '../lib/catalogLanguages';
 
 interface ImportItem {
   id: string;
@@ -53,12 +54,6 @@ const MAX_PASTE_CHARS = 5_000_000;
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_FILE_MB = Math.round(MAX_FILE_BYTES / (1024 * 1024));
 const ACCEPTED_EXT = ['.pdf', '.epub'];
-
-const langOptions = [
-  { value: 'en', label: 'English', flag: '🇬🇧' },
-  { value: 'ru', label: 'Russian', flag: '🇷🇺' },
-  { value: 'uz', label: 'Uzbek', flag: '🇺🇿' },
-];
 
 type ImportTab = 'url' | 'paste' | 'pdf';
 
@@ -113,6 +108,7 @@ function relativeTime(iso: string) {
 }
 
 function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const { langs } = useCatalogLanguages();
   return (
     <div className="py-4">
       <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Language</label>
@@ -123,8 +119,8 @@ function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v
           onChange={(e) => onChange(e.target.value)}
           className="w-full h-10 pl-3 pr-8 bg-white border border-[#e5e7eb] rounded-[14px] text-sm text-[#364153] outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] appearance-none transition-all disabled:opacity-50"
         >
-          {langOptions.map((l) => (
-            <option key={l.value} value={l.value}>{l.flag} {l.label}</option>
+          {langs.map((l) => (
+            <option key={l.code} value={l.code}>{l.flagEmoji} {l.name}</option>
           ))}
         </select>
         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />

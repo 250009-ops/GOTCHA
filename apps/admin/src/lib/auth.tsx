@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { api, clearToken, getToken, setTokens } from './api';
+import { api, apiUpload, clearToken, getToken, setTokens } from './api';
 
 export interface AdminProfile {
   id: string;
@@ -22,6 +22,7 @@ interface AuthContextValue {
   loading: boolean;
   logout: () => void;
   refresh: () => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -86,9 +87,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
   }, []);
 
+  const uploadAvatar = useCallback(async (file: File) => {
+    const updated = await apiUpload<Pick<AdminProfile, 'avatarUrl'>>('/users/me/avatar', file);
+    setUser((prev) => (prev ? { ...prev, avatarUrl: updated.avatarUrl } : prev));
+  }, []);
+
   const value = useMemo(
-    () => ({ user, loading, logout, refresh }),
-    [user, loading, logout, refresh],
+    () => ({ user, loading, logout, refresh, uploadAvatar }),
+    [user, loading, logout, refresh, uploadAvatar],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

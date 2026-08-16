@@ -111,6 +111,18 @@ export interface ContentItem {
   segmentCount?: number;
   progressPct?: number;
   knownWordRatio?: number;
+  currentSegmentId?: string | null;
+  outline?: ContentOutlineSegment[];
+}
+
+export interface ContentOutlineSegment {
+  id: string;
+  segmentIndex: number;
+  chapterIndex?: number;
+  chapterTitle?: string | null;
+  pageIndex?: number;
+  title?: string | null;
+  wordCount: number;
 }
 
 export interface ContentSegment {

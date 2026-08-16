@@ -2,7 +2,6 @@ import { NavLink, Outlet } from 'react-router-dom';
 import {
   Bell,
   BookOpen,
-  ClipboardCheck,
   Cpu,
   CreditCard,
   Globe2,
@@ -12,17 +11,16 @@ import {
   Settings,
   ShieldCheck,
   Sparkles,
-  Ticket,
   TrendingUp,
   Users,
   X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import avatarUrl from '../assets/avatar.png';
+import { AdminAvatar } from './AdminAvatar';
 import { AdminNotifications } from './AdminNotifications';
 import { AdminSearch } from './AdminSearch';
 import { redirectToSharedLogin, useAuth } from '../lib/auth';
-import { cn, initials } from '../lib/utils';
+import { cn } from '../lib/utils';
 
 type AdminRole = 'superadmin' | 'editor' | 'moderator' | 'analyst';
 
@@ -42,13 +40,11 @@ const nav: NavItem[] = [
   // catalog), so they get a dedicated link straight to that tab instead of "Content Library".
   { to: '/content/user-imports', label: 'Moderation Queue', icon: ShieldCheck, roles: ['moderator'] },
   { to: '/languages', label: 'Languages', icon: Globe2, roles: ['superadmin', 'editor', 'analyst'] },
-  { to: '/level-tests', label: 'Level Tests', icon: ClipboardCheck, roles: ['superadmin', 'editor', 'analyst'] },
   { to: '/ai-usage', label: 'AI Usage', icon: Cpu, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/gamification', label: 'Gamification', icon: Sparkles, roles: ['superadmin', 'editor', 'analyst'] },
   { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['superadmin', 'editor'] },
   { to: '/import-pricing', label: 'Import & Pricing', icon: CreditCard, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/analytics', label: 'Analytics', icon: TrendingUp, roles: ['superadmin', 'analyst'] },
-  { to: '/support', label: 'Support', icon: Ticket, roles: ['superadmin', 'moderator'] },
   { to: '/settings', label: 'Settings', icon: Settings, roles: ['superadmin'] },
 ];
 
@@ -107,7 +103,7 @@ export default function AdminShell() {
       </nav>
 
       <div className="mt-4 rounded-xl bg-white/5 border border-white/10 p-3 flex items-center gap-3 shrink-0">
-        <img src={avatarUrl} alt="" className="size-10 rounded-full object-cover" />
+        <AdminAvatar name={user?.displayName} email={user?.email} url={user?.avatarUrl} size={40} />
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold truncate">{name}</div>
           <div className="text-xs text-slate-400 capitalize truncate">{role}</div>
@@ -150,9 +146,7 @@ export default function AdminShell() {
             </button>
             <div className="font-bold flex-1 min-w-0 truncate">GOTCHA Admin</div>
             <AdminNotifications />
-            <div className="size-8 rounded-full bg-[#6c1d95] text-white grid place-items-center text-xs font-bold shrink-0">
-              {initials(user?.displayName, user?.email)}
-            </div>
+            <AdminAvatar name={user?.displayName} email={user?.email} url={user?.avatarUrl} size={32} />
           </div>
           <AdminSearch className="w-full" />
         </header>

@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookOpen, DollarSign, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { APP_LANGUAGES, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
 
-type Tab = 'all' | 'book' | 'article' | 'news' | 'user_imports' | 'pricing';
+type Tab = 'all' | 'book' | 'article' | 'news' | 'user_imports';
 
 interface CurriculumItem {
   id: string;
@@ -19,6 +19,7 @@ interface CurriculumItem {
   publishStatus: string;
   isFree: boolean;
   priceUsd: number;
+  priceUzs?: number;
   salesCount: number;
 }
 
@@ -43,15 +44,6 @@ interface IngestionRow {
   errorMessage?: string | null;
 }
 
-interface PricingRules {
-  contentType: string;
-  basePriceUsd: number;
-  perPageSurchargeUsd: number;
-  volumeDiscountsEnabled: boolean;
-  buy3PctOff: number;
-  buy5PctOff: number;
-}
-
 const DIRECTORY_TO_TAB: Record<string, Tab> = {
   all: 'all',
   books: 'book',
@@ -61,7 +53,7 @@ const DIRECTORY_TO_TAB: Record<string, Tab> = {
   news: 'news',
   'user-imports': 'user_imports',
   user_imports: 'user_imports',
-  pricing: 'pricing',
+  pricing: 'all',
 };
 
 const TAB_TO_PATH: Record<Tab, string> = {
@@ -70,7 +62,6 @@ const TAB_TO_PATH: Record<Tab, string> = {
   article: '/content/articles',
   news: '/content/news',
   user_imports: '/content/user-imports',
-  pricing: '/content/pricing',
 };
 
 const TABS: Array<{ id: Tab; label: string }> = [
@@ -79,7 +70,6 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'article', label: 'Articles' },
   { id: 'news', label: 'News' },
   { id: 'user_imports', label: 'User Imports' },
-  { id: 'pricing', label: 'Pricing' },
 ];
 
 const langBadge: Record<string, string> = {
@@ -114,26 +104,24 @@ export default function ContentPage() {
   const tabFromPath = directory ? DIRECTORY_TO_TAB[directory] : undefined;
   const tab = tabFromPath || (params.get('tab') as Tab) || 'all';
   const [stats, setStats] = useState({
-    total: 847,
-    published: 723,
-    draft: 89,
-    review: 35,
+    total: 0,
+    published: 0,
+    draft: 0,
+    review: 0,
     archived: 0,
-    activeSalesMonthly: 12450,
-    freeItems: 34,
+    activeSalesMonthly: 0,
+    freeItems: 0,
   });
   const [items, setItems] = useState<CurriculumItem[] | null>(null);
   const [q, setQ] = useState(() => params.get('q') ?? '');
-  const [langFilter, setLangFilter] = useState('all');
-  const [levelFilter, setLevelFilter] = useState('all');
+  const [langFilter, setLangFilter] = useState(() => params.get('lang') ?? 'all');
+  const [levelFilter, setLevelFilter] = useState(() => params.get('level') ?? 'all');
   const [licenses, setLicenses] = useState<LicenseRow[]>([]);
   const [moderation, setModeration] = useState<ModerationRow[]>([]);
   const [ingestion, setIngestion] = useState<IngestionRow[]>([]);
   const [rightsHolder, setRightsHolder] = useState('');
   const [attributionText, setAttributionText] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
-  const [pricingSaving, setPricingSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // Moderator-role admins can only reach /admin/moderation — the catalog endpoints below
   // 403 for them. Track that separately so the moderation queue still renders instead of
@@ -143,10 +131,17 @@ export default function ContentPage() {
   const loadCurriculum = useCallback(async () => {
     setError(null);
     try {
-      const type = tab === 'all' || tab === 'pricing' ? 'all' : tab === 'user_imports' ? 'user_imports' : tab;
+      const type = tab === 'user_imports' ? 'user_imports' : tab === 'all' ? 'all' : tab;
+      const qs = new URLSearchParams();
+      qs.set('type', type);
+      if (langFilter !== 'all') qs.set('language', langFilter);
+      if (levelFilter !== 'all') qs.set('level', levelFilter);
+      const statsQs = new URLSearchParams();
+      if (langFilter !== 'all') statsQs.set('language', langFilter);
+      if (levelFilter !== 'all') statsQs.set('level', levelFilter);
       const [list, s] = await Promise.all([
-        api<CurriculumItem[]>(`/admin/content/curriculum?type=${type}`),
-        api<typeof stats>('/admin/content/stats'),
+        api<CurriculumItem[]>(`/admin/content/curriculum?${qs}`),
+        api<typeof stats>(`/admin/content/stats${statsQs.toString() ? `?${statsQs}` : ''}`),
       ]);
       setItems(list);
       setStats(s);
@@ -160,7 +155,7 @@ export default function ContentPage() {
         setError(e instanceof Error ? e.message : 'Failed to load content');
       }
     }
-  }, [tab]);
+  }, [tab, langFilter, levelFilter]);
 
   async function loadOps() {
     const [lic, mod, ing] = await Promise.allSettled([
@@ -174,41 +169,35 @@ export default function ContentPage() {
     if (mod.status === 'rejected') throw mod.reason;
   }
 
-  async function loadPricingRules() {
-    setPricingRules(await api<PricingRules>('/admin/content/pricing-rules'));
-  }
-
   useEffect(() => {
     void loadCurriculum();
   }, [loadCurriculum]);
 
   useEffect(() => {
     const fromUrl = params.get('q');
-    if (fromUrl != null) setQ(fromUrl);
+    if (fromUrl != null && fromUrl !== q) setQ(fromUrl);
+    const fromLang = params.get('lang') ?? 'all';
+    if (fromLang !== langFilter) setLangFilter(fromLang);
+    const fromLevel = params.get('level') ?? 'all';
+    if (fromLevel !== levelFilter) setLevelFilter(fromLevel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
   useEffect(() => {
     if (tab === 'user_imports') loadOps().catch(console.error);
   }, [tab]);
 
-  useEffect(() => {
-    if (tab === 'pricing' || tab !== 'user_imports') loadPricingRules().catch(console.error);
-  }, [tab]);
-
-  useEffect(() => {
-    if (tab === 'pricing') {
-      document.getElementById('pricing-rules')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }
-  }, [tab, pricingRules]);
-
   const filtered = useMemo(() => {
+    const query = q.trim().toLowerCase();
     return (items ?? []).filter((item) => {
-      if (langFilter !== 'all' && item.language !== langFilter) return false;
-      if (levelFilter !== 'all' && item.cefrLevel !== levelFilter) return false;
-      if (q && !item.title.toLowerCase().includes(q.toLowerCase())) return false;
-      return true;
+      if (!query) return true;
+      return (
+        item.title.toLowerCase().includes(query) ||
+        item.language.toLowerCase().includes(query) ||
+        item.cefrLevel.toLowerCase().includes(query)
+      );
     });
-  }, [items, langFilter, levelFilter, q]);
+  }, [items, q]);
 
   async function publish(id: string) {
     setBusyId(id);
@@ -220,10 +209,10 @@ export default function ContentPage() {
     }
   }
 
-  async function archive(id: string) {
+  async function remove(id: string) {
     setBusyId(id);
     try {
-      await api(`/admin/content/${id}/archive`, { method: 'PATCH' });
+      await api(`/admin/content/${id}`, { method: 'DELETE' });
       await loadCurriculum();
     } finally {
       setBusyId(null);
@@ -246,31 +235,36 @@ export default function ContentPage() {
     await loadOps();
   }
 
-  function setTab(next: Tab) {
-    const path = TAB_TO_PATH[next];
-    const qParam = q ? `?q=${encodeURIComponent(q)}` : '';
-    navigate(`${path}${qParam}`);
+  function catalogQuery(next?: { lang?: string; level?: string; q?: string }) {
+    const qs = new URLSearchParams();
+    const lang = next?.lang ?? langFilter;
+    const level = next?.level ?? levelFilter;
+    const query = next?.q ?? q;
+    if (query.trim()) qs.set('q', query.trim());
+    if (lang !== 'all') qs.set('lang', lang);
+    if (level !== 'all') qs.set('level', level);
+    const s = qs.toString();
+    return s ? `?${s}` : '';
   }
 
-  async function savePricingRules(e: React.FormEvent) {
-    e.preventDefault();
-    if (!pricingRules) return;
-    setPricingSaving(true);
-    try {
-      setPricingRules(await api<PricingRules>('/admin/content/pricing-rules', {
-        method: 'PATCH',
-        body: JSON.stringify(pricingRules),
-      }));
-    } finally {
-      setPricingSaving(false);
-    }
+  function setTab(next: Tab) {
+    navigate(`${TAB_TO_PATH[next]}${catalogQuery()}`);
+  }
+
+  function setLang(next: string) {
+    setLangFilter(next);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ lang: next })}`, { replace: true });
+  }
+
+  function setLevel(next: string) {
+    setLevelFilter(next);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ level: next })}`, { replace: true });
   }
 
   if (error && !items) return <ErrorBlock message={error} onRetry={() => void loadCurriculum()} />;
   if (!items) return <LoadingBlock />;
 
   const showCatalog = tab !== 'user_imports' && !catalogForbidden;
-  const showPricing = (tab === 'pricing' || tab !== 'user_imports') && !catalogForbidden;
 
   return (
     <div>
@@ -279,18 +273,18 @@ export default function ContentPage() {
         subtitle={
           catalogForbidden
             ? 'Review user-submitted imports awaiting approval.'
-            : 'Manage learning content, set product pricing, and track sales performance.'
+            : 'Manage the reading catalog. Import charges are pay as you go in UZS via Atmos.'
         }
         actions={
           catalogForbidden ? undefined : (
             <div className="flex flex-wrap gap-2">
-              <Select value={langFilter} onChange={(e) => setLangFilter(e.target.value)} className="w-36">
+              <Select value={langFilter} onChange={(e) => setLang(e.target.value)} className="w-36">
                 <option value="all">Language: All</option>
                 {APP_LANGUAGES.map((l) => (
                   <option key={l} value={l}>{l.toUpperCase()}</option>
                 ))}
               </Select>
-              <Select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="w-36">
+              <Select value={levelFilter} onChange={(e) => setLevel(e.target.value)} className="w-36">
                 <option value="all">Level: A1-C2</option>
                 {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
                   <option key={l} value={l}>{l.toUpperCase()}</option>
@@ -310,9 +304,8 @@ export default function ContentPage() {
         <StatCard label="Published" value={formatNumber(stats.published)} accent="bg-emerald-50 text-emerald-700" />
         <StatCard
           label="Active Sales"
-          value={`${formatMoney(stats.activeSalesMonthly, 'USD')}/mo`}
+          value={`${formatMoney(stats.activeSalesMonthly, 'UZS')}/mo`}
           accent="bg-slate-100 text-slate-700"
-          icon={<DollarSign className="size-5" />}
         />
         <StatCard label="Free Items" value={formatNumber(stats.freeItems)} accent="bg-amber-50 text-amber-700" />
       </div>
@@ -420,7 +413,7 @@ export default function ContentPage() {
             </div>
           </div>
         ) : showCatalog ? (
-          <DataTable headers={['Curriculum Item', 'Language', 'Level', 'Type', 'Word Count', 'Active Reads', 'Completion', 'Status', 'Price (USD)', 'Sales', 'Actions']}>
+          <DataTable headers={['Curriculum Item', 'Language', 'Level', 'Type', 'Word Count', 'Active Reads', 'Completion', 'Status', 'Price (UZS)', 'Sales', 'Actions']}>
             {filtered.map((item) => (
               <tr key={item.id}>
                 <td className="px-4 py-3 text-sm font-semibold max-w-[240px] truncate">{item.title}</td>
@@ -449,7 +442,9 @@ export default function ContentPage() {
                   </Badge>
                 </td>
                 <td className="px-4 py-3 text-sm font-medium">
-                  {item.isFree || item.priceUsd <= 0 ? 'Free' : formatMoney(item.priceUsd, 'USD')}
+                  {item.isFree || (item.priceUzs ?? item.priceUsd) <= 0
+                    ? 'Free'
+                    : formatMoney(item.priceUzs ?? item.priceUsd, 'UZS')}
                 </td>
                 <td className="px-4 py-3 text-sm">{formatNumber(item.salesCount)}</td>
                 <td className="px-4 py-3">
@@ -467,126 +462,46 @@ export default function ContentPage() {
                         Publish
                       </Button>
                     )}
-                    {item.publishStatus !== 'archived' && (
-                      <button
-                        type="button"
-                        className="size-8 rounded-lg grid place-items-center text-slate-400 hover:text-rose-500 disabled:opacity-40"
-                        aria-label="Archive"
-                        disabled={busyId === item.id}
-                        onClick={() => {
-                          if (window.confirm(`Archive “${item.title}”?`)) void archive(item.id);
-                        }}
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      className="size-8 rounded-lg grid place-items-center text-slate-400 hover:text-rose-500 disabled:opacity-40"
+                      aria-label="Delete permanently"
+                      disabled={busyId === item.id}
+                      onClick={() => {
+                        if (
+                          window.confirm(
+                            `Permanently delete “${item.title}”? This cannot be undone.`,
+                          )
+                        ) {
+                          void remove(item.id);
+                        }
+                      }}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </button>
                   </div>
                 </td>
               </tr>
             ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={11} className="px-4 py-10 text-sm text-slate-500 text-center">
+                  No catalog items match these filters.
+                </td>
+              </tr>
+            )}
           </DataTable>
         ) : null}
       </Card>
 
-      {showPricing && pricingRules && (
-        <Card id="pricing-rules" className="p-5">
-          <div className="mb-4">
-            <div className="text-lg font-semibold">Pricing Rules</div>
-            <div className="text-sm text-slate-500">Automate catalog price calculations and define standard incentives.</div>
+      {showCatalog && (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="font-semibold text-sm">Pay as you go import prices</div>
+            <div className="text-sm text-slate-500">Atmos charges are in UZS. Set page tiers on Import & Pricing — not catalog list prices.</div>
           </div>
-          <form className="grid gap-6 lg:grid-cols-2" onSubmit={savePricingRules}>
-            <div>
-              <div className="font-semibold mb-3">Bulk Price Generation</div>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <label className="text-sm space-y-1.5 block">
-                  <span className="text-slate-600">Content Type</span>
-                  <Select
-                    value={pricingRules.contentType}
-                    onChange={(e) => setPricingRules({ ...pricingRules, contentType: e.target.value })}
-                  >
-                    <option value="book">Book</option>
-                    <option value="article">Article</option>
-                    <option value="news">News</option>
-                  </Select>
-                </label>
-                <label className="text-sm space-y-1.5 block">
-                  <span className="text-slate-600">Base Price (USD)</span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={pricingRules.basePriceUsd}
-                    onChange={(e) => setPricingRules({ ...pricingRules, basePriceUsd: Number(e.target.value) })}
-                  />
-                </label>
-                <label className="text-sm space-y-1.5 block">
-                  <span className="text-slate-600">Per-Page Surcharge</span>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={pricingRules.perPageSurchargeUsd}
-                    onChange={(e) => setPricingRules({ ...pricingRules, perPageSurchargeUsd: Number(e.target.value) })}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="font-semibold">Volume Discounts</div>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={pricingRules.volumeDiscountsEnabled}
-                  onClick={() =>
-                    setPricingRules({
-                      ...pricingRules,
-                      volumeDiscountsEnabled: !pricingRules.volumeDiscountsEnabled,
-                    })
-                  }
-                  className={cn(
-                    'relative h-6 w-11 rounded-full transition',
-                    pricingRules.volumeDiscountsEnabled ? 'bg-[#6c1d95]' : 'bg-slate-300',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'absolute top-0.5 size-5 rounded-full bg-white transition',
-                      pricingRules.volumeDiscountsEnabled ? 'left-[22px]' : 'left-0.5',
-                    )}
-                  />
-                </button>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <label className="text-sm space-y-1.5 block">
-                  <span className="text-slate-600">Buy 3+ Items</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={pricingRules.buy3PctOff}
-                    onChange={(e) => setPricingRules({ ...pricingRules, buy3PctOff: Number(e.target.value) })}
-                    disabled={!pricingRules.volumeDiscountsEnabled}
-                  />
-                </label>
-                <label className="text-sm space-y-1.5 block">
-                  <span className="text-slate-600">Buy 5+ Items</span>
-                  <Input
-                    type="number"
-                    min="0"
-                    value={pricingRules.buy5PctOff}
-                    onChange={(e) => setPricingRules({ ...pricingRules, buy5PctOff: Number(e.target.value) })}
-                    disabled={!pricingRules.volumeDiscountsEnabled}
-                  />
-                </label>
-              </div>
-            </div>
-            <div className="lg:col-span-2">
-              <Button type="submit" disabled={pricingSaving}>
-                {pricingSaving ? 'Saving…' : 'Save pricing rules'}
-              </Button>
-            </div>
-          </form>
-        </Card>
+          <Button variant="secondary" onClick={() => navigate('/import-pricing')}>Open Import & Pricing</Button>
+        </div>
       )}
     </div>
   );

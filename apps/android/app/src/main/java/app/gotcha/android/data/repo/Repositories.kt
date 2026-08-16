@@ -188,6 +188,8 @@ class ContentRepository(
         }
     }
 
+    suspend fun catalogLanguages() = api.catalogLanguages()
+
     suspend fun feed(): FeedResponse = feedFetch().data
 
     suspend fun feedFetch(): FetchResult<FeedResponse> = fetchWithCache(
@@ -310,7 +312,7 @@ class ContentRepository(
         var from = 0
         var contentId = id
         val pageSize = 200
-        repeat(12) {
+        repeat(80) {
             val page = api.segments(id, from = from, limit = pageSize)
             if (page.contentId.isNotBlank()) contentId = page.contentId
             all += page.segments
@@ -1017,6 +1019,22 @@ class AdminRepository(private val api: GotchaApi) {
     suspend fun contentStats(): ContentStats = api.adminContentStats()
     suspend fun createContent(body: AdminCreateContentRequest): ContentItem = api.adminCreateContent(body)
     suspend fun ingestPreview(body: AdminCreateContentRequest) = api.adminIngestPreview(body)
+    suspend fun ingestPreviewFile(
+        bytes: ByteArray,
+        fileName: String,
+        title: String,
+        contentType: String,
+        language: String,
+    ) = api.adminIngestPreviewFile(
+        MultipartBody.Part.createFormData(
+            "file",
+            fileName,
+            bytes.toRequestBody("application/pdf".toMediaTypeOrNull()),
+        ),
+        title.toRequestBody("text/plain".toMediaTypeOrNull()),
+        contentType.toRequestBody("text/plain".toMediaTypeOrNull()),
+        language.toRequestBody("text/plain".toMediaTypeOrNull()),
+    )
     suspend fun contentDetail(id: String) = api.adminContentDetail(id)
     suspend fun updateContent(id: String, body: app.gotcha.android.data.model.AdminUpdateContentRequest) =
         api.adminUpdateContent(id, body)
@@ -1030,7 +1048,8 @@ class AdminRepository(private val api: GotchaApi) {
             ),
         )
     suspend fun publishContent(id: String): ContentItem = api.adminPublishContent(id)
-    suspend fun archiveContent(id: String): ContentItem = api.adminArchiveContent(id)
+    suspend fun archiveContent(id: String) = api.adminDeleteContent(id)
+    suspend fun deleteContent(id: String) = api.adminDeleteContent(id)
     suspend fun importPricing(): ImportPricingResponse = api.importPricing()
     suspend fun updateImportPricingRules(body: UpdateImportPricingRulesRequest) = api.updateImportPricingRules(body)
     suspend fun updateImportPageTier(id: String, body: UpdateImportPageTierRequest) = api.updateImportPageTier(id, body)
@@ -1038,6 +1057,9 @@ class AdminRepository(private val api: GotchaApi) {
     suspend fun analytics(range: String = "7d") = api.adminAnalytics(range)
     suspend fun support() = api.adminSupport()
     suspend fun languages() = api.adminLanguages()
+    suspend fun addLanguage(code: String) =
+        api.adminAddLanguage(app.gotcha.android.data.model.AdminAddLanguageRequest(code))
+    suspend fun removeLanguage(code: String) = api.adminRemoveLanguage(code)
     suspend fun updateLanguage(code: String, isEnabled: Boolean) =
         api.adminUpdateLanguage(
             code,
@@ -1047,6 +1069,11 @@ class AdminRepository(private val api: GotchaApi) {
             ),
         )
     suspend fun gamification() = api.adminGamification()
+    suspend fun updateAchievement(id: String, isActive: Boolean) =
+        api.adminUpdateAchievement(
+            id,
+            app.gotcha.android.data.model.AdminUpdateAchievementRequest(isActive = isActive),
+        )
     suspend fun notifications() = api.adminNotifications()
     suspend fun createCampaign(body: AdminCreateCampaignRequest) = api.adminCreateCampaign(body)
     suspend fun updateCampaign(id: String, body: AdminUpdateCampaignRequest) = api.adminUpdateCampaign(id, body)

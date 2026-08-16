@@ -95,7 +95,32 @@ val APP_LANGUAGE_OPTIONS = listOf(
     AppLanguageOption("en", "English", "English", "\uD83C\uDDEC\uD83C\uDDE7"),
     AppLanguageOption("ru", "Русский", "Russian", "\uD83C\uDDF7\uD83C\uDDFA"),
     AppLanguageOption("uz", "O'zbek", "Uzbek", "\uD83C\uDDFA\uD83C\uDDFF"),
+    AppLanguageOption("fr", "Français", "French", "\uD83C\uDDEB\uD83C\uDDF7"),
+    AppLanguageOption("es", "Español", "Spanish", "\uD83C\uDDEA\uD83C\uDDF8"),
+    AppLanguageOption("ja", "日本語", "Japanese", "\uD83C\uDDEF\uD83C\uDDF5"),
+    AppLanguageOption("de", "Deutsch", "German", "\uD83C\uDDE9\uD83C\uDDEA"),
+    AppLanguageOption("ko", "한국어", "Korean", "\uD83C\uDDF0\uD83C\uDDF7"),
+    AppLanguageOption("pt", "Português", "Portuguese", "\uD83C\uDDF5\uD83C\uDDF9"),
 )
+
+@Serializable
+data class CatalogLanguage(
+    val code: String,
+    val name: String? = null,
+    val nativeName: String? = null,
+    val flagEmoji: String? = null,
+    val isEnabled: Boolean = true,
+)
+
+fun CatalogLanguage.toAppLanguageOption(): AppLanguageOption {
+    val fallback = APP_LANGUAGE_OPTIONS.firstOrNull { it.code.equals(code, true) }
+    return AppLanguageOption(
+        code = code.lowercase(),
+        nativeLabel = nativeName ?: fallback?.nativeLabel ?: name ?: code,
+        englishLabel = name ?: fallback?.englishLabel ?: code,
+        flag = flagEmoji ?: fallback?.flag ?: "\uD83C\uDF10",
+    )
+}
 
 @Serializable
 data class AuthUser(
@@ -128,6 +153,7 @@ data class ContentItem(
     val language: String? = null,
     val cefrLevel: String? = null,
     val contentType: String? = null,
+    val contentSource: String? = null,
     val genre: String? = null,
     val wordCount: Int? = null,
     val segmentCount: Int? = null,
@@ -167,6 +193,7 @@ data class FeedResponse(
     val continueReading: List<ContentItem> = emptyList(),
     val featuredCollections: List<FeaturedCollection> = emptyList(),
     val recentlyPublished: List<ContentItem> = emptyList(),
+    val myImports: List<ContentItem> = emptyList(),
 ) {
     fun readerWarmIds(): List<ContentItem> = buildList {
         addAll(continueReading)
@@ -635,6 +662,7 @@ data class AdminUsersResponse(
 data class AdminUserStats(
     val total: Int = 0,
     val premium: Int = 0,
+    val payAsYouGo: Int = 0,
     val free: Int = 0,
     val suspended: Int = 0,
     val flagged: Int = 0,
@@ -884,7 +912,14 @@ data class AdminAnalytics(
     val range: String? = null,
     val kpis: AdminAnalyticsKpis? = null,
     val engagementByHour: List<Int> = emptyList(),
+    val engagementByDay: List<AdminNamedValue> = emptyList(),
     val featureUsage: List<AdminNamedPct> = emptyList(),
+)
+
+@Serializable
+data class AdminNamedValue(
+    val label: String? = null,
+    val value: Int = 0,
 )
 
 @Serializable
@@ -960,6 +995,11 @@ data class AdminUpdateLanguageRequest(
 )
 
 @Serializable
+data class AdminAddLanguageRequest(
+    val code: String,
+)
+
+@Serializable
 data class AdminLanguage(
     val code: String,
     val name: String? = null,
@@ -1010,6 +1050,11 @@ data class AdminAchievement(
     val points: Int = 0,
     val threshold: Int = 0,
     val isActive: Boolean = true,
+)
+
+@Serializable
+data class AdminUpdateAchievementRequest(
+    val isActive: Boolean,
 )
 
 @Serializable
@@ -1097,6 +1142,7 @@ data class AdminLevelTestResult(
 data class AdminAiUsageResponse(
     val today: AdminAiToday? = null,
     val hourlyLookups: List<Int> = emptyList(),
+    val dailyLookups: List<Int> = emptyList(),
     val topUsers: List<AdminAiTopUser> = emptyList(),
     val insight: String? = null,
 )
@@ -1106,6 +1152,7 @@ data class AdminAiToday(
     val lookups: Int = 0,
     val quizzes: Int = 0,
     val tokens: Int = 0,
+    val uniqueUsers: Int = 0,
     val growthPct: Double = 0.0,
     val avgLookupsPerUser: Double = 0.0,
     val apiCostToday: Double = 0.0,

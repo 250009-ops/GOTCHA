@@ -8,7 +8,8 @@ import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
-import { LIVE_LANGUAGES, LANGUAGE_META, type AppLanguage } from '../lib/types';
+import { LANGUAGE_META, type AppLanguage } from '../lib/types';
+import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { cn } from '../components/ui/utils';
 
 export default function AuthPage() {
@@ -37,6 +38,7 @@ export default function AuthPage() {
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>('en');
   const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>([]);
+  const { langs: catalogLangs, codes: catalogCodes } = useCatalogLanguages();
 
   useEffect(() => {
     // Clear leftover tokens when opening auth screens (once on mount).
@@ -205,9 +207,9 @@ export default function AuthPage() {
                   onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
                   className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
                 >
-                  {LIVE_LANGUAGES.map((code) => (
-                    <option key={code} value={code}>
-                      {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
+                  {catalogLangs.map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {lang.flagEmoji} {lang.name}
                     </option>
                   ))}
                 </select>
@@ -217,8 +219,9 @@ export default function AuthPage() {
                   Languages you want to learn <span className="text-[#9ca3af] font-normal">(pick at least one)</span>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {LIVE_LANGUAGES.filter((code) => code !== nativeLanguage).map((code) => {
+                  {catalogCodes.filter((code) => code !== nativeLanguage).map((code) => {
                     const selected = targetLanguages.includes(code);
+                    const meta = catalogLangs.find((l) => l.code === code);
                     return (
                       <button
                         key={code}
@@ -234,8 +237,8 @@ export default function AuthPage() {
                         {selected && (
                           <Check className="w-3 h-3 absolute top-1.5 right-1.5 text-[#7f22fe]" />
                         )}
-                        <span className="text-lg leading-none">{LANGUAGE_META[code].flag}</span>
-                        <span>{LANGUAGE_META[code].label}</span>
+                        <span className="text-lg leading-none">{meta?.flagEmoji ?? LANGUAGE_META[code]?.flag}</span>
+                        <span>{meta?.name ?? LANGUAGE_META[code]?.label ?? code}</span>
                       </button>
                     );
                   })}

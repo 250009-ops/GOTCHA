@@ -145,7 +145,7 @@ export default function DashboardPage() {
               <span className="inline-flex items-center gap-2 flex-wrap">
                 <span className="text-emerald-600 font-semibold">{data.engagementPct}% engagement</span>
                 <span className="text-slate-400">·</span>
-                <span className="text-slate-600">{formatNumber(data.activeSubscribers)} subscribers</span>
+                <span className="text-slate-600">{formatNumber(data.activeSubscribers)} pay as you go</span>
               </span>
             }
             icon={<CreditCard className="size-5" />}

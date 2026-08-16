@@ -32,28 +32,22 @@ const statusClass: Record<string, string> = {
 
 function audienceLabel(raw: string): string {
   const key = (raw || 'all').toLowerCase();
-  if (key === 'all') return 'All Users';
-  if (key === 'premium') return 'Premium';
+  if (key === 'all') return 'All learners';
+  if (key === 'payg' || key === 'premium') return 'Pay as you go';
   if (key === 'free') return 'Free';
   if (key === 'active') return 'Active';
-  if (key === 'new_users') return 'New Users';
+  if (key === 'new_users') return 'New learners';
   return key.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
-}
-
-function channelChip(raw: string): 'push' | 'email' {
-  return raw?.toLowerCase().includes('email') ? 'email' : 'push';
 }
 
 export default function NotificationsPage() {
   const [data, setData] = useState<NotificationsData | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [channelFilter, setChannelFilter] = useState<'push' | 'email'>('push');
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Campaign | null>(null);
   const [name, setName] = useState('');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
-  const [channel, setChannel] = useState('push');
   const [audience, setAudience] = useState('all');
   const [busyId, setBusyId] = useState<string | null>(null);
 
@@ -75,7 +69,6 @@ export default function NotificationsPage() {
     setName('');
     setSubject('');
     setBody('');
-    setChannel(channelFilter);
     setAudience('all');
     setShowForm(true);
   }
@@ -85,22 +78,22 @@ export default function NotificationsPage() {
     setName(c.name);
     setSubject(c.subject);
     setBody(c.body ?? '');
-    setChannel(channelChip(c.channel));
-    setAudience(c.audience || 'all');
+    setAudience(c.audience === 'premium' ? 'payg' : c.audience || 'all');
     setShowForm(true);
   }
 
   async function saveCampaign(e: React.FormEvent) {
     e.preventDefault();
+    const payload = { name, subject, body, channel: 'push', audience };
     if (editing) {
       await api(`/admin/notifications/${editing.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ name, subject, body, channel, audience }),
+        body: JSON.stringify(payload),
       });
     } else {
       await api('/admin/notifications', {
         method: 'POST',
-        body: JSON.stringify({ name, subject, body, channel, audience, status: 'draft' }),
+        body: JSON.stringify({ ...payload, status: 'draft' }),
       });
     }
     setShowForm(false);
@@ -108,7 +101,7 @@ export default function NotificationsPage() {
     await load();
   }
 
-  async function markSent(id: string) {
+  async function sendToLearners(id: string) {
     setBusyId(id);
     try {
       await api(`/admin/notifications/${id}`, {
@@ -135,16 +128,14 @@ export default function NotificationsPage() {
 
   if (!data) return <LoadingBlock />;
 
-  const filtered = data.campaigns.filter((c) => channelChip(c.channel) === channelFilter);
-
   return (
     <div>
       <PageHeader
-        title="Notifications & Campaigns"
-        subtitle="Draft and schedule learner messaging across channels."
+        title="Push Notifications"
+        subtitle="Draft and send in-app notices to learners. Email campaigns are not used."
         actions={
           <Button onClick={openCreate}>
-            <Plus className="size-4" /> New campaign
+            <Plus className="size-4" /> New notification
           </Button>
         }
       />
@@ -156,50 +147,20 @@ export default function NotificationsPage() {
         <StatCard label="Sent" value={data.stats.sent} accent="bg-emerald-50 text-emerald-700" />
       </div>
 
-      <div className="flex flex-wrap gap-2 mb-4">
-        {(
-          [
-            ['push', 'Push Notifications'],
-            ['email', 'Email Campaigns'],
-          ] as const
-        ).map(([key, label]) => {
-          const on = channelFilter === key;
-          return (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setChannelFilter(key)}
-              className={`rounded-lg border px-4 py-2 text-sm font-semibold transition-colors ${
-                on ? 'bg-[#7008e7] text-white border-[#7008e7]' : 'bg-white text-slate-600 border-slate-200'
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
       {showForm && (
         <Card className="p-5 mb-4">
           <form className="grid gap-3 max-w-2xl" onSubmit={saveCampaign}>
-            <div className="text-sm font-extrabold">{editing ? 'Edit campaign' : 'New campaign'}</div>
-            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name" required />
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Subject / title" required />
+            <div className="text-sm font-extrabold">{editing ? 'Edit notification' : 'New notification'}</div>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Internal name" required />
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Title learners see" required />
             <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Message body" required rows={4} />
-            <div className="grid grid-cols-2 gap-3">
-              <Select value={channel} onChange={(e) => setChannel(e.target.value)}>
-                <option value="push">Push</option>
-                <option value="email">Email</option>
-                <option value="in_app">In-app</option>
-              </Select>
-              <Select value={audience} onChange={(e) => setAudience(e.target.value)}>
-                <option value="all">All Users</option>
-                <option value="premium">Premium</option>
-                <option value="free">Free</option>
-                <option value="active">Active</option>
-                <option value="new_users">New users</option>
-              </Select>
-            </div>
+            <Select value={audience} onChange={(e) => setAudience(e.target.value)}>
+              <option value="all">All learners</option>
+              <option value="free">Free</option>
+              <option value="payg">Pay as you go</option>
+              <option value="active">Active</option>
+              <option value="new_users">New learners</option>
+            </Select>
             <div className="flex gap-2">
               <Button type="submit">{editing ? 'Save changes' : 'Save draft'}</Button>
               <Button
@@ -218,13 +179,13 @@ export default function NotificationsPage() {
       )}
 
       <Card className="p-2">
-        {filtered.length === 0 ? (
+        {data.campaigns.length === 0 ? (
           <p className="text-sm text-slate-500 py-10 text-center">
-            No {channelFilter === 'email' ? 'email' : 'push'} campaigns yet.
+            No push notifications yet. Create one to send it to the learner inbox.
           </p>
         ) : (
-          <DataTable headers={['Campaign', 'Audience', 'Status', 'When', 'Open rate', '']}>
-            {filtered.map((c) => {
+          <DataTable headers={['Notification', 'Audience', 'Status', 'When', '']}>
+            {data.campaigns.map((c) => {
               const status = (c.status || 'draft').toLowerCase();
               const when =
                 status === 'scheduled'
@@ -239,26 +200,16 @@ export default function NotificationsPage() {
                     <div className="text-xs text-slate-500">{c.name}</div>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge
-                      className={
-                        (c.audience || '').toLowerCase() === 'premium'
-                          ? 'bg-[#f0e7ff] text-[#7008e7]'
-                          : 'bg-slate-100 text-slate-600'
-                      }
-                    >
-                      {audienceLabel(c.audience)}
-                    </Badge>
+                    <Badge className="bg-slate-100 text-slate-600">{audienceLabel(c.audience)}</Badge>
                   </td>
                   <td className="px-4 py-3">
                     <Badge className={statusClass[status] ?? statusClass.draft}>{status}</Badge>
                   </td>
                   <td className="px-4 py-3 text-sm text-slate-500">{when}</td>
-                  {/* No open-rate field on NotificationCampaign — stay honest. */}
-                  <td className="px-4 py-3 text-sm text-slate-500">—</td>
                   <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                     {status !== 'sent' && (
-                      <Button variant="ghost" disabled={busyId === c.id} onClick={() => markSent(c.id)}>
-                        {busyId === c.id ? '…' : 'Mark sent'}
+                      <Button variant="ghost" disabled={busyId === c.id} onClick={() => sendToLearners(c.id)}>
+                        {busyId === c.id ? '…' : 'Send to learners'}
                       </Button>
                     )}
                   </td>

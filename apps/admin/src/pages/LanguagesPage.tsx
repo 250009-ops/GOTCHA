@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Globe2 } from 'lucide-react';
-import { Badge, Button, Card, Input, LoadingBlock, PageHeader, StatCard } from '../components/ui';
+import { Globe2, Plus, Trash2 } from 'lucide-react';
+import { Badge, Button, Card, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber } from '../lib/utils';
 
@@ -24,6 +24,7 @@ interface LanguagesPayload {
     avgCefrCoverage: number;
   };
   languages: Lang[];
+  availableToAdd?: Lang[];
 }
 
 const statusClass: Record<string, string> = {
@@ -36,23 +37,65 @@ const statusClass: Record<string, string> = {
 export default function LanguagesPage() {
   const [data, setData] = useState<LanguagesPayload | null>(null);
   const [q, setQ] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+  const [addCode, setAddCode] = useState('');
 
   async function load() {
     setData(await api<LanguagesPayload>('/admin/languages'));
   }
 
-  useEffect(() => { load().catch(console.error); }, []);
+  useEffect(() => {
+    load().catch(console.error);
+  }, []);
 
-  async function toggle(code: string, isEnabled: boolean) {
-    await api(`/admin/languages/${code}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ isEnabled: !isEnabled, status: !isEnabled ? 'Active' : 'Draft' }),
-    });
-    await load();
+  async function run(code: string, work: () => Promise<void>) {
+    setBusy(code);
+    setError(null);
+    try {
+      await work();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Update failed');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggle(lang: Lang) {
+    await run(lang.code, () =>
+      api(`/admin/languages/${lang.code}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isEnabled: !lang.isEnabled, status: lang.isEnabled ? 'Draft' : 'Active' }),
+      }),
+    );
+  }
+
+  async function remove(lang: Lang) {
+    if (
+      !window.confirm(
+        `Remove ${lang.name} from the learner app? Existing learners keep it, but new signups and AI pickers will hide it.`,
+      )
+    ) {
+      return;
+    }
+    await run(lang.code, () => api(`/admin/languages/${lang.code}`, { method: 'DELETE' }));
+  }
+
+  async function addLanguage(e: React.FormEvent) {
+    e.preventDefault();
+    if (!addCode) return;
+    await run(addCode, () =>
+      api('/admin/languages', { method: 'POST', body: JSON.stringify({ code: addCode }) }),
+    );
+    setAddOpen(false);
+    setAddCode('');
   }
 
   if (!data) return <LoadingBlock />;
 
+  const available = data.availableToAdd ?? data.languages.filter((l) => !l.isEnabled);
   const filtered = data.languages.filter((l) =>
     `${l.name} ${l.nativeName} ${l.code}`.toLowerCase().includes(q.toLowerCase()),
   );
@@ -61,9 +104,17 @@ export default function LanguagesPage() {
     <div>
       <PageHeader
         title="Languages & Localization"
-        subtitle="Manage supported target languages and live content / learner coverage."
-        actions={<Button disabled title="Coming soon">+ Add Language</Button>}
+        subtitle="Enabled languages appear in signup, settings, import, and AI detection."
+        actions={
+          <Button onClick={() => { setAddOpen(true); setAddCode(available[0]?.code ?? ''); }} disabled={available.length === 0}>
+            <Plus className="size-4" /> Add Language
+          </Button>
+        }
       />
+
+      {error && (
+        <div className="mb-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
         <StatCard
@@ -85,6 +136,29 @@ export default function LanguagesPage() {
           }
         />
       </div>
+
+      {addOpen && (
+        <Card className="p-4 mb-4">
+          <form className="flex flex-wrap items-end gap-3" onSubmit={addLanguage}>
+            <label className="text-sm space-y-1.5 block min-w-[220px]">
+              <span className="text-slate-600">Language to enable</span>
+              <Select value={addCode} onChange={(e) => setAddCode(e.target.value)}>
+                {available.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.flagEmoji} {l.name} ({l.code.toUpperCase()})
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <Button type="submit" disabled={!addCode || busy === addCode}>
+              {busy === addCode ? 'Adding…' : 'Enable for learners'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => setAddOpen(false)}>
+              Cancel
+            </Button>
+          </form>
+        </Card>
+      )}
 
       <Card className="p-0 overflow-hidden">
         <div className="p-4 border-b border-slate-100 flex items-center justify-between gap-3">
@@ -131,12 +205,25 @@ export default function LanguagesPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <Badge className={statusClass[lang.status] ?? statusClass.Planned}>{lang.status}</Badge>
+                    <Badge className={statusClass[lang.status] ?? statusClass.Planned}>{lang.isEnabled ? 'Active' : lang.status}</Badge>
                   </td>
                   <td className="px-4 py-3">
-                    <Button variant="secondary" onClick={() => toggle(lang.code, lang.isEnabled)}>
-                      {lang.isEnabled ? 'Disable' : 'Enable'}
-                    </Button>
+                    <div className="flex gap-2 justify-end">
+                      <Button variant="secondary" disabled={busy === lang.code} onClick={() => void toggle(lang)}>
+                        {busy === lang.code ? '…' : lang.isEnabled ? 'Disable' : 'Enable'}
+                      </Button>
+                      {lang.isEnabled && (
+                        <button
+                          type="button"
+                          className="size-9 rounded-lg grid place-items-center text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-40"
+                          aria-label={`Remove ${lang.name}`}
+                          disabled={busy === lang.code}
+                          onClick={() => void remove(lang)}
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

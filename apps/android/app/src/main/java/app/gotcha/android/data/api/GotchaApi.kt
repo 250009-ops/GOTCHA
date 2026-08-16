@@ -2,12 +2,16 @@ package app.gotcha.android.data.api
 
 import app.gotcha.android.data.model.AdminAiUsageResponse
 import app.gotcha.android.data.model.AdminAnalytics
+import app.gotcha.android.data.model.AdminAddLanguageRequest
 import app.gotcha.android.data.model.AdminCampaign
+import app.gotcha.android.data.model.CatalogLanguage
 import app.gotcha.android.data.model.AdminCreateCampaignRequest
 import app.gotcha.android.data.model.AdminCreateContentRequest
 import app.gotcha.android.data.model.AdminDashboard
+import app.gotcha.android.data.model.AdminAchievement
 import app.gotcha.android.data.model.AdminGamificationResponse
 import app.gotcha.android.data.model.AdminLanguage
+import app.gotcha.android.data.model.AdminUpdateAchievementRequest
 import app.gotcha.android.data.model.AdminLanguagesResponse
 import app.gotcha.android.data.model.AdminLevelTestsResponse
 import app.gotcha.android.data.model.AdminMe
@@ -132,6 +136,9 @@ interface GotchaApi {
 
     @GET("content/feed")
     suspend fun feed(@Query("targetLang") targetLang: String? = null): FeedResponse
+
+    @GET("content/languages")
+    suspend fun catalogLanguages(): List<CatalogLanguage>
 
     @GET("content")
     suspend fun contentList(
@@ -391,6 +398,15 @@ interface GotchaApi {
     @POST("admin/content/ingest-preview")
     suspend fun adminIngestPreview(@Body body: AdminCreateContentRequest): app.gotcha.android.data.model.AdminIngestPreview
 
+    @Multipart
+    @POST("admin/content/ingest-preview-file")
+    suspend fun adminIngestPreviewFile(
+        @Part file: MultipartBody.Part,
+        @Part("title") title: RequestBody?,
+        @Part("contentType") contentType: RequestBody?,
+        @Part("language") language: RequestBody?,
+    ): app.gotcha.android.data.model.AdminIngestPreview
+
     @POST("admin/content")
     suspend fun adminCreateContent(@Body body: AdminCreateContentRequest): ContentItem
 
@@ -414,7 +430,10 @@ interface GotchaApi {
     suspend fun adminPublishContent(@Path("id") id: String): ContentItem
 
     @PATCH("admin/content/{id}/archive")
-    suspend fun adminArchiveContent(@Path("id") id: String): ContentItem
+    suspend fun adminArchiveContent(@Path("id") id: String): AdminHardDeleteResponse
+
+    @DELETE("admin/content/{id}")
+    suspend fun adminDeleteContent(@Path("id") id: String): AdminHardDeleteResponse
 
     @GET("admin/import-pricing")
     suspend fun importPricing(@Query("range") range: String? = "12m"): ImportPricingResponse
@@ -440,14 +459,26 @@ interface GotchaApi {
     @GET("admin/languages")
     suspend fun adminLanguages(): AdminLanguagesResponse
 
+    @POST("admin/languages")
+    suspend fun adminAddLanguage(@Body body: AdminAddLanguageRequest): AdminLanguage
+
     @PATCH("admin/languages/{code}")
     suspend fun adminUpdateLanguage(
         @Path("code") code: String,
         @Body body: AdminUpdateLanguageRequest,
     ): AdminLanguage
 
+    @DELETE("admin/languages/{code}")
+    suspend fun adminRemoveLanguage(@Path("code") code: String): AdminLanguage
+
     @GET("admin/gamification")
     suspend fun adminGamification(): AdminGamificationResponse
+
+    @PATCH("admin/gamification/achievements/{id}")
+    suspend fun adminUpdateAchievement(
+        @Path("id") id: String,
+        @Body body: AdminUpdateAchievementRequest,
+    ): AdminAchievement
 
     @GET("admin/notifications")
     suspend fun adminNotifications(): AdminNotificationsResponse

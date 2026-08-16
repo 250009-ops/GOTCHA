@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { PublishStatus, Prisma, WordStatus } from '@prisma/client';
-import { LIVE_LANGUAGES } from '@gotcha/shared';
+import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
+import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
+import { ensureLanguageCatalog } from '../../common/language-catalog';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import {
   getDevContentById,
@@ -62,42 +63,45 @@ export class ContentService {
       OR: [
         { publishStatus: PublishStatus.published },
         {
-          publishStatus: PublishStatus.review,
           createdById: userId,
-          contentSource: 'user_import',
+          publishStatus: { in: [PublishStatus.published, PublishStatus.review, PublishStatus.draft] },
         },
+        { readingProgress: { some: { userId } } },
       ],
     };
   }
 
-  /** Languages learners may select — live EN/RU/UZ only (catalog extras stay admin-only). */
+  /** Languages learners may select — whatever admin has enabled in LanguageCatalog. */
   async listLanguages() {
-    const live = new Set<string>(LIVE_LANGUAGES);
-    const toRow = (code: string) => ({
-      code,
-      ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
-      isEnabled: true,
-    });
+    const toRow = (code: string) => {
+      const meta = LANGUAGE_META[code as keyof typeof LANGUAGE_META];
+      return {
+        code,
+        name: meta?.label ?? FALLBACK_LANG_META[code]?.name ?? code,
+        nativeName: meta?.nativeName ?? FALLBACK_LANG_META[code]?.nativeName ?? code,
+        flagEmoji: meta?.flag ?? FALLBACK_LANG_META[code]?.flagEmoji ?? '🌐',
+        isEnabled: true,
+      };
+    };
 
     if (this.useDevContent()) {
       return LIVE_LANGUAGES.map(toRow);
     }
 
+    await ensureLanguageCatalog(this.prisma);
     const rows = await this.prisma.languageCatalog.findMany({
-      where: { isEnabled: true, code: { in: [...LIVE_LANGUAGES] } },
+      where: { isEnabled: true, code: { in: [...APP_LANGUAGES] } },
       orderBy: { sortOrder: 'asc' },
     });
 
     if (rows.length > 0) {
-      return rows
-        .filter((r) => live.has(r.code))
-        .map((r) => ({
-          code: r.code,
-          name: r.name,
-          nativeName: r.nativeName,
-          flagEmoji: r.flagEmoji,
-          isEnabled: r.isEnabled,
-        }));
+      return rows.map((r) => ({
+        code: r.code,
+        name: r.name,
+        nativeName: r.nativeName,
+        flagEmoji: r.flagEmoji,
+        isEnabled: r.isEnabled,
+      }));
     }
 
     return LIVE_LANGUAGES.map(toRow);
@@ -114,9 +118,10 @@ export class ContentService {
             items: c.items.filter((i) => i.content.language === targetLang),
           })),
           recentlyPublished: feed.recentlyPublished.filter((i) => i.language === targetLang),
+          myImports: [],
         };
       }
-      return feed;
+      return { ...feed, myImports: [] };
     }
 
     const progress = await this.prisma.readingProgress.findMany({
@@ -130,8 +135,10 @@ export class ContentService {
       take: 10,
     });
 
-    const where: Prisma.ContentItemWhereInput = {
+    const catalogWhere: Prisma.ContentItemWhereInput = {
       publishStatus: PublishStatus.published,
+      contentSource: { not: ContentSource.user_import },
+      contentType: { not: ContentType.user_import },
       ...(targetLang ? { language: targetLang as never } : {}),
     };
 
@@ -148,17 +155,15 @@ export class ContentService {
         orderBy: { sortOrder: 'asc' },
       }),
       this.prisma.contentItem.findMany({
-        where,
-        orderBy: { publishedAt: 'desc' },
-        take: 12,
+        where: catalogWhere,
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 48,
       }),
-      // Ensure the learner's own imports surface in Library / Browse (Imports filter),
-      // including those still awaiting moderation (`review`).
       this.prisma.contentItem.findMany({
         where: {
           publishStatus: { in: [PublishStatus.published, PublishStatus.review] },
           createdById: userId,
-          contentSource: 'user_import',
+          contentSource: ContentSource.user_import,
           ...(targetLang ? { language: targetLang as never } : {}),
         },
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
@@ -166,29 +171,30 @@ export class ContentService {
       }),
     ]);
 
-    const recentIds = new Set(recent.map((r) => r.id));
-    const mergedRecent = [
-      ...myImports.filter((i) => !recentIds.has(i.id)),
-      ...recent,
-    ].slice(0, 36);
+    const catalogFeatured = featured.map((c) => ({
+      ...c,
+      items: c.items
+        .filter(
+          (i) =>
+            i.content.contentSource !== ContentSource.user_import &&
+            i.content.contentType !== ContentType.user_import,
+        )
+        .map((i) => ({
+          ...i,
+          content: serializeContent(i.content),
+        })),
+    }));
 
     return {
       continueReading: progress.map((p) => ({
         ...serializeContent(p.content),
         progressPct: p.progressPct,
         lastReadAt: p.lastReadAt,
-        // Include the knownWordRatio so LibraryPage can show a "% known" badge
-        // for items in progress. See docs/E2E_AUDIT_REPORT.md item #7 for context.
         knownWordRatio: p.knownWordRatio ?? null,
       })),
-      featuredCollections: featured.map((c) => ({
-        ...c,
-        items: c.items.map((i) => ({
-          ...i,
-          content: serializeContent(i.content),
-        })),
-      })),
-      recentlyPublished: mergedRecent.map((item) => serializeContent(item)),
+      featuredCollections: catalogFeatured,
+      recentlyPublished: recent.map((item) => serializeContent(item)),
+      myImports: myImports.map((item) => serializeContent(item)),
     };
   }
 
@@ -218,7 +224,12 @@ export class ContentService {
       ...(query.level ? { cefrLevel: query.level } : {}),
       ...(query.genre ? { genre: query.genre } : {}),
       ...(query.type ? { contentType: query.type } : {}),
-      ...(query.source ? { contentSource: query.source } : {}),
+      ...(query.source
+        ? { contentSource: query.source }
+        : {
+            contentSource: { not: ContentSource.user_import },
+            contentType: { not: ContentType.user_import },
+          }),
       ...(query.q
         ? {
             OR: [
@@ -266,7 +277,15 @@ export class ContentService {
       include: {
         license: true,
         segments: {
-          select: { id: true, segmentIndex: true, title: true, wordCount: true },
+          select: {
+            id: true,
+            segmentIndex: true,
+            chapterIndex: true,
+            chapterTitle: true,
+            pageIndex: true,
+            title: true,
+            wordCount: true,
+          },
           orderBy: { segmentIndex: 'asc' },
         },
       },
@@ -279,14 +298,13 @@ export class ContentService {
         })
       : null;
 
+    const { segments, ...rest } = item;
     return {
-      ...serializeContent(item),
-      segmentCount: item.segments.length,
+      ...serializeContent(rest),
+      segmentCount: segments.length,
+      outline: segments,
       progressPct: progress?.progressPct ?? 0,
       lastReadAt: progress?.lastReadAt ?? null,
-      // Resume-to-last-position: return the segment ID where the user left off.
-      // ReaderPage.tsx uses this to open the book at the correct chapter.
-      // See docs/E2E_AUDIT_REPORT.md item #6a for context.
       currentSegmentId: progress?.segmentId ?? null,
     };
   }
@@ -306,10 +324,11 @@ export class ContentService {
     });
     if (!content) throw new NotFoundException('Content not found');
 
+    const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 1, 1), 200);
     const segments = await this.prisma.contentSegment.findMany({
       where: { contentId, segmentIndex: { gte: from } },
       orderBy: { segmentIndex: 'asc' },
-      take: limit,
+      take,
     });
 
     return { contentId, segments };

@@ -31,6 +31,7 @@ import {
 } from './extract-text';
 import { ImportCleanupSource, isImportAiCleanupEnabled } from './import-ai-cleanup';
 import { preparePastedText } from './import-text-cleaner';
+import { chaptersHaveRealTitles } from './chapter-split';
 
 /** Above this size, finish processing in the background so the client can poll status. */
 const ASYNC_PASTE_CHARS = 40_000;
@@ -410,6 +411,9 @@ export class ImportsService {
     documentTitle: string,
     userId: string,
   ): Promise<ExtractedChapter[]> {
+    if (chaptersHaveRealTitles(chapters) && chapters.length >= 8) {
+      return chapters;
+    }
     try {
       const cleaned = await this.ai.cleanImportChapters(chapters, {
         source,

@@ -5,17 +5,7 @@ import { Badge, Button, Card, Input, LoadingBlock, PageHeader, Select, StatCard 
 import { api } from '../lib/api';
 import { cn, formatMoney, formatNumber } from '../lib/utils';
 
-type Section = 'overview' | 'types' | 'limits' | 'tiers';
-
-interface ImportRule {
-  id: string;
-  key: string;
-  label: string;
-  pricePerImport: number;
-  pricePerPage: number;
-  isActive: boolean;
-  sortOrder: number;
-}
+type Section = 'overview' | 'limits' | 'tiers';
 
 interface PageTier {
   id: string;
@@ -53,15 +43,15 @@ interface ImportPricingData {
     conversionPct: number;
     conversionGrowthPct: number;
     paidImportsThisMonth?: number;
+    paidImportsInRange?: number;
+    priorRevenueFromImports?: number;
   };
-  rules: ImportRule[];
   tiers: PageTier[];
   freeLimits: FreeLimits;
 }
 
 const SECTIONS: Array<{ id: Section; label: string; path: string }> = [
   { id: 'overview', label: 'Overview', path: '/import-pricing' },
-  { id: 'types', label: 'Pricing by Type', path: '/import-pricing/types' },
   { id: 'limits', label: 'Free Limits', path: '/import-pricing/limits' },
   { id: 'tiers', label: 'Page Tiers', path: '/import-pricing/tiers' },
 ];
@@ -69,12 +59,11 @@ const SECTIONS: Array<{ id: Section; label: string; path: string }> = [
 const FORMAT_OPTIONS = [
   { id: 'article', label: 'Articles' },
   { id: 'news', label: 'News' },
-  { id: 'book', label: 'Books' },
+  { id: 'ebook', label: 'Books' },
   { id: 'research', label: 'Research Papers' },
 ];
 
 function resolveSection(directory?: string): Section {
-  if (directory === 'types' || directory === 'pricing-by-type') return 'types';
   if (directory === 'limits' || directory === 'free-limits') return 'limits';
   if (directory === 'tiers' || directory === 'page-tiers') return 'tiers';
   return 'overview';
@@ -86,7 +75,6 @@ export default function ImportPricingPage() {
   const section = resolveSection(directory);
   const [data, setData] = useState<ImportPricingData | null>(null);
   const [range, setRange] = useState('12m');
-  const [rules, setRules] = useState<ImportRule[]>([]);
   const [limits, setLimits] = useState<FreeLimits | null>(null);
   const [editingTier, setEditingTier] = useState<PageTier | null>(null);
   const [tierPrice, setTierPrice] = useState('');
@@ -105,7 +93,6 @@ export default function ImportPricingPage() {
   async function load(nextRange = range) {
     const res = await api<ImportPricingData>(`/admin/import-pricing?range=${encodeURIComponent(nextRange)}`);
     setData(res);
-    setRules(res.rules);
     setLimits(res.freeLimits);
   }
 
@@ -116,38 +103,11 @@ export default function ImportPricingPage() {
 
   useEffect(() => {
     const id =
-      section === 'types' ? 'section-types'
-        : section === 'limits' ? 'section-limits'
-          : section === 'tiers' ? 'section-tiers'
-            : null;
+      section === 'limits' ? 'section-limits'
+        : section === 'tiers' ? 'section-tiers'
+          : null;
     if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [section, data]);
-
-  async function saveRules() {
-    setPricingError(null);
-    for (const rule of rules) {
-      const err =
-        validateAtmosMin(rule.pricePerImport, `${rule.label} — price per import`) ??
-        validateAtmosMin(rule.pricePerPage, `${rule.label} — price per page`);
-      if (err) {
-        setPricingError(err);
-        return;
-      }
-    }
-    setSaving(true);
-    try {
-      const res = await api<ImportPricingData>('/admin/import-pricing/rules', {
-        method: 'PATCH',
-        body: JSON.stringify({ rules }),
-      });
-      setData(res);
-      setRules(res.rules);
-    } catch (e) {
-      setPricingError(e instanceof Error ? e.message : 'Could not save type prices');
-    } finally {
-      setSaving(false);
-    }
-  }
 
   async function saveLimits() {
     if (!limits) return;
@@ -193,7 +153,7 @@ export default function ImportPricingPage() {
     <div>
       <PageHeader
         title="Import & Pricing Controls"
-        subtitle="Configure import costs (UZS) per content type, page-based pricing tiers, and free usage allowances. Atmos charges page-tier prices."
+        subtitle="Atmos charges page-tier prices in UZS. Free limits apply per learner before payment."
         actions={
           <Select value={range} onChange={(e) => setRange(e.target.value)} className="w-44">
             <option value="12m">Last 12 Months</option>
@@ -245,133 +205,47 @@ export default function ImportPricingPage() {
         <StatCard
           label="Total Imports Today"
           value={formatNumber(data.stats.totalImportsToday)}
-          hint={
-            <span>
-              Submissions processed · <span className="text-[#6c1d95] font-semibold">+{data.stats.importsGrowthPct}%</span>
-            </span>
-          }
+          hint={<span className="text-slate-500">Learner submissions started today</span>}
         />
         <StatCard
           label="Revenue from Imports"
           value={formatMoney(data.stats.revenueFromImports)}
           hint={
-            <span>
-              Paid this month
-              {data.stats.paidImportsThisMonth != null ? ` · ${data.stats.paidImportsThisMonth} paid imports` : ''}
-              {' · '}
-              <span className="text-emerald-600 font-semibold">+{data.stats.revenueGrowthPct}%</span>
+            <span className="text-slate-500">
+              Paid Atmos imports
+              {data.stats.paidImportsInRange != null ? ` · ${data.stats.paidImportsInRange} in range` : ''}
+              {data.stats.paidImportsThisMonth != null ? ` · ${data.stats.paidImportsThisMonth} this month` : ''}
+              {data.stats.priorRevenueFromImports
+                ? ` · ${data.stats.revenueGrowthPct > 0 ? '+' : ''}${data.stats.revenueGrowthPct}% vs prior`
+                : ''}
             </span>
           }
           accent="bg-emerald-50 text-emerald-700"
         />
         <StatCard
-          label="Free Imports Used"
-          value={`${formatNumber(data.stats.freeImportsUsed)} / ${formatNumber(data.stats.freeImportsPool)}`}
+          label="Free Imports This Month"
+          value={formatNumber(data.stats.freeImportsUsed)}
           hint={
-            <div className="space-y-2">
-              <div>Current monthly quota pool · <Badge className="bg-violet-50 text-[#6c1d95]">{data.stats.freeUsedPct}%</Badge></div>
-              <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                <div className="h-full bg-[#6c1d95]" style={{ width: `${data.stats.freeUsedPct}%` }} />
-              </div>
-            </div>
+            <span className="text-slate-500">
+              {limits.dailyFreeImportsPerUser} free / learner / day · {formatNumber(limits.monthlyFreePageLimit)} free pages / {limits.resetCycle}
+            </span>
           }
         />
         <StatCard
-          label="Conversion Rate"
-          value={`${data.stats.conversionPct}%`}
-          hint={
-            <span>
-              Import users to paid plans · <span className="text-amber-600 font-semibold">+{data.stats.conversionGrowthPct}%</span>
-            </span>
-          }
+          label="Paid Imports This Month"
+          value={formatNumber(data.stats.paidImportsThisMonth ?? 0)}
+          hint={<span className="text-slate-500">Completed Atmos payments</span>}
           accent="bg-amber-50 text-amber-700"
         />
       </div>
-
-      <Card id="section-types" className="p-5 mb-4">
-        <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
-          <div>
-            <div className="font-semibold">Import Pricing by Type</div>
-            <div className="text-sm text-slate-500">Set pricing structures based on imported format categories.</div>
-          </div>
-          <Button onClick={saveRules} disabled={saving}>{saving ? 'Saving…' : 'Save type prices'}</Button>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[720px] text-left">
-            <thead>
-              <tr className="border-b border-slate-100">
-                {['Content Type', 'Price per Import (UZS)', 'Price per Page (UZS)', 'Status'].map((h) => (
-                  <th key={h} className="px-3 py-3 text-xs font-semibold uppercase tracking-wide text-slate-400">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rules.map((rule, idx) => (
-                <tr key={rule.id}>
-                  <td className="px-3 py-3 text-sm font-medium">{rule.label}</td>
-                  <td className="px-3 py-3">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="max-w-[140px]"
-                      value={rule.pricePerImport}
-                      onChange={(e) => {
-                        const next = [...rules];
-                        next[idx] = { ...rule, pricePerImport: Number(e.target.value) };
-                        setRules(next);
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-3">
-                    <Input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      className="max-w-[140px]"
-                      value={rule.pricePerPage}
-                      onChange={(e) => {
-                        const next = [...rules];
-                        next[idx] = { ...rule, pricePerPage: Number(e.target.value) };
-                        setRules(next);
-                      }}
-                    />
-                  </td>
-                  <td className="px-3 py-3">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={rule.isActive}
-                      onClick={() => {
-                        const next = [...rules];
-                        next[idx] = { ...rule, isActive: !rule.isActive };
-                        setRules(next);
-                      }}
-                      className={cn(
-                        'relative h-5 w-9 rounded-full transition',
-                        rule.isActive ? 'bg-emerald-500' : 'bg-slate-300',
-                      )}
-                    >
-                      <span
-                        className={cn(
-                          'absolute top-0.5 size-4 rounded-full bg-white transition',
-                          rule.isActive ? 'left-[18px]' : 'left-0.5',
-                        )}
-                      />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </Card>
 
       <div className="grid grid-cols-1 xl:grid-cols-[380px_1fr] gap-4">
         <Card id="section-limits" className="p-5">
           <div className="mb-4">
             <div className="font-semibold">Free Usage Limits</div>
-            <div className="text-sm text-slate-500">Daily constraints for unsubscribed tier users.</div>
+            <div className="text-sm text-slate-500">
+              Applied at quote time: daily free imports, page cap, and allowed formats. Unused credits do not roll over.
+            </div>
           </div>
           <div className="space-y-4">
             <label className="flex items-center justify-between gap-3 text-sm">
@@ -428,26 +302,6 @@ export default function ImportPricingPage() {
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
               </Select>
-            </label>
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>Allow rollover unused credits</span>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={limits.allowRollover}
-                onClick={() => setLimits({ ...limits, allowRollover: !limits.allowRollover })}
-                className={cn(
-                  'relative h-5 w-10 rounded-full transition',
-                  limits.allowRollover ? 'bg-[#6c1d95]' : 'bg-slate-300',
-                )}
-              >
-                <span
-                  className={cn(
-                    'absolute top-0.5 size-4 rounded-full bg-white transition',
-                    limits.allowRollover ? 'left-[22px]' : 'left-0.5',
-                  )}
-                />
-              </button>
             </label>
             <Button onClick={saveLimits} disabled={saving}>{saving ? 'Saving…' : 'Save limits'}</Button>
           </div>

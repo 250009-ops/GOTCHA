@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, ImagePlus, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, FileText, ImagePlus, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, Card, ErrorBlock, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { api, apiUpload } from '../lib/api';
@@ -43,9 +43,10 @@ export default function ContentEditorPage() {
   const [contentType, setContentType] = useState('book');
   const [isFree, setIsFree] = useState(true);
   const [priceUsd, setPriceUsd] = useState('0');
-  const [sourceMode, setSourceMode] = useState<'paste' | 'url'>('paste');
+  const [sourceMode, setSourceMode] = useState<'paste' | 'url' | 'pdf'>('paste');
   const [plainText, setPlainText] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [preview, setPreview] = useState<IngestPreview | null>(null);
@@ -100,22 +101,33 @@ export default function ContentEditorPage() {
       .finally(() => setLoading(false));
   }, [id]);
 
-  const canAnalyze = sourceMode === 'url' ? sourceUrl.trim().length > 8 : plainText.trim().length > 40;
+  const canAnalyze =
+    sourceMode === 'pdf'
+      ? Boolean(pdfFile)
+      : sourceMode === 'url'
+        ? sourceUrl.trim().length > 8
+        : plainText.trim().length > 40;
 
   async function analyze() {
     setAnalyzing(true);
     setError(null);
     try {
-      const result = await api<IngestPreview>('/admin/content/ingest-preview', {
-        method: 'POST',
-        body: JSON.stringify({
-          title: title || 'Untitled',
-          contentType,
-          language,
-          plainText: sourceMode === 'paste' ? plainText : undefined,
-          sourceUrl: sourceMode === 'url' ? sourceUrl : undefined,
-        }),
-      });
+      const result = sourceMode === 'pdf' && pdfFile
+        ? await apiUpload<IngestPreview>('/admin/content/ingest-preview-file', pdfFile, 'file', {
+            title: title || 'Untitled',
+            contentType,
+            language,
+          })
+        : await api<IngestPreview>('/admin/content/ingest-preview', {
+            method: 'POST',
+            body: JSON.stringify({
+              title: title || 'Untitled',
+              contentType,
+              language,
+              plainText: sourceMode === 'paste' ? plainText : undefined,
+              sourceUrl: sourceMode === 'url' ? sourceUrl : undefined,
+            }),
+          });
       setPreview(result);
       setOpenChapters(Object.fromEntries(result.chapters.map((c) => [c.chapterIndex, true])));
     } catch (e) {
@@ -145,6 +157,15 @@ export default function ContentEditorPage() {
         sourceUrl: sourceMode === 'url' ? sourceUrl || undefined : undefined,
         chapters: preview?.chaptersPayload?.length ? preview.chaptersPayload : undefined,
       };
+      if (sourceMode === 'pdf' && pdfFile && !payload.chapters?.length) {
+        const analyzed = await apiUpload<IngestPreview>('/admin/content/ingest-preview-file', pdfFile, 'file', {
+          title: title || 'Untitled',
+          contentType,
+          language,
+        });
+        payload.chapters = analyzed.chaptersPayload;
+        setPreview(analyzed);
+      }
       if (editing && id) {
         await api(`/admin/content/${id}`, { method: 'PATCH', body: JSON.stringify(payload) });
         if (coverFile) await apiUpload(`/admin/content/${id}/cover`, coverFile);
@@ -175,7 +196,7 @@ export default function ContentEditorPage() {
     <div>
       <PageHeader
         title={editing ? 'Edit material' : 'New material'}
-        subtitle="Add catalog details, then let AI split books and stories into real chapters. Pages stay word-count slices inside each chapter."
+        subtitle="Add catalog details, then detect exact chapter names from the source (Gutenberg text, HTML headings, or the PDF outline). Pages stay word-count slices inside each chapter."
         actions={
           <Button type="button" variant="secondary" onClick={() => navigate('/content')}>
             Back to library
@@ -221,7 +242,7 @@ export default function ContentEditorPage() {
               </Select>
             </div>
             {!isFree && (
-              <Input type="number" min="0" step="0.01" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="Price (USD)" />
+              <Input type="number" min="0" step="1" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="Price (UZS)" />
             )}
             <label className="block">
               <span className="text-sm font-medium text-slate-600">Cover image</span>
@@ -244,16 +265,46 @@ export default function ContentEditorPage() {
                 />
               </div>
             </label>
+            <label className="block">
+              <span className="text-sm font-medium text-slate-600">Source PDF</span>
+              <div className="mt-2 flex items-center gap-3">
+                <div className="size-20 rounded-xl border border-dashed border-slate-300 overflow-hidden bg-slate-50 grid place-items-center">
+                  <FileText className={`size-6 ${pdfFile ? 'text-[#6c1d95]' : 'text-slate-400'}`} />
+                </div>
+                <div className="min-w-0">
+                  <input
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      setPdfFile(file);
+                      if (file) {
+                        setSourceMode('pdf');
+                        setPreview(null);
+                      }
+                    }}
+                  />
+                  <div className="text-xs text-slate-500 mt-1">
+                    {pdfFile
+                      ? pdfFile.name
+                      : 'Upload a text PDF (up to 100 MB / about 4,000 pages). Chapter names come from the PDF outline and headings.'}
+                  </div>
+                </div>
+              </div>
+            </label>
           </Card>
 
           <Card className="p-5 space-y-3">
-            <div className="font-semibold">Source & AI ingest</div>
-            <div className="flex gap-2">
+            <div className="font-semibold">Source & chapter detect</div>
+            <div className="flex flex-wrap gap-2">
               <Button type="button" variant={sourceMode === 'paste' ? 'primary' : 'secondary'} onClick={() => setSourceMode('paste')}>
                 Paste text
               </Button>
+              <Button type="button" variant={sourceMode === 'pdf' ? 'primary' : 'secondary'} onClick={() => setSourceMode('pdf')}>
+                Upload PDF
+              </Button>
               <Button type="button" variant={sourceMode === 'url' ? 'primary' : 'secondary'} onClick={() => setSourceMode('url')}>
-                PDF / page URL
+                Page URL
               </Button>
             </div>
             {sourceMode === 'paste' ? (
@@ -261,21 +312,27 @@ export default function ContentEditorPage() {
                 rows={12}
                 value={plainText}
                 onChange={(e) => setPlainText(e.target.value)}
-                placeholder={literary(contentType) ? 'Paste the book or story. Copyright and contents pages are dropped; real chapters are detected.' : 'Paste the article or news body. Kept as a tight single piece.'}
-                required={!editing && !preview}
+                placeholder={literary(contentType) ? 'Paste the book or story. Copyright and contents pages are dropped; chapter titles stay as printed (Chapter 1. Loomings).' : 'Paste the article or news body. Kept as a tight single piece.'}
+                required={!editing && !preview && !pdfFile}
               />
+            ) : sourceMode === 'pdf' ? (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                {pdfFile
+                  ? `Ready to analyze: ${pdfFile.name}`
+                  : 'Choose a PDF above, then detect chapters from its outline and headings.'}
+              </div>
             ) : (
               <Input
                 value={sourceUrl}
                 onChange={(e) => setSourceUrl(e.target.value)}
-                placeholder="https://…/book.pdf or article URL"
+                placeholder="https://www.gutenberg.org/ebooks/2701 or any public book/article URL"
                 required={!editing && !preview}
               />
             )}
             <div className="flex flex-wrap gap-2">
               <Button type="button" disabled={!canAnalyze || analyzing} onClick={() => void analyze()}>
                 <Sparkles className="size-4" />
-                {analyzing ? 'Analyzing…' : literary(contentType) ? 'AI: detect chapters' : 'AI: prepare body'}
+                {analyzing ? 'Detecting chapters…' : literary(contentType) ? 'Detect chapters' : 'Prepare body'}
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy ? 'Saving…' : editing ? 'Save changes' : 'Create draft'}

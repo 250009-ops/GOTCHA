@@ -12,6 +12,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 import { effectiveStreakCount } from '../../services/streak.service';
 
+import { assertEnabledLanguage } from '../../common/language-catalog';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -350,6 +351,7 @@ export class UsersService {
   }
 
   async addTargetLanguage(userId: string, dto: AddTargetLanguageDto) {
+    await assertEnabledLanguage(this.prisma, dto.targetLanguage, 'Target language');
     const existingCount = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (dto.isPrimary || existingCount === 0) {
       await this.prisma.userTargetLanguage.updateMany({

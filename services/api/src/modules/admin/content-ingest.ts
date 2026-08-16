@@ -2,9 +2,9 @@ import { tokenizeText, paginateText, uniqueWordCount } from '../../utils/tokeniz
 import {
   extractTextFromPdf,
   extractTextFromUrl,
-  splitTextIntoChapters,
   type ExtractedChapter,
 } from '../imports/extract-text';
+import { chaptersHaveRealTitles, splitAccurateChapters } from '../imports/chapter-split';
 
 const FRONT_MATTER_TITLE =
   /^(copyright|contents|table of contents|title page|dedication|acknowledg|foreword|preface|isbn|colophon|legal|credits|about the author)$/i;
@@ -24,9 +24,6 @@ const FRONT_MATTER_MARKERS = [
   'table of contents',
 ];
 
-const CHAPTER_HEADING =
-  /^(chapter|глава|bob|qism|часть|part|section)\s+[\divxlc0-9]+(?:\b|[.:—–-])/i;
-
 function countWords(text: string) {
   return (text.match(/[\p{L}\p{M}']+/gu) ?? []).length;
 }
@@ -39,58 +36,15 @@ export function isFrontMatterChapter(title: string, text: string) {
   return hits >= 2 && countWords(text) < 450;
 }
 
-function isLiteraryHeading(line: string): string | null {
-  const t = line.trim();
-  if (!t || t.length > 120) return null;
-  const md = t.match(/^#{1,3}\s+(.+)$/);
-  if (md) return md[1].trim();
-  if (CHAPTER_HEADING.test(t)) return t;
-  if (/^\d{1,3}[-.]?\s*bob\b/i.test(t)) return t;
-  if (/^[IVXLCDM]{1,8}\.?\s+\S/.test(t) && t.length < 80 && !/[.!?]$/.test(t)) return t;
-  if (/^[A-Z0-9][A-Z0-9 \-:'"]{8,80}$/.test(t) && !/[.!?]$/.test(t) && CHAPTER_HEADING.test(t)) {
-    return t;
-  }
-  return null;
-}
-
 /** Book/story chapter split: real headings only, copyright/front matter dropped. */
 export function splitLiteraryChapters(text: string, fallbackTitle = 'Chapter 1'): ExtractedChapter[] {
   const normalized = text.replace(/\r\n/g, '\n').trim();
   if (!normalized) return [];
-
-  const lines = normalized.split('\n');
-  const chapters: ExtractedChapter[] = [];
-  let currentTitle = fallbackTitle;
-  let buffer: string[] = [];
-
-  const flush = () => {
-    const body = buffer.join('\n').trim();
-    buffer = [];
-    if (!body) return;
-    if (isFrontMatterChapter(currentTitle, body)) return;
-    chapters.push({ title: currentTitle.slice(0, 160), text: body });
-  };
-
-  for (const line of lines) {
-    const heading = isLiteraryHeading(line);
-    if (heading) {
-      if (buffer.length > 0) flush();
-      currentTitle = heading;
-      continue;
-    }
-    buffer.push(line);
-  }
-  flush();
-
-  if (chapters.length >= 2) return chapters;
-
-  const heuristic = splitTextIntoChapters(normalized, fallbackTitle).filter(
+  const chapters = splitAccurateChapters(normalized, fallbackTitle).filter(
     (c) => !isFrontMatterChapter(c.title, c.text),
   );
-  if (heuristic.length >= 2) return heuristic;
-  const body = heuristic[0]?.text || normalized;
-  if (!body.trim()) return [];
-  return [{ title: fallbackTitle, text: body }];
+  if (chapters.length) return chapters;
+  return [{ title: fallbackTitle, text: normalized }];
 }
 
 export type BuiltSegment = {
@@ -166,33 +120,48 @@ export function segmentStats(segments: BuiltSegment[]) {
   };
 }
 
+function finalizeExtractedDoc(
+  doc: { text?: string; chapters: ExtractedChapter[]; detectedTitle?: string },
+  fallbackTitle: string,
+): { title?: string; chapters: ExtractedChapter[]; text: string } {
+  const title = doc.detectedTitle || fallbackTitle;
+  const text = doc.text || doc.chapters.map((c) => c.text).join('\n\n');
+  if (chaptersHaveRealTitles(doc.chapters)) {
+    return {
+      title,
+      text,
+      chapters: doc.chapters.filter((c) => !isFrontMatterChapter(c.title, c.text)),
+    };
+  }
+  return {
+    title,
+    text,
+    chapters: splitLiteraryChapters(text, title),
+  };
+}
+
 export async function extractSourceDocument(opts: {
   plainText?: string;
   sourceUrl?: string;
   title?: string;
+  pdfBuffer?: Buffer;
 }): Promise<{ title?: string; chapters: ExtractedChapter[]; text: string }> {
   const title = opts.title?.trim() || 'Untitled';
+  if (opts.pdfBuffer?.length) {
+    const doc = await extractTextFromPdf(opts.pdfBuffer);
+    return finalizeExtractedDoc(doc, title);
+  }
   const url = opts.sourceUrl?.trim();
   if (url) {
     if (/\.pdf(\?|#|$)/i.test(url)) {
-      const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(60_000) });
+      const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(120_000) });
       if (!res.ok) throw new Error(`Could not download PDF (${res.status})`);
       const buf = Buffer.from(await res.arrayBuffer());
       const doc = await extractTextFromPdf(buf);
-      const text = doc.chapters.map((c) => c.text).join('\n\n');
-      return {
-        title: doc.detectedTitle || title,
-        text,
-        chapters: splitLiteraryChapters(text, doc.detectedTitle || title),
-      };
+      return finalizeExtractedDoc(doc, title);
     }
     const doc = await extractTextFromUrl(url);
-    const text = doc.text || doc.chapters.map((c) => c.text).join('\n\n');
-    return {
-      title: doc.detectedTitle || title,
-      text,
-      chapters: splitLiteraryChapters(text, doc.detectedTitle || title),
-    };
+    return finalizeExtractedDoc(doc, title);
   }
 
   const plain = (opts.plainText ?? '').trim();

@@ -2,10 +2,11 @@ import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
+  Bell,
   Brain,
   ChevronLeft,
   ChevronRight,
-  Crown,
+  Wallet,
   Flame,
   GraduationCap,
   Home,
@@ -20,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popove
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../lib/auth';
+import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { UserAvatar } from '../components/UserAvatar';
 
 interface NavItem {
@@ -38,6 +40,7 @@ const primaryNav: NavItem[] = [
 
 const secondaryNav: NavItem[] = [
   { path: '/app/stats', label: 'Statistics', icon: BarChart3 },
+  { path: '/app/notifications', label: 'Notifications', icon: Bell },
   { path: '/app/messages', label: 'Messages', icon: MessageSquare },
 ];
 
@@ -50,8 +53,10 @@ export default function LearnerShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, stats, logout } = useAuth();
+  useCatalogLanguages();
   const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [unreadNotifs, setUnreadNotifs] = useState(0);
 
   const isActive = (path: string, exact = false) => {
     if (exact || path === '/app') {
@@ -75,6 +80,18 @@ export default function LearnerShell() {
     return () => window.clearInterval(id);
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    const load = () => {
+      void api<{ unreadCount: number }>('/notifications/unread-count')
+        .then((res) => setUnreadNotifs(res.unreadCount ?? 0))
+        .catch(() => undefined);
+    };
+    load();
+    const id = window.setInterval(load, 30_000);
+    return () => window.clearInterval(id);
+  }, [user, location.pathname]);
+
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {
     const active = isActive(item.path, item.exact);
     const btn = (
@@ -82,7 +99,7 @@ export default function LearnerShell() {
         type="button"
         onClick={() => navigate(item.path)}
         className={cn(
-          'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group',
+          'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group relative',
           collapsed ? 'px-0 py-3 justify-center' : 'px-3 py-2.5',
           active
             ? 'bg-[#7f22fe] text-white shadow-[0_4px_3px_rgba(77,23,154,0.4),0_2px_2px_rgba(77,23,154,0.4)]'
@@ -91,6 +108,14 @@ export default function LearnerShell() {
       >
         <item.icon className={cn('w-[18px] h-[18px] shrink-0', active ? 'text-white' : 'text-white/50 group-hover:text-white/80')} />
         {!collapsed && <span className="truncate">{item.label}</span>}
+        {item.path === '/app/notifications' && unreadNotifs > 0 && (
+          <span className={cn(
+            'min-w-5 h-5 px-1 rounded-full bg-[#f59e0b] text-[10px] font-bold text-white grid place-items-center',
+            collapsed ? 'absolute top-1 right-1' : 'ml-auto',
+          )}>
+            {unreadNotifs > 9 ? '9+' : unreadNotifs}
+          </span>
+        )}
       </button>
     );
 
@@ -151,28 +176,28 @@ export default function LearnerShell() {
               {expanded ? (
                 <button
                   type="button"
-                  onClick={() => navigate('/app/settings')}
+                  onClick={() => navigate('/app/import')}
                   className="w-full p-3 bg-gradient-to-r from-[#7008e7] to-[#372aac] rounded-[14px] text-left border border-white/10"
                 >
                   <div className="flex items-center gap-2 mb-0.5">
-                    <Crown className="w-3.5 h-3.5 text-amber-300" />
-                    <span className="text-white text-xs font-semibold">Upgrade to Premium</span>
+                    <Wallet className="w-3.5 h-3.5 text-amber-300" />
+                    <span className="text-white text-xs font-semibold">Pay as you go</span>
                   </div>
-                  <p className="text-[#c4b4ff] text-[11px]">Unlimited AI · Imports · Offline</p>
+                  <p className="text-[#c4b4ff] text-[11px]">Import books · Pay per file</p>
                 </button>
               ) : (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => navigate('/app/settings')}
+                      onClick={() => navigate('/app/import')}
                       className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-[#7008e7] to-[#372aac] border border-white/10"
                     >
-                      <Crown className="w-3.5 h-3.5 text-amber-300" />
+                      <Wallet className="w-3.5 h-3.5 text-amber-300" />
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8} className="bg-gray-900 text-white border-white/10 text-xs">
-                    Upgrade to Premium
+                    Pay as you go
                   </TooltipContent>
                 </Tooltip>
               )}
@@ -205,6 +230,20 @@ export default function LearnerShell() {
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />
                 <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-4">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
               </div>
+
+              <button
+                type="button"
+                aria-label="Notifications"
+                onClick={() => navigate('/app/notifications')}
+                className="relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-[#7f22fe] hover:border-violet-200"
+              >
+                <Bell className="w-4 h-4" />
+                {unreadNotifs > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#7f22fe] text-[10px] font-bold text-white grid place-items-center">
+                    {unreadNotifs > 9 ? '9+' : unreadNotifs}
+                  </span>
+                )}
+              </button>
 
               <Popover open={userMenuOpen} onOpenChange={setUserMenuOpen}>
                 <PopoverTrigger asChild>

@@ -5,8 +5,49 @@ import {
   ADMIN_METRICS_KEY,
   FIGMA_ADMIN_METRICS,
 } from '../src/modules/admin/admin-figma-metrics';
+import { syntheticUserEmailWhere } from '../src/common/production-users';
 
 const prisma = new PrismaClient();
+
+const DEMO_CATALOG_SLUGS = [
+  'the-master-and-margarita',
+  'sherlock-holmes',
+  'uzbek-folk-tales',
+  'anna-karenina',
+  'first-space-news',
+  'uzbek-cuisine-history',
+  'the-great-gatsby',
+  'war-and-peace',
+];
+
+async function purgeCatalogBySlugs(slugs: string[]) {
+  const unique = [...new Set(slugs.filter(Boolean))];
+  if (!unique.length) return;
+  const items = await prisma.contentItem.findMany({
+    where: { slug: { in: unique } },
+    select: { id: true, slug: true },
+  });
+  for (const item of items) {
+    await prisma.$transaction(async (tx) => {
+      await tx.userVocabulary.updateMany({
+        where: { contentId: item.id },
+        data: { contentId: null, contextSegmentId: null },
+      });
+      await tx.practiceSession.updateMany({
+        where: { contentId: item.id },
+        data: { contentId: null, segmentId: null },
+      });
+      await tx.userImport.updateMany({ where: { contentId: item.id }, data: { contentId: null } });
+      await tx.ingestionJob.updateMany({ where: { contentId: item.id }, data: { contentId: null } });
+      await tx.moderationQueue.updateMany({ where: { contentId: item.id }, data: { contentId: null } });
+      await tx.contentItem.updateMany({ where: { parentContentId: item.id }, data: { parentContentId: null } });
+      await tx.contentItem.delete({ where: { id: item.id } });
+    });
+  }
+  if (items.length) {
+    console.log(`Purged ${items.length} seed catalog item(s): ${items.map((i) => i.slug).join(', ')}`);
+  }
+}
 
 /** Multi-chapter B1 story matching the Figma Reader screen. */
 const LIGHTHOUSE_CHAPTERS: Array<{ title: string; text: string }> = [
@@ -458,193 +499,22 @@ async function main() {
     });
   }
 
-  // Figma learner library / home catalog (covers + authors in subtitle).
-  const FIGMA_LEARNER_CONTENT: Array<{
-    slug: string;
-    title: string;
-    author: string;
-    language: AppLanguage;
-    level: CefrLevel;
-    type: ContentType;
-    genre: string;
-    cover: string;
-    text: string;
-  }> = [
-    {
-      slug: 'the-master-and-margarita',
-      title: 'The Master and Margarita',
-      author: 'Mikhail Bulgakov',
-      language: 'ru',
-      level: 'c1',
-      type: ContentType.book,
-      genre: 'novel',
-      cover: 'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=560&fit=crop',
-      text: `Мастер и Маргарита — роман о любви, творчестве и дьяволе, который посещает Москву. Однажды весной, в час небывало жаркого заката, в Москве, на Патриарших прудах, появились два гражданина.`,
-    },
-    {
-      slug: 'sherlock-holmes',
-      title: 'Sherlock Holmes',
-      author: 'Arthur Conan Doyle',
-      language: 'en',
-      level: 'b2',
-      type: ContentType.book,
-      genre: 'mystery',
-      cover: 'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=560&fit=crop',
-      text: `To Sherlock Holmes she is always the woman. I have seldom heard him mention her under any other name. In his eyes she eclipses and predominates the whole of her sex.`,
-    },
-    {
-      slug: 'uzbek-folk-tales',
-      title: 'Uzbek Folk Tales',
-      author: 'Traditional',
-      language: 'uz',
-      level: 'a2',
-      type: ContentType.book,
-      genre: 'folklore',
-      cover: 'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=560&fit=crop',
-      text: `Qadim zamonlarda bir podshoh yashagan ekan. Uning uch o'g'li bor edi. Bir kuni podshoh o'g'illarini chaqirib, ularga aqldan darak beradigan vazifa berdi.`,
-    },
-    {
-      slug: 'anna-karenina',
-      title: 'Anna Karenina',
-      author: 'Leo Tolstoy',
-      language: 'ru',
-      level: 'c1',
-      type: ContentType.book,
-      genre: 'novel',
-      cover: 'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=560&fit=crop',
-      text: `Все счастливые семьи похожи друг на друга, каждая несчастливая семья несчастлива по-своему. Все смешалось в доме Облонских.`,
-    },
-    {
-      slug: 'first-space-news',
-      title: 'First Space News',
-      author: 'BBC News',
-      language: 'en',
-      level: 'b1',
-      type: ContentType.news,
-      genre: 'news',
-      cover: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&h=560&fit=crop',
-      text: `Astronomers have detected signals from a distant galaxy that may reshape how we understand star formation. Scientists say the discovery opens a new chapter in space observation for learners around the world.`,
-    },
-    {
-      slug: 'uzbek-cuisine-history',
-      title: 'Uzbek Cuisine History',
-      author: 'Tashkent News',
-      language: 'uz',
-      level: 'a2',
-      type: ContentType.article,
-      genre: 'culture',
-      cover: 'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=560&fit=crop',
-      text: `O'zbek oshxonasi asrlar davomida shakllangan. Palov, somsa va non — milliy taomlarimizning yuragi. Har bir viloyatning o'z retsepti bor.`,
-    },
-    {
-      slug: 'the-great-gatsby',
-      title: 'The Great Gatsby',
-      author: 'F. Scott Fitzgerald',
-      language: 'en',
-      level: 'b2',
-      type: ContentType.book,
-      genre: 'classic',
-      cover: 'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=560&fit=crop',
-      text: `In my younger and more vulnerable years my father gave me some advice that I've been turning over in my mind ever since. Whenever you feel like criticizing anyone, he told me, just remember that all the people in this world haven't had the advantages that you've had.`,
-    },
-    {
-      slug: 'war-and-peace',
-      title: 'War and Peace',
-      author: 'Leo Tolstoy',
-      language: 'ru',
-      level: 'c2',
-      type: ContentType.book,
-      genre: 'novel',
-      cover: 'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&h=560&fit=crop',
-      text: `Well, Prince, so Genoa and Lucca are now just family estates of the Buonapartes. But I warn you, if you don't tell me that this means war, if you still try to defend the infamies and horrors perpetrated by that Antichrist...`,
-    },
-  ];
-
-  const figmaContentIds: Record<string, string> = {};
-  for (const row of FIGMA_LEARNER_CONTENT) {
-    const { tokenMap, sentenceMap, wordCount } = tokenizeText(row.text);
-    const item = await prisma.contentItem.upsert({
-      where: { slug: row.slug },
-      update: {
-        title: row.title,
-        subtitle: row.author,
-        description: `${row.author} · ${row.level.toUpperCase()} ${row.genre}`,
-        language: row.language,
-        contentType: row.type,
-        contentSource: ContentSource.public_domain,
-        cefrLevel: row.level,
-        genre: row.genre,
-        coverImageKey: row.cover,
-        wordCount,
-        uniqueWordCount: uniqueWordCount(tokenMap as never),
-        publishStatus: PublishStatus.published,
-        publishedAt: new Date(),
-      },
-      create: {
-        slug: row.slug,
-        title: row.title,
-        subtitle: row.author,
-        description: `${row.author} · ${row.level.toUpperCase()} ${row.genre}`,
-        language: row.language,
-        contentType: row.type,
-        contentSource: ContentSource.public_domain,
-        cefrLevel: row.level,
-        genre: row.genre,
-        coverImageKey: row.cover,
-        wordCount,
-        uniqueWordCount: uniqueWordCount(tokenMap as never),
-        publishStatus: PublishStatus.published,
-        publishedAt: new Date(),
-        createdById: admin.id,
-        segments: {
-          create: {
-            segmentIndex: 0,
-            title: 'Chapter 1',
-            plainText: row.text,
-            tokenMap: tokenMap as never,
-            sentenceMap: sentenceMap as never,
-            wordCount,
-          },
-        },
-      },
-    });
-    figmaContentIds[row.slug] = item.id;
-    // Ensure a segment exists even when the item was created earlier without one.
-    const segCount = await prisma.contentSegment.count({ where: { contentId: item.id } });
-    if (segCount === 0) {
-      await prisma.contentSegment.create({
-        data: {
-          contentId: item.id,
-          segmentIndex: 0,
-          title: 'Chapter 1',
-          plainText: row.text,
-          tokenMap: tokenMap as never,
-          sentenceMap: sentenceMap as never,
-          wordCount,
-        },
-      });
-    }
-    await prisma.contentCollectionItem.upsert({
-      where: {
-        collectionId_contentId: {
-          collectionId: starterCollection.id,
-          contentId: item.id,
-        },
-      },
-      update: {},
-      create: {
-        collectionId: starterCollection.id,
-        contentId: item.id,
-        sortOrder: collectionSort++,
-      },
-    });
-  }
+  // Permanently drop Figma demo catalog books so deploy/seed cannot recreate them.
+  const extraCompleted = await prisma.contentItem.findMany({
+    where: { slug: { startsWith: 'figma-completed-article-' } },
+    select: { slug: true },
+  });
+  await purgeCatalogBySlugs([
+    ...DEMO_CATALOG_SLUGS,
+    ...FIGMA_ADMIN_METRICS.content.seedCurriculum.map((row) => slugify(row.title)),
+    ...extraCompleted.map((row) => row.slug),
+  ]);
 
   // Clear prior demo progress/sessions so Home Continue Reading matches Figma only.
   await prisma.readingSession.deleteMany({ where: { userId: demoUser.id } });
   await prisma.readingProgress.deleteMany({ where: { userId: demoUser.id } });
 
-  // Continue Reading (Figma Home): Master 64%, Sherlock 32%.
+  // Continue Reading uses the lighthouse demo only.
   async function upsertProgress(
     contentId: string,
     progressPct: number,
@@ -675,104 +545,7 @@ async function main() {
     });
   }
 
-  const masterId = figmaContentIds['the-master-and-margarita'];
-  const sherlockId = figmaContentIds['sherlock-holmes'];
-  if (masterId) await upsertProgress(masterId, 64, { readSeconds: 2400, lastReadAt: new Date() });
-  if (sherlockId) {
-    await upsertProgress(sherlockId, 32, {
-      readSeconds: 1200,
-      lastReadAt: new Date(Date.now() - 3600_000),
-    });
-  }
-
-  // Keep lighthouse as a completed story so Reader demos still work.
-  const firstSegment = await prisma.contentSegment.findFirst({
-    where: { contentId: lighthouse.id },
-    orderBy: { segmentIndex: 'asc' },
-  });
-  if (firstSegment) {
-    await upsertProgress(lighthouse.id, 100, {
-      completed: true,
-      readSeconds: 1800,
-      lastReadAt: new Date(Date.now() - 86400_000 * 2),
-    });
-  }
-
-  // Profile "23 articles read" — complete additional catalog + sample stories.
-  const extraCompleteSlugs = [
-    'anna-karenina',
-    'first-space-news',
-    'uzbek-cuisine-history',
-    'the-great-gatsby',
-    'war-and-peace',
-    'uzbek-folk-tales',
-    'a-morning-in-tashkent',
-    'utro-v-gorode',
-    'bahor-tongi',
-    'the-little-prince-opening',
-    'tech-news-language-apps-grow',
-  ];
-  let completedCount = 1; // lighthouse
-  for (const slug of extraCompleteSlugs) {
-    const id =
-      figmaContentIds[slug] ??
-      (await prisma.contentItem.findUnique({ where: { slug } }))?.id;
-    if (!id || id === masterId || id === sherlockId) continue;
-    await upsertProgress(id, 100, {
-      completed: true,
-      readSeconds: 600 + completedCount * 40,
-      lastReadAt: new Date(Date.now() - completedCount * 3600_000),
-    });
-    completedCount += 1;
-  }
-  // Pad to 23 completed with synthetic short articles if needed.
-  while (completedCount < 23) {
-    const slug = `figma-completed-article-${completedCount}`;
-    const sample = `Completed sample article ${completedCount} for GOTCHA Figma profile stats.`;
-    const { tokenMap, sentenceMap, wordCount } = tokenizeText(sample);
-    const item = await prisma.contentItem.upsert({
-      where: { slug },
-      // Keep below featured learner catalog in Library (publishedAt desc).
-      update: {
-        publishStatus: PublishStatus.published,
-        publishedAt: new Date('2026-05-01T12:00:00.000Z'),
-        coverImageKey: 'https://images.unsplash.com/photo-14565130808-af32db8c1b38?w=400&h=560&fit=crop',
-      },
-      create: {
-        slug,
-        title: `Practice Article ${completedCount}`,
-        subtitle: 'GOTCHA Library',
-        description: 'Seeded completed reading for Figma profile stats.',
-        language: 'en',
-        contentType: ContentType.article,
-        contentSource: ContentSource.public_domain,
-        cefrLevel: 'b1',
-        genre: 'article',
-        coverImageKey: 'https://images.unsplash.com/photo-14565130808-af32db8c1b38?w=400&h=560&fit=crop',
-        wordCount,
-        uniqueWordCount: uniqueWordCount(tokenMap as never),
-        publishStatus: PublishStatus.published,
-        publishedAt: new Date('2026-05-01T12:00:00.000Z'),
-        createdById: admin.id,
-        segments: {
-          create: {
-            segmentIndex: 0,
-            title: 'Part 1',
-            plainText: sample,
-            tokenMap: tokenMap as never,
-            sentenceMap: sentenceMap as never,
-            wordCount,
-          },
-        },
-      },
-    });
-    await upsertProgress(item.id, 100, {
-      completed: true,
-      readSeconds: 300,
-      lastReadAt: new Date(Date.now() - completedCount * 7200_000),
-    });
-    completedCount += 1;
-  }
+  await upsertProgress(lighthouse.id, 64, { readSeconds: 2400, lastReadAt: new Date() });
 
   // Align session history with streakCount=7 (heatmap / bestStreak / calendar).
   // Today: 15 / 20 min daily goal + 12 new words; prior 6 days lighter sessions.
@@ -785,7 +558,7 @@ async function main() {
       startedAt: { gte: streakDayStart },
     },
   });
-  if (masterId) {
+  {
     for (let dayOffset = 6; dayOffset >= 0; dayOffset--) {
       const startedAt = new Date();
       startedAt.setHours(10, 0, 0, 0);
@@ -794,7 +567,7 @@ async function main() {
       await prisma.readingSession.create({
         data: {
           userId: demoUser.id,
-          contentId: masterId,
+          contentId: lighthouse.id,
           startedAt,
           endedAt: new Date(startedAt.getTime() + (isToday ? 15 : 12) * 60_000),
           durationSeconds: (isToday ? 15 : 12) * 60,
@@ -995,199 +768,21 @@ async function main() {
     });
   }
 
-  // Figma Languages screen catalog (exact learner/content/CEFR figures).
-  for (const lang of FIGMA_ADMIN_METRICS.languages.catalog) {
-    await prisma.languageCatalog.upsert({
-      where: { code: lang.code },
-      update: {
-        name: lang.name,
-        nativeName: lang.nativeName,
-        flagEmoji: lang.flagEmoji,
-        regionLabel: lang.region,
-        status: lang.status,
-        cefrCoverage: lang.cefrCoverage,
-        learnerCount: lang.learnerCount,
-        contentCount: lang.contentCount,
-        isEnabled: lang.isEnabled,
-        sortOrder: lang.sortOrder,
-      },
-      create: {
-        code: lang.code,
-        name: lang.name,
-        nativeName: lang.nativeName,
-        flagEmoji: lang.flagEmoji,
-        regionLabel: lang.region,
-        status: lang.status,
-        cefrCoverage: lang.cefrCoverage,
-        learnerCount: lang.learnerCount,
-        contentCount: lang.contentCount,
-        isEnabled: lang.isEnabled,
-        sortOrder: lang.sortOrder,
-      },
-    });
-  }
+  // Language catalog metadata only — isEnabled is owned by admin (EN/RU/UZ live by default).
+  // Do not re-enable Figma extras (FR/ES/JA/DE) on every seed.
 
-  // Keep Russian in catalog for existing content (not on Figma Languages table).
-  await prisma.languageCatalog.upsert({
-    where: { code: 'ru' },
-    update: {
-      name: 'Russian',
-      nativeName: 'Русский',
-      flagEmoji: '🇷🇺',
-      regionLabel: 'RU',
-      status: 'Active',
-      cefrCoverage: 70,
-      isEnabled: true,
-      sortOrder: 99,
-    },
-    create: {
-      code: 'ru',
-      name: 'Russian',
-      nativeName: 'Русский',
-      flagEmoji: '🇷🇺',
-      regionLabel: 'RU',
-      status: 'Active',
-      cefrCoverage: 70,
-      learnerCount: 980,
-      contentCount: 120,
-      isEnabled: true,
-      sortOrder: 99,
-    },
+  await prisma.platformSetting.deleteMany({ where: { key: ADMIN_METRICS_KEY } });
+
+  const syntheticUsers = await prisma.user.findMany({
+    where: { ...syntheticUserEmailWhere(), adminProfile: { is: null } },
+    select: { id: true, email: true },
   });
-
-  await prisma.platformSetting.upsert({
-    where: { key: ADMIN_METRICS_KEY },
-    update: { value: FIGMA_ADMIN_METRICS as never },
-    create: { key: ADMIN_METRICS_KEY, value: FIGMA_ADMIN_METRICS as never },
-  });
-
-  // Showcase users from Figma Dashboard / AI Usage (idempotent by email).
-  const showcaseUsers: Array<{
-    email: string;
-    displayName: string;
-    native: AppLanguage;
-    target: AppLanguage;
-    tier: 'free' | 'premium';
-    subId: string;
-  }> = [
-    { email: 'soren@existential.dk', displayName: 'Soren Kierkegaard', native: 'en', target: 'de', tier: 'premium', subId: '00000000-0000-4000-8000-000000000021' },
-    { email: 'yuki.t@tokyo.jp', displayName: 'Yuki Tanaka', native: 'ja', target: 'en', tier: 'free', subId: '00000000-0000-4000-8000-000000000022' },
-    { email: 'elena@rostov.ru', displayName: 'Elena Rostova', native: 'ru', target: 'es', tier: 'premium', subId: '00000000-0000-4000-8000-000000000023' },
-    { email: 'm.andre@quebec.ca', displayName: 'Marc-André', native: 'fr', target: 'de', tier: 'free', subId: '00000000-0000-4000-8000-000000000024' },
-    { email: 'hans@gotcha.app', displayName: 'Hans Müller', native: 'de', target: 'en', tier: 'premium', subId: '00000000-0000-4000-8000-000000000025' },
-    { email: 'carlos@gotcha.app', displayName: 'Carlos Ruiz', native: 'es', target: 'en', tier: 'premium', subId: '00000000-0000-4000-8000-000000000026' },
-    { email: 'aisha@gotcha.app', displayName: 'Aisha Al-Mansoor', native: 'en', target: 'fr', tier: 'premium', subId: '00000000-0000-4000-8000-000000000027' },
-    { email: 'david@gotcha.app', displayName: 'David Miller', native: 'en', target: 'es', tier: 'free', subId: '00000000-0000-4000-8000-000000000028' },
-  ];
-
-  const showcasePassword = await bcrypt.hash('Learner2026!', 12);
-  for (const su of showcaseUsers) {
-    const user = await prisma.user.upsert({
-      where: { email: su.email },
-      update: { displayName: su.displayName },
-      create: {
-        email: su.email,
-        passwordHash: showcasePassword,
-        displayName: su.displayName,
-        nativeLanguage: su.native,
-        preferences: { create: {} },
-        targetLanguages: {
-          create: [{ targetLanguage: su.target, isPrimary: true, cefrLevel: 'a2' }],
-        },
-      },
+  if (syntheticUsers.length) {
+    await prisma.user.updateMany({
+      where: { id: { in: syntheticUsers.map((u) => u.id) } },
+      data: { deletedAt: new Date() },
     });
-    const planId = su.tier === 'premium' ? premiumPlan?.id : freePlan?.id;
-    if (planId) await ensureSubscription(user.id, planId, su.subId);
-  }
-
-  // Real ContentItem rows (stable slugs) for admin Content Library Publish/Archive.
-  const curriculumCovers = [
-    'https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1481627834876-b7833e8f5570?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1512820790803-83ca734da794?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1519682337058-a94d519337bc?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1524995997946-a1c2e315a42f?w=400&h=560&fit=crop',
-    'https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=400&h=560&fit=crop',
-  ];
-  for (const [curriculumIdx, row] of FIGMA_ADMIN_METRICS.content.seedCurriculum.entries()) {
-    const slug = slugify(row.title);
-    const sample = `${row.title}. Sample graded text for GOTCHA admin curriculum seeding.`;
-    const { tokenMap, sentenceMap, wordCount } = tokenizeText(sample);
-    const lang = (['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const).includes(row.language as never)
-      ? (row.language as AppLanguage)
-      : 'en';
-    const contentType =
-      row.type === 'book' ? ContentType.book
-        : row.type === 'news' ? ContentType.news
-          : ContentType.article;
-    const status =
-      row.status === 'published' ? PublishStatus.published
-        : row.status === 'review' ? PublishStatus.review
-          : PublishStatus.draft;
-
-    const priceUsd = Number((row as { priceUsd?: number }).priceUsd ?? 0);
-    const salesCount = Number((row as { salesCount?: number }).salesCount ?? 0);
-    const isFree = Boolean((row as { isFree?: boolean }).isFree ?? priceUsd <= 0);
-
-    const coverImageKey = curriculumCovers[curriculumIdx % curriculumCovers.length];
-    // Keep admin curriculum below Figma learner catalog in Library sort (publishedAt desc).
-    const curriculumPublishedAt =
-      status === PublishStatus.published ? new Date('2026-07-15T12:00:00.000Z') : null;
-    await prisma.contentItem.upsert({
-      where: { slug },
-      update: {
-        title: row.title,
-        language: lang,
-        contentType,
-        cefrLevel: row.level as CefrLevel,
-        wordCount: row.wordCount || wordCount,
-        publishStatus: status,
-        publishedAt: curriculumPublishedAt,
-        coverImageKey,
-        isFree,
-        priceUsd,
-        salesCount,
-      },
-      create: {
-        slug,
-        title: row.title,
-        description: `Figma curriculum sample · ${row.level.toUpperCase()} ${row.type}`,
-        language: lang,
-        contentType,
-        contentSource: ContentSource.public_domain,
-        cefrLevel: row.level as CefrLevel,
-        genre: row.type,
-        coverImageKey,
-        wordCount: row.wordCount || wordCount,
-        uniqueWordCount: uniqueWordCount(tokenMap as never),
-        publishStatus: status,
-        publishedAt: curriculumPublishedAt ?? undefined,
-        isFree,
-        priceUsd,
-        salesCount,
-        createdById: admin.id,
-        segments: {
-          create: {
-            segmentIndex: 0,
-            title: 'Part 1',
-            plainText: sample,
-            tokenMap: tokenMap as never,
-            sentenceMap: sentenceMap as never,
-            wordCount,
-          },
-        },
-      },
-    });
-  }
-
-  // Learner Library: Figma catalog sorts above admin curriculum samples.
-  for (const [i, slug] of Object.keys(figmaContentIds).entries()) {
-    await prisma.contentItem.update({
-      where: { slug },
-      data: { publishedAt: new Date(Date.now() - i * 60_000) },
-    });
+    console.log(`Hid ${syntheticUsers.length} QA/seed user(s): ${syntheticUsers.map((u) => u.email).join(', ')}`);
   }
 
   // Import & Pricing controls (Figma 47:1091)
@@ -1247,7 +842,7 @@ async function main() {
           monthlyFreePageLimit: 50,
           allowedFormats: ['article', 'news'],
           resetCycle: 'monthly',
-          allowRollover: true,
+          allowRollover: false,
         },
       },
     });
@@ -1337,124 +932,40 @@ async function main() {
     create: { key: 'aiDefaultUserQuota', value: 50 },
   });
 
-  const existingCampaigns = await prisma.notificationCampaign.count();
-  if (existingCampaigns === 0) {
-    await prisma.notificationCampaign.createMany({
-      data: [
-        {
-          name: 'Welcome Push',
-          subject: 'Welcome to GOTCHA',
-          body: 'Start reading in your target language today.',
-          channel: 'push',
-          status: 'sent',
-          audience: 'new_users',
-          sentAt: new Date(),
-          createdById: admin.id,
-        },
-        {
-          name: 'Streak Reminder',
-          subject: "Don't lose your streak",
-          body: 'Read for 10 minutes to keep your streak alive.',
-          channel: 'push',
-          status: 'scheduled',
-          audience: 'active',
-          scheduledAt: new Date(Date.now() + 86400000),
-          createdById: admin.id,
-        },
-        {
-          name: 'Premium Upsell',
-          subject: 'Unlock unlimited AI lookups',
-          body: 'Try Premium free for 7 days.',
-          channel: 'email',
-          status: 'draft',
-          audience: 'free',
-          createdById: admin.id,
-        },
+  await prisma.notificationCampaign.deleteMany({
+    where: {
+      OR: [
+        { channel: 'email' },
+        { name: { in: ['Premium Upsell', 'Welcome Push', 'Streak Reminder'] } },
+        { subject: 'Unlock unlimited AI lookups' },
       ],
-    });
-  }
+    },
+  });
 
-  const existingTickets = await prisma.supportTicket.count();
-  if (existingTickets === 0) {
-    await prisma.supportTicket.createMany({
-      data: [
+  await prisma.supportTicket.deleteMany({
+    where: {
+      OR: [
         {
-          userId: demoUser.id,
-          subject: 'Import failed for EPUB',
-          body: 'My EPUB upload stays stuck on processing.',
-          status: 'open',
-          priority: 'high',
-          category: 'imports',
+          subject: {
+            in: [
+              'Import failed for EPUB',
+              'Billing question',
+              'Feature request: dark reader theme',
+            ],
+          },
         },
-        {
-          userId: demoUser.id,
-          subject: 'Billing question',
-          body: 'How do I switch from monthly to yearly Premium?',
-          status: 'in_progress',
-          priority: 'medium',
-          category: 'billing',
-          assigneeId: admin.id,
-        },
-        {
-          subject: 'Feature request: dark reader theme',
-          body: 'Please add a true OLED black theme for night reading.',
-          status: 'resolved',
-          priority: 'low',
-          category: 'product',
-          resolvedAt: new Date(),
-        },
+        { body: { contains: 'yearly Premium', mode: 'insensitive' } },
       ],
-    });
-  }
+    },
+  });
 
-  const placementCount = await prisma.placementResult.count();
-  if (placementCount === 0) {
-    await prisma.placementResult.createMany({
-      data: [
-        { userId: demoUser.id, targetLanguage: 'en', suggestedLevel: 'a2', score: 72.5 },
-        { userId: admin.id, targetLanguage: 'ru', suggestedLevel: 'b1', score: 81.0 },
+  await prisma.aiUsageDaily.deleteMany({
+    where: {
+      OR: [
+        { user: syntheticUserEmailWhere() },
+        { user: { adminProfile: { isNot: null } } },
+        { lookupCount: { gte: 1000 } },
       ],
-    });
-  }
-
-  const todayDate = new Date(new Date().toISOString().slice(0, 10));
-  // Distribute Figma "45,230 lookups today" across showcase + demo users (idempotent upserts).
-  const aiShares = [
-    { email: 'learner@gotcha.app', lookups: 189 },
-    { email: 'hans@gotcha.app', lookups: 412 },
-    { email: 'yuki.t@tokyo.jp', lookups: 189 },
-    { email: 'carlos@gotcha.app', lookups: 642 },
-    { email: 'aisha@gotcha.app', lookups: 395 },
-    { email: 'david@gotcha.app', lookups: 290 },
-  ];
-  let assigned = 0;
-  for (const share of aiShares) {
-    const u = await prisma.user.findUnique({ where: { email: share.email } });
-    if (!u) continue;
-    assigned += share.lookups;
-    await prisma.aiUsageDaily.upsert({
-      where: { userId_usageDate: { userId: u.id, usageDate: todayDate } },
-      update: { lookupCount: share.lookups, quizCount: Math.round(share.lookups * 0.08), tokensUsed: share.lookups * 32 },
-      create: {
-        userId: u.id,
-        usageDate: todayDate,
-        lookupCount: share.lookups,
-        quizCount: Math.round(share.lookups * 0.08),
-        tokensUsed: share.lookups * 32,
-      },
-    });
-  }
-  // Remainder on admin so aggregate can approach Figma total when not using metrics overlay.
-  const remainder = Math.max(0, FIGMA_ADMIN_METRICS.dashboard.aiLookupsToday - assigned);
-  await prisma.aiUsageDaily.upsert({
-    where: { userId_usageDate: { userId: admin.id, usageDate: todayDate } },
-    update: { lookupCount: remainder, quizCount: Math.round(remainder * 0.08), tokensUsed: remainder * 32 },
-    create: {
-      userId: admin.id,
-      usageDate: todayDate,
-      lookupCount: remainder,
-      quizCount: Math.round(remainder * 0.08),
-      tokensUsed: remainder * 32,
     },
   });
 
@@ -1568,7 +1079,7 @@ async function main() {
   console.log('Seed complete.');
   console.log('Admin: admin@gotcha.app / GotchaAdmin2026!');
   console.log('Demo learner: learner@gotcha.app / Learner2026!');
-  console.log(`Figma metrics seeded (${ADMIN_METRICS_KEY}): users=${FIGMA_ADMIN_METRICS.dashboard.users} mrr=${FIGMA_ADMIN_METRICS.dashboard.mrr}`);
+  console.log('Production metrics: live user/AI/revenue counts (Figma overlay removed).');
 }
 
 main()

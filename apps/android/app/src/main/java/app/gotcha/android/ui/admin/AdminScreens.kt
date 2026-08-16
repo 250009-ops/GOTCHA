@@ -40,7 +40,6 @@ import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.PersonAdd
-import androidx.compose.material.icons.outlined.Quiz
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.WarningAmber
@@ -274,7 +273,6 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
                 }
                 composable("pricing") {
                     AdminImportPricingScreen(
-                        onOpenRule = { id -> nav.navigate("pricing/rule/$id") },
                         onOpenLimits = { nav.navigate("pricing/limits") },
                         onOpenTiers = { nav.navigate("pricing/tiers") },
                     )
@@ -344,7 +342,6 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
                 }
                 composable("gamification") { AdminGamificationScreen(onBack = { nav.popBackStack() }) }
                 composable("languages") { AdminLanguagesScreen(onBack = { nav.popBackStack() }) }
-                composable("level-tests") { AdminLevelTestsScreen(onBack = { nav.popBackStack() }) }
                 composable("settings") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
                 composable("ai-usage") { AdminAiUsageScreen(onBack = { nav.popBackStack() }) }
             }
@@ -1205,7 +1202,7 @@ private fun ContentStoreRow(item: ContentItem, onClick: () -> Unit) {
         }
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
-                if (free) "Free" else "$%.2f".format(item.priceUsd ?: 0.0),
+                if (free) "Free" else formatUsdMicros(item.priceUsd),
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 14.sp,
                 color = if (free) GotchaColors.SuccessBright else GotchaColors.BrandPurple,
@@ -1231,16 +1228,13 @@ private fun ContentStoreRow(item: ContentItem, onClick: () -> Unit) {
 
 @Composable
 private fun AdminImportPricingScreen(
-    onOpenRule: (String) -> Unit,
     onOpenLimits: () -> Unit,
     onOpenTiers: () -> Unit,
 ) {
     val container = LocalAppContainer.current
-    val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<ImportPricingResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var togglingId by remember { mutableStateOf<String?>(null) }
     val topInset = LocalAdminTopInset.current
     val bottomInset = LocalAdminBottomInset.current
 
@@ -1325,99 +1319,11 @@ private fun AdminImportPricingScreen(
                                 color = GotchaColors.TextMuted,
                             )
                             Text(
-                                "${formatInt(d.stats?.freeImportsUsed ?: 0)}/${formatCompact(d.stats?.freeImportsPool ?: 0)}",
+                                formatInt(d.stats?.freeImportsUsed ?: 0),
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
                                 color = GotchaColors.Ink,
                             )
-                        }
-                    }
-                }
-                item {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text(
-                            "Pricing by Type (per import / page)",
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 14.sp,
-                            color = GotchaColors.Ink,
-                        )
-                        d.rules.forEach { rule ->
-                            val enabled = rule.isActive
-                            val busy = togglingId == rule.id
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White)
-                                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
-                                    .clickable(enabled = !busy) { onOpenRule(rule.id) }
-                                    .padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(8.dp)
-                                        .clip(RoundedCornerShape(4.dp))
-                                        .background(GotchaColors.BrandPurple),
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    pricingRuleShortLabel(rule.key, rule.label),
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 14.sp,
-                                    color = GotchaColors.Ink,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                )
-                                Spacer(Modifier.weight(1f))
-                                Text(
-                                    "Base: ${formatSomList(rule.pricePerImport)}",
-                                    color = GotchaColors.TextMuted,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Text(
-                                    "Page: ${formatSomList(rule.pricePerPage)}",
-                                    color = GotchaColors.TextMuted,
-                                    fontSize = 11.sp,
-                                    maxLines = 1,
-                                    softWrap = false,
-                                )
-                                Spacer(Modifier.width(8.dp))
-                                Switch(
-                                    checked = enabled,
-                                    enabled = !busy,
-                                    onCheckedChange = { next ->
-                                        scope.launch {
-                                            togglingId = rule.id
-                                            try {
-                                                data = container.adminRepository.updateImportPricingRules(
-                                                    UpdateImportPricingRulesRequest(
-                                                        rules = listOf(
-                                                            ImportPricingRulePatch(
-                                                                id = rule.id,
-                                                                isActive = next,
-                                                            ),
-                                                        ),
-                                                    ),
-                                                )
-                                            } catch (_: Exception) {
-                                                // keep previous data; user can retry
-                                            } finally {
-                                                togglingId = null
-                                            }
-                                        }
-                                    },
-                                    colors = SwitchDefaults.colors(
-                                        checkedThumbColor = Color.White,
-                                        checkedTrackColor = GotchaColors.BrandPurple,
-                                        uncheckedThumbColor = Color.White,
-                                        uncheckedTrackColor = GotchaColors.Border,
-                                    ),
-                                )
-                            }
                         }
                     }
                 }
@@ -1541,12 +1447,11 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
         loading = true
         error = null
         val tier = when (filter) {
-            "Premium" -> "premium"
+            "Pay as you go" -> "payg"
             "Free" -> "free"
             else -> null
         }
         val status = when (filter) {
-            "Flagged" -> "flagged"
             "Suspended" -> "suspended"
             else -> null
         }
@@ -1565,7 +1470,6 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
     }
 
     val rows = response?.users.orEmpty()
-    val flaggedCount = response?.stats?.flagged ?: 0
 
     when {
         loading && response == null -> LoadingBox(Modifier.fillMaxSize())
@@ -1634,11 +1538,10 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                         .padding(start = 24.dp),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    listOf("All", "Premium", "Free", "Flagged", "Suspended").forEach { chip ->
+                    listOf("All", "Pay as you go", "Free", "Suspended").forEach { chip ->
                         val selected = filter == chip
-                        val isAlert = chip == "Flagged" || chip == "Suspended"
+                        val isAlert = chip == "Suspended"
                         val label = when {
-                            chip == "Flagged" && flaggedCount > 0 -> "Flagged ($flaggedCount)"
                             chip == "Suspended" && (response?.stats?.suspended ?: 0) > 0 ->
                                 "Suspended (${response?.stats?.suspended})"
                             else -> chip
@@ -1679,7 +1582,6 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                 item {
                     EmptyState(
                         when (filter) {
-                            "Flagged" -> "No flagged users (AI quota ≥90% today)."
                             "Suspended" -> "No suspended users."
                             else -> "No users found."
                         },
@@ -1696,9 +1598,10 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
 
 @Composable
 private fun UserRow(user: AdminUserRow, onClick: () -> Unit) {
-    val premium = user.billingTier?.contains("Premium", true) == true
+    val payg = user.billingTier?.contains("pay", true) == true ||
+        user.planLabel?.contains("pay", true) == true
     val planLabel = user.planLabel
-        ?: if (premium) "Premium" else "Free Tier"
+        ?: if (payg) "Pay as you go" else "Free"
     val statusColor = when {
         user.isSuspended -> GotchaColors.Danger
         user.isActiveRecently -> GotchaColors.SuccessBright
@@ -1756,9 +1659,9 @@ private fun UserRow(user: AdminUserRow, onClick: () -> Unit) {
                 planLabel,
                 modifier = Modifier
                     .clip(RoundedCornerShape(6.dp))
-                    .background(if (premium) GotchaColors.BrandPurpleSoft else Color(0xFFF3F4F6))
+                    .background(if (payg) GotchaColors.BrandPurpleSoft else Color(0xFFF3F4F6))
                     .padding(horizontal = 8.dp, vertical = 2.dp),
-                color = if (premium) GotchaColors.BrandPurple else GotchaColors.TextMuted,
+                color = if (payg) GotchaColors.BrandPurple else GotchaColors.TextMuted,
                 fontWeight = FontWeight.Bold,
                 fontSize = 10.sp,
             )
@@ -1780,12 +1683,10 @@ private fun AdminMoreScreen(
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var me by remember { mutableStateOf<AdminMe?>(null) }
-    var openTickets by remember { mutableStateOf(0) }
     var scheduledCampaigns by remember { mutableStateOf(0) }
 
     LaunchedEffect(Unit) {
         runCatching { me = container.adminRepository.me() }
-        runCatching { openTickets = container.adminRepository.support().stats?.open ?: 0 }
         runCatching {
             val n = container.adminRepository.notifications()
             scheduledCampaigns = (n.stats?.scheduled ?: 0) + (n.stats?.draft ?: 0)
@@ -1827,11 +1728,7 @@ private fun AdminMoreScreen(
                 MoreRow(Icons.Outlined.EmojiEvents, "Gamification & Streaks") { onNavigate("gamification") }
                 MoreRow(Icons.Outlined.Memory, "AI Usage") { onNavigate("ai-usage") }
                 MoreRow(Icons.AutoMirrored.Outlined.TrendingUp, "Analytics") { onNavigate("analytics") }
-                MoreRow(Icons.Outlined.HeadsetMic, "Support Tickets", badge = openTickets.takeIf { it > 0 }, badgeColor = GotchaColors.Danger) {
-                    onNavigate("support")
-                }
                 MoreRow(Icons.Outlined.Language, "Supported Languages") { onNavigate("languages") }
-                MoreRow(Icons.Outlined.Quiz, "Level Placements & Tests") { onNavigate("level-tests") }
                 MoreRow(Icons.Outlined.Settings, "Global Console Settings", showDivider = false) { onNavigate("settings") }
             }
         }
@@ -1852,16 +1749,26 @@ private fun AdminMoreScreen(
                         .background(GotchaColors.BrandPurple),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text(
-                        (me?.displayName ?: me?.email ?: "A").take(1).uppercase(),
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                    )
+                    val photo = resolveMediaUrl(me?.avatarUrl)
+                    if (!photo.isNullOrBlank()) {
+                        AsyncImage(
+                            model = photo,
+                            contentDescription = null,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    } else {
+                        Text(
+                            (me?.displayName ?: me?.email ?: "A").take(1).uppercase(),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        me?.displayName ?: "Alex Mercer",
+                        me?.displayName?.takeIf { it.isNotBlank() } ?: me?.email ?: "Admin",
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                         modifier = Modifier.clickable(onClick = onOpenLearner),

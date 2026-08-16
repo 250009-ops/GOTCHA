@@ -3,6 +3,17 @@ import type { LookupResult } from './types';
 
 export const CHAT_LANG_PAIR = ['EN', 'RU', 'UZ'] as const;
 
+let enabledChatLangs: string[] = [...CHAT_LANG_PAIR];
+
+export function setEnabledChatLangs(codes: string[]) {
+  const next = codes.map((c) => c.toUpperCase().slice(0, 2)).filter(Boolean);
+  if (next.length) enabledChatLangs = [...new Set(next)];
+}
+
+export function enabledChatLangCodes() {
+  return enabledChatLangs;
+}
+
 const UZ_HINTS = new Set([
   'salom', 'rahmat', 'yaxshi', 'qanday', 'nima', 'qayerda', 'bugun', 'kecha',
   'kitob', 'dost', "do'st", 'ha', 'yoq', "yo'q", 'men', 'sen', 'biz', 'ular',
@@ -31,7 +42,8 @@ export function apiChatLang(code?: string | null): string {
 
 export function otherChatLangs(selected: string): string[] {
   const code = normalizeChatLang(selected);
-  return CHAT_LANG_PAIR.filter((item) => item !== code);
+  const pool = enabledChatLangs.length ? enabledChatLangs : [...CHAT_LANG_PAIR];
+  return pool.filter((item) => item !== code);
 }
 
 export function learningTarget(
@@ -44,7 +56,7 @@ export function learningTarget(
     [peerNative, remaining, remaining, 'ru', 'uz', 'en']
       .filter(Boolean)
       .map((item) => normalizeChatLang(item))
-      .find((item) => CHAT_LANG_PAIR.includes(item as (typeof CHAT_LANG_PAIR)[number]) && item !== mine)
+      .find((item) => enabledChatLangs.includes(item) && item !== mine)
     ?? otherChatLangs(mine)[0]
     ?? 'EN'
   );
@@ -56,18 +68,37 @@ export function coerceToLang(native: string, selected?: string | null): string {
   return code && options.includes(code) ? code : (options[0] ?? 'EN');
 }
 
+const FR_HINTS = new Set(['le', 'la', 'les', 'une', 'des', 'bonjour', 'merci', 'avec', 'pour', 'vous', 'est']);
+const ES_HINTS = new Set(['el', 'los', 'las', 'hola', 'gracias', 'que', 'una', 'para', 'con', 'usted']);
+const DE_HINTS = new Set(['der', 'die', 'das', 'und', 'nicht', 'ich', 'sie', 'ein', 'eine', 'hallo', 'danke']);
+const PT_HINTS = new Set(['nao', 'não', 'voce', 'você', 'obrigado', 'ola', 'olá', 'uma', 'para', 'com']);
+
 export function detectChatLang(text: string): string | null {
   const letters = [...text].filter((ch) => /\p{L}/u.test(ch));
   if (letters.length === 0) return null;
+  const allowed = new Set(enabledChatLangs);
+  const pick = (code: string) => (allowed.has(code) ? code : null);
+
+  if (letters.some((ch) => ch >= '\u3040' && ch <= '\u30FF')) return pick('JA') ?? pick('EN');
+  if (letters.some((ch) => ch >= '\uAC00' && ch <= '\uD7AF')) return pick('KO') ?? pick('EN');
   const cyr = letters.filter((ch) => ch >= '\u0400' && ch <= '\u04FF').length;
-  if (cyr * 4 >= letters.length) return 'RU';
+  if (cyr * 4 >= letters.length) return pick('RU') ?? pick('UZ') ?? pick('EN');
   const lower = text.toLowerCase();
-  if (/[ʻʼ‘’']|o'|g'|oʻ|gʻ/.test(lower)) return 'UZ';
+  if (/[ʻʼ‘’']|o'|g'|oʻ|gʻ/.test(lower)) return pick('UZ') ?? pick('EN');
   const tokens = [...lower.matchAll(/[\p{L}']+/gu)].map((m) => m[0]);
-  const uzHits = tokens.filter((t) => UZ_HINTS.has(t)).length;
-  const enHits = tokens.filter((t) => EN_HINTS.has(t)).length;
-  if (uzHits > 0 && uzHits >= enHits) return 'UZ';
-  return 'EN';
+  const score = (hints: Set<string>) => tokens.filter((t) => hints.has(t)).length;
+  const ranked: Array<[string, number]> = [
+    ['UZ', score(UZ_HINTS)],
+    ['FR', score(FR_HINTS)],
+    ['ES', score(ES_HINTS)],
+    ['DE', score(DE_HINTS)],
+    ['PT', score(PT_HINTS)],
+    ['EN', score(EN_HINTS)],
+  ];
+  ranked.sort((a, b) => b[1] - a[1]);
+  const best = ranked.find(([code, hits]) => hits > 0 && allowed.has(code));
+  if (best) return best[0];
+  return pick('EN') ?? enabledChatLangs[0] ?? 'EN';
 }
 
 export function sameChatText(a?: string | null, b?: string | null): boolean {
@@ -83,28 +114,26 @@ export function looksLikeLang(text: string, lang: string): boolean {
   return want === 'RU' ? got === 'RU' : got !== 'RU';
 }
 
+const CHAT_META: Record<string, { name: string; flag: string }> = {
+  EN: { name: 'English', flag: '🇬🇧' },
+  RU: { name: 'Russian', flag: '🇷🇺' },
+  UZ: { name: 'Uzbek', flag: '🇺🇿' },
+  FR: { name: 'French', flag: '🇫🇷' },
+  ES: { name: 'Spanish', flag: '🇪🇸' },
+  JA: { name: 'Japanese', flag: '🇯🇵' },
+  DE: { name: 'German', flag: '🇩🇪' },
+  KO: { name: 'Korean', flag: '🇰🇷' },
+  PT: { name: 'Portuguese', flag: '🇵🇹' },
+};
+
 export function chatLangName(code: string): string {
-  switch (normalizeChatLang(code)) {
-    case 'RU':
-      return 'Russian';
-    case 'EN':
-      return 'English';
-    case 'UZ':
-      return 'Uzbek';
-    default:
-      return normalizeChatLang(code);
-  }
+  const key = normalizeChatLang(code);
+  return CHAT_META[key]?.name ?? key;
 }
 
 export function chatLangFlag(code: string): string {
-  switch (normalizeChatLang(code)) {
-    case 'RU':
-      return '🇷🇺';
-    case 'UZ':
-      return '🇺🇿';
-    default:
-      return '🇬🇧';
-  }
+  const key = normalizeChatLang(code);
+  return CHAT_META[key]?.flag ?? '🌐';
 }
 
 function toPrefKey(conversationId: string): string {
@@ -122,7 +151,7 @@ export function loadToLang(conversationId: string): string | null {
 
 export function saveToLang(conversationId: string, lang: string): void {
   const code = normalizeChatLang(lang);
-  if (!CHAT_LANG_PAIR.includes(code as (typeof CHAT_LANG_PAIR)[number])) return;
+  if (!enabledChatLangs.includes(code)) return;
   try {
     localStorage.setItem(toPrefKey(conversationId), code);
   } catch {

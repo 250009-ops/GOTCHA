@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { ImportPaymentStatus, ImportType, Prisma } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
+import { formatIsAllowed, normalizeAllowedFormats, normalizeImportFormat } from '../../common/import-format';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AtmosClient, validateCardForAtmos } from './atmos.client';
 
@@ -78,7 +79,7 @@ export class ImportCommerceService {
   }
 
   mapImportTypeToFormat(importType: ImportType, contentFormat?: string): string {
-    if (contentFormat?.trim()) return contentFormat.trim().toLowerCase();
+    if (contentFormat?.trim()) return normalizeImportFormat(contentFormat);
     switch (importType) {
       case ImportType.pdf:
       case ImportType.epub:
@@ -114,7 +115,13 @@ export class ImportCommerceService {
       allowRollover: true,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
-    return { ...defaults, ...(row.value as object) } as typeof defaults;
+    const merged = { ...defaults, ...(row.value as object) } as typeof defaults;
+    return {
+      ...merged,
+      allowedFormats: normalizeAllowedFormats(merged.allowedFormats),
+      resetCycle: ['daily', 'monthly', 'yearly'].includes(merged.resetCycle) ? merged.resetCycle : 'monthly',
+      allowRollover: false,
+    };
   }
 
   private startOfUtcDay(d = new Date()) {
@@ -125,9 +132,19 @@ export class ImportCommerceService {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
   }
 
-  async freeUsage(userId: string) {
+  private startOfUtcYear(d = new Date()) {
+    return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  }
+
+  private pageWindowStart(resetCycle: string) {
+    if (resetCycle === 'daily') return this.startOfUtcDay();
+    if (resetCycle === 'yearly') return this.startOfUtcYear();
+    return this.startOfUtcMonth();
+  }
+
+  async freeUsage(userId: string, resetCycle = 'monthly') {
     const dayStart = this.startOfUtcDay();
-    const monthStart = this.startOfUtcMonth();
+    const pageStart = this.pageWindowStart(resetCycle);
 
     const [dailyFreeUsed, monthFreePayments] = await Promise.all([
       this.prisma.importPayment.count({
@@ -143,7 +160,7 @@ export class ImportCommerceService {
           userId,
           status: ImportPaymentStatus.paid,
           amountTiyins: 0,
-          paidAt: { gte: monthStart },
+          paidAt: { gte: pageStart },
         },
         select: { estimatedPages: true },
       }),
@@ -167,7 +184,7 @@ export class ImportCommerceService {
     const contentFormat = this.mapImportTypeToFormat(importType, input.contentFormat);
     const estimatedPages = this.estimatePages(input);
     const freeLimits = await this.getFreeLimits();
-    const usage = await this.freeUsage(userId);
+    const usage = await this.freeUsage(userId, freeLimits.resetCycle);
     const tier = await this.findTier(estimatedPages);
     const priceUzs = tier ? Number(tier.priceUsd) : 0;
     const amountTiyins = Math.max(0, Math.round(priceUzs * 100));
@@ -177,7 +194,7 @@ export class ImportCommerceService {
     let freeReason: string | null = gatewayEnabled ? null : 'Payment gateway disabled (unlimited imports)';
 
     if (gatewayEnabled) {
-      const formatOk = freeLimits.allowedFormats.map((f) => f.toLowerCase()).includes(contentFormat);
+      const formatOk = formatIsAllowed(freeLimits.allowedFormats, contentFormat);
       const underDaily = usage.dailyFreeUsed < freeLimits.dailyFreeImportsPerUser;
       const underMonthlyPages = usage.monthlyPagesUsed + estimatedPages <= freeLimits.monthlyFreePageLimit;
       if (formatOk && underDaily && underMonthlyPages) {

@@ -11,6 +11,7 @@ import SettingsPage from './pages/SettingsPage';
 import StatsPage from './pages/StatsPage';
 import VocabularyPage from './pages/VocabularyPage';
 import MessagesPage from './pages/MessagesPage';
+import NotificationsPage from './pages/NotificationsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
@@ -39,6 +40,7 @@ export default function App() {
         <Route path="import/payment-return" element={<ImportPaymentReturnPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="messages" element={<MessagesPage />} />
+        <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
       </Route>
       <Route

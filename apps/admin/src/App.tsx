@@ -8,11 +8,9 @@ import DashboardPage from './pages/DashboardPage';
 import GamificationPage from './pages/GamificationPage';
 import ImportPricingPage from './pages/ImportPricingPage';
 import LanguagesPage from './pages/LanguagesPage';
-import LevelTestsPage from './pages/LevelTestsPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProtectedRoute from './pages/ProtectedRoute';
 import SettingsPage from './pages/SettingsPage';
-import SupportPage from './pages/SupportPage';
 import UsersPage from './pages/UsersPage';
 import { useAuth } from './lib/auth';
 
@@ -36,7 +34,7 @@ export default function App() {
           <Route path="content/:id/edit" element={<ContentEditorPage />} />
           <Route path="content/:directory" element={<ContentPage />} />
           <Route path="languages" element={<LanguagesPage />} />
-          <Route path="level-tests" element={<LevelTestsPage />} />
+          <Route path="level-tests" element={<Navigate to="/" replace />} />
           <Route path="ai-usage" element={<AiUsagePage />} />
           <Route path="gamification" element={<GamificationPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
@@ -46,7 +44,7 @@ export default function App() {
           <Route path="subscriptions" element={<Navigate to="/import-pricing" replace />} />
           <Route path="subscriptions/:directory" element={<Navigate to="/import-pricing" replace />} />
           <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="support" element={<SupportPage />} />
+          <Route path="support" element={<Navigate to="/" replace />} />
           <Route path="settings" element={<SettingsPage />} />
           {/* Figma IA: ops live under Content → User Imports (not sidebar nav) */}
           <Route path="licenses" element={<Navigate to="/content/user-imports" replace />} />

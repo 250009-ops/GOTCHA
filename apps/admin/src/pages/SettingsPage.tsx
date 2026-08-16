@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AdminAvatar } from '../components/AdminAvatar';
 import { Button, Card, Input, LoadingBlock, PageHeader, Select } from '../components/ui';
 import { api, clearToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -13,9 +14,6 @@ interface Settings {
   aiImportCleanupModel: string;
   aiDefaultUserQuota: number;
   aiConfigured?: boolean;
-  maintenanceMode: boolean;
-  allowRegistrations: boolean;
-  defaultCefr: string;
   contentModerationEnabled: boolean;
   autoApproveImports: boolean;
 }
@@ -28,11 +26,28 @@ const MODEL_OPTIONS = [
   'o4-mini',
 ];
 
+function settingsPayload(settings: Settings) {
+  return {
+    platformName: settings.platformName,
+    supportEmail: settings.supportEmail?.trim() || undefined,
+    aiEnabled: settings.aiEnabled,
+    aiDailyLimit: settings.aiDailyLimit,
+    aiDefaultUserQuota: settings.aiDefaultUserQuota,
+    aiLookupModel: settings.aiLookupModel,
+    aiQuizModel: settings.aiQuizModel,
+    aiImportCleanupModel: settings.aiImportCleanupModel,
+    contentModerationEnabled: settings.contentModerationEnabled,
+    autoApproveImports: settings.autoApproveImports,
+  };
+}
+
 export default function SettingsPage() {
-  const { user, refresh } = useAuth();
+  const { user, refresh, uploadAvatar } = useAuth();
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
@@ -47,7 +62,9 @@ export default function SettingsPage() {
   const [pwSuccess, setPwSuccess] = useState(false);
 
   useEffect(() => {
-    api<Settings>('/admin/settings').then(setSettings).catch(console.error);
+    api<Settings>('/admin/settings')
+      .then(setSettings)
+      .catch((e) => setLoadError(e instanceof Error ? e.message : 'Failed to load settings'));
   }, []);
 
   useEffect(() => {
@@ -120,19 +137,25 @@ export default function SettingsPage() {
     setSaving(true);
     setSaved(false);
     try {
-      const { aiConfigured: _ignored, ...payload } = settings;
       const res = await api<Settings>('/admin/settings', {
         method: 'PATCH',
-        body: JSON.stringify(payload),
+        body: JSON.stringify(settingsPayload(settings)),
       });
       setSettings(res);
       setSaved(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not save settings');
     } finally {
       setSaving(false);
     }
   }
 
-  if (!settings) return <LoadingBlock />;
+  if (!settings) {
+    if (loadError) {
+      return <p className="text-sm text-red-600">{loadError}</p>;
+    }
+    return <LoadingBlock />;
+  }
 
   const lookupModels = MODEL_OPTIONS.includes(settings.aiLookupModel)
     ? MODEL_OPTIONS
@@ -148,7 +171,7 @@ export default function SettingsPage() {
     <div>
       <PageHeader
         title="Settings"
-        subtitle="Manage GOTCHA app configurations, AI LLM integrations, content moderation, security, and billing plans."
+        subtitle="Manage your admin photo, platform name, support email, AI limits, and import moderation."
       />
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
@@ -169,33 +192,6 @@ export default function SettingsPage() {
                 value={String(settings.supportEmail ?? '')}
                 onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
               />
-            </label>
-            <label className="text-sm">
-              <span className="text-slate-500 block mb-1">Default CEFR</span>
-              <Select
-                value={String(settings.defaultCefr ?? 'a2')}
-                onChange={(e) => setSettings({ ...settings, defaultCefr: e.target.value })}
-              >
-                {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </Select>
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.allowRegistrations)}
-                onChange={(e) => setSettings({ ...settings, allowRegistrations: e.target.checked })}
-              />
-              Allow new registrations
-            </label>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={Boolean(settings.maintenanceMode)}
-                onChange={(e) => setSettings({ ...settings, maintenanceMode: e.target.checked })}
-              />
-              Maintenance mode
             </label>
             <div className="flex items-center gap-3">
               <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save settings'}</Button>
@@ -232,7 +228,7 @@ export default function SettingsPage() {
                 />
               </label>
               <label className="text-sm">
-                <span className="text-slate-500 block mb-1">Default user daily quota (no plan)</span>
+                <span className="text-slate-500 block mb-1">Daily AI quota per learner</span>
                 <Input
                   type="number"
                   min={0}
@@ -307,13 +303,14 @@ export default function SettingsPage() {
                   setSaving(true);
                   setSaved(false);
                   try {
-                    const { aiConfigured: _ignored, ...payload } = settings;
                     const res = await api<Settings>('/admin/settings', {
                       method: 'PATCH',
-                      body: JSON.stringify(payload),
+                      body: JSON.stringify(settingsPayload(settings)),
                     });
                     setSettings(res);
                     setSaved(true);
+                  } catch (e) {
+                    alert(e instanceof Error ? e.message : 'Could not save settings');
                   } finally {
                     setSaving(false);
                   }
@@ -327,6 +324,36 @@ export default function SettingsPage() {
           <Card className="p-5">
             <div className="font-semibold mb-4">Admin account</div>
             <form className="grid gap-3 text-sm" onSubmit={saveProfile}>
+              <div>
+                <span className="text-slate-500 block mb-2">Photo</span>
+                <div className="flex items-center gap-3">
+                  <AdminAvatar
+                    name={profileName || user?.displayName}
+                    email={profileEmail || user?.email}
+                    url={user?.avatarUrl}
+                    size={56}
+                  />
+                  <label className="h-9 px-3 rounded-lg border border-slate-200 bg-white text-sm font-medium text-slate-800 hover:bg-slate-50 inline-flex items-center cursor-pointer">
+                    {avatarBusy ? 'Uploading…' : 'Change photo'}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="hidden"
+                      disabled={avatarBusy}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        setAvatarBusy(true);
+                        void uploadAvatar(file)
+                          .catch((err) => alert(err instanceof Error ? err.message : 'Upload failed'))
+                          .finally(() => setAvatarBusy(false));
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="text-xs text-slate-400 mt-1.5">JPG, PNG, or WebP up to 2 MB. Shown in the sidebar.</p>
+              </div>
               <label>
                 <span className="text-slate-500 block mb-1">Name</span>
                 <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} />

@@ -5,6 +5,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -45,6 +46,7 @@ import app.gotcha.android.data.api.apiErrorCode
 import app.gotcha.android.data.api.apiErrorEmail
 import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
+import app.gotcha.android.data.model.toAppLanguageOption
 import app.gotcha.android.ui.components.BrandMark
 import app.gotcha.android.ui.components.BrandWordmark
 import app.gotcha.android.ui.components.GotchaPrimaryButton
@@ -185,6 +187,15 @@ fun SignUpScreen(
     var step by remember { mutableStateOf("credentials") }
     var nativeLanguage by remember { mutableStateOf("en") }
     var targetLanguages by remember { mutableStateOf(emptySet<String>()) }
+    var languageOptions by remember { mutableStateOf(APP_LANGUAGE_OPTIONS.take(3)) }
+
+    LaunchedEffect(Unit) {
+        runCatching { container.contentRepository.catalogLanguages() }
+            .onSuccess { rows ->
+                val mapped = rows.filter { it.isEnabled }.map { it.toAppLanguageOption() }
+                if (mapped.isNotEmpty()) languageOptions = mapped
+            }
+    }
     var pendingVerificationEmail by remember { mutableStateOf<String?>(null) }
     var accountAlreadyExists by remember { mutableStateOf(false) }
 
@@ -210,14 +221,14 @@ fun SignUpScreen(
                 color = GotchaColors.InkSecondary,
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                APP_LANGUAGE_OPTIONS.forEach { opt ->
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                languageOptions.forEach { opt ->
                     val selected = nativeLanguage == opt.code
                     LanguagePickChip(
                         flag = opt.flag,
                         label = opt.englishLabel,
                         selected = selected,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier,
                         onClick = {
                             nativeLanguage = opt.code
                             targetLanguages = targetLanguages - opt.code
@@ -234,14 +245,14 @@ fun SignUpScreen(
                 color = GotchaColors.InkSecondary,
             )
             Spacer(Modifier.height(8.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                APP_LANGUAGE_OPTIONS.filter { it.code != nativeLanguage }.forEach { opt ->
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                languageOptions.filter { it.code != nativeLanguage }.forEach { opt ->
                     val selected = targetLanguages.contains(opt.code)
                     LanguagePickChip(
                         flag = opt.flag,
                         label = opt.englishLabel,
                         selected = selected,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier,
                         onClick = {
                             targetLanguages = if (selected) targetLanguages - opt.code else targetLanguages + opt.code
                         },

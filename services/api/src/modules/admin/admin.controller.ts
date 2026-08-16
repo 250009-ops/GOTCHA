@@ -20,6 +20,7 @@ import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
 import { CreateContentDto, UpdateAdminProfileDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
+import { MAX_FILE_BYTES } from '../imports/extract-text';
 
 @ApiTags('admin')
 @Controller('admin')
@@ -97,14 +98,19 @@ export class AdminController {
 
   @Get('content/curriculum')
   @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
-  curriculum(@Query('type') type?: string) {
-    return this.admin.listCurriculum(type);
+  curriculum(
+    @Query('type') type?: string,
+    @Query('language') language?: string,
+    @Query('level') level?: string,
+    @Query('q') q?: string,
+  ) {
+    return this.admin.listCurriculum(type, language, level, q);
   }
 
   @Get('content/stats')
   @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
-  contentStats() {
-    return this.admin.contentStats();
+  contentStats(@Query('language') language?: string, @Query('level') level?: string) {
+    return this.admin.contentStats(language, level);
   }
 
   @Get('content/pricing-rules')
@@ -123,6 +129,45 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.editor)
   ingestPreview(@Body() body: Record<string, unknown>) {
     return this.admin.previewContentIngest(body);
+  }
+
+  @Post('content/ingest-preview-file')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+        title: { type: 'string' },
+        contentType: { type: 'string' },
+        language: { type: 'string' },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_FILE_BYTES },
+    }),
+  )
+  ingestPreviewFile(
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Body() body: Record<string, string>,
+  ) {
+    if (!file?.buffer?.length) throw new BadRequestException('PDF file is required');
+    const name = (file.originalname || '').toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase();
+    if (!name.endsWith('.pdf') && mime !== 'application/pdf') {
+      throw new BadRequestException('Only PDF files are supported');
+    }
+    return this.admin.previewContentIngest({
+      title: body.title,
+      contentType: body.contentType,
+      language: body.language,
+      pdfBuffer: file.buffer,
+    });
   }
 
   @Post('content')
@@ -173,7 +218,13 @@ export class AdminController {
   @Patch('content/:id/archive')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   archive(@Param('id') id: string) {
-    return this.admin.archiveContent(id);
+    return this.admin.deleteContent(id);
+  }
+
+  @Delete('content/:id')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  deleteContent(@Param('id') id: string) {
+    return this.admin.deleteContent(id);
   }
 
   @Get('licenses')
@@ -270,10 +321,22 @@ export class AdminController {
     return this.admin.languages();
   }
 
+  @Post('languages')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  addLanguage(@Body() body: { code?: string }) {
+    return this.admin.addLanguage(String(body.code ?? ''));
+  }
+
   @Patch('languages/:code')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateLanguage(@Param('code') code: string, @Body() body: { isEnabled?: boolean }) {
+  updateLanguage(@Param('code') code: string, @Body() body: { isEnabled?: boolean; status?: string }) {
     return this.admin.updateLanguage(code, body);
+  }
+
+  @Delete('languages/:code')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  removeLanguage(@Param('code') code: string) {
+    return this.admin.removeLanguage(code);
   }
 
   @Get('level-tests')

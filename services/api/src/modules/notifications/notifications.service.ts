@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, PublishStatus } from '@prisma/client';
+import { campaignAudienceMatches, PUSH_CAMPAIGN_CHANNELS } from '../../common/campaign-audience';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -138,14 +139,14 @@ export class NotificationsService {
 
   private async buildDrafts(userId: string): Promise<Draft[]> {
     const today = todayKey();
-    const [user, prefs, dueCount, todaySeconds, campaigns, participations] = await Promise.all([
+    const [user, prefs, dueCount, todaySeconds, campaigns, participations, newContent, paidImport] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { streakCount: true, streakLastDate: true, displayName: true },
+        select: { streakCount: true, streakLastDate: true, displayName: true, createdAt: true },
       }),
       this.prisma.userPreferences.findUnique({
         where: { userId },
-        select: { dailyGoalMinutes: true },
+        select: { dailyGoalMinutes: true, notificationsEnabled: true },
       }),
       this.prisma.userVocabulary.count({
         where: { userId, mastered: false, dueAt: { lte: new Date() } },
@@ -155,6 +156,7 @@ export class NotificationsService {
         where: {
           status: 'sent',
           sentAt: { gte: daysAgo(14) },
+          channel: { in: [...PUSH_CAMPAIGN_CHANNELS] },
         },
         orderBy: { sentAt: 'desc' },
         take: 10,
@@ -173,6 +175,24 @@ export class NotificationsService {
           },
         },
       }),
+      this.prisma.contentItem.findMany({
+        where: {
+          publishStatus: PublishStatus.published,
+          contentSource: { not: 'user_import' },
+          contentType: { not: 'user_import' },
+          OR: [
+            { publishedAt: { gte: daysAgo(30) } },
+            { publishedAt: null, createdAt: { gte: daysAgo(30) } },
+          ],
+        },
+        orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
+        take: 12,
+        select: { id: true, title: true, contentType: true, publishedAt: true },
+      }),
+      this.prisma.importPayment.findFirst({
+        where: { userId, status: 'paid' },
+        select: { id: true },
+      }),
     ]);
 
     const drafts: Draft[] = [];
@@ -181,7 +201,8 @@ export class NotificationsService {
       ? user.streakLastDate.toISOString().slice(0, 10)
       : null;
     const streakCount = user?.streakCount ?? 0;
-    if (streakCount > 0 && streakLast !== today) {
+    const remindersOn = prefs?.notificationsEnabled !== false;
+    if (remindersOn && streakCount > 0 && streakLast !== today) {
       drafts.push({
         kind: 'streak',
         title: `Don't lose your ${streakCount}-day streak!`,
@@ -193,7 +214,7 @@ export class NotificationsService {
 
     const goal = prefs?.dailyGoalMinutes ?? 15;
     const todayMinutes = Math.round(todaySeconds / 60);
-    if (goal > 0 && todayMinutes < goal) {
+    if (remindersOn && goal > 0 && todayMinutes < goal) {
       const left = Math.max(1, goal - todayMinutes);
       drafts.push({
         kind: 'goal',
@@ -240,7 +261,13 @@ export class NotificationsService {
       });
     }
 
+    const audienceCtx = {
+      createdAt: user?.createdAt ?? new Date(0),
+      hasPaidImport: Boolean(paidImport),
+      isActive: streakCount > 0 || todaySeconds > 0,
+    };
     for (const campaign of campaigns) {
+      if (!campaignAudienceMatches(campaign.audience, audienceCtx)) continue;
       drafts.push({
         kind: 'system',
         title: campaign.subject || campaign.name,
@@ -248,6 +275,27 @@ export class NotificationsService {
         href: 'library',
         refId: campaign.id,
         dedupeKey: `campaign:${campaign.id}`,
+      });
+    }
+
+    for (const item of newContent) {
+      const kindLabel =
+        item.contentType === 'news'
+          ? 'news piece'
+          : item.contentType === 'article'
+            ? 'article'
+            : item.contentType === 'story'
+              ? 'story'
+              : 'book';
+      drafts.push({
+        kind: 'content',
+        title: `New ${kindLabel} in the library`,
+        body: `${item.title} is now available to read.`,
+        href: `content/${item.id}`,
+        refId: item.id,
+        dedupeKey: `content:${item.id}`,
+        eventAt: item.publishedAt ?? undefined,
+        bumpUnread: true,
       });
     }
 

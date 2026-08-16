@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -163,6 +164,7 @@ fun HomeScreen(
     val todayWords = stats?.todayWordsSaved ?: 0
     val continueItems = feed?.continueReading.orEmpty()
     val recommendedItems = feed?.recentlyPublished.orEmpty()
+    val myImportItems = feed?.myImports.orEmpty()
 
     LazyColumn(
         modifier = Modifier
@@ -432,6 +434,26 @@ fun HomeScreen(
                         }
                     }
                 }
+
+                if (myImportItems.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            "Your imports",
+                            fontFamily = Manrope,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = GotchaColors.Ink,
+                        )
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(myImportItems.take(8)) { item ->
+                                RecommendCard(
+                                    item,
+                                    onClick = offline.guardClick { onOpenReader(item.id) },
+                                )
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -573,7 +595,7 @@ private fun RecommendCard(item: ContentItem, onClick: () -> Unit) {
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        CoverThumb(item.coverImageUrl, Modifier.fillMaxWidth().height(110.dp), corner = 10)
+        CoverThumb(item.coverImageUrl, Modifier.fillMaxWidth().aspectRatio(3f / 4f), corner = 10)
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
             LangChip(item.language ?: "?")
             if (!item.cefrLevel.isNullOrBlank()) LevelChip(item.cefrLevel)

@@ -5,7 +5,6 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import {
-  AchievementCategory,
   AppLanguage,
   CampaignChannel,
   CampaignStatus,
@@ -13,12 +12,13 @@ import {
   ContentType,
   LicenseStatus,
   ModerationStatus,
+  Prisma,
   PublishStatus,
   SubscriptionTier,
   SupportTicketPriority,
   SupportTicketStatus,
 } from '@prisma/client';
-import { mkdir, writeFile } from 'fs/promises';
+import { mkdir, unlink, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { tokenizeText, slugify, uniqueWordCount } from '../../utils/tokenizer';
@@ -30,6 +30,7 @@ import {
   segmentStats,
   type BuiltSegment,
 } from './content-ingest';
+import { chaptersHaveRealTitles } from '../imports/chapter-split';
 import {
   ADMIN_METRICS_KEY,
   FIGMA_ADMIN_METRICS,
@@ -43,6 +44,17 @@ import {
 import { AuthService } from '../auth/auth.service';
 import { UpdateAdminProfileDto } from './dto/admin.dto';
 import { assertAtmosMinPriceSom, atmosMinAmountSom } from '../billing/atmos.client';
+import { liveLearnerWhere, syntheticUserEmailWhere } from '../../common/production-users';
+import { normalizeAllowedFormats } from '../../common/import-format';
+import {
+  normalizeCampaignAudience,
+  PUSH_CAMPAIGN_CHANNELS,
+} from '../../common/campaign-audience';
+import {
+  ensureLanguageCatalog,
+  isAppLanguageCode,
+} from '../../common/language-catalog';
+import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
 
 @Injectable()
 export class AdminService {
@@ -61,6 +73,7 @@ export class AdminService {
   }
 
   async dashboard() {
+    await this.purgeSeedSupportTickets();
     const now = new Date();
     const dayStart = new Date(now);
     dayStart.setHours(0, 0, 0, 0);
@@ -79,7 +92,7 @@ export class AdminService {
       users,
       createdThisWeek,
       createdPrevWeek,
-      activeSubscribers,
+      paidImportUsers,
       activeTodayRows,
       publishedContent,
       userImports,
@@ -94,16 +107,18 @@ export class AdminService {
       recentTickets,
       importPaymentsSince,
     ] = await Promise.all([
-      this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.user.count({ where: { deletedAt: null, createdAt: { gte: weekAgo } } }),
+      this.prisma.user.count({ where: liveLearnerWhere() }),
+      this.prisma.user.count({ where: { ...liveLearnerWhere(), createdAt: { gte: weekAgo } } }),
       this.prisma.user.count({
-        where: { deletedAt: null, createdAt: { gte: twoWeeksAgo, lt: weekAgo } },
+        where: { ...liveLearnerWhere(), createdAt: { gte: twoWeeksAgo, lt: weekAgo } },
       }),
-      this.prisma.userSubscription.count({
-        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
+      this.prisma.importPayment.findMany({
+        where: { status: 'paid', user: liveLearnerWhere() },
+        select: { userId: true },
+        distinct: ['userId'],
       }),
       this.prisma.readingSession.findMany({
-        where: { startedAt: { gte: dayStart } },
+        where: { startedAt: { gte: dayStart }, user: liveLearnerWhere() },
         select: { userId: true },
         distinct: ['userId'],
       }),
@@ -112,7 +127,7 @@ export class AdminService {
       this.prisma.moderationQueue.count({ where: { status: 'pending' } }),
       this.prisma.ingestionJob.count({ where: { status: 'queued' } }),
       this.prisma.aiUsageDaily.aggregate({
-        where: { usageDate: { gte: dayStart } },
+        where: { usageDate: { gte: dayStart }, user: liveLearnerWhere() },
         _sum: { lookupCount: true, quizCount: true, tokensUsed: true },
       }),
       // Real revenue only: completed/paid Atmos import payments (UZS). Never blend in
@@ -137,7 +152,7 @@ export class AdminService {
         })
         .catch(() => ({ _sum: { amountTiyins: 0 as number | null } })),
       this.prisma.user.findMany({
-        where: { deletedAt: null },
+        where: liveLearnerWhere(),
         orderBy: { createdAt: 'desc' },
         take: 8,
         include: {
@@ -173,6 +188,8 @@ export class AdminService {
         .catch(() => [] as Array<{ amountTiyins: number; paidAt: Date | null }>),
     ]);
 
+    const payAsYouGoIds = new Set(paidImportUsers.map((r) => r.userId));
+    const activeSubscribers = payAsYouGoIds.size;
     const activeToday = activeTodayRows.length;
     const revenueMonthUzs = Math.round((importPaidMonthAgg._sum.amountTiyins ?? 0) / 100);
     const revenuePrevUzs = Math.round((importPaidPrevMonthAgg._sum.amountTiyins ?? 0) / 100);
@@ -205,7 +222,7 @@ export class AdminService {
       months.map(async (m) => ({
         month: m.label,
         users: await this.prisma.user.count({
-          where: { deletedAt: null, createdAt: { lte: m.end } },
+          where: { ...liveLearnerWhere(), createdAt: { lte: m.end } },
         }),
       })),
     );
@@ -249,7 +266,7 @@ export class AdminService {
     }));
 
     const recentUsers = recentUsersRaw.map((u) => {
-      const mapped = this.mapUserRow(u);
+      const mapped = this.mapUserRow(u, { payAsYouGo: payAsYouGoIds.has(u.id) });
       return {
         id: mapped.id,
         displayName: mapped.displayName,
@@ -270,7 +287,7 @@ export class AdminService {
     };
     const activity: ActivityItem[] = [];
     for (const u of recentUsersRaw.slice(0, 3)) {
-      const mapped = this.mapUserRow(u);
+      const mapped = this.mapUserRow(u, { payAsYouGo: payAsYouGoIds.has(u.id) });
       activity.push({
         id: `user:${u.id}`,
         type: 'user',
@@ -326,7 +343,7 @@ export class AdminService {
       revenueToday: revenueTodayUzs,
       revenueMomDelta,
       aiUsageTotal: {
-        tokensUsed: aiTokensToday || aiLookupsToday * 32,
+        tokensUsed: aiTokensToday,
         lookupCount: aiLookupsToday,
         quizCount: aiQuizzesToday,
       },
@@ -352,28 +369,18 @@ export class AdminService {
 
   async listUsers(q?: string, tier?: string, status?: string) {
     const statusKey = (status ?? '').trim().toLowerCase();
+    const tierKey = (tier ?? '').trim().toLowerCase();
     const includeSuspended = statusKey === 'suspended';
     const dayStart = new Date();
     dayStart.setHours(0, 0, 0, 0);
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const [aiSettings, usageToday, activeRecentRows] = await Promise.all([
-      this.resolveAiSettings(),
-      this.prisma.aiUsageDaily.findMany({
-        where: { usageDate: { gte: dayStart } },
-        include: {
-          user: {
-            include: {
-              subscriptions: {
-                where: { status: { in: ['active', 'trialing'] } },
-                include: { plan: true },
-                orderBy: { createdAt: 'desc' },
-                take: 1,
-              },
-            },
-          },
-        },
+    const [paidImportUsers, activeRecentRows] = await Promise.all([
+      this.prisma.importPayment.findMany({
+        where: { status: 'paid', user: liveLearnerWhere() },
+        select: { userId: true },
+        distinct: ['userId'],
       }),
       this.prisma.readingSession.findMany({
         where: { startedAt: { gte: weekAgo } },
@@ -382,19 +389,13 @@ export class AdminService {
       }),
     ]);
 
-    const flaggedIds = new Set<string>();
-    for (const r of usageToday) {
-      const quota =
-        r.user.subscriptions[0]?.plan.aiDailyQuota ?? aiSettings.defaultUserQuota;
-      if (quota < 1_000_000 && r.lookupCount >= Math.max(1, Math.floor(quota * 0.9))) {
-        flaggedIds.add(r.userId);
-      }
-    }
+    const payAsYouGoIds = new Set(paidImportUsers.map((r) => r.userId));
     const activeRecentIds = new Set(activeRecentRows.map((r) => r.userId));
 
     const users = await this.prisma.user.findMany({
       where: {
         deletedAt: includeSuspended ? { not: null } : null,
+        NOT: syntheticUserEmailWhere(),
         ...(q
           ? {
               OR: [
@@ -415,44 +416,46 @@ export class AdminService {
     });
 
     let rows = users.map((u) => {
-      const mapped = this.mapUserRow(u);
-      const isFlagged = flaggedIds.has(u.id);
+      const payAsYouGo = payAsYouGoIds.has(u.id);
+      const mapped = this.mapUserRow(u, { payAsYouGo });
       const isSuspended = Boolean(u.deletedAt);
       return {
         ...mapped,
-        planLabel: mapped.billingTier === 'Premium' ? 'Premium' : 'Free Tier',
+        planLabel: payAsYouGo ? 'Pay as you go' : 'Free',
         isAdmin: Boolean(u.adminProfile),
         adminRole: u.adminProfile?.role ?? null,
         vocabCount: u._count.vocabulary,
         sessionCount: u._count.readingSessions,
-        isFlagged,
+        isFlagged: false,
         isSuspended,
         isActiveRecently: activeRecentIds.has(u.id) && !isSuspended,
       };
     });
 
-    if (tier) {
-      rows = rows.filter((r) => r.billingTier.toLowerCase().includes(tier.toLowerCase()));
-    }
-    if (statusKey === 'flagged') {
-      rows = rows.filter((r) => r.isFlagged);
+    const wantsPayg =
+      tierKey === 'premium' || tierKey === 'payg' || tierKey === 'pay as you go';
+    if (wantsPayg) {
+      rows = rows.filter((r) => r.billingTier.toLowerCase().includes('pay'));
+    } else if (tierKey === 'free') {
+      rows = rows.filter((r) => !r.billingTier.toLowerCase().includes('pay'));
     }
 
-    const [total, premium, suspended] = await Promise.all([
-      this.prisma.user.count({ where: { deletedAt: null } }),
-      this.prisma.userSubscription.count({
-        where: { status: { in: ['active', 'trialing'] }, plan: { tier: 'premium' } },
+    const [total, suspended] = await Promise.all([
+      this.prisma.user.count({ where: liveLearnerWhere() }),
+      this.prisma.user.count({
+        where: { deletedAt: { not: null }, NOT: syntheticUserEmailWhere() },
       }),
-      this.prisma.user.count({ where: { deletedAt: { not: null } } }),
     ]);
+    const payAsYouGo = payAsYouGoIds.size;
 
     return {
       stats: {
         total,
-        premium,
-        free: Math.max(0, total - premium),
+        premium: payAsYouGo,
+        payAsYouGo,
+        free: Math.max(0, total - payAsYouGo),
         suspended,
-        flagged: flaggedIds.size,
+        flagged: 0,
       },
       users: rows,
     };
@@ -475,10 +478,7 @@ export class AdminService {
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const [usageToday, recentSessions, recentVocab, recentImports, aiSettings] = await Promise.all([
-      this.prisma.aiUsageDaily.findFirst({
-        where: { userId: id, usageDate: { gte: dayStart } },
-      }),
+    const [recentSessions, recentVocab, recentImports, paidImport] = await Promise.all([
       this.prisma.readingSession.findMany({
         where: { userId: id },
         orderBy: { startedAt: 'desc' },
@@ -497,22 +497,20 @@ export class AdminService {
         take: 5,
         select: { title: true, createdAt: true },
       }),
-      this.resolveAiSettings(),
+      this.prisma.importPayment.findFirst({
+        where: { userId: id, status: 'paid' },
+        select: { id: true },
+      }),
     ]);
 
-    const quota =
-      u.subscriptions[0]?.plan.aiDailyQuota ?? aiSettings.defaultUserQuota;
-    const isFlagged =
-      Boolean(usageToday) &&
-      quota < 1_000_000 &&
-      (usageToday?.lookupCount ?? 0) >= Math.max(1, Math.floor(quota * 0.9));
+    const payAsYouGo = Boolean(paidImport);
     const isSuspended = Boolean(u.deletedAt);
     const recentRead = await this.prisma.readingSession.findFirst({
       where: { userId: id, startedAt: { gte: weekAgo } },
       select: { id: true },
     });
 
-    const mapped = this.mapUserRow(u);
+    const mapped = this.mapUserRow(u, { payAsYouGo });
     const activity: Array<{ id: string; label: string; createdAt: string; type: string }> = [];
 
     for (const s of recentSessions) {
@@ -561,29 +559,16 @@ export class AdminService {
       });
     }
 
-    const sub = u.subscriptions[0];
-    if (sub) {
-      activity.push({
-        id: `sub:${sub.id}`,
-        type: 'subscription',
-        label:
-          sub.plan.tier === 'premium'
-            ? 'Subscribed to Premium plan'
-            : 'On Free plan',
-        createdAt: sub.createdAt.toISOString(),
-      });
-    }
-
     activity.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));
 
     return {
       ...mapped,
-      planLabel: mapped.billingTier === 'Premium' ? 'Premium' : 'Free Tier',
+      planLabel: payAsYouGo ? 'Pay as you go' : 'Free',
       isAdmin: Boolean(u.adminProfile),
       adminRole: u.adminProfile?.role ?? null,
       vocabCount: u._count.vocabulary,
       sessionCount: u._count.readingSessions,
-      isFlagged,
+      isFlagged: false,
       isSuspended,
       isActiveRecently: Boolean(recentRead) && !isSuspended,
       recentActivity: activity.slice(0, 8),
@@ -701,39 +686,103 @@ export class AdminService {
     return { deleted: true, id };
   }
 
+  private catalogFilter(opts?: {
+    language?: string;
+    level?: string;
+    q?: string;
+  }): Prisma.ContentItemWhereInput {
+    const extra: Prisma.ContentItemWhereInput = {};
+    const language = (opts?.language ?? '').trim().toLowerCase();
+    const level = (opts?.level ?? '').trim().toLowerCase();
+    const q = (opts?.q ?? '').trim();
+    if (language && language !== 'all' && Object.values(AppLanguage).includes(language as AppLanguage)) {
+      extra.language = language as AppLanguage;
+    }
+    if (level && level !== 'all' && ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].includes(level)) {
+      extra.cefrLevel = level as never;
+    }
+    if (q) {
+      extra.OR = [
+        { title: { contains: q, mode: 'insensitive' } },
+        { author: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    return extra;
+  }
+
+  private catalogWhere(extra?: Prisma.ContentItemWhereInput): Prisma.ContentItemWhereInput {
+    return {
+      AND: [
+        { contentSource: { not: ContentSource.user_import } },
+        { contentType: { not: ContentType.user_import } },
+        ...(extra && Object.keys(extra).length > 0 ? [extra] : []),
+      ],
+    };
+  }
+
   listContent(status?: PublishStatus) {
     return this.prisma.contentItem.findMany({
-      where: status ? { publishStatus: status } : undefined,
+      where: this.catalogWhere(status ? { publishStatus: status } : undefined),
       orderBy: { updatedAt: 'desc' },
       include: { license: true, _count: { select: { readingProgress: true, segments: true } } },
     });
   }
 
-  async contentStats() {
-    // Keep Figma-sized KPI numbers for the Content Library header cards.
-    const metrics = await this.getMetrics();
-    const c = metrics.content;
-    const freeItemsDb = await this.prisma.contentItem.count({ where: { isFree: true } });
+  async contentStats(language?: string, level?: string) {
+    const filter = this.catalogFilter({ language, level });
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [total, published, draft, review, archived, freeItems, paidMonth] = await Promise.all([
+      this.prisma.contentItem.count({ where: this.catalogWhere(filter) }),
+      this.prisma.contentItem.count({
+        where: this.catalogWhere({ ...filter, publishStatus: PublishStatus.published }),
+      }),
+      this.prisma.contentItem.count({
+        where: this.catalogWhere({ ...filter, publishStatus: PublishStatus.draft }),
+      }),
+      this.prisma.contentItem.count({
+        where: this.catalogWhere({ ...filter, publishStatus: PublishStatus.review }),
+      }),
+      this.prisma.contentItem.count({
+        where: this.catalogWhere({ ...filter, publishStatus: PublishStatus.archived }),
+      }),
+      this.prisma.contentItem.count({
+        where: this.catalogWhere({ ...filter, isFree: true }),
+      }),
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', paidAt: { gte: monthStart } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 as number | null } })),
+    ]);
     return {
-      total: c.total,
-      published: c.published,
-      draft: c.draft,
-      review: c.review,
-      archived: c.archived ?? 0,
-      activeSalesMonthly: c.activeSalesMonthly ?? 12450,
-      freeItems: Math.max(c.freeItems ?? 0, freeItemsDb),
+      total,
+      published,
+      draft,
+      review,
+      archived,
+      activeSalesMonthly: Math.round((paidMonth._sum.amountTiyins ?? 0) / 100),
+      currency: 'UZS',
+      freeItems,
     };
   }
 
   /** Real ContentItem rows for the admin Content Library (Publish/Archive use these IDs). */
-  async listCurriculum(type?: string) {
+  async listCurriculum(type?: string, language?: string, level?: string, q?: string) {
     // User Imports tab is ops UI (moderation/ingestion/licenses); no curriculum rows.
     if (type === 'user_imports') return [];
 
-    const where =
-      !type || type === 'all'
+    const typeKey = (type ?? 'all').trim().toLowerCase();
+    const typeFilter =
+      !typeKey || typeKey === 'all' || typeKey === 'pricing'
         ? undefined
-        : { contentType: type as ContentType };
+        : { contentType: typeKey as ContentType };
+    const where = this.catalogWhere({
+      ...this.catalogFilter({ language, level, q }),
+      ...typeFilter,
+    });
 
     const items = await this.prisma.contentItem.findMany({
       where,
@@ -762,6 +811,7 @@ export class AdminService {
         publishStatus: item.publishStatus,
         isFree: item.isFree,
         priceUsd: Number(item.priceUsd ?? 0),
+        priceUzs: Number(item.priceUsd ?? 0),
         salesCount: item.salesCount,
         author: item.author,
         coverImageKey: item.coverImageKey,
@@ -798,13 +848,17 @@ export class AdminService {
       plainText: body.plainText ? String(body.plainText) : undefined,
       sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
       title: body.title ? String(body.title) : undefined,
+      pdfBuffer: Buffer.isBuffer(body.pdfBuffer) ? body.pdfBuffer : undefined,
     });
     let chapters = extracted.chapters;
     if (mode === 'literary' && chapters.length) {
-      chapters = await this.ai.cleanImportChapters(chapters, {
-        source: 'url',
-        documentTitle: extracted.title,
-      });
+      const alreadyStructured = chaptersHaveRealTitles(chapters) && chapters.length >= 8;
+      if (!alreadyStructured) {
+        chapters = await this.ai.cleanImportChapters(chapters, {
+          source: 'url',
+          documentTitle: extracted.title,
+        });
+      }
     }
     if (mode === 'tight') {
       const text = extracted.text || chapters.map((c) => c.text).join('\n\n');
@@ -840,7 +894,7 @@ export class AdminService {
     const stats = segmentStats(segments);
     const author = body.author ? String(body.author).trim() : undefined;
 
-    return this.prisma.contentItem.create({
+    const item = await this.prisma.contentItem.create({
       data: {
         slug: `${slugify(title)}-${Date.now()}`,
         title,
@@ -860,24 +914,38 @@ export class AdminService {
         uniqueWordCount: stats.uniqueWordCount,
         publishStatus: PublishStatus.draft,
         createdById: adminId,
-        segments: segments.length
-          ? {
-              create: segments.map((s) => ({
-                segmentIndex: s.segmentIndex,
-                chapterIndex: s.chapterIndex,
-                chapterTitle: s.chapterTitle,
-                pageIndex: s.pageIndex,
-                title: s.title,
-                plainText: s.plainText,
-                tokenMap: s.tokenMap as never,
-                sentenceMap: s.sentenceMap as never,
-                wordCount: s.wordCount,
-              })),
-            }
-          : undefined,
       },
-      include: { segments: { orderBy: { segmentIndex: 'asc' } }, license: true },
     });
+
+    const BATCH = 80;
+    for (let i = 0; i < segments.length; i += BATCH) {
+      const batch = segments.slice(i, i + BATCH);
+      await this.prisma.contentSegment.createMany({
+        data: batch.map((s) => ({
+          contentId: item.id,
+          segmentIndex: s.segmentIndex,
+          chapterIndex: s.chapterIndex,
+          chapterTitle: s.chapterTitle,
+          pageIndex: s.pageIndex,
+          title: s.title,
+          plainText: s.plainText,
+          tokenMap: s.tokenMap as never,
+          sentenceMap: s.sentenceMap as never,
+          wordCount: s.wordCount,
+        })),
+      });
+    }
+
+    return {
+      id: item.id,
+      title: item.title,
+      author: item.author,
+      contentType: item.contentType,
+      publishStatus: item.publishStatus,
+      wordCount: item.wordCount,
+      chapterCount: new Set(segments.map((s) => s.chapterIndex)).size,
+      pageCount: segments.length,
+    };
   }
 
   async getContent(id: string) {
@@ -1008,38 +1076,103 @@ export class AdminService {
   }
 
   archiveContent(id: string) {
-    return this.prisma.contentItem.update({
-      where: { id },
-      data: { publishStatus: PublishStatus.archived },
+    return this.deleteContent(id);
+  }
+
+  async deleteContent(id: string) {
+    const existing = await this.prisma.contentItem.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Content not found');
+    if (
+      existing.contentSource === ContentSource.user_import ||
+      existing.contentType === ContentType.user_import
+    ) {
+      throw new BadRequestException('Learner imports are managed from User Imports, not the catalog.');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.userVocabulary.updateMany({
+        where: { contentId: id },
+        data: { contentId: null, contextSegmentId: null },
+      });
+      await tx.practiceSession.updateMany({
+        where: { contentId: id },
+        data: { contentId: null, segmentId: null },
+      });
+      await tx.userImport.updateMany({ where: { contentId: id }, data: { contentId: null } });
+      await tx.ingestionJob.updateMany({ where: { contentId: id }, data: { contentId: null } });
+      await tx.contentItem.updateMany({ where: { parentContentId: id }, data: { parentContentId: null } });
+      await tx.contentItem.delete({ where: { id } });
     });
+
+    const cover = existing.coverImageKey?.split('?')[0] ?? '';
+    const match = cover.match(/^\/uploads\/covers\/([^/]+)$/);
+    if (match) {
+      const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+      await unlink(join(root, 'covers', match[1])).catch(() => undefined);
+    }
+
+    return { deleted: true, id, title: existing.title };
   }
 
   async importPricing(range = '12m') {
-    const metrics = await this.getMetrics();
-    const m = metrics.importPricing;
+    const months = range === '3m' ? 3 : range === '6m' ? 6 : 12;
     const dayStart = new Date();
     dayStart.setUTCHours(0, 0, 0, 0);
     const monthStart = new Date(Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1));
+    const rangeStart = new Date(
+      Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth() - (months - 1), 1),
+    );
+    const priorStart = new Date(
+      Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth() - (months * 2 - 1), 1),
+    );
+    const priorEnd = new Date(rangeStart.getTime() - 1);
 
-    const [rules, tiers, freeLimits, importCount, paidMonth, freeMonth, importsToday] = await Promise.all([
-      this.prisma.importPricingRule.findMany({ orderBy: { sortOrder: 'asc' } }),
-      this.prisma.importPageTier.findMany({ orderBy: { sortOrder: 'asc' } }),
-      this.getImportFreeLimits(),
-      this.prisma.userImport.count(),
-      this.prisma.importPayment.aggregate({
-        where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: monthStart } },
-        _sum: { amountTiyins: true },
-        _count: true,
-      }).catch(() => ({ _sum: { amountTiyins: 0 }, _count: 0 })),
-      this.prisma.importPayment.count({
-        where: { status: 'paid', amountTiyins: 0, paidAt: { gte: monthStart } },
-      }).catch(() => 0),
-      this.prisma.userImport.count({ where: { createdAt: { gte: dayStart } } }),
-    ]);
+    const [rules, tiers, freeLimits, importCount, paidRange, paidPrior, paidMonth, freeMonth, importsToday] =
+      await Promise.all([
+        this.prisma.importPricingRule.findMany({ orderBy: { sortOrder: 'asc' } }),
+        this.prisma.importPageTier.findMany({ orderBy: { sortOrder: 'asc' } }),
+        this.getImportFreeLimits(),
+        this.prisma.userImport.count(),
+        this.prisma.importPayment
+          .aggregate({
+            where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: rangeStart } },
+            _sum: { amountTiyins: true },
+            _count: true,
+          })
+          .catch(() => ({ _sum: { amountTiyins: 0 }, _count: 0 })),
+        this.prisma.importPayment
+          .aggregate({
+            where: {
+              status: 'paid',
+              amountTiyins: { gt: 0 },
+              paidAt: { gte: priorStart, lte: priorEnd },
+            },
+            _sum: { amountTiyins: true },
+          })
+          .catch(() => ({ _sum: { amountTiyins: 0 } })),
+        this.prisma.importPayment
+          .aggregate({
+            where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: monthStart } },
+            _sum: { amountTiyins: true },
+            _count: true,
+          })
+          .catch(() => ({ _sum: { amountTiyins: 0 }, _count: 0 })),
+        this.prisma.importPayment
+          .count({
+            where: { status: 'paid', amountTiyins: 0, paidAt: { gte: monthStart } },
+          })
+          .catch(() => 0),
+        this.prisma.userImport.count({ where: { createdAt: { gte: dayStart } } }),
+      ]);
 
-    const revenueUzs = (paidMonth._sum.amountTiyins ?? 0) / 100;
-    const freePool = Math.max(1, freeLimits.dailyFreeImportsPerUser * 30);
-    const freeUsed = freeMonth;
+    const revenueUzs = (paidRange._sum.amountTiyins ?? 0) / 100;
+    const priorUzs = (paidPrior._sum.amountTiyins ?? 0) / 100;
+    const revenueGrowthPct =
+      priorUzs > 0
+        ? Number((((revenueUzs - priorUzs) / priorUzs) * 100).toFixed(1))
+        : revenueUzs > 0
+          ? 100
+          : 0;
 
     return {
       range,
@@ -1052,18 +1185,19 @@ export class AdminService {
       ),
       atmosMinAmountSom: atmosMinAmountSom(),
       stats: {
-        // Prefer live DB aggregates (incl. 0) — do not fall back to Figma seed metrics.
         totalImportsToday: importsToday,
-        importsGrowthPct: m.importsGrowthPct,
+        importsGrowthPct: 0,
         revenueFromImports: revenueUzs,
-        revenueGrowthPct: m.revenueGrowthPct,
-        freeImportsUsed: freeUsed,
-        freeImportsPool: freePool,
-        freeUsedPct: Math.round((freeUsed / freePool) * 100),
-        conversionPct: m.conversionPct,
-        conversionGrowthPct: m.conversionGrowthPct,
+        revenueGrowthPct,
+        priorRevenueFromImports: priorUzs,
+        freeImportsUsed: freeMonth,
+        freeImportsPool: 0,
+        freeUsedPct: 0,
+        conversionPct: 0,
+        conversionGrowthPct: 0,
         realImportCount: importCount,
         paidImportsThisMonth: paidMonth._count,
+        paidImportsInRange: paidRange._count,
       },
       rules: rules.map((r) => ({
         id: r.id,
@@ -1155,10 +1289,16 @@ export class AdminService {
       monthlyFreePageLimit: 50,
       allowedFormats: ['article', 'news'] as string[],
       resetCycle: 'monthly',
-      allowRollover: true,
+      allowRollover: false,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
-    return { ...defaults, ...(row.value as object) };
+    const merged = { ...defaults, ...(row.value as object) } as typeof defaults;
+    return {
+      ...merged,
+      allowedFormats: normalizeAllowedFormats(merged.allowedFormats),
+      resetCycle: ['daily', 'monthly', 'yearly'].includes(merged.resetCycle) ? merged.resetCycle : 'monthly',
+      allowRollover: false,
+    };
   }
 
   async updateImportFreeLimits(body: Record<string, unknown>) {
@@ -1172,10 +1312,10 @@ export class AdminService {
       monthlyFreePageLimit:
         body.monthlyFreePageLimit !== undefined ? Number(body.monthlyFreePageLimit) : current.monthlyFreePageLimit,
       allowedFormats: Array.isArray(body.allowedFormats)
-        ? body.allowedFormats.map(String)
+        ? normalizeAllowedFormats(body.allowedFormats)
         : current.allowedFormats,
       resetCycle: body.resetCycle !== undefined ? String(body.resetCycle) : current.resetCycle,
-      allowRollover: body.allowRollover !== undefined ? Boolean(body.allowRollover) : current.allowRollover,
+      allowRollover: false,
     };
     await this.prisma.platformSetting.upsert({
       where: { key: 'importFreeLimits' },
@@ -1255,16 +1395,39 @@ export class AdminService {
     });
   }
 
-  private analyticsRangeFactor(range?: string) {
-    if (range === '7d') return 0.32;
-    if (range === '90d') return 2.65;
-    return 1;
+  private analyticsWindow(range = '30d') {
+    const end = new Date();
+    const days = range === '7d' ? 7 : range === '90d' ? 90 : 30;
+    const start = new Date(end);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+    const priorEnd = new Date(start);
+    priorEnd.setMilliseconds(priorEnd.getMilliseconds() - 1);
+    const priorStart = new Date(priorEnd);
+    priorStart.setHours(0, 0, 0, 0);
+    priorStart.setDate(priorStart.getDate() - (days - 1));
+    return { start, end, priorStart, priorEnd, days };
   }
 
-  private aiRangeFactor(range?: string) {
-    if (range === 'yesterday') return 0.88;
-    if (range === '7d') return 6.4;
-    return 1;
+  private async activeLearnerIds(start: Date, end: Date) {
+    const [sessions, vocabs, imports] = await Promise.all([
+      this.prisma.readingSession.findMany({
+        where: { startedAt: { gte: start, lte: end }, user: liveLearnerWhere() },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.userVocabulary.findMany({
+        where: { createdAt: { gte: start, lte: end }, user: liveLearnerWhere() },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+      this.prisma.userImport.findMany({
+        where: { createdAt: { gte: start, lte: end }, user: liveLearnerWhere() },
+        select: { userId: true },
+        distinct: ['userId'],
+      }),
+    ]);
+    return new Set([...sessions, ...vocabs, ...imports].map((row) => row.userId));
   }
 
   async search(q?: string) {
@@ -1387,8 +1550,10 @@ export class AdminService {
   }
 
   async notificationsFeed() {
+    await this.purgeSeedSupportTickets();
     const [campaigns, tickets] = await Promise.all([
       this.prisma.notificationCampaign.findMany({
+        where: { channel: { in: [...PUSH_CAMPAIGN_CHANNELS] } },
         orderBy: { createdAt: 'desc' },
         take: 8,
       }),
@@ -1517,114 +1682,145 @@ export class AdminService {
     return { start, end };
   }
 
-  async aiUsage(range = 'today') {
-    const aiSettings = await this.resolveAiSettings();
-    const { start, end } = this.aiDateBounds(range);
+  private aiPriorBounds(range = 'today') {
+    const { start } = this.aiDateBounds(range);
+    const days = range === '7d' ? 7 : 1;
+    const priorEnd = new Date(start);
+    priorEnd.setMilliseconds(priorEnd.getMilliseconds() - 1);
+    const priorStart = new Date(priorEnd);
+    priorStart.setHours(0, 0, 0, 0);
+    priorStart.setDate(priorStart.getDate() - (days - 1));
+    return { start: priorStart, end: priorEnd };
+  }
 
-    const rows = await this.prisma.aiUsageDaily.findMany({
-      where: { usageDate: { gte: start, lte: end } },
-      include: {
-        user: {
-          include: {
-            subscriptions: {
-              where: { status: 'active' },
-              include: { plan: true },
-              orderBy: { createdAt: 'desc' },
-              take: 1,
-            },
-          },
-        },
+  /** Drop leftover Figma / admin / QA usage rows once so live KPIs are not theater. */
+  private async purgeSeedAiUsage() {
+    const key = 'aiUsageSeedPurged';
+    const done = await this.prisma.platformSetting.findUnique({ where: { key } });
+    if (done) return;
+    await this.prisma.aiUsageDaily.deleteMany({
+      where: {
+        OR: [
+          { user: syntheticUserEmailWhere() },
+          { user: { adminProfile: { isNot: null } } },
+          { lookupCount: { gte: 1000 } },
+        ],
       },
     });
+    await this.prisma.platformSetting.upsert({
+      where: { key },
+      update: { value: { at: new Date().toISOString() } as never },
+      create: { key, value: { at: new Date().toISOString() } as never },
+    });
+  }
 
-    if (rows.length === 0) {
-      return this.aiUsageFromSeedMetrics(range, aiSettings);
-    }
+  async aiUsage(range = 'today') {
+    await this.purgeSeedAiUsage();
+    const aiSettings = await this.resolveAiSettings();
+    const { start, end } = this.aiDateBounds(range);
+    const prior = this.aiPriorBounds(range);
+    const liveUsage = { user: liveLearnerWhere() };
+
+    const chartStart = new Date();
+    chartStart.setHours(0, 0, 0, 0);
+    chartStart.setDate(chartStart.getDate() - 6);
+
+    const [rows, priorAgg, monthRows, chartRows] = await Promise.all([
+      this.prisma.aiUsageDaily.findMany({
+        where: { usageDate: { gte: start, lte: end }, ...liveUsage },
+        include: { user: { select: { id: true, email: true, displayName: true } } },
+      }),
+      this.prisma.aiUsageDaily.aggregate({
+        where: { usageDate: { gte: prior.start, lte: prior.end }, ...liveUsage },
+        _sum: { lookupCount: true },
+      }),
+      this.prisma.aiUsageDaily.findMany({
+        where: {
+          usageDate: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+          ...liveUsage,
+        },
+        select: { userId: true, lookupCount: true },
+      }),
+      this.prisma.aiUsageDaily.findMany({
+        where: { usageDate: { gte: chartStart }, ...liveUsage },
+        select: { usageDate: true, lookupCount: true, tokensUsed: true },
+      }),
+    ]);
 
     const lookups = rows.reduce((sum, r) => sum + r.lookupCount, 0);
     const quizzes = rows.reduce((sum, r) => sum + r.quizCount, 0);
     const tokens = rows.reduce((sum, r) => sum + Number(r.tokensUsed ?? 0), 0);
     const uniqueUsers = new Set(rows.map((r) => r.userId)).size;
     const avgLookupsPerUser = uniqueUsers > 0 ? lookups / uniqueUsers : 0;
-    const avgCostPerLookup = 0.002;
-    const costPerLookup = avgCostPerLookup;
+    const priorLookups = priorAgg._sum.lookupCount ?? 0;
+    const growthPct =
+      priorLookups > 0
+        ? Number((((lookups - priorLookups) / priorLookups) * 100).toFixed(1))
+        : lookups > 0
+          ? 100
+          : 0;
 
-    const byUser = new Map<
-      string,
-      {
-        email: string;
-        displayName: string | null;
-        plan: string;
-        lookups: number;
-        monthLookups: number;
-        quota: number;
-      }
-    >();
-
-    const monthStart = new Date();
-    monthStart.setDate(1);
-    monthStart.setHours(0, 0, 0, 0);
-    const monthRows = await this.prisma.aiUsageDaily.findMany({
-      where: { usageDate: { gte: monthStart } },
-    });
     const monthByUser = new Map<string, number>();
     for (const r of monthRows) {
       monthByUser.set(r.userId, (monthByUser.get(r.userId) ?? 0) + r.lookupCount);
     }
 
+    const byUser = new Map<
+      string,
+      { email: string; displayName: string | null; lookups: number; tokens: number }
+    >();
     for (const r of rows) {
-      const plan = r.user.subscriptions[0]?.plan;
-      const quota = plan?.aiDailyQuota ?? aiSettings.defaultUserQuota;
       const existing = byUser.get(r.userId);
       if (existing) {
         existing.lookups += r.lookupCount;
+        existing.tokens += Number(r.tokensUsed ?? 0);
       } else {
         byUser.set(r.userId, {
           email: r.user.email,
           displayName: r.user.displayName,
-          plan: plan?.name ?? 'Free',
           lookups: r.lookupCount,
-          monthLookups: monthByUser.get(r.userId) ?? r.lookupCount,
-          quota,
+          tokens: Number(r.tokensUsed ?? 0),
         });
       }
     }
 
+    const paidImportUsers =
+      byUser.size === 0
+        ? []
+        : await this.prisma.importPayment.findMany({
+            where: { status: 'paid', userId: { in: [...byUser.keys()] } },
+            select: { userId: true },
+            distinct: ['userId'],
+          });
+    const payAsYouGoIds = new Set(paidImportUsers.map((r) => r.userId));
+
     const topUsers = [...byUser.entries()]
       .sort((a, b) => b[1].lookups - a[1].lookups)
       .slice(0, 10)
-      .map(([id, u]) => {
-        const status =
-          u.quota < 1_000_000 && u.lookups >= u.quota
-            ? 'Suspended'
-            : u.quota < 1_000_000 && u.lookups >= Math.max(1, Math.floor(u.quota * 0.9))
-              ? 'Flagged'
-              : 'Active';
-        return {
-          user: { id, email: u.email, displayName: u.displayName },
-          plan: u.plan,
-          lookups: u.lookups,
-          monthLookups: u.monthLookups,
-          cost: Number((u.lookups * costPerLookup).toFixed(2)),
-          status,
-          tokens: u.lookups * 32,
-        };
-      });
+      .map(([id, u]) => ({
+        user: { id, email: u.email, displayName: u.displayName },
+        plan: payAsYouGoIds.has(id) ? 'Pay as you go' : 'Free',
+        lookups: u.lookups,
+        monthLookups: monthByUser.get(id) ?? u.lookups,
+        cost: 0,
+        status: 'Active',
+        tokens: u.tokens,
+      }));
 
-    const rateLimitedUsers = topUsers.filter((u) => u.status !== 'Active').length;
     const dayMap = new Map<string, { lookups: number; tokens: number }>();
-    for (const r of rows) {
+    for (const r of chartRows) {
       const key = r.usageDate.toISOString().slice(0, 10);
       const cur = dayMap.get(key) ?? { lookups: 0, tokens: 0 };
       cur.lookups += r.lookupCount;
-      cur.tokens += Number(r.tokensUsed ?? 0) || r.lookupCount * 32;
+      cur.tokens += Number(r.tokensUsed ?? 0);
       dayMap.set(key, cur);
     }
 
     const today = new Date();
-    const daily = Array.from({ length: 14 }, (_, i) => {
+    const daily = Array.from({ length: 7 }, (_, i) => {
       const d = new Date(today);
-      d.setDate(d.getDate() - (13 - i));
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - (6 - i));
       const key = d.toISOString().slice(0, 10);
       const hit = dayMap.get(key);
       return {
@@ -1634,36 +1830,32 @@ export class AdminService {
       };
     });
 
-    const hourlyLookups = Array.from({ length: 24 }, (_, i) => {
-      // Daily aggregates only — distribute evenly for chart shape.
-      const base = Math.floor(lookups / 24);
-      return i < lookups % 24 ? base + 1 : base;
-    });
+    const chartPoints = daily.map((d) => ({
+      label: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }),
+      value: d.lookups,
+    }));
+    const dailyLookups = daily.map((d) => d.lookups);
 
-    const chartPoints =
-      range === '7d'
-        ? daily.slice(-7).map((d) => ({
-            label: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }),
-            value: d.lookups,
-          }))
-        : hourlyLookups.map((v, i) => ({
-            label:
-              i % 4 === 0 || i === hourlyLookups.length - 1
-                ? i === 0
-                  ? '12 AM'
-                  : i === 12
-                    ? '12 PM'
-                    : `${i}`
-                : '',
-            value: v,
-          }));
-
-    const lookupPct = lookups + quizzes > 0 ? Math.round((lookups / (lookups + quizzes)) * 100) : 92;
-    const quizPct = 100 - lookupPct;
+    const totalCalls = lookups + quizzes;
+    const featureUsage: Array<{ name: string; pct: number; color: string }> = [];
+    if (lookups > 0) {
+      featureUsage.push({
+        name: 'Word Lookup',
+        pct: totalCalls > 0 ? Math.round((lookups / totalCalls) * 100) : 0,
+        color: '#6c1d95',
+      });
+    }
+    if (quizzes > 0) {
+      featureUsage.push({
+        name: 'Quiz Gen',
+        pct: totalCalls > 0 ? Math.round((quizzes / totalCalls) * 100) : 0,
+        color: '#a855f7',
+      });
+    }
 
     return {
       range,
-      source: 'live',
+      source: 'live' as const,
       aiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
       aiEnabled: aiSettings.enabled,
       settings: {
@@ -1675,30 +1867,32 @@ export class AdminService {
       today: {
         lookups,
         quizzes,
-        tokens: tokens || lookups * 32,
-        growthPct: 0,
+        tokens,
+        uniqueUsers,
+        priorLookups,
+        growthPct,
         avgLookupsPerUser: Number(avgLookupsPerUser.toFixed(1)),
         avgLookupsTarget: aiSettings.defaultUserQuota,
-        apiCostToday: Number((lookups * costPerLookup).toFixed(2)),
-        avgCostPerLookup: costPerLookup,
-        rateLimitedUsers,
-        flagAlerts: rateLimitedUsers,
+        apiCostToday: 0,
+        avgCostPerLookup: 0,
+        rateLimitedUsers: 0,
+        flagAlerts: 0,
       },
       allTime: {
         lookups,
         quizzes,
-        tokens: tokens || lookups * 32,
+        tokens,
       },
       daily,
-      hourlyLookups,
+      dailyLookups,
+      hourlyLookups: [] as number[],
       chartPoints,
-      chartKind: range === '7d' ? 'daily' : 'hourly',
-      featureUsage: [
-        { name: 'Word Lookup', pct: lookupPct, color: '#6c1d95' },
-        { name: 'Quiz Gen', pct: quizPct, color: '#a855f7' },
-      ],
+      chartKind: 'daily' as const,
+      featureUsage,
       insight: aiSettings.enabled
-        ? `Live usage from ${uniqueUsers} learner(s). Platform daily limit ${aiSettings.dailyLimit.toLocaleString()}; model ${aiSettings.lookupModel}.`
+        ? uniqueUsers > 0
+          ? `Live usage from ${uniqueUsers} learner${uniqueUsers === 1 ? '' : 's'} in this range. Model ${aiSettings.lookupModel}.`
+          : 'No learner AI lookups in this range yet.'
         : 'AI is disabled in Settings — learner lookups are blocked until re-enabled.',
       topUsers,
       categories: [
@@ -1717,151 +1911,194 @@ export class AdminService {
     return parseAiPlatformSettings(map);
   }
 
-  private aiUsageFromSeedMetrics(range: string, aiSettings: ReturnType<typeof parseAiPlatformSettings>) {
-    const metrics = FIGMA_ADMIN_METRICS;
-    const a = metrics.aiUsage;
-    const factor = this.aiRangeFactor(range);
-    const today = new Date();
-    const daily = Array.from({ length: 14 }, (_, i) => {
-      const d = new Date(today);
-      d.setDate(d.getDate() - (13 - i));
-      const dayFactor = 0.85 + (i / 13) * 0.2;
+  async analytics(range = '30d') {
+    const { start, end, priorStart, priorEnd, days } = this.analyticsWindow(range);
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const live = { user: liveLearnerWhere() };
+    const colors = ['#6c1d95', '#10b981', '#f97316', '#3b82f6', '#ef4444', '#14b8a6'];
+
+    const [
+      todayIds,
+      yesterdayIds,
+      rangeIds,
+      priorIds,
+      sessions,
+      sessionAgg,
+      priorSessionAgg,
+      langGroups,
+      cefrGroups,
+      vocabCount,
+      importCount,
+      aiLookups,
+      paidRange,
+      paidPrior,
+    ] = await Promise.all([
+      this.activeLearnerIds(todayStart, end),
+      this.activeLearnerIds(yesterdayStart, new Date(todayStart.getTime() - 1)),
+      this.activeLearnerIds(start, end),
+      this.activeLearnerIds(priorStart, priorEnd),
+      this.prisma.readingSession.findMany({
+        where: { startedAt: { gte: start, lte: end }, ...live },
+        select: { startedAt: true, durationSeconds: true },
+      }),
+      this.prisma.readingSession.aggregate({
+        where: { startedAt: { gte: start, lte: end }, durationSeconds: { gt: 0 }, ...live },
+        _avg: { durationSeconds: true },
+        _count: true,
+      }),
+      this.prisma.readingSession.aggregate({
+        where: { startedAt: { gte: priorStart, lte: priorEnd }, durationSeconds: { gt: 0 }, ...live },
+        _avg: { durationSeconds: true },
+      }),
+      this.prisma.userTargetLanguage.groupBy({
+        by: ['targetLanguage'],
+        where: { user: liveLearnerWhere() },
+        _count: { _all: true },
+      }),
+      this.prisma.userTargetLanguage.groupBy({
+        by: ['cefrLevel'],
+        where: { user: liveLearnerWhere() },
+        _count: { _all: true },
+      }),
+      this.prisma.userVocabulary.count({
+        where: { createdAt: { gte: start, lte: end }, ...live },
+      }),
+      this.prisma.userImport.count({
+        where: { createdAt: { gte: start, lte: end }, ...live },
+      }),
+      this.prisma.aiUsageDaily.aggregate({
+        where: { usageDate: { gte: start, lte: end }, ...live },
+        _sum: { lookupCount: true },
+      }),
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: start, lte: end } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 } })),
+      this.prisma.importPayment
+        .aggregate({
+          where: { status: 'paid', amountTiyins: { gt: 0 }, paidAt: { gte: priorStart, lte: priorEnd } },
+          _sum: { amountTiyins: true },
+        })
+        .catch(() => ({ _sum: { amountTiyins: 0 } })),
+    ]);
+
+    const dau = todayIds.size;
+    const yesterday = yesterdayIds.size;
+    const dauGrowthPct =
+      yesterday > 0 ? Number((((dau - yesterday) / yesterday) * 100).toFixed(1)) : dau > 0 ? 100 : 0;
+
+    const avgSessionMin = Number(((sessionAgg._avg.durationSeconds ?? 0) / 60).toFixed(1));
+    const priorAvgMin = (priorSessionAgg._avg.durationSeconds ?? 0) / 60;
+    const avgSessionGrowthPct =
+      priorAvgMin > 0
+        ? Number((((avgSessionMin - priorAvgMin) / priorAvgMin) * 100).toFixed(1))
+        : avgSessionMin > 0
+          ? 100
+          : 0;
+
+    const returning = [...rangeIds].filter((id) => priorIds.has(id)).length;
+    const retentionPct =
+      priorIds.size > 0 ? Number(((returning / priorIds.size) * 100).toFixed(1)) : 0;
+
+    const revenue = (paidRange._sum.amountTiyins ?? 0) / 100;
+    const priorRevenue = (paidPrior._sum.amountTiyins ?? 0) / 100;
+    const revenueGrowthPct =
+      priorRevenue > 0
+        ? Number((((revenue - priorRevenue) / priorRevenue) * 100).toFixed(1))
+        : revenue > 0
+          ? 100
+          : 0;
+
+    const hourly = Array.from({ length: 24 }, () => 0);
+    const dayMap = new Map<string, number>();
+    for (const s of sessions) {
+      hourly[s.startedAt.getUTCHours()] += 1;
+      const key = s.startedAt.toISOString().slice(0, 10);
+      dayMap.set(key, (dayMap.get(key) ?? 0) + 1);
+    }
+    const chartDays = Math.min(days, 14);
+    const engagementByDay = Array.from({ length: chartDays }, (_, i) => {
+      const d = new Date(end);
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - (chartDays - 1 - i));
+      const key = d.toISOString().slice(0, 10);
       return {
-        date: d.toISOString().slice(0, 10),
-        lookups: Math.round(a.lookupsToday * dayFactor * 0.9),
-        tokens: Math.round(a.lookupsToday * dayFactor * 28),
+        label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        value: dayMap.get(key) ?? 0,
       };
     });
 
-    const hourlyLookups =
-      range === 'yesterday'
-        ? a.hourlyLookups.map((v) => Math.round(v * 0.88))
-        : range === '7d'
-          ? daily.slice(-7).map((d) => d.lookups)
-          : [...a.hourlyLookups];
+    const langTotal = langGroups.reduce((sum, g) => sum + g._count._all, 0);
+    const languageDistribution = langGroups
+      .map((g, i) => ({
+        name: LANGUAGE_META[g.targetLanguage]?.label ?? g.targetLanguage,
+        code: g.targetLanguage,
+        count: g._count._all,
+        pct: langTotal > 0 ? Math.round((g._count._all / langTotal) * 100) : 0,
+        color: colors[i % colors.length],
+      }))
+      .sort((a, b) => b.count - a.count);
 
-    const chartPoints =
-      range === '7d'
-        ? daily.slice(-7).map((d) => ({
-            label: new Date(d.date).toLocaleDateString('en-US', { weekday: 'short' }),
-            value: d.lookups,
-          }))
-        : hourlyLookups.map((v, i) => ({
-            label:
-              i % 4 === 0 || i === hourlyLookups.length - 1
-                ? i === 0
-                  ? '12 AM'
-                  : i === 12
-                    ? '12 PM'
-                    : `${i}`
-                : '',
-            value: v,
-          }));
+    const cefrMap = new Map(cefrGroups.map((g) => [g.cefrLevel, g._count._all]));
+    const cefrDistribution = CEFR_LEVELS.map((level) => ({
+      level: level.toUpperCase(),
+      count: cefrMap.get(level) ?? 0,
+    }));
 
-    const lookups = Math.round(a.lookupsToday * factor);
-
-    return {
-      range,
-      source: 'seed',
-      aiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
-      aiEnabled: aiSettings.enabled,
-      settings: {
-        dailyLimit: aiSettings.dailyLimit,
-        lookupModel: aiSettings.lookupModel,
-        quizModel: aiSettings.quizModel,
-        defaultUserQuota: aiSettings.defaultUserQuota,
-      },
-      today: {
-        lookups,
-        quizzes: Math.round(lookups * 0.08),
-        tokens: Math.round(lookups * 32),
-        growthPct: a.lookupsGrowthPct,
-        avgLookupsPerUser: a.avgLookupsPerUser,
-        avgLookupsTarget: aiSettings.defaultUserQuota || a.avgLookupsTarget,
-        apiCostToday: Number((a.apiCostToday * factor).toFixed(2)),
-        avgCostPerLookup: a.avgCostPerLookup,
-        rateLimitedUsers: Math.max(1, Math.round(a.rateLimitedUsers * (range === '7d' ? 1.8 : factor))),
-        flagAlerts: Math.max(1, Math.round(a.flagAlerts * (range === '7d' ? 2 : 1))),
-      },
-      allTime: {
-        lookups: a.lookupsToday * 40,
-        quizzes: Math.round(a.lookupsToday * 3.2),
-        tokens: Math.round(a.lookupsToday * 32 * 40),
-      },
-      daily,
-      hourlyLookups,
-      chartPoints,
-      chartKind: range === '7d' ? 'daily' : 'hourly',
-      featureUsage: a.featureUsage.map((f) => ({ ...f })),
-      insight: aiSettings.enabled
-        ? `${a.insight} (demo seed — real stats appear after learner lookups are logged.)`
-        : 'AI is disabled in Settings — learner lookups are blocked until re-enabled.',
-      topUsers: a.topUsers.map((u) => ({
-        user: { id: u.email, email: u.email, displayName: u.displayName },
-        plan: u.plan,
-        lookups: Math.round(u.today * (range === '7d' ? 6 : factor)),
-        monthLookups: u.month,
-        cost: Number((u.cost * (range === '7d' ? 1 : factor)).toFixed(2)),
-        status: u.status,
-        tokens: Math.round(u.today * 32 * (range === '7d' ? 6 : factor)),
-      })),
-      categories: a.categories.map((c) => ({ ...c })),
-    };
-  }
-
-  async analytics(range = '30d') {
-    // NOTE: This method currently returns synthetic seed metrics (scaled by range factor),
-    // not real aggregation queries against user/session tables. See docs/E2E_AUDIT_REPORT.md
-    // item #11 for context. The `source: 'seed'` field lets the frontend display an honest
-    // "Demo data" badge, matching the pattern AI Usage already uses.
-    const metrics = await this.getMetrics();
-    const a = metrics.analytics;
-    const factor = this.analyticsRangeFactor(range);
-    const dau = Math.round(a.dau * (range === '7d' ? 0.92 : range === '90d' ? 1.08 : 1));
+    const readingCount = sessions.length;
+    const lookups = aiLookups._sum.lookupCount ?? 0;
+    const featureTotal = readingCount + vocabCount + lookups + importCount;
+    const featureUsage = [
+      { name: 'Reading', count: readingCount, color: '#6c1d95' },
+      { name: 'Vocabulary', count: vocabCount, color: '#10b981' },
+      { name: 'AI lookups', count: lookups, color: '#f97316' },
+      { name: 'Imports', count: importCount, color: '#3b82f6' },
+    ]
+      .filter((f) => f.count > 0)
+      .map((f) => ({
+        name: f.name,
+        pct: featureTotal > 0 ? Math.round((f.count / featureTotal) * 100) : 0,
+        color: f.color,
+      }));
 
     return {
       range,
-      source: 'seed' as const,
+      source: 'live' as const,
       kpis: {
         dau,
-        dauGrowthPct: Number((a.dauGrowthPct * (range === '7d' ? 0.6 : range === '90d' ? 1.4 : 1)).toFixed(1)),
-        avgSessionMin: a.avgSessionMin,
-        avgSessionGrowthPct: a.avgSessionGrowthPct,
-        lessonCompletionPct: a.lessonCompletionPct,
-        lessonCompletionDeltaPct: a.lessonCompletionDeltaPct,
-        retentionPct: a.retentionPct,
-        retentionGrowthPct: a.retentionGrowthPct,
-        revenue: metrics.content.activeSalesMonthly ?? metrics.dashboard.mrr,
-        revenueGrowthPct: Number((metrics.dashboard.mrrGrowthPct * (range === '7d' ? 0.65 : 1)).toFixed(1)),
-        users: metrics.dashboard.users,
-        sessions: Math.round(dau * 18 * factor),
-        vocab: Math.round(128400 * factor),
-        content: metrics.content.published,
-        readingHours: Math.round((dau * a.avgSessionMin * factor) / 60),
+        dauGrowthPct,
+        avgSessionMin,
+        avgSessionGrowthPct,
+        lessonCompletionPct: 0,
+        lessonCompletionDeltaPct: 0,
+        retentionPct,
+        retentionGrowthPct: 0,
+        revenue,
+        revenueGrowthPct,
+        users: rangeIds.size,
+        sessions: readingCount,
+        vocab: vocabCount,
+        content: 0,
+        readingHours: Number(((sessionAgg._avg.durationSeconds ?? 0) * (sessionAgg._count ?? 0) / 3600).toFixed(1)),
+        priorDau: yesterday,
+        priorRevenue,
       },
-      engagementByHour: a.engagementByHour.map((v) => Math.round(v * (range === '7d' ? 0.85 : range === '90d' ? 1.15 : 1))),
-      languageDistribution: a.languageDistribution.map((l) => ({ ...l })),
-      cefrDistribution: a.cefrDistribution.map((c) => ({
-        level: c.level,
-        count: Math.round(c.count * factor),
-      })),
-      featureUsage: a.featureUsage.map((f) => ({ ...f })),
-      engagement: metrics.dashboard.userGrowth.map((m) => ({
-        month: m.month,
-        sessions: Math.round(m.users * 0.35 * factor),
-        newUsers: Math.round(m.users * 0.08 * factor),
-      })),
-      byLanguage: a.languageDistribution.map((l) => ({
-        language: l.name,
-        code: l.name.slice(0, 2).toLowerCase(),
-        count: Math.round((dau * l.pct) / 100),
-        pct: l.pct,
-        color: l.color,
-      })),
+      engagementByHour: hourly,
+      engagementByDay,
+      languageDistribution,
+      cefrDistribution,
+      featureUsage,
+      byLanguage: languageDistribution,
     };
   }
 
   async languages() {
+    await ensureLanguageCatalog(this.prisma);
     const catalog = await this.prisma.languageCatalog.findMany();
     const byCode = new Map(catalog.map((l) => [l.code, l]));
 
@@ -1891,14 +2128,14 @@ export class AdminService {
       cefrLevelsByLang.set(g.language, set);
     }
 
-    const codes = Object.values(AppLanguage);
+    const codes = [...APP_LANGUAGES];
     const languages = codes
       .map((code, idx) => {
         const row = byCode.get(code);
         const contentCount = contentByLang.get(code) ?? 0;
         const learnerCount = learnersByLang.get(code) ?? 0;
         const cefrCoverage = Math.round(((cefrLevelsByLang.get(code)?.size ?? 0) / 6) * 100);
-        const isEnabled = row?.isEnabled ?? true;
+        const isEnabled = row?.isEnabled ?? (LIVE_LANGUAGES as readonly string[]).includes(code);
         return {
           code,
           name: row?.name ?? this.langLabel(code),
@@ -1916,9 +2153,9 @@ export class AdminService {
       .sort((a, b) => a.sortOrder - b.sortOrder);
 
     const enabled = languages.filter((l) => l.isEnabled);
-    const totalContentItems = languages.reduce((s, l) => s + l.contentCount, 0);
-    const avgCefrCoverage = languages.length
-      ? Math.round(languages.reduce((s, l) => s + l.cefrCoverage, 0) / languages.length)
+    const totalContentItems = enabled.reduce((s, l) => s + l.contentCount, 0);
+    const avgCefrCoverage = enabled.length
+      ? Math.round(enabled.reduce((s, l) => s + l.cefrCoverage, 0) / enabled.length)
       : 0;
 
     return {
@@ -1928,25 +2165,66 @@ export class AdminService {
         avgCefrCoverage,
       },
       languages,
+      availableToAdd: languages.filter((l) => !l.isEnabled),
     };
   }
 
+  async addLanguage(code: string) {
+    const normalized = code.trim().toLowerCase();
+    if (!isAppLanguageCode(normalized)) {
+      throw new BadRequestException(
+        `Unsupported language code "${code}". Allowed: ${APP_LANGUAGES.join(', ')}.`,
+      );
+    }
+    return this.updateLanguage(normalized, { isEnabled: true, status: 'Active' });
+  }
+
+  async removeLanguage(code: string) {
+    const normalized = code.trim().toLowerCase();
+    if (!isAppLanguageCode(normalized)) {
+      throw new BadRequestException(`Unknown language "${code}".`);
+    }
+    const enabled = await this.prisma.languageCatalog.count({
+      where: { isEnabled: true, code: { in: [...APP_LANGUAGES] } },
+    });
+    const current = await this.prisma.languageCatalog.findUnique({ where: { code: normalized } });
+    if (current?.isEnabled && enabled <= 1) {
+      throw new BadRequestException('Keep at least one enabled language.');
+    }
+    return this.updateLanguage(normalized, { isEnabled: false, status: 'Draft' });
+  }
+
   async updateLanguage(code: string, body: { isEnabled?: boolean; status?: string }) {
+    const normalized = code.trim().toLowerCase();
+    if (!isAppLanguageCode(normalized)) {
+      throw new BadRequestException(`Unknown language "${code}".`);
+    }
+    if (body.isEnabled === false) {
+      const enabled = await this.prisma.languageCatalog.count({
+        where: {
+          isEnabled: true,
+          code: { in: APP_LANGUAGES.filter((c) => c !== normalized) },
+        },
+      });
+      if (enabled < 1) {
+        throw new BadRequestException('Keep at least one enabled language.');
+      }
+    }
     const isEnabled = body.isEnabled;
     const status =
       body.status ??
       (isEnabled === false ? 'Draft' : isEnabled === true ? 'Active' : undefined);
     return this.prisma.languageCatalog.upsert({
-      where: { code },
+      where: { code: normalized },
       update: {
         isEnabled,
         status,
       },
       create: {
-        code,
-        name: this.langLabel(code),
-        nativeName: this.langNative(code),
-        flagEmoji: this.langFlag(code),
+        code: normalized,
+        name: this.langLabel(normalized),
+        nativeName: this.langNative(normalized),
+        flagEmoji: this.langFlag(normalized),
         status: status ?? 'Active',
         cefrCoverage: 0,
         learnerCount: 0,
@@ -2008,17 +2286,11 @@ export class AdminService {
 
   async gamification() {
     const achievements = await this.prisma.achievement.findMany({ orderBy: { sortOrder: 'asc' } });
-    const [streakers, vocabMasters, sessionUsers, streakAgg] = await Promise.all([
-      this.prisma.user.count({ where: { streakCount: { gte: 7 }, deletedAt: null } }),
-      this.prisma.userVocabulary.count({ where: { mastered: true } }),
-      this.prisma.readingSession.groupBy({
-        by: ['userId'],
-        _count: { _all: true },
-      }),
+    const [streakers, streakAgg] = await Promise.all([
+      this.prisma.user.count({ where: { ...liveLearnerWhere(), streakCount: { gte: 7 } } }),
       this.prisma.user.aggregate({
-        where: { deletedAt: null },
+        where: liveLearnerWhere(),
         _avg: { streakCount: true },
-        _sum: { streakCount: true },
       }),
     ]);
 
@@ -2030,14 +2302,12 @@ export class AdminService {
         achievements: achievements.length,
         activeAchievements: achievements.filter((a) => a.isActive).length,
         streakers,
-        vocabMasters,
-        activeReaders: sessionUsers.filter((s) => s._count._all >= 5).length,
-        // No UserAchievement ledger — catalog points + live avg streak only.
+        vocabMasters: 0,
+        activeReaders: 0,
         catalogPoints,
         avgStreakDays,
-        totalEarned: catalogPoints,
+        totalEarned: 0,
       },
-      // No leaderboard season model in schema — clients should hide if empty.
       seasons: [] as Array<{
         id: string;
         title: string;
@@ -2049,58 +2319,75 @@ export class AdminService {
     };
   }
 
-  createAchievement(body: Record<string, unknown>) {
-    return this.prisma.achievement.create({
+  createAchievement(_body: Record<string, unknown>) {
+    throw new BadRequestException(
+      'Custom achievements are not available yet. Enable or disable the seeded catalog badges instead.',
+    );
+  }
+
+  async updateAchievement(id: string, body: Record<string, unknown>) {
+    const existing = await this.prisma.achievement.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Achievement not found');
+    return this.prisma.achievement.update({
+      where: { id },
       data: {
-        code: String(body.code ?? `ach_${Date.now()}`),
-        title: String(body.title ?? 'New Achievement'),
-        description: String(body.description ?? ''),
-        category: (body.category as AchievementCategory) ?? AchievementCategory.special,
-        iconKey: body.iconKey ? String(body.iconKey) : undefined,
-        points: Number(body.points ?? 10),
-        threshold: Number(body.threshold ?? 1),
-        isActive: body.isActive !== false,
-        sortOrder: Number(body.sortOrder ?? 0),
+        isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
       },
     });
   }
 
-  updateAchievement(id: string, body: Record<string, unknown>) {
-    return this.prisma.achievement.update({
-      where: { id },
-      data: {
-        title: body.title !== undefined ? String(body.title) : undefined,
-        description: body.description !== undefined ? String(body.description) : undefined,
-        isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
-        points: body.points !== undefined ? Number(body.points) : undefined,
-        threshold: body.threshold !== undefined ? Number(body.threshold) : undefined,
+  /** Drop leftover email / Premium-upsell seed campaigns once. */
+  private async purgeSeedCampaigns() {
+    const key = 'notificationCampaignsLiveAligned';
+    const done = await this.prisma.platformSetting.findUnique({ where: { key } });
+    if (done) return;
+    await this.prisma.notificationCampaign.deleteMany({
+      where: {
+        OR: [
+          { channel: CampaignChannel.email },
+          { name: { in: ['Premium Upsell', 'Welcome Push', 'Streak Reminder'] } },
+          { subject: 'Unlock unlimited AI lookups' },
+        ],
       },
+    });
+    await this.prisma.platformSetting.upsert({
+      where: { key },
+      update: { value: { at: new Date().toISOString() } as never },
+      create: { key, value: { at: new Date().toISOString() } as never },
     });
   }
 
   async notifications() {
+    await this.purgeSeedCampaigns();
+    const pushWhere = { channel: { in: [...PUSH_CAMPAIGN_CHANNELS] } };
     const campaigns = await this.prisma.notificationCampaign.findMany({
+      where: pushWhere,
       orderBy: { createdAt: 'desc' },
       take: 50,
     });
     const [draft, scheduled, sent] = await Promise.all([
-      this.prisma.notificationCampaign.count({ where: { status: 'draft' } }),
-      this.prisma.notificationCampaign.count({ where: { status: 'scheduled' } }),
-      this.prisma.notificationCampaign.count({ where: { status: 'sent' } }),
+      this.prisma.notificationCampaign.count({ where: { ...pushWhere, status: 'draft' } }),
+      this.prisma.notificationCampaign.count({ where: { ...pushWhere, status: 'scheduled' } }),
+      this.prisma.notificationCampaign.count({ where: { ...pushWhere, status: 'sent' } }),
     ]);
     return { stats: { draft, scheduled, sent, total: campaigns.length }, campaigns };
   }
 
   createCampaign(adminId: string, body: Record<string, unknown>) {
+    const channel = String(body.channel ?? 'push').toLowerCase();
+    if (channel === 'email') {
+      throw new BadRequestException('Email campaigns are not supported. Use a push notification instead.');
+    }
     return this.prisma.notificationCampaign.create({
       data: {
-        name: String(body.name ?? 'Untitled campaign'),
-        subject: String(body.subject ?? ''),
-        body: String(body.body ?? ''),
-        channel: (body.channel as CampaignChannel) ?? CampaignChannel.push,
+        name: String(body.name ?? 'Untitled campaign').trim() || 'Untitled campaign',
+        subject: String(body.subject ?? '').trim(),
+        body: String(body.body ?? '').trim(),
+        channel: CampaignChannel.push,
         status: (body.status as CampaignStatus) ?? CampaignStatus.draft,
-        audience: String(body.audience ?? 'all'),
+        audience: normalizeCampaignAudience(body.audience),
         scheduledAt: body.scheduledAt ? new Date(String(body.scheduledAt)) : undefined,
+        sentAt: body.status === 'sent' ? new Date() : undefined,
         createdById: adminId,
       },
     });
@@ -2109,14 +2396,17 @@ export class AdminService {
   async updateCampaign(id: string, body: Record<string, unknown>) {
     const existing = await this.prisma.notificationCampaign.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Campaign not found');
+    if (body.channel !== undefined && String(body.channel).toLowerCase() === 'email') {
+      throw new BadRequestException('Email campaigns are not supported. Use a push notification instead.');
+    }
     return this.prisma.notificationCampaign.update({
       where: { id },
       data: {
         name: body.name !== undefined ? String(body.name) : undefined,
         subject: body.subject !== undefined ? String(body.subject) : undefined,
         body: body.body !== undefined ? String(body.body) : undefined,
-        channel: body.channel !== undefined ? (body.channel as CampaignChannel) : undefined,
-        audience: body.audience !== undefined ? String(body.audience) : undefined,
+        channel: CampaignChannel.push,
+        audience: body.audience !== undefined ? normalizeCampaignAudience(body.audience) : undefined,
         status: body.status !== undefined ? (body.status as CampaignStatus) : undefined,
         scheduledAt: body.scheduledAt ? new Date(String(body.scheduledAt)) : undefined,
         sentAt: body.status === 'sent' ? new Date() : undefined,
@@ -2124,7 +2414,36 @@ export class AdminService {
     });
   }
 
+  /** Learners have no in-app ticket API — drop leftover Figma/seed rows once. */
+  private async purgeSeedSupportTickets() {
+    const key = 'supportTicketsSeedPurged';
+    const done = await this.prisma.platformSetting.findUnique({ where: { key } });
+    if (done) return;
+    await this.prisma.supportTicket.deleteMany({
+      where: {
+        OR: [
+          {
+            subject: {
+              in: [
+                'Import failed for EPUB',
+                'Billing question',
+                'Feature request: dark reader theme',
+              ],
+            },
+          },
+          { body: { contains: 'yearly Premium', mode: 'insensitive' } },
+        ],
+      },
+    });
+    await this.prisma.platformSetting.upsert({
+      where: { key },
+      update: { value: { at: new Date().toISOString() } as never },
+      create: { key, value: { at: new Date().toISOString() } as never },
+    });
+  }
+
   async support() {
+    await this.purgeSeedSupportTickets();
     const tickets = await this.prisma.supportTicket.findMany({
       orderBy: { createdAt: 'desc' },
       take: 100,
@@ -2151,17 +2470,10 @@ export class AdminService {
     };
   }
 
-  createTicket(body: Record<string, unknown>) {
-    return this.prisma.supportTicket.create({
-      data: {
-        userId: body.userId ? String(body.userId) : undefined,
-        subject: String(body.subject ?? 'Support request'),
-        body: String(body.body ?? ''),
-        status: (body.status as SupportTicketStatus) ?? SupportTicketStatus.open,
-        priority: (body.priority as SupportTicketPriority) ?? SupportTicketPriority.medium,
-        category: String(body.category ?? 'general'),
-      },
-    });
+  createTicket(_body: Record<string, unknown>) {
+    throw new BadRequestException(
+      'Learners cannot submit in-app tickets yet. Contact is email-only (Settings → support email).',
+    );
   }
 
   async updateTicket(id: string, body: Record<string, unknown>) {
@@ -2270,18 +2582,21 @@ export class AdminService {
     };
   }
 
-  private mapUserRow(u: {
-    id: string;
-    email: string;
-    displayName: string | null;
-    avatarUrl: string | null;
-    createdAt: Date;
-    streakCount: number;
-    targetLanguages: Array<{ targetLanguage: AppLanguage; cefrLevel: string; isPrimary: boolean }>;
-    subscriptions: Array<{ status: string; plan: { name: string; tier: string } }>;
-  }) {
-    const sub = u.subscriptions[0];
+  private mapUserRow(
+    u: {
+      id: string;
+      email: string;
+      displayName: string | null;
+      avatarUrl: string | null;
+      createdAt: Date;
+      streakCount: number;
+      targetLanguages: Array<{ targetLanguage: AppLanguage; cefrLevel: string; isPrimary: boolean }>;
+      subscriptions: Array<{ status: string; plan: { name: string; tier: string } }>;
+    },
+    opts?: { payAsYouGo?: boolean },
+  ) {
     const primary = u.targetLanguages.find((t) => t.isPrimary) ?? u.targetLanguages[0];
+    const payAsYouGo = Boolean(opts?.payAsYouGo);
     return {
       id: u.id,
       email: u.email,
@@ -2292,8 +2607,8 @@ export class AdminService {
       targetLanguage: primary ? this.langLabel(primary.targetLanguage) : '—',
       targetLanguageCode: primary?.targetLanguage ?? null,
       cefrLevel: primary?.cefrLevel ?? null,
-      billingTier: sub ? (sub.plan.tier === 'premium' ? 'Premium' : 'Free') : 'Free',
-      subscriptionStatus: sub?.status ?? 'none',
+      billingTier: payAsYouGo ? 'Pay as you go' : 'Free',
+      subscriptionStatus: u.subscriptions[0]?.status ?? 'none',
     };
   }
 

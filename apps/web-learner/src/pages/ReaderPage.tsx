@@ -23,23 +23,67 @@ import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import type { ContentItem, ContentSegment, LookupResult, WordStatus } from '../lib/types';
+import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 
-const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'];
-
-function chapterRoman(index: number) {
-  return ROMAN[index] ?? String(index + 1);
+function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
+  const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
+  if (!raw) return `Chapter ${fallbackIndex + 1}`;
+  return raw;
 }
 
-function chapterLabel(seg: ContentSegment | undefined, index: number) {
-  if (!seg) return '';
-  const title = seg.title?.replace(/^Chapter\s+[IVXLC\d]+\s*[—–-]?\s*/i, '').trim() || seg.title;
-  if (title && /^chapter\b/i.test(title)) return title;
-  return `Chapter ${chapterRoman(index)} — ${title ?? `Part ${index + 1}`}`;
+function chapterKeyOf(
+  item: { chapterIndex?: number; title?: string | null; chapterTitle?: string | null },
+  fallbackIndex: number,
+) {
+  if (typeof item.chapterIndex === 'number') return item.chapterIndex;
+  const match = (item.chapterTitle || item.title || '').match(/^chapter\s+(\d+)/i);
+  if (match) return Number(match[1]);
+  return fallbackIndex;
 }
 
-function sidebarChapterTitle(seg: ContentSegment) {
-  return seg.title?.replace(/^Chapter\s+[IVXLC\d]+\s*[—–-]?\s*/i, '').trim() || seg.title || `Part ${seg.segmentIndex + 1}`;
+type ResumeMark = { segmentId?: string; segmentIndex?: number };
+
+function resumeStorageKey(contentId: string) {
+  return `gotcha.reader.resume.${contentId}`;
+}
+
+function readResume(contentId: string): ResumeMark | null {
+  try {
+    const raw = localStorage.getItem(resumeStorageKey(contentId));
+    if (!raw) return null;
+    return JSON.parse(raw) as ResumeMark;
+  } catch {
+    return null;
+  }
+}
+
+function writeResume(contentId: string, mark: ResumeMark) {
+  try {
+    localStorage.setItem(resumeStorageKey(contentId), JSON.stringify(mark));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function resolveResumeIndex(
+  pages: ContentOutlineSegment[],
+  apiSegmentId?: string | null,
+  local?: ResumeMark | null,
+) {
+  const localIdx = local?.segmentId
+    ? pages.findIndex((s) => s.id === local.segmentId)
+    : -1;
+  if (localIdx >= 0) return localIdx;
+  const apiIdx = apiSegmentId ? pages.findIndex((s) => s.id === apiSegmentId) : -1;
+  if (apiIdx >= 0) return apiIdx;
+  if (
+    typeof local?.segmentIndex === 'number' &&
+    local.segmentIndex >= 0 &&
+    local.segmentIndex < pages.length
+  ) {
+    return local.segmentIndex;
+  }
+  return 0;
 }
 
 const STATUS_STYLES: Record<WordStatus, string> = {
@@ -216,7 +260,8 @@ export default function ReaderPage() {
   const { user, preferences, updatePreferences, refreshVocab } = useAuth();
 
   const [content, setContent] = useState<ContentItem | null>(null);
-  const [segments, setSegments] = useState<ContentSegment[]>([]);
+  const [outline, setOutline] = useState<ContentOutlineSegment[]>([]);
+  const [pageCache, setPageCache] = useState<Record<number, ContentSegment>>({});
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [activeWord, setActiveWord] = useState<string | null>(null);
   const [activeLookup, setActiveLookup] = useState<LookupResult | null>(null);
@@ -225,32 +270,50 @@ export default function ReaderPage() {
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
   const [showUnknownOnly, setShowUnknownOnly] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(true);
-  const [openChapterKeys, setOpenChapterKeys] = useState<Record<number, boolean>>({});
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [pageDraft, setPageDraft] = useState('1');
+  const readingPaneRef = useRef<HTMLDivElement>(null);
 
-  const segment = segments[segmentIndex];
+  const pageCount = outline.length;
+  const segment = pageCache[segmentIndex];
   const literary = content?.contentType === 'book' || content?.contentType === 'story';
   const chapterGroups = useMemo(() => {
     if (!literary) return null;
-    const groups: Array<{ key: number; title: string; indices: number[] }> = [];
-    const byKey = new Map<number, { key: number; title: string; indices: number[] }>();
-    segments.forEach((seg, i) => {
-      const key = seg.chapterIndex ?? 0;
+    const groups: Array<{ key: number; title: string; firstIndex: number; pageCount: number }> = [];
+    const byKey = new Map<number, { key: number; title: string; firstIndex: number; pageCount: number }>();
+    outline.forEach((seg, i) => {
+      const key = chapterKeyOf(seg, i);
       let group = byKey.get(key);
       if (!group) {
         group = {
           key,
-          title: seg.chapterTitle || seg.title?.split(' · ')[0] || `Chapter ${key + 1}`,
-          indices: [],
+          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key),
+          firstIndex: i,
+          pageCount: 0,
         };
         byKey.set(key, group);
         groups.push(group);
       }
-      group.indices.push(i);
+      group.pageCount += 1;
     });
     return groups;
-  }, [literary, segments]);
+  }, [literary, outline]);
+  const currentChapter = useMemo(() => {
+    if (!chapterGroups?.length) return null;
+    const current = outline[segmentIndex];
+    if (!current) return chapterGroups[0];
+    const key = chapterKeyOf(current, segmentIndex);
+    return chapterGroups.find((g) => g.key === key) ?? chapterGroups[0];
+  }, [chapterGroups, outline, segmentIndex]);
+  const pageInChapter = useMemo(() => {
+    if (!currentChapter) return { current: segmentIndex + 1, total: Math.max(1, pageCount) };
+    const pages = outline
+      .map((seg, index) => ({ seg, index }))
+      .filter(({ seg, index }) => chapterKeyOf(seg, index) === currentChapter.key);
+    const pos = pages.findIndex(({ index }) => index === segmentIndex);
+    return { current: Math.max(1, pos + 1), total: Math.max(1, pages.length) };
+  }, [outline, segmentIndex, currentChapter, pageCount]);
   const targetLang = user?.nativeLanguage ?? 'en';
   const sourceLang = content?.language ?? 'en';
   const ttsEnabled = preferences?.ttsEnabled ?? false;
@@ -279,24 +342,67 @@ export default function ReaderPage() {
     }
   }, [preferences?.readerFontScale]);
 
+  const outlineRef = useRef(outline);
+  outlineRef.current = outline;
+  const pageCacheRef = useRef(pageCache);
+  pageCacheRef.current = pageCache;
+
+  const loadPage = useCallback(async (index: number) => {
+    if (!id || index < 0) return;
+    const meta = outlineRef.current[index];
+    if (!meta || pageCacheRef.current[index]) return;
+    const res = await api<{ segments: ContentSegment[] }>(
+      `/content/${id}/segments?from=${meta.segmentIndex}&limit=1`,
+    );
+    const page = res.segments?.[0];
+    if (!page) return;
+    setPageCache((prev) => (prev[index] ? prev : { ...prev, [index]: page }));
+  }, [id]);
+
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setPageCache({});
+    setOutline([]);
     Promise.all([
       api<ContentItem>(`/content/${id}`),
-      api<{ segments: ContentSegment[] }>(`/content/${id}/segments?from=0&limit=500`),
       api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
-    ]).then(([item, segRes, known]) => {
+    ]).then(async ([item, known]) => {
       setContent(item);
-      const segs = segRes.segments ?? [];
-      setSegments(segs);
+      let pages = item.outline ?? [];
+      const cache: Record<number, ContentSegment> = {};
+      if (!pages.length) {
+        const first = await api<{ segments: ContentSegment[] }>(`/content/${id}/segments?from=0&limit=200`);
+        const segs = first.segments ?? [];
+        pages = segs.map((s) => ({
+          id: s.id,
+          segmentIndex: s.segmentIndex,
+          chapterIndex: s.chapterIndex,
+          chapterTitle: s.chapterTitle,
+          pageIndex: s.pageIndex,
+          title: s.title,
+          wordCount: s.wordCount,
+        }));
+        segs.forEach((s, i) => {
+          cache[i] = s;
+        });
+      }
+      setOutline(pages);
+      const start = resolveResumeIndex(pages, item.currentSegmentId, readResume(id));
+      setSegmentIndex(start);
+      writeResume(id, { segmentId: pages[start]?.id, segmentIndex: start });
+      if (!cache[start] && pages[start]) {
+        const res = await api<{ segments: ContentSegment[] }>(
+          `/content/${id}/segments?from=${pages[start].segmentIndex}&limit=1`,
+        );
+        if (res.segments?.[0]) cache[start] = res.segments[0];
+      }
+      setPageCache(cache);
       const map: Record<string, WordStatus> = {};
       for (const w of known) {
         map[w.lemma.toLowerCase()] = (w.status as WordStatus) ?? 'known';
       }
       setWordStatuses(map);
-      const resumeIdx = segs.findIndex((s) => s.id === (item as ContentItem & { currentSegmentId?: string }).currentSegmentId);
-      setSegmentIndex(resumeIdx >= 0 ? resumeIdx : 0);
       lastProgressAtRef.current = Date.now();
     }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
   }, [id]);
@@ -309,7 +415,7 @@ export default function ReaderPage() {
   const { unknownCount, learningCount } = useMemo(() => {
     const unknown = new Set<string>();
     const learning = new Set<string>();
-    for (const seg of segments) {
+    for (const seg of Object.values(pageCache)) {
       for (const t of seg.tokenMap ?? []) {
         if (!t.isWord) continue;
         const key = (t.lemma ?? t.surface).toLowerCase();
@@ -319,7 +425,7 @@ export default function ReaderPage() {
       }
     }
     return { unknownCount: unknown.size, learningCount: learning.size };
-  }, [segments, lemmaStatus]);
+  }, [pageCache, lemmaStatus]);
 
   const persistFontScale = (next: number) => {
     setFontScale(next);
@@ -404,41 +510,91 @@ export default function ReaderPage() {
     }
   };
 
-  const saveProgress = async (nextIndex: number, completed = false) => {
-    if (!id || !segments.length) return;
-    const pct = Math.round(((nextIndex + 1) / segments.length) * 100);
+  const saveProgress = useCallback(async (nextIndex: number, completed = false) => {
+    if (!id || !pageCount) return;
+    const segmentId = outlineRef.current[nextIndex]?.id ?? pageCacheRef.current[nextIndex]?.id;
+    writeResume(id, { segmentId, segmentIndex: nextIndex });
+    const pct = Math.round(((nextIndex + 1) / pageCount) * 100);
     const readSeconds = Math.max(0, Math.round((Date.now() - lastProgressAtRef.current) / 1000));
     lastProgressAtRef.current = Date.now();
     try {
       await api(`/content/${id}/progress`, {
         method: 'PUT',
         body: JSON.stringify({
-          segmentId: segments[nextIndex]?.id,
+          segmentId,
           progressPct: completed ? 100 : pct,
           completed,
           readSeconds,
         }),
       });
     } catch {
-      /* non-blocking */
+      /* non-blocking — local resume still holds the page */
     }
-  };
+  }, [id, pageCount]);
 
-  const goToSegment = (index: number) => {
-    if (index < 0 || index >= segments.length) return;
+  const goToSegment = useCallback((index: number) => {
+    if (index < 0 || index >= outlineRef.current.length) return;
     setSegmentIndex(index);
     setActiveWord(null);
     setActiveLookup(null);
-    void saveProgress(index);
-  };
+    readingPaneRef.current?.scrollTo({ top: 0 });
+    if (id) {
+      writeResume(id, {
+        segmentId: outlineRef.current[index]?.id,
+        segmentIndex: index,
+      });
+    }
+    void (async () => {
+      await loadPage(index);
+      void loadPage(index - 1);
+      void loadPage(index + 1);
+      void saveProgress(index);
+    })();
+  }, [id, loadPage, saveProgress]);
 
   const goNext = () => {
-    if (segmentIndex < segments.length - 1) goToSegment(segmentIndex + 1);
+    if (segmentIndex < pageCount - 1) goToSegment(segmentIndex + 1);
   };
 
   const goPrev = () => {
     if (segmentIndex > 0) goToSegment(segmentIndex - 1);
   };
+
+  const commitPageJump = () => {
+    const raw = Number.parseInt(pageDraft.replace(/[^\d]/g, ''), 10);
+    if (!Number.isFinite(raw)) {
+      setPageDraft(String(pageInChapter.current));
+      return;
+    }
+    const total = pageInChapter.total;
+    const nextPage = Math.min(Math.max(raw, 1), total);
+    setPageDraft(String(nextPage));
+    if (currentChapter) {
+      goToSegment(currentChapter.firstIndex + nextPage - 1);
+      return;
+    }
+    goToSegment(nextPage - 1);
+  };
+
+  useEffect(() => {
+    setPageDraft(String(pageInChapter.current));
+  }, [pageInChapter.current]);
+
+  useEffect(() => {
+    if (!id || !pageCount) return;
+    const flush = () => {
+      void saveProgress(segmentIndex);
+    };
+    const onHide = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, [id, pageCount, segmentIndex, saveProgress]);
 
   const closeDict = () => {
     setDictOpen(false);
@@ -468,7 +624,7 @@ export default function ReaderPage() {
     );
   }
 
-  if (!segments.length || !segment) {
+  if (!pageCount) {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
@@ -488,8 +644,9 @@ export default function ReaderPage() {
     );
   }
 
-  const tokens = segment.tokenMap ?? [];
-  const currentChapterLabel = chapterLabel(segment, segmentIndex);
+  const tokens = segment?.tokenMap ?? [];
+  const currentChapterLabel = currentChapter?.title
+    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex);
   const zoomPct = Math.round(fontScale * 100);
   const readerTheme = preferences?.readerTheme ?? 'light';
   const pageTone =
@@ -566,7 +723,7 @@ export default function ReaderPage() {
           <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
           <button
             type="button"
-            onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment.id}`)}
+            onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment?.id ?? outline[segmentIndex]?.id ?? ''}`)}
             className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
             title="Quiz yourself on this chapter"
           >
@@ -592,49 +749,30 @@ export default function ReaderPage() {
               <div className="flex-1 overflow-y-auto py-2">
                 {chapterGroups
                   ? chapterGroups.map((group) => {
-                      const open = openChapterKeys[group.key] !== false;
-                      const activeHere = group.indices.includes(segmentIndex);
+                      const activeHere = segmentIndex >= group.firstIndex
+                        && segmentIndex < group.firstIndex + group.pageCount;
                       return (
-                        <div key={group.key}>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setOpenChapterKeys((prev) => ({ ...prev, [group.key]: !open }))
-                            }
-                            className={cn(
-                              'w-full text-left px-4 py-2.5 transition-colors',
-                              activeHere ? 'bg-[#f5f3ff]' : 'hover:bg-gray-50',
-                            )}
-                          >
-                            <div className={cn('text-xs font-semibold', activeHere ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                              Ch. {group.key + 1}
+                        <button
+                          key={group.key}
+                          type="button"
+                          onClick={() => goToSegment(group.firstIndex)}
+                          className={cn(
+                            'w-full text-left px-4 py-2.5 transition-colors',
+                            activeHere ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                          )}
+                        >
+                          <div className={cn('text-sm font-medium truncate', activeHere ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                            {group.title}
+                          </div>
+                          {group.pageCount > 1 && (
+                            <div className={cn('text-xs mt-0.5', activeHere ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                              {group.pageCount} pages
                             </div>
-                            <div className={cn('text-sm font-medium truncate mt-0.5', activeHere ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
-                              {group.title}
-                            </div>
-                          </button>
-                          {open &&
-                            group.indices.map((i) => {
-                              const seg = segments[i];
-                              const active = i === segmentIndex;
-                              return (
-                                <button
-                                  key={seg.id}
-                                  type="button"
-                                  onClick={() => goToSegment(i)}
-                                  className={cn(
-                                    'w-full text-left pl-7 pr-4 py-1.5 text-xs transition-colors',
-                                    active ? 'text-[#7008e7] font-semibold' : 'text-[#6a7282] hover:text-[#4a5565]',
-                                  )}
-                                >
-                                  Page {(seg.pageIndex ?? group.indices.indexOf(i)) + 1}
-                                </button>
-                              );
-                            })}
-                        </div>
+                          )}
+                        </button>
                       );
                     })
-                  : segments.map((seg, i) => {
+                  : outline.map((seg, i) => {
                       const active = i === segmentIndex;
                       return (
                         <button
@@ -647,10 +785,10 @@ export default function ReaderPage() {
                           )}
                         >
                           <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                            {segments.length > 1 ? `Page ${i + 1}` : 'Content'}
+                            {pageCount > 1 ? `Page ${i + 1}` : 'Content'}
                           </div>
                           <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
-                            {sidebarChapterTitle(seg)}
+                            {displayChapterTitle(seg.chapterTitle || seg.title, i)}
                           </div>
                         </button>
                       );
@@ -679,33 +817,41 @@ export default function ReaderPage() {
         </aside>
 
         {/* Main reading pane */}
-        <div className="flex-1 min-w-0 overflow-y-auto">
+        <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+          <div ref={readingPaneRef} className="flex-1 min-h-0 overflow-y-auto">
           {/* Mobile chapter chips */}
           <div className="md:hidden flex gap-2 overflow-x-auto px-4 pt-3 pb-1 scrollbar-hide">
-            {segments.map((seg, i) => (
+            {(chapterGroups ?? outline.map((seg, i) => ({
+              key: i,
+              title: displayChapterTitle(seg.chapterTitle || seg.title, i),
+              firstIndex: i,
+              pageCount: 1,
+            }))).map((group) => (
               <button
-                key={seg.id}
+                key={group.key}
                 type="button"
-                onClick={() => goToSegment(i)}
+                onClick={() => goToSegment(group.firstIndex)}
                 className={cn(
-                  'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
-                  i === segmentIndex
+                  'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors max-w-[12rem] truncate',
+                  segmentIndex >= group.firstIndex && segmentIndex < group.firstIndex + group.pageCount
                     ? 'bg-[#f5f3ff] border-[#7f22fe] text-[#7008e7]'
                     : 'bg-white border-gray-200 text-[#4a5565]',
                 )}
               >
-                Ch. {seg.segmentIndex + 1}
+                {group.title}
               </button>
             ))}
           </div>
 
           <div
-            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12"
+            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6"
             style={{ fontSize: `${fontScale}rem` }}
           >
             <div className="mb-8">
               <div className="text-xs font-semibold text-[#8e51ff] uppercase tracking-[1.2px] mb-1">
-                {segmentIndex + 1} of {segments.length}
+                {chapterGroups
+                  ? `Chapter ${(chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1} of ${chapterGroups.length}`
+                  : `${segmentIndex + 1} of ${pageCount}`}
               </div>
               <h1 className="text-2xl font-bold text-[#101828] font-serif leading-8">
                 {currentChapterLabel}
@@ -713,7 +859,11 @@ export default function ReaderPage() {
             </div>
 
             <div className="text-[#1e2939] leading-[1.9] font-serif">
-              {tokens.map((token) => {
+              {!segment ? (
+                <div className="flex items-center justify-center py-16">
+                  <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
+                </div>
+              ) : tokens.map((token) => {
                 if (!token.isWord) {
                   return <span key={token.i}>{token.surface}</span>;
                 }
@@ -763,15 +913,34 @@ export default function ReaderPage() {
               })}
             </div>
 
-            <div className="mt-12 pt-6 border-t border-[#f3f4f6] flex items-center justify-between gap-3">
+          </div>
+          </div>
+          <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-4 py-2.5">
+            <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
               <Button variant="outline" onClick={goPrev} disabled={segmentIndex === 0} className="rounded-xl gap-1.5">
                 <ChevronLeft className="w-4 h-4" />
                 <span className="hidden sm:inline">Previous</span>
               </Button>
-              <span className="text-xs text-[#99a1af] tabular-nums">
-                {segmentIndex + 1} / {segments.length}
-              </span>
-              {segmentIndex < segments.length - 1 ? (
+              <form
+                className="flex items-center gap-1.5 text-xs text-[#99a1af]"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  commitPageJump();
+                }}
+              >
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  value={pageDraft}
+                  onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
+                  onBlur={commitPageJump}
+                  aria-label="Go to page in this chapter"
+                  className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#8e51ff]/40 focus:border-[#7f22fe]"
+                />
+                <span className="tabular-nums">/ {pageInChapter.total}</span>
+              </form>
+              {segmentIndex < pageCount - 1 ? (
                 <Button onClick={goNext} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
                   <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="w-4 h-4" />

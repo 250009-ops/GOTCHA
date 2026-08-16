@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Flag, Search, UserMinus, Users, X } from 'lucide-react';
+import { Search, UserMinus, Users, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber, initials, levelBadgeClass, relativeTime } from '../lib/utils';
 
-type FilterChip = 'All' | 'Premium' | 'Free' | 'Flagged' | 'Suspended';
+type FilterChip = 'All' | 'Pay as you go' | 'Free' | 'Suspended';
 
 interface ActivityItem {
   id: string;
@@ -27,23 +27,26 @@ interface UserRow {
   sessionCount?: number;
   streakCount?: number;
   isAdmin: boolean;
-  isFlagged?: boolean;
   isSuspended?: boolean;
   isActiveRecently?: boolean;
   recentActivity?: ActivityItem[];
 }
 
 interface UsersResponse {
-  stats: { total: number; premium: number; free: number; suspended: number; flagged?: number };
+  stats: { total: number; premium: number; payAsYouGo?: number; free: number; suspended: number };
   users: UserRow[];
 }
 
 function chipQuery(filter: FilterChip): { tier?: string; status?: string } {
-  if (filter === 'Premium') return { tier: 'premium' };
+  if (filter === 'Pay as you go') return { tier: 'payg' };
   if (filter === 'Free') return { tier: 'free' };
-  if (filter === 'Flagged') return { status: 'flagged' };
   if (filter === 'Suspended') return { status: 'suspended' };
   return {};
+}
+
+function isPayAsYouGo(u: Pick<UserRow, 'billingTier' | 'planLabel'>) {
+  const text = `${u.billingTier} ${u.planLabel ?? ''}`.toLowerCase();
+  return text.includes('pay');
 }
 
 export default function UsersPage() {
@@ -136,25 +139,6 @@ export default function UsersPage() {
     }
   }
 
-  async function adjustTier(id: string, next: 'free' | 'premium') {
-    setBusyId(id);
-    setActionMsg(null);
-    setActionErr(null);
-    try {
-      const updated = await api<UserRow>(`/admin/users/${id}/adjust-tier`, {
-        method: 'POST',
-        body: JSON.stringify({ tier: next }),
-      });
-      await load();
-      setSelected(updated);
-      setActionMsg(next === 'premium' ? 'Moved to Premium.' : 'Moved to Free.');
-    } catch (e: unknown) {
-      setActionErr(e instanceof Error ? e.message : 'Tier update failed');
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   async function hardDelete(id: string) {
     setBusyId(id);
     setActionErr(null);
@@ -184,9 +168,9 @@ export default function UsersPage() {
 
   if (!data) return <LoadingBlock />;
 
-  // Figma 122:487 chips; Suspended is an API-backed discovery path (not invented metrics).
-  const chips: FilterChip[] = ['All', 'Premium', 'Free', 'Flagged', 'Suspended'];
-  const premiumSelected = selected?.billingTier.toLowerCase().includes('premium') ?? false;
+  const chips: FilterChip[] = ['All', 'Pay as you go', 'Free', 'Suspended'];
+  const paygCount = data.stats.payAsYouGo ?? data.stats.premium;
+  const paygSelected = selected ? isPayAsYouGo(selected) : false;
 
   return (
     <div>
@@ -212,7 +196,7 @@ export default function UsersPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
         <StatCard label="Total Users" value={formatNumber(data.stats.total)} icon={<Users className="size-5" />} />
-        <StatCard label="Premium" value={formatNumber(data.stats.premium)} accent="bg-violet-50 text-[#6c1d95]" />
+        <StatCard label="Pay as you go" value={formatNumber(paygCount)} accent="bg-violet-50 text-[#6c1d95]" />
         <StatCard label="Free" value={formatNumber(data.stats.free)} accent="bg-slate-100 text-slate-600" />
         <StatCard
           label="Suspended"
@@ -222,21 +206,13 @@ export default function UsersPage() {
         />
       </div>
 
-      {(data.stats.flagged ?? 0) > 0 && (
-        <div className="mb-4 text-sm text-rose-600 flex items-center gap-2">
-          <Flag className="size-4" />
-          {formatNumber(data.stats.flagged ?? 0)} users near AI quota (≥90% today)
-        </div>
-      )}
-
       <div className="flex flex-wrap gap-2 mb-4">
         {chips.map((chip) => {
           const selectedChip = filter === chip;
-          const isFlagged = chip === 'Flagged';
           const isSuspended = chip === 'Suspended';
           const className = selectedChip
             ? 'bg-[#7008e7] text-white border-[#7008e7]'
-            : isFlagged || isSuspended
+            : isSuspended
               ? 'bg-[#fee2e2] text-[#ef4444] border-[#fca5a5]'
               : 'bg-white text-slate-600 border-slate-200';
           return (
@@ -247,7 +223,6 @@ export default function UsersPage() {
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition-colors ${className}`}
             >
               {chip}
-              {chip === 'Flagged' && (data.stats.flagged ?? 0) > 0 ? ` (${data.stats.flagged})` : ''}
               {chip === 'Suspended' && data.stats.suspended > 0 ? ` (${data.stats.suspended})` : ''}
             </button>
           );
@@ -258,18 +233,15 @@ export default function UsersPage() {
         <Card className="p-2">
           {data.users.length === 0 ? (
             <p className="text-sm text-slate-500 py-10 text-center">
-              {filter === 'Flagged'
-                ? 'No flagged users (AI quota ≥90% today).'
-                : filter === 'Suspended'
-                  ? 'No suspended users.'
-                  : 'No users found.'}
+              {filter === 'Suspended'
+                ? 'No suspended users.'
+                : 'No users found.'}
             </p>
           ) : (
             <DataTable headers={['User', 'Language', 'Level', 'Plan', 'Vocab', 'Joined', '']}>
               {data.users.map((u) => {
-                const premium = u.billingTier.toLowerCase().includes('premium');
-                // Schema has free/premium only — no monthly/annual interval.
-                const plan = u.planLabel || (premium ? 'Premium' : 'Free Tier');
+                const payg = isPayAsYouGo(u);
+                const plan = u.planLabel || (payg ? 'Pay as you go' : 'Free');
                 return (
                   <tr
                     key={u.id}
@@ -288,7 +260,6 @@ export default function UsersPage() {
                               className={`size-1.5 rounded-full ${u.isActiveRecently ? 'bg-emerald-500' : 'bg-slate-300'}`}
                               title={u.isActiveRecently ? 'Active in last 7 days' : 'Inactive'}
                             />
-                            {u.isFlagged && <Badge className="bg-rose-50 text-rose-600">Flagged</Badge>}
                             {u.isSuspended && <Badge className="bg-rose-50 text-rose-600">Suspended</Badge>}
                             {u.isAdmin && <Badge className="bg-amber-50 text-amber-700">Admin</Badge>}
                           </div>
@@ -301,7 +272,7 @@ export default function UsersPage() {
                       {u.cefrLevel ? <Badge className={levelBadgeClass(u.cefrLevel)}>{u.cefrLevel.toUpperCase()}</Badge> : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={premium ? 'bg-[#f0e7ff] text-[#7008e7]' : 'bg-slate-100 text-slate-600'}>
+                      <Badge className={payg ? 'bg-[#f0e7ff] text-[#7008e7]' : 'bg-slate-100 text-slate-600'}>
                         {plan}
                       </Badge>
                     </td>
@@ -345,12 +316,12 @@ export default function UsersPage() {
                     className={
                       selected.isSuspended
                         ? 'bg-rose-50 text-rose-600'
-                        : premiumSelected
+                        : paygSelected
                           ? 'bg-[#f0e7ff] text-[#7008e7]'
                           : 'bg-slate-100 text-slate-600'
                     }
                   >
-                    {selected.isSuspended ? 'Suspended' : premiumSelected ? 'Premium' : 'Free'}
+                    {selected.isSuspended ? 'Suspended' : paygSelected ? 'Pay as you go' : 'Free'}
                   </Badge>
                 </div>
                 <div className="text-xs text-slate-500">{selected.email}</div>
@@ -394,20 +365,13 @@ export default function UsersPage() {
                 <p className="text-xs text-slate-500">Admin accounts cannot be modified here.</p>
               ) : (
                 <>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <Button
                       variant="secondary"
                       disabled={busyId === selected.id}
                       onClick={() => resetPassword(selected.id)}
                     >
                       {busyId === selected.id ? '…' : 'Reset PW'}
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      disabled={busyId === selected.id}
-                      onClick={() => adjustTier(selected.id, premiumSelected ? 'free' : 'premium')}
-                    >
-                      {busyId === selected.id ? '…' : 'Adjust Tier'}
                     </Button>
                     {selected.isSuspended ? (
                       <Button

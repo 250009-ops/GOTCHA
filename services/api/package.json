@@ -12,7 +12,8 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

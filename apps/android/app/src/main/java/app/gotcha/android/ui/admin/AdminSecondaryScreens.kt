@@ -33,6 +33,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.text.BasicTextField
@@ -82,6 +83,7 @@ import app.gotcha.android.data.model.AdminLanguagesResponse
 import app.gotcha.android.data.model.AdminLevelTestsResponse
 import app.gotcha.android.data.model.AdminNamedPct
 import app.gotcha.android.data.model.AdminNotificationsResponse
+import app.gotcha.android.data.model.AdminMe
 import app.gotcha.android.data.model.AdminSettings
 import app.gotcha.android.data.model.AdminSupportResponse
 import app.gotcha.android.data.model.AdminSupportTicket
@@ -116,6 +118,7 @@ fun AdminContentDetailScreen(contentId: String, onBack: () -> Unit, onEdit: (Str
     var markFree by remember { mutableStateOf(false) }
     var activeVisible by remember { mutableStateOf(false) }
     var publishing by remember { mutableStateOf(false) }
+    var deleting by remember { mutableStateOf(false) }
     var statusMsg by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(contentId) {
@@ -230,8 +233,8 @@ fun AdminContentDetailScreen(contentId: String, onBack: () -> Unit, onEdit: (Str
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             LabeledReadonlyField(
-                                "Base Price ($)",
-                                if (free) "0.00" else "%.2f".format(c.priceUsd ?: 0.0),
+                                "Base Price (UZS)",
+                                if (free) "Free" else formatUsdMicros(c.priceUsd),
                                 modifier = Modifier.weight(1f),
                             )
                             Column(
@@ -300,6 +303,31 @@ fun AdminContentDetailScreen(contentId: String, onBack: () -> Unit, onEdit: (Str
                                 ),
                             )
                         }
+                        Text(
+                            if (deleting) "Deleting…" else "Delete permanently",
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .border(1.dp, GotchaColors.Danger, RoundedCornerShape(12.dp))
+                                .clickable(enabled = !deleting) {
+                                    deleting = true
+                                    scope.launch {
+                                        try {
+                                            container.adminRepository.deleteContent(c.id)
+                                            onBack()
+                                        } catch (e: Exception) {
+                                            statusMsg = e.message ?: "Delete failed"
+                                        } finally {
+                                            deleting = false
+                                        }
+                                    }
+                                }
+                                .padding(vertical = 12.dp),
+                            color = GotchaColors.Danger,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            textAlign = TextAlign.Center,
+                        )
                     }
 
                     // Figma 122:359 — Views | Sales | Rating strip
@@ -473,6 +501,8 @@ fun AdminAddProductScreen(
     var bodyText by remember { mutableStateOf("") }
     var sourceUrl by remember { mutableStateOf("") }
     var sourceMode by remember { mutableStateOf("paste") }
+    var pdfBytes by remember { mutableStateOf<ByteArray?>(null) }
+    var pdfName by remember { mutableStateOf<String?>(null) }
     var coverBytes by remember { mutableStateOf<ByteArray?>(null) }
     var coverName by remember { mutableStateOf("cover.jpg") }
     var coverMime by remember { mutableStateOf("image/jpeg") }
@@ -495,6 +525,26 @@ fun AdminAddProductScreen(
         }
         coverBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
         coverPreview = uri.toString()
+    }
+    val pdfPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        val name = runCatching {
+            context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                val idx = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                if (cursor.moveToFirst() && idx >= 0) cursor.getString(idx) else null
+            }
+        }.getOrNull() ?: uri.lastPathSegment ?: "book.pdf"
+        if (!name.lowercase().endsWith(".pdf")) {
+            onImportError("Only PDF files are supported")
+            return@rememberLauncherForActivityResult
+        }
+        pdfName = name
+        pdfBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+        sourceMode = "pdf"
+        preview = null
+        if (title.isBlank()) {
+            title = name.substringBeforeLast('.').replace(Regex("[-_]+"), " ").trim()
+        }
     }
 
     LaunchedEffect(contentId) {
@@ -541,7 +591,18 @@ fun AdminAddProductScreen(
         analyzing = true
         scope.launch {
             try {
-                val result = container.adminRepository.ingestPreview(requestBody())
+                val result = if (sourceMode == "pdf") {
+                    val bytes = pdfBytes ?: throw IllegalStateException("Choose a PDF first")
+                    container.adminRepository.ingestPreviewFile(
+                        bytes = bytes,
+                        fileName = pdfName ?: "book.pdf",
+                        title = title.trim().ifBlank { "Untitled" },
+                        contentType = contentType,
+                        language = language.trim().lowercase().ifBlank { "en" },
+                    )
+                } else {
+                    container.adminRepository.ingestPreview(requestBody())
+                }
                 preview = result
                 openChapters = result.chapters.map { it.chapterIndex }.toSet()
             } catch (e: Exception) {
@@ -591,7 +652,20 @@ fun AdminAddProductScreen(
                         ),
                     ).id
                 } else {
-                    container.adminRepository.createContent(requestBody(bodyText.ifBlank { "$title." })).id
+                    var createBody = requestBody(bodyText.ifBlank { "$title." })
+                    if (sourceMode == "pdf" && createBody.chapters.isNullOrEmpty()) {
+                        val bytes = pdfBytes ?: throw IllegalStateException("Choose a PDF first")
+                        val analyzed = container.adminRepository.ingestPreviewFile(
+                            bytes = bytes,
+                            fileName = pdfName ?: "book.pdf",
+                            title = title.trim().ifBlank { "Untitled" },
+                            contentType = contentType,
+                            language = language.trim().lowercase().ifBlank { "en" },
+                        )
+                        preview = analyzed
+                        createBody = requestBody()
+                    }
+                    container.adminRepository.createContent(createBody).id
                 }
                 coverBytes?.let { bytes ->
                     runCatching { container.adminRepository.uploadContentCover(id, bytes, coverName, coverMime) }
@@ -674,6 +748,34 @@ fun AdminAddProductScreen(
                         fontSize = 12.sp,
                     )
                 }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.White)
+                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
+                        .clickable {
+                            pdfPicker.launch(arrayOf("application/pdf"))
+                        }
+                        .padding(16.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Outlined.UploadFile,
+                        contentDescription = null,
+                        tint = if (pdfBytes != null) GotchaColors.BrandPurple else GotchaColors.TextSubtle,
+                        modifier = Modifier.size(24.dp),
+                    )
+                    Text(
+                        if (pdfName.isNullOrBlank()) "Upload Source PDF" else pdfName!!,
+                        color = GotchaColors.BrandPurple,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 GotchaTextField("Product Title", title, { title = it }, placeholder = "Alice in Wonderland")
                 GotchaTextField("Author", author, { author = it }, placeholder = "Lewis Carroll")
                 GotchaTextField("Description", description, { description = it }, placeholder = "Short catalog description")
@@ -687,9 +789,9 @@ fun AdminAddProductScreen(
                     }
                 }
                 GotchaTextField("Type (book / story / article / news)", contentType, { contentType = it.lowercase() }, placeholder = "book")
-                GotchaTextField("Price (USD)", price, { price = it }, placeholder = "0 for free")
+                GotchaTextField("Price (UZS)", price, { price = it }, placeholder = "0 for free")
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf("paste" to "Paste text", "url" to "PDF / URL").forEach { (mode, label) ->
+                    listOf("paste" to "Paste text", "pdf" to "Upload PDF", "url" to "Page URL").forEach { (mode, label) ->
                         Text(
                             label,
                             modifier = Modifier
@@ -706,14 +808,25 @@ fun AdminAddProductScreen(
                 }
                 Column(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        if (sourceMode == "url") "PDF or page URL" else if (literary) "Paste book / story" else "Paste article / news",
+                        when (sourceMode) {
+                            "url" -> "Page URL"
+                            "pdf" -> "Source PDF"
+                            else -> if (literary) "Paste book / story" else "Paste article / news"
+                        },
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = GotchaColors.TextMuted,
                     )
                     Spacer(Modifier.height(6.dp))
                     if (sourceMode == "url") {
-                        GotchaTextField("Source URL", sourceUrl, { sourceUrl = it }, placeholder = "https://…/book.pdf")
+                        GotchaTextField("Source URL", sourceUrl, { sourceUrl = it }, placeholder = "https://…/article")
+                    } else if (sourceMode == "pdf") {
+                        Text(
+                            if (pdfName.isNullOrBlank()) "Choose a PDF above, then detect chapters from its outline and headings."
+                            else "Ready to analyze: $pdfName",
+                            fontSize = 13.sp,
+                            color = GotchaColors.TextMuted,
+                        )
                     } else {
                         Box(
                             modifier = Modifier
@@ -732,7 +845,7 @@ fun AdminAddProductScreen(
                                 decorationBox = { inner ->
                                     if (bodyText.isEmpty()) {
                                         Text(
-                                            if (literary) "Paste the book or story. Copyright pages are dropped; real chapters are detected."
+                                            if (literary) "Paste the book or story. Copyright pages are dropped; chapter titles stay as printed."
                                             else "Paste the tight article or news body.",
                                             color = GotchaColors.TextSubtle,
                                             fontSize = 13.sp,
@@ -745,7 +858,7 @@ fun AdminAddProductScreen(
                     }
                 }
                 Text(
-                    if (analyzing) "Analyzing chapters…" else if (literary) "AI: detect chapters" else "AI: prepare body",
+                    if (analyzing) "Detecting chapters…" else if (literary) "Detect chapters" else "Prepare body",
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
@@ -1250,20 +1363,21 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
         }
         else -> {
             val u = user!!
-            val premium = u.billingTier?.contains("Premium", true) == true
+            val payg = u.billingTier?.contains("pay", true) == true ||
+                u.planLabel?.contains("pay", true) == true
             val badgeLabel = when {
                 u.isSuspended -> "Suspended"
-                premium -> "Premium"
+                payg -> "Pay as you go"
                 else -> "Free"
             }
             val badgeBg = when {
                 u.isSuspended -> Color(0xFFFEE2E2)
-                premium -> GotchaColors.BrandPurpleSoft
+                payg -> GotchaColors.BrandPurpleSoft
                 else -> Color(0xFFF3F4F6)
             }
             val badgeFg = when {
                 u.isSuspended -> GotchaColors.Danger
-                premium -> GotchaColors.BrandPurple
+                payg -> GotchaColors.BrandPurple
                 else -> GotchaColors.TextMuted
             }
             Column(
@@ -1325,10 +1439,6 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                         }
                         Spacer(Modifier.height(4.dp))
                         Text(u.email, color = GotchaColors.TextMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (u.isFlagged) {
-                            Spacer(Modifier.height(4.dp))
-                            Text("Flagged — AI quota ≥90% today", color = GotchaColors.Danger, fontSize = 11.sp)
-                        }
                     }
                 }
                 Spacer(Modifier.height(16.dp))
@@ -1408,7 +1518,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                     }
                 }
                 Spacer(Modifier.height(16.dp))
-                // Figma 122:646 — Admin Actions: Reset PW / Adjust Tier / Suspend
+                // Admin Actions: Reset PW / Suspend
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Text(
                         "Admin Actions",
@@ -1444,29 +1554,6 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                                         actionMessage = result.getOrNull()?.message ?: "Reset email sent."
                                     } else {
                                         actionError = result.exceptionOrNull()?.message ?: "Reset failed"
-                                    }
-                                    busy = false
-                                }
-                            }
-                            ActionChip(
-                                label = if (busy) "…" else "Adjust Tier",
-                                danger = false,
-                                enabled = !busy,
-                                modifier = Modifier.weight(1f),
-                            ) {
-                                busy = true
-                                actionError = null
-                                actionMessage = null
-                                scope.launch {
-                                    val next = if (premium) "free" else "premium"
-                                    val result = runCatching {
-                                        container.adminRepository.adjustUserTier(u.id, next)
-                                    }
-                                    if (result.isSuccess) {
-                                        user = result.getOrNull() ?: loadUser()
-                                        actionMessage = if (next == "premium") "Moved to Premium." else "Moved to Free."
-                                    } else {
-                                        actionError = result.exceptionOrNull()?.message ?: "Tier update failed"
                                     }
                                     busy = false
                                 }
@@ -1799,19 +1886,16 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
         else -> {
             val d = data!!
             val k = d.kpis
-            val growthBars = if (d.engagementByHour.isNotEmpty()) {
-                // Figma shows 7 weekday bars — sample evenly from hourly series.
-                val src = d.engagementByHour.map { it.toDouble() }
-                if (src.size <= 7) src
-                else (0 until 7).map { i ->
-                    val idx = (i * (src.size - 1)) / 6
-                    src[idx]
-                }
+            val dayPoints = d.engagementByDay
+            val growthBars = dayPoints.map { it.value.toDouble() }.let { bars ->
+                if (bars.any { it > 0 }) bars else emptyList()
+            }
+            val dayLabels = if (growthBars.isNotEmpty()) {
+                dayPoints.map { it.label?.takeLast(2) ?: "" }
             } else {
                 emptyList()
             }
-            val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
-            val features = d.featureUsage.take(3)
+            val features = d.featureUsage.take(4)
             LazyColumn(
                 modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
@@ -1850,24 +1934,24 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         AnalyticsKpiTile(
-                            label = "DAU",
+                            label = "Active today",
                             value = formatInt(k?.dau ?: 0),
-                            hint = "+${(k?.dauGrowthPct ?: 0.0).toInt()}% vs lw",
-                            hintColor = GotchaColors.SuccessBright,
+                            hint = if ((k?.dau ?: 0) == 0) "No activity" else "Live learners",
+                            hintColor = GotchaColors.TextMuted,
                             modifier = Modifier.weight(1f),
                         )
                         AnalyticsKpiTile(
                             label = "Revenue",
-                            value = "$${formatInt((k?.revenue ?: 0.0).toInt())}",
-                            hint = "+${(k?.revenueGrowthPct ?: 0.0).toInt()}% vs lw",
-                            hintColor = GotchaColors.SuccessBright,
+                            value = formatUsdMicros(k?.revenue),
+                            hint = "Import payments",
+                            hintColor = GotchaColors.TextMuted,
                             modifier = Modifier.weight(1f),
                         )
                         AnalyticsKpiTile(
-                            label = "Retention",
+                            label = "Returning",
                             value = "${(k?.retentionPct ?: 0.0).toInt()}%",
-                            hint = if ((k?.retentionPct ?: 0.0) >= 70) "Healthy" else "Watch",
-                            hintColor = GotchaColors.SuccessBright,
+                            hint = "vs prior range",
+                            hintColor = GotchaColors.TextMuted,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -1882,10 +1966,10 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
                             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                             .padding(14.dp),
                     ) {
-                        Text("User Growth Trend", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                        Text("Reading sessions", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
                         Spacer(Modifier.height(8.dp))
                         if (growthBars.isEmpty()) {
-                            Text("No engagement series for this range.", color = GotchaColors.TextMuted, fontSize = 12.sp)
+                            Text("No reading sessions in this range.", color = GotchaColors.TextMuted, fontSize = 12.sp)
                         } else {
                             val max = growthBars.maxOrNull()?.coerceAtLeast(1.0) ?: 1.0
                             Row(
@@ -1926,7 +2010,7 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
                             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                             .padding(14.dp),
                     ) {
-                        Text("AI Feature Usage", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                        Text("Feature usage", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
                         Spacer(Modifier.height(10.dp))
                         if (features.isEmpty()) {
                             Text("No feature usage data for this range.", color = GotchaColors.TextMuted, fontSize = 12.sp)
@@ -2019,7 +2103,6 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
     var data by remember { mutableStateOf<AdminNotificationsResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var channel by remember { mutableStateOf("Push") }
     var showCompose by remember { mutableStateOf(false) }
     var selected by remember { mutableStateOf<AdminCampaign?>(null) }
     var formError by remember { mutableStateOf<String?>(null) }
@@ -2028,7 +2111,6 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
     var subject by remember { mutableStateOf("") }
     var body by remember { mutableStateOf("") }
     var audience by remember { mutableStateOf("all") }
-    var composeChannel by remember { mutableStateOf("Push") }
 
     suspend fun reload() {
         data = container.adminRepository.notifications()
@@ -2049,13 +2131,9 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
         name = existing?.name.orEmpty()
         subject = existing?.subject.orEmpty()
         body = existing?.body.orEmpty()
-        audience = existing?.audience ?: "all"
-        composeChannel = when {
-            existing?.channel?.contains("email", true) == true -> "Email"
-            existing?.channel?.contains("in_app", true) == true ||
-                existing?.channel?.contains("in-app", true) == true -> "In-App"
-            existing != null -> "Push"
-            else -> channel
+        audience = when (existing?.audience?.lowercase()) {
+            "premium", "pro" -> "payg"
+            else -> existing?.audience ?: "all"
         }
         formError = null
         showCompose = true
@@ -2069,18 +2147,13 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
         saving = true
         formError = null
         val result = runCatching {
-            val ch = when (composeChannel) {
-                "Email" -> "email"
-                "In-App" -> "in_app"
-                else -> "push"
-            }
             if (selected == null) {
                 container.adminRepository.createCampaign(
                     AdminCreateCampaignRequest(
                         name = name.trim(),
                         subject = subject.trim(),
                         body = body.trim(),
-                        channel = ch,
+                        channel = "push",
                         audience = audience,
                         status = status,
                     ),
@@ -2093,7 +2166,7 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
                         subject = subject.trim(),
                         body = body.trim(),
                         audience = audience,
-                        channel = ch,
+                        channel = "push",
                         status = status,
                     ),
                 )
@@ -2120,8 +2193,6 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
             onBody = { body = it },
             audience = audience,
             onAudience = { audience = it },
-            composeChannel = composeChannel,
-            onChannel = { composeChannel = it },
             formError = formError,
             saving = saving,
             onBack = { showCompose = false; selected = null },
@@ -2139,13 +2210,6 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
         }
         else -> {
             val campaigns = data!!.campaigns
-            val filtered = campaigns.filter {
-                when (channel) {
-                    "Push" -> it.channel?.contains("email", true) != true
-                    "Email" -> it.channel?.contains("email", true) == true
-                    else -> true
-                }
-            }
             LazyColumn(
                 modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
@@ -2164,38 +2228,10 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
                         }
                     }
                 }
-                item {
-                    Row(
-                        modifier = Modifier
-                            .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        listOf("Push" to "Push Notifications", "Email" to "Email Campaigns").forEach { (key, label) ->
-                            val selectedChip = channel == key
-                            Text(
-                                label,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(if (selectedChip) GotchaColors.BrandPurple else Color.White)
-                                    .border(
-                                        1.dp,
-                                        if (selectedChip) GotchaColors.BrandPurple else GotchaColors.Border,
-                                        RoundedCornerShape(8.dp),
-                                    )
-                                    .clickable { channel = key }
-                                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                                color = if (selectedChip) Color.White else GotchaColors.TextMuted,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                            )
-                        }
-                    }
-                }
-                if (filtered.isEmpty()) {
-                    item { EmptyState("No ${if (channel == "Email") "email" else "push"} campaigns yet.") }
+                if (campaigns.isEmpty()) {
+                    item { EmptyState("No push notifications yet.") }
                 } else {
-                    items(filtered, key = { it.id }) { c ->
+                    items(campaigns, key = { it.id }) { c ->
                         CampaignRow(
                             c = c,
                             onOpen = { openCompose(c) },
@@ -2229,8 +2265,6 @@ private fun AdminNotificationComposeScreen(
     onBody: (String) -> Unit,
     audience: String,
     onAudience: (String) -> Unit,
-    composeChannel: String,
-    onChannel: (String) -> Unit,
     formError: String?,
     saving: Boolean,
     onBack: () -> Unit,
@@ -2252,41 +2286,6 @@ private fun AdminNotificationComposeScreen(
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             AdminComposeField("CAMPAIGN NAME", name, onName, singleLine = true)
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    "TYPE SELECTOR",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = GotchaColors.TextMuted,
-                )
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(GotchaColors.Border)
-                        .padding(4.dp),
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    listOf("Push", "Email", "In-App").forEach { key ->
-                        val on = composeChannel == key
-                        Text(
-                            key,
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(if (on) Color.White else Color.Transparent)
-                                .clickable { onChannel(key) }
-                                .padding(vertical = 8.dp),
-                            textAlign = TextAlign.Center,
-                            fontFamily = Manrope,
-                            fontWeight = if (on) FontWeight.Bold else FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            color = if (on) GotchaColors.Ink else GotchaColors.TextMuted,
-                        )
-                    }
-                }
-            }
             AdminComposeField("SUBJECT LINE", subject, onSubject, singleLine = true)
             AdminComposeField("MESSAGE BODY", body, onBody, singleLine = false, fieldHeight = 100.dp)
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -2298,11 +2297,11 @@ private fun AdminNotificationComposeScreen(
                     color = GotchaColors.TextMuted,
                 )
                 val audiences = listOf(
-                    "all" to "All Users",
-                    "premium" to "Pro Subscribers",
-                    "free" to "Free Users",
-                    "jp" to "JP Learners",
-                    "inactive" to "Inactive 7d+",
+                    "all" to "All learners",
+                    "free" to "Free",
+                    "payg" to "Pay as you go",
+                    "active" to "Active",
+                    "new_users" to "New learners",
                 )
                 audiences.chunked(3).forEach { row ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2421,16 +2420,14 @@ private fun CampaignRow(
     }
     val audienceKey = (c.audience ?: "all").lowercase()
     val audienceLabel = when (audienceKey) {
-        "all" -> "All Users"
-        "premium" -> "Pro Subscribers"
-        "free" -> "Free Users"
-        "jp" -> "JP Learners"
-        "inactive" -> "Inactive 7d+"
+        "all" -> "All learners"
+        "premium", "payg" -> "Pay as you go"
+        "free" -> "Free"
         "active" -> "Active"
-        "new_users" -> "New Users"
+        "new_users" -> "New learners"
         else -> audienceKey.replace('_', ' ').replaceFirstChar { it.uppercase() }
     }
-    val audiencePremium = audienceKey == "premium"
+    val audiencePremium = audienceKey == "payg" || audienceKey == "premium"
     val dateLabel = when (status) {
         "scheduled" -> "Scheduled: ${formatCampaignDay(c.scheduledAt)}"
         "sent", "sending" -> "Sent: ${formatCampaignDay(c.sentAt ?: c.createdAt)}"
@@ -2753,13 +2750,19 @@ fun AdminTicketDetailScreen(ticketId: String, onBack: () -> Unit) {
 @Composable
 fun AdminGamificationScreen(onBack: () -> Unit) {
     val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
     var data by remember { mutableStateOf<AdminGamificationResponse?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var toggling by remember { mutableStateOf<String?>(null) }
+
+    suspend fun reload() {
+        data = container.adminRepository.gamification()
+    }
 
     LaunchedEffect(Unit) {
         try {
-            data = container.adminRepository.gamification()
+            reload()
         } catch (e: Exception) {
             error = e.message ?: "Failed to load gamification"
         } finally {
@@ -2781,14 +2784,12 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                // Figma 122:1311 — Gamification
                 item { AdminBackHeader("Gamification", onBack) }
                 item {
                     Row(
                         modifier = Modifier.padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        // No earn ledger — show catalog points honestly (not Figma seed).
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -2798,10 +2799,10 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Text("Total Points", color = GotchaColors.TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            Text("Avg Streak", color = GotchaColors.TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                             Text(
-                                formatInt(s?.catalogPoints ?: s?.totalEarned ?: 0),
-                                color = GotchaColors.BrandPurple,
+                                "${s?.avgStreakDays ?: 0.0} days",
+                                color = GotchaColors.Ink,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
                             )
@@ -2815,9 +2816,9 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
                                 .padding(12.dp),
                             verticalArrangement = Arrangement.spacedBy(4.dp),
                         ) {
-                            Text("Avg Streak", color = GotchaColors.TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
+                            Text("Streakers (7d+)", color = GotchaColors.TextMuted, fontWeight = FontWeight.SemiBold, fontSize = 11.sp)
                             Text(
-                                "${s?.avgStreakDays ?: 0.0} days",
+                                formatInt(s?.streakers ?: 0),
                                 color = GotchaColors.Ink,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
@@ -2837,7 +2838,25 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
                 if (d.achievements.isEmpty()) {
                     item { EmptyState("No achievements configured.") }
                 } else {
-                    items(d.achievements, key = { it.id }) { a -> AchievementRow(a) }
+                    items(d.achievements, key = { it.id }) { a ->
+                        AchievementRow(
+                            a = a,
+                            enabled = toggling != a.id,
+                            onToggle = {
+                                scope.launch {
+                                    toggling = a.id
+                                    try {
+                                        container.adminRepository.updateAchievement(a.id, !a.isActive)
+                                        reload()
+                                    } catch (e: Exception) {
+                                        error = e.message ?: "Failed to update achievement"
+                                    } finally {
+                                        toggling = null
+                                    }
+                                }
+                            },
+                        )
+                    }
                 }
                 if (d.seasons.isNotEmpty()) {
                     item {
@@ -2897,7 +2916,11 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun AchievementRow(a: AdminAchievement) {
+private fun AchievementRow(
+    a: AdminAchievement,
+    enabled: Boolean,
+    onToggle: () -> Unit,
+) {
     Row(
         modifier = Modifier
             .padding(horizontal = 24.dp)
@@ -2907,7 +2930,7 @@ private fun AchievementRow(a: AdminAchievement) {
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
@@ -2919,20 +2942,19 @@ private fun AchievementRow(a: AdminAchievement) {
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
-                "${a.points} pts · ${a.category ?: "general"}",
+                "${a.points} pts · ${a.category ?: "general"} · threshold ${a.threshold}",
                 color = GotchaColors.TextSubtle,
                 fontSize = 11.sp,
             )
         }
-        Text(
-            if (a.isActive) "ACTIVE" else "DISABLED",
-            modifier = Modifier
-                .clip(RoundedCornerShape(6.dp))
-                .background(if (a.isActive) GotchaColors.SuccessBg else Color(0xFFE5E7EB))
-                .padding(horizontal = 6.dp, vertical = 2.dp),
-            color = if (a.isActive) GotchaColors.SuccessBright else GotchaColors.TextSubtle,
-            fontWeight = FontWeight.Bold,
-            fontSize = 9.sp,
+        Switch(
+            checked = a.isActive,
+            onCheckedChange = { onToggle() },
+            enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedTrackColor = GotchaColors.BrandPurple,
+                checkedThumbColor = Color.White,
+            ),
         )
     }
 }
@@ -3276,25 +3298,12 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
         else -> {
             val d = data!!
             val t = d.today
-            val flagged = t?.flagAlerts ?: 0
-            val insight = d.insight?.takeIf { it.isNotBlank() }
-            val alertText = when {
-                flagged > 0 ->
-                    insight?.takeIf {
-                        it.contains("threshold", ignoreCase = true) ||
-                            it.contains("flag", ignoreCase = true) ||
-                            it.contains("high usage", ignoreCase = true)
-                    } ?: "High usage threshold detected for $flagged users today."
-                else -> null
-            }
-            val hourly = d.hourlyLookups.map { it.toDouble() }.let { bars ->
-                if (!bars.any { it > 0 }) emptyList()
-                else if (bars.size <= 12) bars
-                else {
-                    // Figma chart is sparse (~7 bars); downsample dense 24h series.
-                    val step = (bars.size + 11) / 12
-                    bars.filterIndexed { index, _ -> index % step == 0 }.take(12)
-                }
+            val dailyBars = d.dailyLookups.map { it.toDouble() }
+            val hourlyBars = d.hourlyLookups.map { it.toDouble() }
+            val volume = when {
+                dailyBars.any { it > 0 } -> dailyBars
+                hourlyBars.any { it > 0 } -> hourlyBars
+                else -> emptyList()
             }
             LazyColumn(
                 modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
@@ -3302,67 +3311,36 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 item { AdminBackHeader("AI Usage", onBack) }
-                if (alertText != null) {
-                    item {
-                        Row(
-                            modifier = Modifier
-                                .padding(horizontal = 24.dp)
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFFFEE2E2))
-                                .border(1.dp, GotchaColors.Danger, RoundedCornerShape(12.dp))
-                                .padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        ) {
-                            Icon(
-                                Icons.Outlined.WarningAmber,
-                                contentDescription = null,
-                                tint = GotchaColors.Danger,
-                                modifier = Modifier.size(16.dp),
-                            )
-                            Text(
-                                alertText,
-                                color = GotchaColors.Danger,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                modifier = Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
                 item {
-                    // Figma 122:1459 — three compact KPI tiles
                     Row(
                         modifier = Modifier.padding(horizontal = 24.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         AiKpiTile(
-                            label = "Lookups Today",
+                            label = "Lookups",
                             value = formatInt(t?.lookups ?: 0),
                             modifier = Modifier.weight(1f),
                         )
                         AiKpiTile(
-                            label = "Avg Cost/User",
-                            value = "$%.3f".format(t?.avgCostPerLookup ?: 0.0),
+                            label = "Avg / User",
+                            value = "%.1f".format(t?.avgLookupsPerUser ?: 0.0),
                             modifier = Modifier.weight(1f),
                         )
                         AiKpiTile(
-                            label = "Flagged Users",
-                            value = formatInt(flagged),
-                            valueColor = if (flagged > 0) GotchaColors.Danger else GotchaColors.Ink,
+                            label = "Active Users",
+                            value = formatInt(t?.uniqueUsers ?: 0),
                             modifier = Modifier.weight(1f),
                         )
                     }
                 }
-                if (hourly.isNotEmpty()) {
+                if (volume.isNotEmpty()) {
                     item {
                         Column(
                             modifier = Modifier.padding(horizontal = 24.dp),
                             verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             Text(
-                                "Hourly Lookup Volume",
+                                "Daily Lookup Volume",
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 12.sp,
                                 color = GotchaColors.TextMuted,
@@ -3375,14 +3353,14 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
                                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                     .padding(12.dp),
                             ) {
-                                MiniBarChart(values = hourly, heightDp = 48, barWidthDp = 14)
+                                MiniBarChart(values = volume, heightDp = 48, barWidthDp = 14)
                             }
                         }
                     }
                 }
                 item {
                     Text(
-                        "Top Users (Abuse Detection)",
+                        "Top AI Users",
                         modifier = Modifier.padding(horizontal = 24.dp),
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 12.sp,
@@ -3390,19 +3368,13 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
                     )
                 }
                 if (d.topUsers.isEmpty()) {
-                    item { EmptyState("No top AI users yet.") }
+                    item { EmptyState("No learner AI usage yet.") }
                 } else {
                     items(d.topUsers.take(20)) { row ->
-                        val status = row.status ?: "Active"
-                        val (badgeBg, badgeFg) = when (status.lowercase()) {
-                            "flagged" -> Color(0xFFFEE2E2) to GotchaColors.Danger
-                            "suspended" -> Color(0xFFE5E7EB) to GotchaColors.TextMuted
-                            else -> GotchaColors.SuccessBg to GotchaColors.SuccessBright
-                        }
                         val display = buildString {
                             append(row.user?.displayName ?: row.user?.email ?: "User")
                             append(" (")
-                            append((row.plan ?: "Free").replaceFirstChar { it.uppercase() })
+                            append(row.plan ?: "Free")
                             append(")")
                         }
                         Row(
@@ -3418,21 +3390,11 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(display, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GotchaColors.Ink)
                                 Text(
-                                    "${row.lookups} calls • $${"%.2f".format(row.cost)} cost",
+                                    "${row.lookups} lookups · ${row.monthLookups} this month",
                                     color = GotchaColors.TextSubtle,
                                     fontSize = 10.sp,
                                 )
                             }
-                            Text(
-                                status.replaceFirstChar { it.uppercase() },
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(badgeBg)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                color = badgeFg,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 9.sp,
-                            )
                         }
                     }
                 }
@@ -3465,15 +3427,44 @@ private fun AiKpiTile(
 fun AdminSettingsScreen(onBack: () -> Unit) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var settings by remember { mutableStateOf<AdminSettings?>(null) }
+    var me by remember { mutableStateOf<AdminMe?>(null) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var saving by remember { mutableStateOf(false) }
     var savedFlash by remember { mutableStateOf(false) }
+    var uploadingPhoto by remember { mutableStateOf(false) }
+    val photoPicker = rememberLauncherForActivityResult(
+        ActivityResultContracts.PickVisualMedia(),
+    ) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            uploadingPhoto = true
+            error = null
+            try {
+                val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
+                val name = when {
+                    mime.contains("png") -> "avatar.png"
+                    mime.contains("webp") -> "avatar.webp"
+                    else -> "avatar.jpg"
+                }
+                val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                    ?: error("Could not read image")
+                val updated = container.userRepository.uploadAvatar(bytes, name, mime)
+                me = me?.copy(avatarUrl = updated.avatarUrl) ?: container.adminRepository.me()
+            } catch (e: Exception) {
+                error = e.message ?: "Couldn’t upload photo"
+            } finally {
+                uploadingPhoto = false
+            }
+        }
+    }
 
     LaunchedEffect(Unit) {
         try {
             settings = container.adminRepository.settings()
+            runCatching { me = container.adminRepository.me() }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load settings"
         } finally {
@@ -3498,9 +3489,6 @@ fun AdminSettingsScreen(onBack: () -> Unit) {
                         aiLookupModel = next.aiLookupModel,
                         aiQuizModel = next.aiQuizModel,
                         aiDefaultUserQuota = next.aiDefaultUserQuota,
-                        maintenanceMode = next.maintenanceMode,
-                        allowRegistrations = next.allowRegistrations,
-                        defaultCefr = next.defaultCefr,
                         contentModerationEnabled = next.contentModerationEnabled,
                         autoApproveImports = next.autoApproveImports,
                     ),
@@ -3541,6 +3529,59 @@ fun AdminSettingsScreen(onBack: () -> Unit) {
                     if (error != null) {
                         Text(error!!, color = GotchaColors.Danger, fontSize = 12.sp)
                     }
+                    SettingsSection("Admin account") {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable(enabled = !uploadingPhoto) {
+                                    photoPicker.launch(
+                                        androidx.activity.result.PickVisualMediaRequest(
+                                            ActivityResultContracts.PickVisualMedia.ImageOnly,
+                                        ),
+                                    )
+                                }
+                                .padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(GotchaColors.BrandPurple),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                val photo = resolveMediaUrl(me?.avatarUrl)
+                                if (!photo.isNullOrBlank()) {
+                                    AsyncImage(
+                                        model = photo,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Text(
+                                        (me?.displayName ?: me?.email ?: "A").take(1).uppercase(),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    me?.displayName?.takeIf { it.isNotBlank() } ?: me?.email ?: "Admin",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 14.sp,
+                                    color = GotchaColors.Ink,
+                                )
+                                Text(
+                                    if (uploadingPhoto) "Uploading…" else "Change photo · JPG, PNG, or WebP",
+                                    color = GotchaColors.TextMuted,
+                                    fontSize = 12.sp,
+                                )
+                            }
+                        }
+                    }
                     SettingsSection("App Configuration") {
                         SettingsValueRow("Brand Name", s.platformName ?: "GOTCHA")
                         SettingsValueRow("Support Email", s.supportEmail ?: "—", showDivider = false)
@@ -3559,19 +3600,6 @@ fun AdminSettingsScreen(onBack: () -> Unit) {
                             enabled = !saving,
                             showDivider = false,
                         ) { checked -> persist { it.copy(aiEnabled = checked) } }
-                    }
-                    SettingsSection("Platform") {
-                        SettingsToggleRow(
-                            "Allow Registrations",
-                            s.allowRegistrations,
-                            enabled = !saving,
-                        ) { checked -> persist { it.copy(allowRegistrations = checked) } }
-                        SettingsToggleRow(
-                            "Maintenance Mode",
-                            s.maintenanceMode,
-                            enabled = !saving,
-                            showDivider = false,
-                        ) { checked -> persist { it.copy(maintenanceMode = checked) } }
                     }
                     SettingsSection("Content Moderation") {
                         SettingsToggleRow(
@@ -3932,17 +3960,16 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var daily by remember { mutableStateOf("") }
     var monthly by remember { mutableStateOf("") }
-    var allowedFormats by remember { mutableStateOf(setOf("articles", "news")) }
+    var allowedFormats by remember { mutableStateOf(setOf("article", "news")) }
     var resetCycle by remember { mutableStateOf("monthly") }
-    var allowRollover by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     val formatOptions = listOf(
-        "articles" to "Articles",
+        "article" to "Articles",
         "news" to "News",
-        "books" to "Books",
+        "ebook" to "Books",
         "research" to "Research Papers",
     )
 
@@ -3952,10 +3979,15 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
             daily = (limits?.dailyFreeImportsPerUser ?: 0).toString()
             monthly = (limits?.monthlyFreePageLimit ?: 0).toString()
             if (!limits?.allowedFormats.isNullOrEmpty()) {
-                allowedFormats = limits!!.allowedFormats.map { it.lowercase() }.toSet()
+                allowedFormats = limits!!.allowedFormats.map {
+                    when (it.lowercase()) {
+                        "articles", "article" -> "article"
+                        "books", "book", "ebook", "e-book" -> "ebook"
+                        else -> it.lowercase()
+                    }
+                }.toSet()
             }
             resetCycle = limits?.resetCycle?.lowercase()?.takeIf { it.isNotBlank() } ?: "monthly"
-            allowRollover = limits?.allowRollover == true
         } catch (e: Exception) {
             error = e.message ?: "Failed to load limits"
         } finally {
@@ -4098,34 +4130,6 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                         )
                     }
                 }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
-                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
-                        .padding(horizontal = 16.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                ) {
-                    Text(
-                        "Allow Rollover",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 14.sp,
-                        color = GotchaColors.Ink,
-                    )
-                    Switch(
-                        checked = allowRollover,
-                        onCheckedChange = { allowRollover = it },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = GotchaColors.BrandPurple,
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = GotchaColors.Border,
-                        ),
-                    )
-                }
                 if (error != null) {
                     Text(error!!, color = GotchaColors.Danger, fontSize = 13.sp)
                 }
@@ -4144,7 +4148,6 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                                     monthlyFreePageLimit = monthly.toIntOrNull(),
                                     allowedFormats = allowedFormats.toList(),
                                     resetCycle = resetCycle,
-                                    allowRollover = allowRollover,
                                 ),
                             )
                             onBack()

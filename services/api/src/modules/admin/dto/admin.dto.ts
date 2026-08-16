@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   MinLength,
+  ValidateIf,
 } from 'class-validator';
 
 export class UpdateAdminProfileDto {
@@ -56,6 +57,10 @@ export class CreateContentDto {
   @IsOptional()
   @IsString()
   genre?: string;
+
+  @IsOptional()
+  @IsIn(['public_domain', 'licensed', 'rss', 'user_import', 'ai_generated'])
+  contentSource?: string;
 
   @IsOptional()
   @IsString()
@@ -127,6 +132,7 @@ export class UpdateSettingsDto {
   platformName?: string;
 
   @IsOptional()
+  @ValidateIf((_, v) => typeof v === 'string' && v.trim().length > 0)
   @IsEmail()
   supportEmail?: string;
 
@@ -165,6 +171,10 @@ export class UpdateSettingsDto {
   @IsOptional()
   @IsString()
   aiQuizModel?: string;
+
+  @IsOptional()
+  @IsString()
+  aiImportCleanupModel?: string;
 
   @IsOptional()
   @IsNumber()

@@ -7,6 +7,7 @@ import { LibrarySkeleton } from '../components/LibrarySkeleton';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { resolveMediaUrl } from '../lib/media';
 import { type ContentItem, gradientForId } from '../lib/types';
 
 const cefrStyle: Record<string, string> = {
@@ -18,7 +19,7 @@ const cefrStyle: Record<string, string> = {
   c2: 'bg-pink-100 text-pink-700',
 };
 const langFlag: Record<string, string> = { en: '🇬🇧', ru: '🇷🇺', uz: '🇺🇿' };
-const filterTabs = ['All', 'EN', 'RU', 'UZ', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2'] as const;
+const filterTabs = ['All', 'EN', 'RU', 'UZ', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
 type FilterTab = (typeof filterTabs)[number];
 
 function formatWordCount(count: number) {
@@ -31,12 +32,24 @@ function itemSubtitle(item: ContentItem) {
 }
 
 function CoverArt({ item, className }: { item: ContentItem; className?: string }) {
+  const src = resolveMediaUrl(item.coverImageUrl);
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src) && !failed;
   return (
     <div
-      className={cn('flex items-center justify-center overflow-hidden', className)}
-      style={{ backgroundImage: gradientForId(item.id) }}
+      className={cn('relative flex items-center justify-center overflow-hidden', className)}
+      style={showImage ? undefined : { backgroundImage: gradientForId(item.id) }}
     >
-      <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
+      {showImage ? (
+        <img
+          src={src ?? ''}
+          alt=""
+          className="absolute inset-0 h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
+      )}
     </div>
   );
 }
@@ -49,7 +62,7 @@ function CefrBadge({ level }: { level: string }) {
   );
 }
 
-function ContentCard({ item, view = 'grid', compact = false }: { item: ContentItem; view?: 'grid' | 'list'; compact?: boolean }) {
+function ContentCard({ item, view = 'grid' }: { item: ContentItem; view?: 'grid' | 'list'; compact?: boolean }) {
   const navigate = useNavigate();
   const isProg = (item.progressPct ?? 0) > 0;
   const subtitle = itemSubtitle(item);
@@ -61,7 +74,7 @@ function ContentCard({ item, view = 'grid', compact = false }: { item: ContentIt
         onClick={() => navigate(`/app/read/${item.id}`)}
         className="w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 hover:border-violet-200 hover:shadow-sm hover:shadow-violet-100 transition-all text-left group"
       >
-        <CoverArt item={item} className="w-16 h-16 rounded-xl shrink-0" />
+        <CoverArt item={item} className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -96,13 +109,10 @@ function ContentCard({ item, view = 'grid', compact = false }: { item: ContentIt
     <button
       type="button"
       onClick={() => navigate(`/app/read/${item.id}`)}
-      className={cn(
-        'bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full',
-        compact ? 'min-h-[220px]' : 'min-h-[240px]',
-      )}
+      className="bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full"
     >
-      <div className="relative shrink-0">
-        <CoverArt item={item} className={cn('w-full', compact ? 'h-28' : 'h-36')} />
+      <div className="relative shrink-0 w-full aspect-[3/4]">
+        <CoverArt item={item} className="absolute inset-0 w-full h-full" />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
         <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[calc(100%-2rem)]">
           <CefrBadge level={item.cefrLevel} />
@@ -144,12 +154,16 @@ function ContentCard({ item, view = 'grid', compact = false }: { item: ContentIt
 
 function ContinueReadingCard({ item }: { item: ContentItem }) {
   const navigate = useNavigate();
+  const cover = resolveMediaUrl(item.coverImageUrl);
   return (
     <div
       className="relative overflow-hidden rounded-2xl cursor-pointer group h-full min-h-[11rem]"
-      style={{ backgroundImage: gradientForId(item.id) }}
+      style={cover ? undefined : { backgroundImage: gradientForId(item.id) }}
       onClick={() => navigate(`/app/read/${item.id}`)}
     >
+      {cover && (
+        <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
       <div className="relative p-5 sm:p-6 min-h-[11rem] h-full flex flex-col justify-end">
         <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">Continue reading</span>
@@ -188,7 +202,12 @@ interface FeaturedCollection {
 interface FeedResponse {
   continueReading: ContentItem[];
   recentlyPublished: ContentItem[];
+  myImports: ContentItem[];
   featuredCollections: FeaturedCollection[];
+}
+
+function isUserImport(item: ContentItem) {
+  return item.contentType === 'user_import' || item.contentSource === 'user_import';
 }
 
 function parseFilterParam(raw: string | null): FilterTab {
@@ -212,6 +231,8 @@ function parseFilterParam(raw: string | null): FilterTab {
     a1a2: 'A1–A2',
     'b1-b2': 'B1–B2',
     b1b2: 'B1–B2',
+    'c1-c2': 'C1–C2',
+    c1c2: 'C1–C2',
   };
   if (aliases[normalized]) return aliases[normalized];
   const exact = filterTabs.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
@@ -231,6 +252,10 @@ function inferFilterFromCollection(collection: Pick<FeaturedCollection, 'slug' |
 }
 
 function matchesFilter(item: ContentItem, activeFilter: FilterTab) {
+  if (activeFilter === 'Imports') {
+    return isUserImport(item);
+  }
+  if (isUserImport(item)) return false;
   if (activeFilter === 'All') return true;
   if (activeFilter === 'EN') return item.language === 'en';
   if (activeFilter === 'RU') return item.language === 'ru';
@@ -247,11 +272,9 @@ function matchesFilter(item: ContentItem, activeFilter: FilterTab) {
     );
   }
   if (activeFilter === 'News') return item.contentType === 'news' || item.contentType === 'article';
-  if (activeFilter === 'Imports') {
-    return item.contentType === 'user_import' || item.contentSource === 'user_import';
-  }
   if (activeFilter === 'A1–A2') return item.cefrLevel === 'a1' || item.cefrLevel === 'a2';
   if (activeFilter === 'B1–B2') return item.cefrLevel === 'b1' || item.cefrLevel === 'b2';
+  if (activeFilter === 'C1–C2') return item.cefrLevel === 'c1' || item.cefrLevel === 'c2';
   return true;
 }
 
@@ -321,6 +344,7 @@ export default function LibraryPage() {
     return dedupeItems([
       ...(feed.continueReading ?? []),
       ...(feed.recentlyPublished ?? []),
+      ...(feed.myImports ?? []),
       ...(feed.featuredCollections?.flatMap((c) => c.items.map((i) => i.content).filter(Boolean)) ?? []),
     ]);
   }, [feed]);
@@ -536,6 +560,58 @@ export default function LibraryPage() {
         </div>
       )}
 
+      {(feed?.recentlyPublished?.length ?? 0) > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-gray-900 font-bold">New in the library</h2>
+              <p className="text-gray-400 text-sm">Admin catalog — A4 covers, not your personal imports</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/app/browse')}
+              className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              See all <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
+            {feed!.recentlyPublished.slice(0, 10).map((item) => (
+              <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
+                <ContentCard item={item} compact />
+              </div>
+            ))}
+            <div className="shrink-0 w-1 lg:hidden" aria-hidden />
+          </div>
+        </section>
+      )}
+
+      {(feed?.myImports?.length ?? 0) > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-gray-900 font-bold">Your imports</h2>
+              <p className="text-gray-400 text-sm">Files and URLs you brought in — kept separate from the store</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => navigate('/app/browse?filter=Imports')}
+              className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              See all <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+          <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
+            {feed!.myImports.slice(0, 10).map((item) => (
+              <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
+                <ContentCard item={item} compact />
+              </div>
+            ))}
+            <div className="shrink-0 w-1 lg:hidden" aria-hidden />
+          </div>
+        </section>
+      )}
+
       {feed?.featuredCollections?.map((collection) => {
         const items = collection.items.map((i) => i.content).filter(Boolean);
         if (!items.length) return null;
@@ -556,7 +632,7 @@ export default function LibraryPage() {
             </div>
             <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
               {items.map((item) => (
-                <div key={item.id} className="snap-start shrink-0 w-[11rem] sm:w-48 lg:w-auto lg:shrink">
+                <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
                   <ContentCard item={item} compact />
                 </div>
               ))}
@@ -588,7 +664,7 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && (
+      {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
         <section>
           <div className="flex items-center justify-between mb-4">
             <div>
