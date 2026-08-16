@@ -143,8 +143,9 @@ export class AuthService {
         passwordHash,
         displayName: dto.displayName ?? email.split('@')[0],
         nativeLanguage: dto.nativeLanguage,
+        uiLanguage: 'en',
         emailVerifiedAt: null,
-        preferences: { create: {} },
+        preferences: { create: { dailyGoalMinutes: 15 } },
         targetLanguages: {
           create: dto.targetLanguages.map((lang, idx) => ({
             targetLanguage: lang,

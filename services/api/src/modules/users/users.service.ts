@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { mkdir, rm, writeFile } from 'fs/promises';
+import { join } from 'path';
 
 import * as bcrypt from 'bcryptjs';
 
@@ -259,7 +261,46 @@ export class UsersService {
 
   }
 
+  async uploadAvatar(userId: string, file: Express.Multer.File) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Photo upload is not available for demo accounts.');
+    }
 
+    const extByMime: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+    const ext = extByMime[file.mimetype];
+    if (!ext) throw new BadRequestException('Use a JPG, PNG, or WebP image.');
+    if (file.size > 2 * 1024 * 1024) {
+      throw new BadRequestException('Image must be 2 MB or smaller.');
+    }
+
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const dir = join(root, 'avatars');
+    await mkdir(dir, { recursive: true });
+    for (const oldExt of ['jpg', 'jpeg', 'png', 'webp']) {
+      await rm(join(dir, `${userId}.${oldExt}`), { force: true });
+    }
+    const fileName = `${userId}.${ext}`;
+    await writeFile(join(dir, fileName), file.buffer);
+    const avatarUrl = `/uploads/avatars/${fileName}?v=${Date.now()}`;
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarUrl: true,
+        uiLanguage: true,
+        nativeLanguage: true,
+        streakCount: true,
+      },
+    });
+  }
 
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
 

@@ -26,6 +26,7 @@ import androidx.compose.material.icons.outlined.ContentPaste
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Link
+import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -34,7 +35,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -47,14 +47,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.data.model.UserImport
-import app.gotcha.android.ui.components.GotchaPrimaryButton
-import app.gotcha.android.ui.components.GotchaTextField
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
-import java.text.NumberFormat
-import java.util.Locale
 
 @Composable
 fun ImportScreen(
@@ -62,24 +56,11 @@ fun ImportScreen(
     onBrowseCatalog: () -> Unit,
     onOpenUrl: () -> Unit = {},
     onOpenPaste: () -> Unit = {},
+    onOpenFile: () -> Unit = {},
 ) {
     GotchaSystemBars(darkIcons = true)
     val container = LocalAppContainer.current
-    val scope = rememberCoroutineScope()
-    var mode by remember { mutableStateOf<String?>(null) }
     var recent by remember { mutableStateOf<List<UserImport>>(emptyList()) }
-    var title by remember { mutableStateOf("") }
-    var text by remember { mutableStateOf("") }
-    var url by remember { mutableStateOf("") }
-    var message by remember { mutableStateOf<String?>(null) }
-    var loading by remember { mutableStateOf(false) }
-    var paymentStep by remember { mutableStateOf<String?>(null) }
-    var currentPaymentId by remember { mutableStateOf<String?>(null) }
-    var cardNumber by remember { mutableStateOf("") }
-    var cardExpiry by remember { mutableStateOf("") }
-    var otpCode by remember { mutableStateOf("") }
-    var maskedPhone by remember { mutableStateOf<String?>(null) }
-    var pendingImportData by remember { mutableStateOf<Triple<String, String?, String?>?>(null) }
 
     LaunchedEffect(Unit) {
         recent = runCatching { container.importRepository.list().items }.getOrDefault(emptyList())
@@ -89,14 +70,14 @@ fun ImportScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(GotchaColors.Surface)
-            .statusBarsPadding()
+            .learnerDirectoryStatusPad()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 24.dp),
+            .padding(top = 12.dp, bottom = 24.dp),
     ) {
         Box(
             modifier = Modifier
-                .padding(top = 8.dp)
+                .padding(top = 4.dp)
                 .align(Alignment.CenterHorizontally)
                 .size(width = 36.dp, height = 5.dp)
                 .clip(RoundedCornerShape(2.5.dp))
@@ -121,17 +102,21 @@ fun ImportScreen(
             }
         }
 
-        if (mode == null) {
-            Column(modifier = Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                ImportOption(
-                    Icons.Outlined.Explore,
-                    "Browse Catalog",
-                    "Return to Library to browse published books, articles & news",
-                    onBrowseCatalog,
-                )
-                ImportOption(Icons.Outlined.Link, "Import from URL", "Paste a link to any article or web page", onOpenUrl)
-                ImportOption(Icons.Outlined.ContentPaste, "Paste Text", "Paste any text and start reading with translations", onOpenPaste)
-            }
+        // URL/Paste/File each own their full quote → payment → import flow (DirectoryScreens.kt /
+        // ImportFileScreen.kt) — this sheet is just the entry point, so there's no local "mode" state
+        // (and no risk of a second, payment-unaware import path drifting out of sync with them).
+        Column(modifier = Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            ImportOption(
+                Icons.Outlined.Explore,
+                "Browse Catalog",
+                "Return to Library to browse published books, articles & news",
+                onBrowseCatalog,
+            )
+            ImportOption(Icons.Outlined.Link, "Import from URL", "Paste a link to any article or web page", onOpenUrl)
+            ImportOption(Icons.Outlined.ContentPaste, "Paste Text", "Paste any text and start reading with translations", onOpenPaste)
+            ImportOption(Icons.Outlined.UploadFile, "Upload File", "Import a PDF or EPUB from your device", onOpenFile)
+        }
+        if (recent.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             Text(
                 "RECENTLY IMPORTED",
@@ -143,247 +128,6 @@ fun ImportScreen(
             Spacer(Modifier.height(12.dp))
             recent.take(5).forEach { item ->
                 RecentImportRow(item, Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
-            }
-        } else {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Text(
-                    if (mode == "url") "Import from URL" else "Paste Text",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                )
-                Spacer(Modifier.height(16.dp))
-                GotchaTextField("Title", title, { title = it }, placeholder = "Optional title")
-                Spacer(Modifier.height(12.dp))
-                if (mode == "url") {
-                    GotchaTextField("URL", url, { url = it }, placeholder = "https://…")
-                } else {
-                    GotchaTextField("Text", text, { text = it }, placeholder = "Paste your content here")
-                }
-                if (message != null) {
-                    Spacer(Modifier.height(12.dp))
-                    Text(message!!, color = GotchaColors.SuccessText, fontSize = 13.sp)
-                }
-                Spacer(Modifier.height(20.dp))
-                when (paymentStep) {
-                    "card" -> {
-                        GotchaTextField(
-                            "Card Number",
-                            cardNumber,
-                            { cardNumber = it.filter { c -> c.isDigit() }.take(16) },
-                            placeholder = "5614 6819 0687 2829",
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        GotchaTextField(
-                            "Expiry (MM/YY)",
-                            cardExpiry,
-                            { cardExpiry = it.filter { c -> c.isDigit() || c == '/' }.take(5) },
-                            placeholder = "03/30",
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        GotchaPrimaryButton(
-                            text = "Continue",
-                            loading = loading,
-                            onClick = {
-                                scope.launch {
-                                    loading = true
-                                    message = null
-                                    try {
-                                        val result = container.importRepository.preApply(
-                                            currentPaymentId!!,
-                                            cardNumber.replace(" ", ""),
-                                            cardExpiry.replace("/", ""),
-                                        )
-                                        if (result.step != null && result.step != "otp") {
-                                            throw IllegalStateException("Unexpected payment state after card verification.")
-                                        }
-                                        maskedPhone = result.maskedPhone
-                                        paymentStep = "otp"
-                                        otpCode = ""
-                                        message = "OTP sent to ${result.maskedPhone ?: "your phone"}"
-                                    } catch (e: Exception) {
-                                        message = e.message ?: "Card verification failed"
-                                    } finally {
-                                        loading = false
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    "otp" -> {
-                        Text(
-                            "Enter SMS code sent to ${maskedPhone ?: "your phone"}",
-                            fontSize = 14.sp,
-                            color = GotchaColors.TextMuted,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                        GotchaTextField(
-                            "OTP Code",
-                            otpCode,
-                            { otpCode = it.filter { c -> c.isDigit() }.take(6) },
-                            placeholder = "123456",
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        GotchaPrimaryButton(
-                            text = "Confirm Payment",
-                            loading = loading,
-                            onClick = {
-                                scope.launch {
-                                    loading = true
-                                    message = null
-                                    try {
-                                        val result = container.importRepository.apply(currentPaymentId!!, otpCode)
-                                        if (result.step == "paid" || result.status == "paid") {
-                                            val (importType, importUrl, importText) = pendingImportData!!
-                                            if (importType == "url") {
-                                                container.importRepository.url(
-                                                    importUrl!!,
-                                                    title.ifBlank { null },
-                                                    null,
-                                                    currentPaymentId,
-                                                )
-                                            } else {
-                                                container.importRepository.paste(
-                                                    title = title.ifBlank { "Pasted text" },
-                                                    text = importText!!,
-                                                    language = null,
-                                                    paymentId = currentPaymentId,
-                                                )
-                                            }
-                                            paymentStep = null
-                                            currentPaymentId = null
-                                            pendingImportData = null
-                                            cardNumber = ""
-                                            cardExpiry = ""
-                                            otpCode = ""
-                                            message = "Import started"
-                                            recent = container.importRepository.list().items
-                                            mode = null
-                                        } else if (result.step == "otp") {
-                                            otpCode = ""
-                                            message = "Check the SMS code and try again."
-                                        } else {
-                                            message = "Payment failed. Please try again with a different card."
-                                            paymentStep = "card"
-                                            cardNumber = ""
-                                            cardExpiry = ""
-                                            otpCode = ""
-                                        }
-                                    } catch (e: Exception) {
-                                        message = e.message ?: "OTP verification failed"
-                                    } finally {
-                                        loading = false
-                                    }
-                                }
-                            },
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Resend Code",
-                            color = GotchaColors.BrandPurple,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.clickable {
-                                scope.launch {
-                                    try {
-                                        container.importRepository.retryOtp(currentPaymentId!!)
-                                        message = "OTP resent"
-                                    } catch (e: Exception) {
-                                        message = e.message ?: "Could not resend OTP"
-                                    }
-                                }
-                            },
-                        )
-                    }
-                    else -> {
-                        GotchaPrimaryButton(
-                            text = "Import",
-                            loading = loading,
-                            onClick = {
-                                scope.launch {
-                                    loading = true
-                                    message = null
-                                    try {
-                                        val isUrl = mode == "url"
-                                        val importType = if (isUrl) "url" else "paste"
-                                        val words = text.trim().split(Regex("\\s+")).filter { it.isNotBlank() }.size
-                                        val quote = container.importRepository.quote(
-                                            importType = importType,
-                                            contentFormat = "article",
-                                            textLength = if (isUrl) 6000 else text.length,
-                                            wordCount = if (isUrl) null else words,
-                                        )
-
-                                        if (quote.gatewayEnabled && quote.requiresPayment) {
-                                            val checkout = container.importRepository.checkout(
-                                                importType = importType,
-                                                contentFormat = "article",
-                                                textLength = if (isUrl) 6000 else text.length,
-                                                wordCount = if (isUrl) null else words,
-                                            )
-                                            if (checkout.step == "card" || checkout.isFree == false) {
-                                                currentPaymentId = checkout.paymentId
-                                                pendingImportData = Triple(importType, if (isUrl) url.trim() else null, if (!isUrl) text else null)
-                                                val amount = quote.amountUzs.toLong()
-                                                val fmt = NumberFormat.getNumberInstance(Locale("uz", "UZ")).format(amount)
-                                                message = "Payment: $fmt soʻm"
-                                                paymentStep = "card"
-                                                return@launch
-                                            }
-                                        }
-
-                                        var paymentId: String? = null
-                                        if (quote.gatewayEnabled) {
-                                            val checkout = container.importRepository.checkout(
-                                                importType = importType,
-                                                contentFormat = "article",
-                                                textLength = if (isUrl) 6000 else text.length,
-                                                wordCount = if (isUrl) null else words,
-                                            )
-                                            paymentId = checkout.paymentId
-                                        }
-
-                                        if (isUrl) {
-                                            container.importRepository.url(
-                                                url.trim(),
-                                                title.ifBlank { null },
-                                                null,
-                                                paymentId,
-                                            )
-                                        } else {
-                                            container.importRepository.paste(
-                                                title = title.ifBlank { "Pasted text" },
-                                                text = text,
-                                                language = null,
-                                                paymentId = paymentId,
-                                            )
-                                        }
-                                        message = "Import started"
-                                        recent = container.importRepository.list().items
-                                        mode = null
-                                    } catch (e: Exception) {
-                                        message = e.message ?: "Import failed"
-                                    } finally {
-                                        loading = false
-                                    }
-                                }
-                            },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    "Back",
-                    color = GotchaColors.BrandPurple,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.clickable {
-                        paymentStep = null
-                        currentPaymentId = null
-                        pendingImportData = null
-                        cardNumber = ""
-                        cardExpiry = ""
-                        otpCode = ""
-                        mode = null
-                    },
-                )
             }
         }
     }

@@ -1,8 +1,28 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Languages, MessageSquare, Search, Send } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Check, CheckCheck, ChevronDown, Clock, Languages, MessageSquare, MoreHorizontal, Search, Send, X } from 'lucide-react';
+import { toast } from 'sonner';
+import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
+import { UserAvatar } from '../components/UserAvatar';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { avatarInitials } from '../lib/types';
+import {
+  apiChatLang,
+  chatLangFlag,
+  chatLangName,
+  coerceToLang,
+  detectChatLang,
+  learningTarget,
+  loadToLang,
+  looksLikeLang,
+  normalizeChatLang,
+  otherChatLangs,
+  presentBubble,
+  sameChatText,
+  saveToLang,
+  tokenizeChatText,
+  tryTranslateChat,
+} from '../lib/chatLang';
+import type { LookupResult } from '../lib/types';
 
 type Peer = {
   id: string;
@@ -11,6 +31,9 @@ type Peer = {
   avatarUrl?: string | null;
   nativeLanguage?: string;
   primaryLanguage?: string;
+  online?: boolean;
+  lastSeenAt?: string | null;
+  typing?: boolean;
 };
 
 type ContentRef = {
@@ -31,9 +54,18 @@ type ConversationRow = {
     translation?: string | null;
     senderId: string;
     createdAt: string;
+    deleted?: boolean;
+    status?: 'sending' | 'sent' | 'read' | null;
   } | null;
   unreadCount: number;
   lastMessageAt?: string | null;
+};
+
+type MessageReplyTo = {
+  id: string;
+  body: string;
+  senderId: string;
+  deleted: boolean;
 };
 
 type ChatMessage = {
@@ -44,6 +76,10 @@ type ChatMessage = {
   senderId: string;
   mine: boolean;
   createdAt: string;
+  editedAt?: string | null;
+  deleted?: boolean;
+  replyTo?: MessageReplyTo | null;
+  status?: 'sending' | 'sent' | 'read' | 'failed' | null;
 };
 
 type ConversationDetail = {
@@ -52,9 +88,12 @@ type ConversationDetail = {
   peer: Peer | null;
   content?: ContentRef | null;
   messages: ChatMessage[];
+  peerLastReadAt?: string | null;
 };
 
 type Suggestion = Peer & { reading?: ContentRef | null };
+
+type LinePair = { to: string; native: string };
 
 function langBadge(code?: string | null) {
   const c = (code ?? 'en').toUpperCase().slice(0, 2);
@@ -87,13 +126,162 @@ function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
-// re-export helper used by shell; keep local if types export lacks cn
+const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
+
+function canEditMessage(m: ChatMessage) {
+  if (!m.mine || m.deleted) return false;
+  return Date.now() - new Date(m.createdAt).getTime() < EDIT_WINDOW_MS;
+}
+
+function messageSnippet(m: Pick<ChatMessage, 'body' | 'deleted'> | MessageReplyTo, fallback = 'Message') {
+  if (m.deleted) return 'Message deleted';
+  const text = m.body.trim();
+  if (!text) return fallback;
+  return text.length > 80 ? `${text.slice(0, 80)}…` : text;
+}
+
+function applyReadReceipts(messages: ChatMessage[], peerLastReadAt?: string | null) {
+  if (!peerLastReadAt) return messages;
+  const readAt = new Date(peerLastReadAt).getTime();
+  return messages.map((m) => {
+    if (!m.mine || m.status === 'sending' || m.status === 'failed' || m.id.startsWith('local-')) return m;
+    return { ...m, status: new Date(m.createdAt).getTime() <= readAt ? 'read' : 'sent' };
+  });
+}
+
+function presenceLabel(peer?: Peer | null) {
+  if (!peer) return '';
+  if (peer.typing) return 'typing…';
+  if (peer.online) return 'online';
+  if (!peer.lastSeenAt) return 'last seen recently';
+  const ms = Date.now() - new Date(peer.lastSeenAt).getTime();
+  const mins = Math.floor(ms / 60000);
+  if (mins < 1) return 'last seen just now';
+  if (mins < 60) return `last seen ${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `last seen ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `last seen ${days}d ago`;
+}
+
 function cx(...parts: Array<string | false | null | undefined>) {
   return parts.filter(Boolean).join(' ');
 }
 
+function TappableMessageText({
+  text,
+  selectedWord,
+  onWordTap,
+  className,
+}: {
+  text: string;
+  selectedWord: string | null;
+  onWordTap: (word: string) => void;
+  className?: string;
+}) {
+  const parts = useMemo(() => tokenizeChatText(text), [text]);
+  return (
+    <p className={cx(className, 'select-none')}>
+      {parts.map((part, i) => {
+        if (part.type !== 'word') {
+          return <span key={`${i}-${part.value}`}>{part.value}</span>;
+        }
+        const selected = !!selectedWord && part.value.toLowerCase() === selectedWord.toLowerCase();
+        return (
+          <span
+            key={`${i}-${part.value}`}
+            role="button"
+            tabIndex={0}
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onWordTap(part.value);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onWordTap(part.value);
+              }
+            }}
+            className={cx(
+              'cursor-pointer underline decoration-dotted underline-offset-2 hover:decoration-solid',
+              selected && 'font-bold decoration-solid decoration-2',
+            )}
+          >
+            {part.value}
+          </span>
+        );
+      })}
+    </p>
+  );
+}
+
+function ToLangPicker({
+  selected,
+  options,
+  onSelect,
+}: {
+  selected: string;
+  options: string[];
+  onSelect: (code: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#e5e7eb] bg-white text-sm font-semibold text-gray-900"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+      >
+        <span className="text-[11px] font-semibold text-[#99a1af]">To</span>
+        {chatLangName(selected)}
+        <Languages className="w-3.5 h-3.5 text-[#7008e7]" />
+        <ChevronDown className="w-3.5 h-3.5 text-[#99a1af]" />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 top-full mt-2 z-20 min-w-full rounded-xl border border-[#e5e7eb] bg-white shadow-lg overflow-hidden"
+        >
+          {options.map((code) => (
+            <button
+              key={code}
+              type="button"
+              role="option"
+              aria-selected={code === selected}
+              onClick={() => {
+                onSelect(code);
+                setOpen(false);
+              }}
+              className={cx(
+                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[#f5f3ff]',
+                code === selected && 'bg-[#f5f3ff] font-semibold',
+              )}
+            >
+              <span>{chatLangFlag(code)}</span>
+              {chatLangName(code)}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function MessagesPage() {
-  const { user } = useAuth();
+  const { user, refreshVocab } = useAuth();
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -105,10 +293,51 @@ export default function MessagesPage() {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tipDismissed, setTipDismissed] = useState(false);
+  const [toLangOverride, setToLangOverride] = useState<string | null>(null);
+  const [linesById, setLinesById] = useState<Record<string, LinePair>>({});
+  const [selectedWord, setSelectedWord] = useState<string | null>(null);
+  const [selectedSentence, setSelectedSentence] = useState('');
+  const [selectedNativeLine, setSelectedNativeLine] = useState('');
+  const [selectedLineLang, setSelectedLineLang] = useState('EN');
+  const [lookup, setLookup] = useState<LookupResult | null>(null);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [profilePeerId, setProfilePeerId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const [menuId, setMenuId] = useState<string | null>(null);
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const backfillKeyRef = useRef('');
+  const typingSentAt = useRef(0);
 
-  const loadInbox = useCallback(async (q?: string) => {
-    setLoadingList(true);
-    setError(null);
+  const nativeLang = normalizeChatLang(user?.nativeLanguage);
+  const toOptions = useMemo(() => otherChatLangs(nativeLang), [nativeLang]);
+  const toLang = useMemo(
+    () =>
+      coerceToLang(
+        nativeLang,
+        toLangOverride
+          ?? learningTarget(nativeLang, detail?.peer?.nativeLanguage, toOptions[0]),
+      ),
+    [nativeLang, toLangOverride, detail?.peer?.nativeLanguage, toOptions],
+  );
+
+  const persistTo = (code: string) => {
+    const next = coerceToLang(nativeLang, code);
+    setToLangOverride(next);
+    if (selectedId) saveToLang(selectedId, next);
+  };
+
+  const rememberPair = useCallback((messageId: string, toText?: string | null, nativeText?: string | null) => {
+    const top = toText?.trim() ?? '';
+    const bottom = nativeText?.trim() ?? '';
+    setLinesById((prev) => ({ ...prev, [messageId]: { to: top, native: bottom } }));
+  }, []);
+
+  const loadInbox = useCallback(async (q?: string, silent = false) => {
+    if (!silent) setLoadingList(true);
+    if (!silent) setError(null);
     try {
       const [inbox, suggested] = await Promise.all([
         api<ConversationRow[]>(`/messaging/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
@@ -118,9 +347,9 @@ export default function MessagesPage() {
       setSuggestions(suggested);
       if (!selectedId && inbox[0]) setSelectedId(inbox[0].id);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to load messages');
+      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load messages');
     } finally {
-      setLoadingList(false);
+      if (!silent) setLoadingList(false);
     }
   }, [selectedId]);
 
@@ -138,8 +367,21 @@ export default function MessagesPage() {
   useEffect(() => {
     if (!selectedId) {
       setDetail(null);
+      setToLangOverride(null);
+      setLinesById({});
+      setSelectedWord(null);
+      setReplyTo(null);
+      setEditing(null);
+      setMenuId(null);
       return;
     }
+    const saved = loadToLang(selectedId);
+    setToLangOverride(saved ? coerceToLang(nativeLang, saved) : null);
+    setLinesById({});
+    setSelectedWord(null);
+    setReplyTo(null);
+    setEditing(null);
+    setMenuId(null);
     let cancelled = false;
     (async () => {
       setLoadingThread(true);
@@ -160,21 +402,83 @@ export default function MessagesPage() {
     return () => {
       cancelled = true;
     };
+  }, [selectedId, nativeLang]);
+
+  useEffect(() => {
+    if (selectedId && toLangOverride == null && detail) {
+      persistTo(toLang);
+    }
+    // Seed default To once per conversation after detail loads.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId, detail?.id, toLangOverride]);
+
+  useEffect(() => {
+    const tick = () => {
+      void api('/messaging/presence', { method: 'POST' }).catch(() => undefined);
+    };
+    tick();
+    const id = window.setInterval(tick, 25_000);
+    return () => window.clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const status = await api<{
+          peerLastReadAt?: string | null;
+          peer?: { id: string; online: boolean; lastSeenAt?: string | null; typing?: boolean } | null;
+        }>(`/messaging/conversations/${selectedId}/status`);
+        if (cancelled) return;
+        setDetail((prev) => {
+          if (!prev || prev.id !== selectedId) return prev;
+          return {
+            ...prev,
+            peerLastReadAt: status.peerLastReadAt ?? prev.peerLastReadAt,
+            peer: prev.peer && status.peer
+              ? {
+                  ...prev.peer,
+                  online: status.peer.online,
+                  lastSeenAt: status.peer.lastSeenAt,
+                  typing: !!status.peer.typing,
+                }
+              : prev.peer,
+            messages: applyReadReceipts(prev.messages, status.peerLastReadAt),
+          };
+        });
+        setConversations((prev) =>
+          prev.map((c) =>
+            c.id === selectedId && c.peer && status.peer
+              ? {
+                  ...c,
+                  peer: {
+                    ...c.peer,
+                    online: status.peer.online,
+                    lastSeenAt: status.peer.lastSeenAt,
+                  },
+                }
+              : c,
+          ),
+        );
+      } catch {
+        /* keep last known status */
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => void poll(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
   }, [selectedId]);
 
-  const langLabel = useMemo(() => {
-    const code = (detail?.language ?? detail?.peer?.primaryLanguage ?? 'en').toUpperCase();
-    const names: Record<string, string> = {
-      RU: 'Russian',
-      EN: 'English',
-      UZ: 'Uzbek',
-      FR: 'French',
-      JA: 'Japanese',
-      DE: 'German',
-      ES: 'Spanish',
-    };
-    return names[code] ?? code;
-  }, [detail]);
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      void loadInbox(search.trim() || undefined, true);
+    }, 15_000);
+    return () => window.clearInterval(id);
+  }, [loadInbox, search]);
 
   const startWith = async (peerId: string, contentId?: string | null) => {
     try {
@@ -184,54 +488,379 @@ export default function MessagesPage() {
       });
       setSelectedId(d.id);
       setDetail(d);
+      setProfilePeerId(null);
       await loadInbox(search.trim() || undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not start chat');
     }
   };
 
+  const openPeerProfile = (peerId?: string | null) => {
+    if (peerId) setProfilePeerId(peerId);
+  };
+
+  const messageFromProfile = async (peer: MessagingPeerProfile) => {
+    const existing = conversations.find((c) => c.peer?.id === peer.id);
+    if (existing) {
+      setSelectedId(existing.id);
+      setProfilePeerId(null);
+      return;
+    }
+    await startWith(peer.id, peer.currentlyReading?.id ?? peer.reading?.id);
+  };
+
+  const composePayload = async (text: string) => {
+    const detected = detectChatLang(text) ?? nativeLang;
+    const to = normalizeChatLang(toLang);
+    const native = normalizeChatLang(nativeLang);
+    let toText: string | null = detected === to ? text : null;
+    let nativeText: string | null = detected === native ? text : null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (!toText) toText = await tryTranslateChat(text, detected, to);
+      if (!nativeText) {
+        nativeText = await tryTranslateChat(text, detected, native)
+          ?? (toText ? await tryTranslateChat(toText, to, native) : null);
+      }
+      if (toText && nativeText) break;
+    }
+    if (!toText) {
+      toast.message(`Couldn’t translate to ${chatLangName(to)} yet. Sending your original.`);
+    }
+    const sendBody = toText ?? text;
+    const sendLang = toText ? to : detected;
+    const sendNative = nativeText && !sameChatText(nativeText, sendBody) ? nativeText : undefined;
+    return { sendBody, sendLang, sendNative, toText, nativeText };
+  };
+
+  const patchInboxLast = (msg: ChatMessage) => {
+    setConversations((prev) => {
+      const next = prev.map((c) =>
+        c.id === selectedId
+          ? {
+              ...c,
+              lastMessage: {
+                id: msg.id,
+                body: msg.deleted ? 'Message deleted' : msg.body,
+                translation: msg.deleted ? null : msg.translation,
+                senderId: msg.senderId,
+                createdAt: msg.createdAt,
+                deleted: !!msg.deleted,
+              },
+              lastMessageAt: msg.createdAt,
+            }
+          : c,
+      );
+      return next.sort((a, b) =>
+        (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''),
+      );
+    });
+  };
+
+  const replaceMessage = (msg: ChatMessage) => {
+    setDetail((prev) =>
+      prev
+        ? { ...prev, messages: prev.messages.map((item) => (item.id === msg.id ? msg : item)) }
+        : prev,
+    );
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === selectedId && c.lastMessage?.id === msg.id
+          ? {
+              ...c,
+              lastMessage: {
+                id: msg.id,
+                body: msg.deleted ? 'Message deleted' : msg.body,
+                translation: msg.deleted ? null : msg.translation,
+                senderId: msg.senderId,
+                createdAt: c.lastMessage.createdAt,
+                deleted: !!msg.deleted,
+              },
+            }
+          : c,
+      ),
+    );
+  };
+
+  const startReply = (m: ChatMessage) => {
+    if (m.deleted) return;
+    setEditing(null);
+    setReplyTo(m);
+    setMenuId(null);
+  };
+
+  const startEdit = (m: ChatMessage) => {
+    if (!canEditMessage(m)) return;
+    setReplyTo(null);
+    setEditing(m);
+    setDraft(linesById[m.id]?.native || m.translation || m.body);
+    setMenuId(null);
+  };
+
+  const cancelComposerMode = () => {
+    setReplyTo(null);
+    if (editing) setDraft('');
+    setEditing(null);
+  };
+
+  const deleteMessage = async (m: ChatMessage) => {
+    if (!selectedId || !m.mine || m.deleted) return;
+    setMenuId(null);
+    if (!window.confirm('Delete this message for everyone?')) return;
+    try {
+      const updated = await api<ChatMessage>(
+        `/messaging/conversations/${selectedId}/messages/${m.id}`,
+        { method: 'DELETE' },
+      );
+      replaceMessage(updated);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete');
+    }
+  };
+
+  const notifyTyping = () => {
+    if (!selectedId) return;
+    const now = Date.now();
+    if (now - typingSentAt.current < 2000) return;
+    typingSentAt.current = now;
+    void api(`/messaging/conversations/${selectedId}/typing`, {
+      method: 'POST',
+      body: JSON.stringify({ typing: true }),
+    }).catch(() => undefined);
+  };
+
   const send = async () => {
     if (!selectedId || !draft.trim() || sending) return;
+    const text = draft.trim();
+    const replyTarget = replyTo;
+    const editingMsg = editing;
+    setDraft('');
+    setReplyTo(null);
+    setEditing(null);
     setSending(true);
+    setError(null);
+    const localId = `local-${Date.now()}`;
+    if (!editingMsg) {
+      const pending: ChatMessage = {
+        id: localId,
+        body: text,
+        senderId: user?.id ?? '',
+        mine: true,
+        createdAt: new Date().toISOString(),
+        status: 'sending',
+        replyTo: replyTarget
+          ? {
+              id: replyTarget.id,
+              body: replyTarget.body,
+              senderId: replyTarget.senderId,
+              deleted: !!replyTarget.deleted,
+            }
+          : null,
+      };
+      setDetail((prev) =>
+        prev ? { ...prev, messages: [...prev.messages, pending] } : prev,
+      );
+    }
     try {
+      const { sendBody, sendLang, sendNative, toText, nativeText } = await composePayload(text);
+      if (editingMsg) {
+        const msg = await api<ChatMessage>(
+          `/messaging/conversations/${selectedId}/messages/${editingMsg.id}`,
+          {
+            method: 'PATCH',
+            body: JSON.stringify({
+              body: sendBody,
+              translation: sendNative,
+              bodyLang: apiChatLang(sendLang),
+            }),
+          },
+        );
+        rememberPair(msg.id, toText ?? msg.body, nativeText ?? msg.translation);
+        replaceMessage(msg);
+        return;
+      }
       const msg = await api<ChatMessage>(`/messaging/conversations/${selectedId}/messages`, {
         method: 'POST',
-        body: JSON.stringify({ body: draft.trim() }),
+        body: JSON.stringify({
+          body: sendBody,
+          translation: sendNative,
+          bodyLang: apiChatLang(sendLang),
+          replyToId: replyTarget?.id,
+        }),
       });
-      setDraft('');
+      rememberPair(msg.id, toText ?? msg.body, nativeText ?? msg.translation);
       setDetail((prev) =>
-        prev ? { ...prev, messages: [...prev.messages, msg] } : prev,
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.map((item) => (item.id === localId ? { ...msg, status: msg.status ?? 'sent' } : item)),
+            }
+          : prev,
       );
-      setConversations((prev) => {
-        const next = prev.map((c) =>
-          c.id === selectedId
-            ? {
-                ...c,
-                lastMessage: {
-                  id: msg.id,
-                  body: msg.body,
-                  translation: msg.translation,
-                  senderId: msg.senderId,
-                  createdAt: msg.createdAt,
-                },
-                lastMessageAt: msg.createdAt,
-              }
-            : c,
-        );
-        return next.sort((a, b) =>
-          (b.lastMessageAt ?? '').localeCompare(a.lastMessageAt ?? ''),
-        );
-      });
+      patchInboxLast({ ...msg, status: msg.status ?? 'sent' });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to send');
+      if (!editingMsg) {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.map((item) =>
+                  item.id === localId ? { ...item, status: 'failed' } : item,
+                ),
+              }
+            : prev,
+        );
+      } else {
+        setDraft(text);
+        setEditing(editingMsg);
+      }
+      setError(e instanceof Error ? e.message : editingMsg ? 'Failed to edit' : 'Failed to send');
     } finally {
       setSending(false);
     }
   };
 
+  useEffect(() => {
+    const messages = detail?.messages ?? [];
+    if (!detail || messages.length === 0) return;
+    const key = `${detail.id}|${toLang}|${nativeLang}|${messages.map((m) => m.id).join(',')}`;
+    if (backfillKeyRef.current === key) return;
+    backfillKeyRef.current = key;
+    let cancelled = false;
+
+    (async () => {
+      const to = normalizeChatLang(toLang);
+      const native = normalizeChatLang(nativeLang);
+      for (const msg of messages) {
+        if (cancelled) return;
+        if (msg.deleted || msg.id.startsWith('local-')) continue;
+        const existing = linesById[msg.id];
+        const topOk = !!existing?.to && looksLikeLang(existing.to, to);
+        const botOk = !!existing?.native
+          && (!sameChatText(existing.native, existing.to) || to === native);
+        if (topOk && botOk) continue;
+
+        const bodyLang = msg.bodyLang
+          ? normalizeChatLang(msg.bodyLang)
+          : (detectChatLang(msg.body) ?? native);
+        const storedTr = msg.translation?.trim() || null;
+        const storedTrLang = storedTr ? detectChatLang(storedTr) : null;
+
+        let toText = [
+          existing?.to && looksLikeLang(existing.to, to) ? existing.to : null,
+          looksLikeLang(msg.body, to) ? msg.body : null,
+          storedTr && (storedTrLang === to || looksLikeLang(storedTr, to)) ? storedTr : null,
+        ].find(Boolean) ?? null;
+
+        let nativeText = [
+          existing?.native,
+          looksLikeLang(msg.body, native) ? msg.body : null,
+          storedTr && (storedTrLang === native || looksLikeLang(storedTr, native)) ? storedTr : null,
+          storedTr && looksLikeLang(msg.body, to) ? storedTr : null,
+        ].find((item) => item?.trim()) ?? null;
+
+        const seed = storedTr && !sameChatText(storedTr, msg.body) ? storedTr : msg.body;
+        const seedLang = storedTrLang ?? bodyLang;
+        if (!toText) toText = await tryTranslateChat(seed, seedLang, to);
+        if (!nativeText) {
+          nativeText = await tryTranslateChat(toText ?? seed, toText ? to : seedLang, native)
+            ?? await tryTranslateChat(seed, seedLang, native)
+            ?? (looksLikeLang(msg.body, native) ? msg.body : null);
+        }
+        if (!cancelled) rememberPair(msg.id, toText, nativeText);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+    // linesById is updated inside; using it as a dep would loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detail?.id, detail?.messages, toLang, nativeLang, rememberPair]);
+
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [detail?.messages.length]);
+
+  useEffect(() => {
+    if (!selectedWord) {
+      setLookup(null);
+      setLookupError(null);
+      setSavedMsg(null);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setLookupLoading(true);
+      setLookupError(null);
+      setLookup(null);
+      setSavedMsg(null);
+      try {
+        const res = await api<LookupResult>('/ai/lookup', {
+          method: 'POST',
+          body: JSON.stringify({
+            token: selectedWord,
+            lemma: selectedWord.toLowerCase(),
+            sentence: selectedSentence.slice(0, 500) || selectedWord,
+            sourceLang: apiChatLang(selectedLineLang),
+            targetLang: apiChatLang(nativeLang),
+          }),
+        });
+        if (!cancelled) setLookup(res);
+      } catch (e) {
+        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        let message = raw;
+        if (/disabled by an administrator/i.test(raw)) {
+          message = 'AI lookups are temporarily disabled. Please try again later.';
+        } else if (/quota exceeded|daily limit reached/i.test(raw)) {
+          message = 'Daily AI lookup limit reached. Try again tomorrow or upgrade your plan.';
+        } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
+          message = 'AI lookup is unavailable right now. Please try again later.';
+        } else if (/AI lookup failed/i.test(raw)) {
+          message = 'AI lookup failed. Please try again in a moment.';
+        }
+        if (!cancelled) setLookupError(message);
+      } finally {
+        if (!cancelled) setLookupLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang]);
+
+  const saveWord = async () => {
+    if (!selectedWord || !lookup?.translation) return;
+    try {
+      const lemma = (lookup.lemma || selectedWord).toLowerCase();
+      await api('/vocabulary', {
+        method: 'POST',
+        body: JSON.stringify({
+          lemma,
+          sourceLang: apiChatLang(selectedLineLang),
+          targetLang: apiChatLang(nativeLang),
+          translation: lookup.translation,
+          contextSentence: (selectedNativeLine || selectedSentence).slice(0, 200) || undefined,
+        }),
+      });
+      setSavedMsg('Saved to vocabulary');
+      toast.success(`"${lemma}" saved to vocabulary`);
+      void refreshVocab().catch(() => undefined);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : 'Save failed';
+      setSavedMsg(message);
+      toast.error(message);
+    }
+  };
+
+  const closeLookup = () => {
+    setSelectedWord(null);
+    setLookup(null);
+    setLookupError(null);
+    setSavedMsg(null);
+  };
+
   return (
     <div className="absolute inset-0 flex bg-white overflow-hidden">
-      {/* Inbox column */}
       <aside className="w-[360px] shrink-0 border-r border-[#e5e7eb] flex flex-col min-h-0 bg-white">
         <div className="p-4 border-b border-[#e5e7eb]">
           <div className="relative">
@@ -255,17 +884,11 @@ export default function MessagesPage() {
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => void startWith(s.id, s.reading?.id)}
+                  onClick={() => openPeerProfile(s.id)}
                   className="w-[130px] shrink-0 rounded-2xl border border-[#e5e7eb] bg-white p-3 text-left hover:border-[#7008e7]/40 transition-colors"
                 >
                   <div className="flex flex-col items-center gap-2">
-                    <div className="w-10 h-10 rounded-full bg-[#f0e7ff] flex items-center justify-center text-xs font-bold text-[#7008e7]">
-                      {s.avatarUrl ? (
-                        <img src={s.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                      ) : (
-                        avatarInitials(s.displayName)
-                      )}
-                    </div>
+                    <UserAvatar name={s.displayName} url={s.avatarUrl} size={40} online={s.online} />
                     <div className="flex items-center gap-1">
                       <span className="text-xs font-semibold text-gray-900 truncate max-w-[70px]">
                         {s.displayName.split(' ')[0]}
@@ -300,25 +923,26 @@ export default function MessagesPage() {
             conversations.map((c) => {
               const active = c.id === selectedId;
               return (
-                <button
+                <div
                   key={c.id}
-                  type="button"
-                  onClick={() => setSelectedId(c.id)}
                   className={cx(
                     'w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#f3f4f6] text-left transition-colors',
                     active ? 'bg-[#f5f3ff]' : 'hover:bg-[#f9fafb]',
                   )}
                 >
-                  <div className="relative shrink-0">
-                    <div className="w-11 h-11 rounded-full bg-[#f0e7ff] flex items-center justify-center text-sm font-bold text-[#7008e7]">
-                      {c.peer?.avatarUrl ? (
-                        <img src={c.peer.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                      ) : (
-                        avatarInitials(c.peer?.displayName ?? '?')
-                      )}
-                    </div>
-                    <span className="absolute bottom-0 right-0 w-3 h-3 rounded-full bg-[#22c55e] border-2 border-white" />
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => openPeerProfile(c.peer?.id)}
+                    className="relative shrink-0 rounded-full"
+                    aria-label={`Open ${c.peer?.displayName ?? 'learner'} profile`}
+                  >
+                    <UserAvatar name={c.peer?.displayName} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedId(c.id)}
+                    className="flex-1 min-w-0 text-left"
+                  >
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <div className="flex items-center gap-1.5 min-w-0">
@@ -334,8 +958,13 @@ export default function MessagesPage() {
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-xs text-[#4a5565] truncate">
-                        {c.lastMessage?.body ?? 'No messages yet'}
+                      <p className={cx('text-xs truncate flex items-center gap-1', c.lastMessage?.deleted ? 'text-[#99a1af] italic' : 'text-[#4a5565]')}>
+                        {c.lastMessage?.senderId === user?.id && !c.lastMessage?.deleted && (
+                          c.lastMessage?.status === 'read'
+                            ? <CheckCheck className="w-3.5 h-3.5 text-[#7008e7] shrink-0" />
+                            : <Check className="w-3 h-3 text-[#99a1af] shrink-0" />
+                        )}
+                        <span className="truncate">{c.lastMessage?.body ?? 'No messages yet'}</span>
                       </p>
                       {c.unreadCount > 0 && (
                         <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#7008e7] text-white text-[10px] font-extrabold flex items-center justify-center">
@@ -344,14 +973,14 @@ export default function MessagesPage() {
                       )}
                     </div>
                   </div>
-                </button>
+                  </button>
+                </div>
               );
             })
           )}
         </div>
       </aside>
 
-      {/* Thread column */}
       <section className="flex-1 min-w-0 flex flex-col bg-[#f9fafb]">
         {!selectedId || !detail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
@@ -362,25 +991,25 @@ export default function MessagesPage() {
         ) : (
           <>
             <header className="h-14 bg-white border-b border-[#e5e7eb] px-5 flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-full bg-[#f0e7ff] flex items-center justify-center text-xs font-bold text-[#7008e7] shrink-0">
-                  {detail.peer?.avatarUrl ? (
-                    <img src={detail.peer.avatarUrl} alt="" className="w-full h-full rounded-full object-cover" />
-                  ) : (
-                    avatarInitials(detail.peer?.displayName ?? '?')
-                  )}
-                </div>
+              <button
+                type="button"
+                onClick={() => openPeerProfile(detail.peer?.id)}
+                className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-[#f5f3ff] px-1 py-0.5 -ml-1"
+              >
+                <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
                 <div className="min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
                     {detail.peer?.displayName ?? 'Learner'}
                   </div>
-                  <div className="text-[11px] text-[#99a1af] truncate">{detail.peer?.handle}</div>
+                  <div className={cx(
+                    'text-[11px] truncate',
+                    detail.peer?.typing ? 'text-[#7008e7] font-semibold' : detail.peer?.online ? 'text-[#16a34a]' : 'text-[#99a1af]',
+                  )}>
+                    {presenceLabel(detail.peer) || detail.peer?.handle}
+                  </div>
                 </div>
-              </div>
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#e5e7eb] bg-white text-sm font-semibold text-gray-900">
-                {langLabel}
-                <Languages className="w-3.5 h-3.5 text-[#7008e7]" />
-              </div>
+              </button>
+              <ToLangPicker selected={toLang} options={toOptions} onSelect={persistTo} />
             </header>
 
             {!tipDismissed && (
@@ -403,68 +1032,277 @@ export default function MessagesPage() {
               {loadingThread && detail.messages.length === 0 ? (
                 <p className="text-sm text-[#99a1af]">Loading messages…</p>
               ) : (
-                detail.messages.map((m) => (
-                  <div
-                    key={m.id}
-                    className={cx('flex flex-col gap-1', m.mine ? 'items-end' : 'items-start')}
-                  >
+                detail.messages.map((m) => {
+                  const forced = linesById[m.id];
+                  const presented = presentBubble({
+                    body: m.body,
+                    translation: m.translation,
+                    nativeLang,
+                    toLang,
+                    forcedTo: forced?.to,
+                    forcedNative: forced?.native,
+                  });
+                  const primary = presented.primary || m.body;
+                  const secondary = presented.secondary;
+                  const replyName = m.replyTo
+                    ? m.replyTo.senderId === user?.id
+                      ? 'You'
+                      : (detail.peer?.displayName ?? 'Learner')
+                    : null;
+                  return (
                     <div
-                      className={cx(
-                        'max-w-[70%] px-3.5 py-3 rounded-2xl text-[15px] leading-5',
-                        m.mine
-                          ? 'bg-[#2107aa] text-white rounded-br-sm'
-                          : 'bg-white border border-[#e5e7eb] text-gray-900 rounded-bl-sm',
-                      )}
+                      key={m.id}
+                      className={cx('group flex flex-col gap-1', m.mine ? 'items-end' : 'items-start')}
                     >
-                      <p>{m.body}</p>
-                      {m.translation && (
-                        <p
+                      <div className={cx('flex items-center gap-1 max-w-[78%]', m.mine ? 'flex-row-reverse' : 'flex-row')}>
+                        <div
                           className={cx(
-                            'italic text-[13px] mt-1',
-                            m.mine ? 'text-white/80' : 'text-[#6a7282]',
+                            'px-3.5 py-3 rounded-2xl text-[15px] leading-5',
+                            m.deleted
+                              ? 'bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic'
+                              : m.mine
+                                ? 'bg-[#2107aa] text-white rounded-br-sm'
+                                : 'bg-white border border-[#e5e7eb] text-gray-900 rounded-bl-sm',
                           )}
                         >
-                          {m.translation}
-                        </p>
-                      )}
+                          {m.replyTo && !m.deleted && (
+                            <div
+                              className={cx(
+                                'mb-2 pl-2 border-l-2 text-[12px] leading-4',
+                                m.mine ? 'border-white/50 text-white/80' : 'border-[#7008e7] text-[#6a7282]',
+                              )}
+                            >
+                              <div className={cx('font-semibold', m.mine ? 'text-white' : 'text-[#7008e7]')}>
+                                {replyName}
+                              </div>
+                              <div className="truncate">{messageSnippet(m.replyTo)}</div>
+                            </div>
+                          )}
+                          {m.deleted ? (
+                            <span className="text-[14px]">This message was deleted</span>
+                          ) : (
+                            <>
+                              <TappableMessageText
+                                text={primary}
+                                selectedWord={selectedWord}
+                                onWordTap={(word) => {
+                                  setSelectedWord(word);
+                                  setSelectedSentence(primary);
+                                  setSelectedNativeLine(secondary);
+                                  setSelectedLineLang(presented.primaryLang);
+                                }}
+                                className="text-[15px] leading-5"
+                              />
+                              {secondary ? (
+                                <TappableMessageText
+                                  text={secondary}
+                                  selectedWord={selectedWord}
+                                  onWordTap={(word) => {
+                                    setSelectedWord(word);
+                                    setSelectedSentence(secondary);
+                                    setSelectedNativeLine(secondary);
+                                    setSelectedLineLang(presented.secondaryLang);
+                                  }}
+                                  className={cx(
+                                    'italic text-[13px] mt-1',
+                                    m.mine ? 'text-white/80' : 'text-[#6a7282]',
+                                  )}
+                                />
+                              ) : null}
+                            </>
+                          )}
+                        </div>
+                        {!m.deleted && (
+                          <div className="relative shrink-0">
+                            <button
+                              type="button"
+                              className={cx(
+                                'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] hover:bg-[#eef2f7] hover:text-[#4a5565]',
+                                'opacity-100 md:opacity-0 md:group-hover:opacity-100',
+                                menuId === m.id && 'opacity-100 bg-[#eef2f7] text-[#4a5565]',
+                              )}
+                              aria-label="Message actions"
+                              onClick={() => setMenuId((id) => (id === m.id ? null : m.id))}
+                            >
+                              <MoreHorizontal className="w-4 h-4" />
+                            </button>
+                            {menuId === m.id && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="fixed inset-0 z-20 cursor-default"
+                                  aria-label="Close menu"
+                                  onClick={() => setMenuId(null)}
+                                />
+                                <div
+                                  className={cx(
+                                    'absolute z-30 mt-1 min-w-[132px] rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg',
+                                    m.mine ? 'right-0' : 'left-0',
+                                  )}
+                                >
+                                  <button
+                                    type="button"
+                                    className="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff]"
+                                    onClick={() => startReply(m)}
+                                  >
+                                    Reply
+                                  </button>
+                                  {canEditMessage(m) && (
+                                    <button
+                                      type="button"
+                                      className="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff]"
+                                      onClick={() => startEdit(m)}
+                                    >
+                                      Edit
+                                    </button>
+                                  )}
+                                  {m.mine && (
+                                    <button
+                                      type="button"
+                                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                      onClick={() => void deleteMessage(m)}
+                                    >
+                                      Delete
+                                    </button>
+                                  )}
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-[#99a1af] inline-flex items-center gap-1">
+                        {formatTime(m.createdAt)}
+                        {m.editedAt && !m.deleted ? ' · edited' : ''}
+                        {m.mine && !m.deleted && (
+                          m.status === 'sending' ? (
+                            <Clock className="w-3 h-3 animate-pulse" />
+                          ) : m.status === 'failed' ? (
+                            <span className="text-red-500">!</span>
+                          ) : m.status === 'read' ? (
+                            <CheckCheck className="w-3.5 h-3.5 text-[#7008e7]" />
+                          ) : (
+                            <Check className="w-3 h-3" />
+                          )
+                        )}
+                      </span>
                     </div>
-                    <span className="text-[10px] text-[#99a1af]">{formatTime(m.createdAt)}</span>
-                  </div>
-                ))
+                  );
+                })
               )}
+              {detail.peer?.typing && (
+                <div className="flex items-start">
+                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-sm bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold">
+                    typing…
+                  </div>
+                </div>
+              )}
+              <div ref={threadEndRef} />
             </div>
 
-            <footer className="bg-white border-t border-[#e5e7eb] p-3 flex items-center gap-2 shrink-0">
-              <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e5e7eb] bg-[#f9fafb]">
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      void send();
-                    }
-                  }}
-                  placeholder="Type a message..."
-                  className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder:text-[#99a1af]"
-                />
-                <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#e0f2fe] text-[#0369a1]">
-                  {(user?.nativeLanguage ?? 'en').toUpperCase().slice(0, 2)}
-                </span>
+            {selectedWord && (
+              <div className="mx-5 mb-2 rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm shrink-0">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-[22px] font-extrabold text-[#7008e7] leading-7">
+                      {lookup?.translation || selectedWord}
+                    </p>
+                    {lookup?.translation && !sameChatText(lookup.lemma || selectedWord, lookup.translation) && (
+                      <p className="text-sm text-[#6a7282] mt-0.5">{lookup.lemma || selectedWord}</p>
+                    )}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={closeLookup}
+                    className="text-[#99a1af] hover:text-gray-700"
+                    aria-label="Close lookup"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                {lookupLoading && <p className="text-sm text-[#99a1af] mt-2">Looking up…</p>}
+                {lookupError && <p className="text-sm text-red-600 mt-2">{lookupError}</p>}
+                {lookup?.partOfSpeech && (
+                  <p className="text-xs text-[#99a1af] mt-2">{lookup.partOfSpeech}</p>
+                )}
+                {lookup?.grammarNote && (
+                  <p className="text-sm text-[#4a5565] mt-2">{lookup.grammarNote}</p>
+                )}
+                {savedMsg && <p className="text-sm text-[#047857] mt-2">{savedMsg}</p>}
+                <button
+                  type="button"
+                  disabled={lookupLoading || !lookup?.translation}
+                  onClick={() => void saveWord()}
+                  className="mt-3 w-full h-10 rounded-xl bg-[#7008e7] text-white text-sm font-bold disabled:opacity-40 hover:bg-[#5b07c4]"
+                >
+                  Save to vocabulary
+                </button>
               </div>
-              <button
-                type="button"
-                disabled={sending || !draft.trim()}
-                onClick={() => void send()}
-                className="w-10 h-10 rounded-full bg-[#7008e7] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
-                aria-label="Send"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+            )}
+
+            <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
+              {(replyTo || editing) && (
+                <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#f5f3ff] px-3 py-2">
+                  <div className="min-w-0 flex-1 border-l-2 border-[#7008e7] pl-2">
+                    <p className="text-[11px] font-bold text-[#7008e7]">
+                      {editing ? 'Editing message' : `Reply to ${replyTo?.mine ? 'yourself' : (detail.peer?.displayName ?? 'learner')}`}
+                    </p>
+                    <p className="text-xs text-[#6a7282] truncate">
+                      {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false })}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={cancelComposerMode}
+                    className="text-[#99a1af] hover:text-gray-700"
+                    aria-label="Cancel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              <div className="flex items-center gap-2">
+                <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e5e7eb] bg-[#f9fafb]">
+                  <input
+                    value={draft}
+                    onChange={(e) => {
+                      setDraft(e.target.value);
+                      if (e.target.value.trim()) notifyTyping();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        void send();
+                      }
+                    }}
+                    placeholder={editing ? 'Edit message...' : 'Type a message...'}
+                    className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder:text-[#99a1af]"
+                  />
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#e0f2fe] text-[#0369a1]">
+                    {nativeLang.slice(0, 2)}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  disabled={sending || !draft.trim()}
+                  onClick={() => void send()}
+                  className="w-10 h-10 rounded-full bg-[#7008e7] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
+                  aria-label={editing ? 'Save edit' : 'Send'}
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              </div>
             </footer>
+            {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
           </>
         )}
       </section>
+
+      <PeerProfileModal
+        peerId={profilePeerId}
+        onClose={() => setProfilePeerId(null)}
+        onMessage={(peer) => void messageFromProfile(peer)}
+      />
     </div>
   );
 }

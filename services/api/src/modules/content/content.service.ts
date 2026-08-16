@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PublishStatus, Prisma, WordStatus } from '@prisma/client';
-import { APP_LANGUAGES } from '@gotcha/shared';
+import { LIVE_LANGUAGES } from '@gotcha/shared';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import {
   getDevContentById,
@@ -25,11 +25,15 @@ const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; fla
 
 /** Map Prisma content fields → learner app DTO (cover + author). */
 function serializeContent(item: object) {
-  const row = item as { coverImageKey?: string | null; subtitle?: string | null };
+  const row = item as {
+    coverImageKey?: string | null;
+    subtitle?: string | null;
+    author?: string | null;
+  };
   return {
     ...row,
     coverImageUrl: row.coverImageKey ?? null,
-    authorName: row.subtitle ?? null,
+    authorName: row.author ?? row.subtitle ?? null,
   };
 }
 
@@ -66,37 +70,37 @@ export class ContentService {
     };
   }
 
-  /** Languages learners may select — respects admin LanguageCatalog.isEnabled. */
+  /** Languages learners may select — live EN/RU/UZ only (catalog extras stay admin-only). */
   async listLanguages() {
+    const live = new Set<string>(LIVE_LANGUAGES);
+    const toRow = (code: string) => ({
+      code,
+      ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
+      isEnabled: true,
+    });
+
     if (this.useDevContent()) {
-      return APP_LANGUAGES.map((code) => ({
-        code,
-        ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
-        isEnabled: true,
-      }));
+      return LIVE_LANGUAGES.map(toRow);
     }
 
     const rows = await this.prisma.languageCatalog.findMany({
-      where: { isEnabled: true },
+      where: { isEnabled: true, code: { in: [...LIVE_LANGUAGES] } },
       orderBy: { sortOrder: 'asc' },
     });
 
     if (rows.length > 0) {
-      return rows.map((r) => ({
-        code: r.code,
-        name: r.name,
-        nativeName: r.nativeName,
-        flagEmoji: r.flagEmoji,
-        isEnabled: r.isEnabled,
-      }));
+      return rows
+        .filter((r) => live.has(r.code))
+        .map((r) => ({
+          code: r.code,
+          name: r.name,
+          nativeName: r.nativeName,
+          flagEmoji: r.flagEmoji,
+          isEnabled: r.isEnabled,
+        }));
     }
 
-    // Catalog not seeded yet — fall back to shared AppLanguage set.
-    return APP_LANGUAGES.map((code) => ({
-      code,
-      ...(FALLBACK_LANG_META[code] ?? { name: code, nativeName: code, flagEmoji: '🌐' }),
-      isEnabled: true,
-    }));
+    return LIVE_LANGUAGES.map(toRow);
   }
 
   async getFeed(userId: string, targetLang?: string) {

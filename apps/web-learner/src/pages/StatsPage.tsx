@@ -5,6 +5,7 @@ import { AreaLineChart, BarChart, DotLineChart, formatShortDate, HeatmapCalendar
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { buildLanguageProgress } from '../lib/languageProgress';
 import type { UserStatsResponse } from '../lib/types';
 
 function localIsoDate(d: Date) {
@@ -74,7 +75,7 @@ function ChartCard({
 }
 
 export default function StatsPage() {
-  const { stats, preferences, vocabItems } = useAuth();
+  const { user, stats, preferences, vocabItems } = useAuth();
   const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
   const [range, setRange] = useState<'7d' | '30d'>('30d');
 
@@ -144,6 +145,10 @@ export default function StatsPage() {
   const learning = Math.max(0, totalVocab - mastered);
   const masteredPct = totalVocab ? Math.round((mastered / totalVocab) * 100) : 0;
   const learningPct = totalVocab ? 100 - masteredPct : 0;
+  const languageProgress = useMemo(
+    () => buildLanguageProgress(user?.targetLanguages, vocabItems),
+    [user?.targetLanguages, vocabItems],
+  );
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-6">
@@ -189,6 +194,43 @@ export default function StatsPage() {
           sub={`${todayMinutes}/${dailyGoal} min today`}
           color="text-[#364153] bg-[#f9fafb] border-[#e5e7eb]"
         />
+      </div>
+
+      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5 space-y-3">
+        <h3 className="font-bold text-gray-900 text-lg">Language Progress</h3>
+        {languageProgress.length === 0 ? (
+          <p className="text-sm text-[#99a1af]">
+            Language progress appears as you save words while reading.
+          </p>
+        ) : (
+          languageProgress.map((lang) => (
+            <div key={lang.code} className="rounded-2xl border border-[#e5e7eb] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="w-9 h-9 rounded-[10px] bg-[#f5f3ff] text-[#7008e7] text-xs font-extrabold flex items-center justify-center shrink-0">
+                    {lang.code}
+                  </span>
+                  <span className="font-extrabold text-gray-900 truncate">{lang.name}</span>
+                </div>
+                <span className="text-sm font-extrabold text-gray-900 shrink-0">{lang.level}</span>
+              </div>
+              <div className="flex items-center justify-between mt-3 text-xs">
+                <span className="font-semibold text-[#99a1af]">{lang.towardLabel}</span>
+                <span className="font-bold text-[#7008e7]">{Math.round(lang.pct * 100)}%</span>
+              </div>
+              <div className="mt-2 h-2 bg-[#f3f4f6] rounded-[4px] overflow-hidden">
+                <div
+                  className="h-full bg-[#7f22fe] rounded-[4px] transition-all"
+                  style={{ width: `${Math.round(lang.pct * 100)}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between mt-2.5 text-xs">
+                <span className="text-[#99a1af]">Words saved</span>
+                <span className="font-bold text-gray-900">{lang.wordCount} words</span>
+              </div>
+            </div>
+          ))
+        )}
       </div>
 
       {!hasActivity ? (

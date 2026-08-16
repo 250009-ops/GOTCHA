@@ -41,6 +41,7 @@ interface AuthContextValue {
   refreshProfile: () => Promise<void>;
   updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
   updatePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
+  uploadAvatar: (file: File) => Promise<void>;
   vocabItems: VocabItem[];
   vocabLoading: boolean;
   vocabError: string | null;
@@ -260,6 +261,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [],
   );
 
+  const uploadAvatar = useCallback(async (file: File) => {
+    const body = new FormData();
+    body.append('file', file);
+    const updated = await api<UserProfile>('/users/me/avatar', { method: 'POST', body });
+    setUser((prev) => (prev ? { ...prev, ...updated } : prev));
+  }, []);
+
   const rateWord = useCallback(
     async (id: string, rating: string) => {
       await api(`/vocabulary/${id}/review`, {
@@ -302,6 +310,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshProfile,
       updateProfile,
       updatePreferences,
+      uploadAvatar,
       vocabItems,
       vocabLoading,
       vocabError,
@@ -321,6 +330,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       refreshProfile,
       updateProfile,
       updatePreferences,
+      uploadAvatar,
       vocabItems,
       vocabLoading,
       vocabError,

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -7,9 +8,13 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
-import { ApiTags } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { AdminRole, LicenseStatus, ModerationStatus, PublishStatus } from '@prisma/client';
 import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
@@ -114,10 +119,43 @@ export class AdminController {
     return this.admin.updateCatalogPricingRules(body);
   }
 
+  @Post('content/ingest-preview')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  ingestPreview(@Body() body: Record<string, unknown>) {
+    return this.admin.previewContentIngest(body);
+  }
+
   @Post('content')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   createContent(@CurrentUser() user: AuthUserPayload, @Body() body: CreateContentDto) {
     return this.admin.createContent(user.sub, body as unknown as Record<string, unknown>);
+  }
+
+  @Get('content/:id')
+  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  getContent(@Param('id') id: string) {
+    return this.admin.getContent(id);
+  }
+
+  @Post('content/:id/cover')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: { file: { type: 'string', format: 'binary' } },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 4 * 1024 * 1024 },
+    }),
+  )
+  uploadCover(@Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined) {
+    if (!file) throw new BadRequestException('File is required');
+    return this.admin.uploadContentCover(id, file);
   }
 
   @Patch('content/:id')

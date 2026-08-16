@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import AdminShell from './components/AdminShell';
 import AiUsagePage from './pages/AiUsagePage';
 import AnalyticsPage from './pages/AnalyticsPage';
+import ContentEditorPage from './pages/ContentEditorPage';
 import ContentPage from './pages/ContentPage';
 import DashboardPage from './pages/DashboardPage';
 import GamificationPage from './pages/GamificationPage';
@@ -31,6 +32,8 @@ export default function App() {
           <Route index element={<HomeRedirect />} />
           <Route path="users" element={<UsersPage />} />
           <Route path="content" element={<ContentPage />} />
+          <Route path="content/new" element={<ContentEditorPage />} />
+          <Route path="content/:id/edit" element={<ContentEditorPage />} />
           <Route path="content/:directory" element={<ContentPage />} />
           <Route path="languages" element={<LanguagesPage />} />
           <Route path="level-tests" element={<LevelTestsPage />} />

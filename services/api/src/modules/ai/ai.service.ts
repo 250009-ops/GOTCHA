@@ -9,7 +9,7 @@ import OpenAI from 'openai';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LookupDto } from './dto/ai.dto';
+import { LookupDto, TranslateDto } from './dto/ai.dto';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -452,6 +452,84 @@ export class AiService {
     }
 
     return { lemma, translation, grammarNote, partOfSpeech, cached: false };
+  }
+
+  /**
+   * Sentence/message translation for chat From→To.
+   * Auth + quota match lookup. Never logs raw message text.
+   */
+  async translate(userId: string, dto: TranslateDto) {
+    const text = (dto.text ?? '').trim();
+    if (!text) {
+      return { translation: '', sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: true };
+    }
+    if (dto.sourceLang === dto.targetLang) {
+      return { translation: text, sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: true };
+    }
+
+    const hash = this.contentHash(
+      ['tr-v1', dto.sourceLang, dto.targetLang, this.sentenceHash(text)].join('|'),
+    );
+    const cached = this.memoryGet(hash);
+    if (cached?.translation) {
+      return {
+        translation: cached.translation,
+        sourceLang: dto.sourceLang,
+        targetLang: dto.targetLang,
+        cached: true,
+      };
+    }
+
+    const settings = await this.getPlatformAiSettings();
+    await this.assertAiAvailable(settings);
+    const { today, memoryKey } = await this.checkQuota(userId, settings.defaultUserQuota);
+    const client = this.getClient();
+    let translation = text;
+    let usedOpenAi = false;
+
+    if (client) {
+      try {
+        const response = await client.chat.completions.create({
+          model: settings.lookupModel,
+          temperature: 0.1,
+          max_tokens: Math.min(1200, Math.max(80, Math.ceil(text.length * 1.4))),
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Keep meaning and tone. Do not add quotes, labels, or explanations. If the text is already in the target language, return it unchanged.',
+            },
+            {
+              role: 'user',
+              content: `Source language: ${dto.sourceLang}\nTarget language: ${dto.targetLang}\nMessage:\n${text}`,
+            },
+          ],
+        });
+        usedOpenAi = true;
+        try {
+          const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
+            translation?: string;
+          };
+          const next = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
+          if (next) translation = next;
+        } catch {
+          const raw = response.choices[0]?.message?.content?.trim();
+          if (raw) translation = raw;
+        }
+      } catch (err) {
+        const detail = err instanceof Error ? err.message : 'OpenAI request failed';
+        throw new ServiceUnavailableException(
+          `AI translate failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
+        );
+      }
+    }
+
+    this.memorySet(hash, { lemma: hash, translation, grammarNote: null, partOfSpeech: null });
+    if (usedOpenAi) {
+      await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
+    }
+    return { translation, sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: false };
   }
 
   async generateQuiz(

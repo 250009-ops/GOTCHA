@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, DollarSign, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard, Textarea } from '../components/ui';
+import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { APP_LANGUAGES, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
 
@@ -126,15 +126,6 @@ export default function ContentPage() {
   const [q, setQ] = useState(() => params.get('q') ?? '');
   const [langFilter, setLangFilter] = useState('all');
   const [levelFilter, setLevelFilter] = useState('all');
-  const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<CurriculumItem | null>(null);
-  const [title, setTitle] = useState('');
-  const [plainText, setPlainText] = useState('');
-  const [language, setLanguage] = useState('en');
-  const [cefrLevel, setCefrLevel] = useState('b1');
-  const [contentType, setContentType] = useState('article');
-  const [isFree, setIsFree] = useState(true);
-  const [priceUsd, setPriceUsd] = useState('0');
   const [licenses, setLicenses] = useState<LicenseRow[]>([]);
   const [moderation, setModeration] = useState<ModerationRow[]>([]);
   const [ingestion, setIngestion] = useState<IngestionRow[]>([]);
@@ -218,62 +209,6 @@ export default function ContentPage() {
       return true;
     });
   }, [items, langFilter, levelFilter, q]);
-
-  function resetForm() {
-    setTitle('');
-    setPlainText('');
-    setLanguage('en');
-    setCefrLevel('b1');
-    setContentType('article');
-    setIsFree(true);
-    setPriceUsd('0');
-    setEditing(null);
-    setShowForm(false);
-  }
-
-  function openCreate() {
-    resetForm();
-    setShowForm(true);
-  }
-
-  function openEdit(item: CurriculumItem) {
-    setEditing(item);
-    setTitle(item.title);
-    setPlainText('');
-    setLanguage(item.language);
-    setCefrLevel(item.cefrLevel);
-    setContentType(item.contentType);
-    setIsFree(item.isFree);
-    setPriceUsd(String(item.priceUsd ?? 0));
-    setShowForm(true);
-  }
-
-  async function saveProduct(e: React.FormEvent) {
-    e.preventDefault();
-    const payload = {
-      title,
-      plainText: plainText || undefined,
-      language,
-      contentType,
-      contentSource: 'public_domain',
-      cefrLevel,
-      isFree,
-      priceUsd: isFree ? 0 : Number(priceUsd || 0),
-    };
-    if (editing) {
-      await api(`/admin/content/${editing.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      });
-    } else {
-      await api('/admin/content', {
-        method: 'POST',
-        body: JSON.stringify({ ...payload, plainText: plainText || `${title}.` }),
-      });
-    }
-    resetForm();
-    await loadCurriculum();
-  }
 
   async function publish(id: string) {
     setBusyId(id);
@@ -361,7 +296,7 @@ export default function ContentPage() {
                   <option key={l} value={l}>{l.toUpperCase()}</option>
                 ))}
               </Select>
-              <Button onClick={openCreate}>
+              <Button onClick={() => navigate('/content/new')}>
                 <Plus className="size-4" /> Add Product
               </Button>
             </div>
@@ -383,63 +318,7 @@ export default function ContentPage() {
       </div>
       )}
 
-      {showForm && !catalogForbidden && (
-        <Card className="p-5 mb-4">
-          <div className="font-semibold mb-3">{editing ? 'Edit Product' : 'Add Product'}</div>
-          <form className="grid gap-3 max-w-3xl" onSubmit={saveProduct}>
-            <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Title" required />
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                {APP_LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </Select>
-              <Select value={cefrLevel} onChange={(e) => setCefrLevel(e.target.value)}>
-                {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </Select>
-              <Select value={contentType} onChange={(e) => setContentType(e.target.value)}>
-                <option value="book">Book</option>
-                <option value="article">Article</option>
-                <option value="news">News</option>
-                <option value="story">Story</option>
-              </Select>
-              <Select
-                value={isFree ? 'free' : 'paid'}
-                onChange={(e) => {
-                  const free = e.target.value === 'free';
-                  setIsFree(free);
-                  if (free) setPriceUsd('0');
-                }}
-              >
-                <option value="free">Free</option>
-                <option value="paid">Paid</option>
-              </Select>
-            </div>
-            {!isFree && (
-              <Input
-                type="number"
-                min="0"
-                step="0.01"
-                value={priceUsd}
-                onChange={(e) => setPriceUsd(e.target.value)}
-                placeholder="Price (USD)"
-                required
-              />
-            )}
-            {!editing && (
-              <Textarea rows={6} value={plainText} onChange={(e) => setPlainText(e.target.value)} placeholder="Plain text content" required />
-            )}
-            <div className="flex gap-2">
-              <Button type="submit">{editing ? 'Save changes' : 'Create draft'}</Button>
-              <Button type="button" variant="secondary" onClick={resetForm}>Cancel</Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
-      <Card className="p-0 overflow-hidden mb-4">
+      <Card className="p-0 overflow-hidden mb-4 [overflow-anchor:none]">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 pt-3 border-b border-slate-100">
           <div className="flex gap-1 flex-wrap">
             {(catalogForbidden ? TABS.filter((t) => t.id === 'user_imports') : TABS).map((t) => (
@@ -579,7 +458,7 @@ export default function ContentPage() {
                       type="button"
                       className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
                       aria-label="Edit"
-                      onClick={() => openEdit(item)}
+                      onClick={() => navigate(`/content/${item.id}/edit`)}
                     >
                       <Pencil className="size-3.5" />
                     </button>
@@ -594,7 +473,9 @@ export default function ContentPage() {
                         className="size-8 rounded-lg grid place-items-center text-slate-400 hover:text-rose-500 disabled:opacity-40"
                         aria-label="Archive"
                         disabled={busyId === item.id}
-                        onClick={() => archive(item.id)}
+                        onClick={() => {
+                          if (window.confirm(`Archive “${item.title}”?`)) void archive(item.id);
+                        }}
                       >
                         <Trash2 className="size-3.5" />
                       </button>

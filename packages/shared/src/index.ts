@@ -2,6 +2,14 @@
 export const APP_LANGUAGES = ['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const;
 export type AppLanguage = (typeof APP_LANGUAGES)[number];
 
+/** Languages the product actually ships today (catalog, chat, reader, signup). */
+export const LIVE_LANGUAGES = ['en', 'ru', 'uz'] as const;
+export type LiveLanguage = (typeof LIVE_LANGUAGES)[number];
+
+export function isLiveLanguage(code?: string | null): code is LiveLanguage {
+  return !!code && (LIVE_LANGUAGES as readonly string[]).includes(code);
+}
+
 export const LANGUAGE_META: Record<
   AppLanguage,
   { label: string; nativeName: string; flag: string }

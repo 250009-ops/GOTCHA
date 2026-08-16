@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
   BarChart3,
@@ -14,12 +14,13 @@ import {
   Settings,
   Upload,
 } from 'lucide-react';
+import { api } from '../lib/api';
 import { GlobalSearch } from '../components/GlobalSearch';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../lib/auth';
-import { avatarInitials } from '../lib/types';
+import { UserAvatar } from '../components/UserAvatar';
 
 interface NavItem {
   path: string;
@@ -60,7 +61,19 @@ export default function LearnerShell() {
     return location.pathname.startsWith(path);
   };
 
-  const initials = avatarInitials(user?.displayName ?? user?.email ?? 'G');
+  useEffect(() => {
+    document.documentElement.lang = user?.uiLanguage || 'en';
+  }, [user?.uiLanguage]);
+
+  useEffect(() => {
+    if (!user) return;
+    const beat = () => {
+      void api('/messaging/presence', { method: 'POST' }).catch(() => undefined);
+    };
+    beat();
+    const id = window.setInterval(beat, 25_000);
+    return () => window.clearInterval(id);
+  }, [user]);
 
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {
     const active = isActive(item.path, item.exact);
@@ -198,20 +211,22 @@ export default function LearnerShell() {
                   <button
                     type="button"
                     aria-label="Account menu"
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.1)]"
-                    style={{ backgroundImage: 'linear-gradient(135deg, #8e51ff 0%, #432dd7 100%)' }}
+                    className="rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.1)]"
                   >
-                    {initials}
+                    <UserAvatar
+                      name={user?.displayName ?? user?.email}
+                      url={user?.avatarUrl}
+                      size={32}
+                    />
                   </button>
                 </PopoverTrigger>
                 <PopoverContent align="end" sideOffset={8} className="w-60 p-3 z-[100]">
                   <div className="flex items-center gap-3">
-                    <div
-                      className="w-9 h-9 rounded-full flex items-center justify-center text-white text-xs font-bold shrink-0"
-                      style={{ backgroundImage: 'linear-gradient(135deg, #a684ff 0%, #4f39f6 100%)' }}
-                    >
-                      {initials}
-                    </div>
+                    <UserAvatar
+                      name={user?.displayName ?? user?.email}
+                      url={user?.avatarUrl}
+                      size={36}
+                    />
                     <div className="min-w-0 flex-1">
                       <div className="text-sm font-semibold text-[#111827] truncate">{user?.displayName}</div>
                       <div className="text-xs text-[#6b7280] truncate">{user?.email}</div>

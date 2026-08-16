@@ -18,6 +18,7 @@ import { AdminModule } from './modules/admin/admin.module';
 import { ReadingModule } from './modules/reading/reading.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -44,6 +45,7 @@ import { MessagingModule } from './modules/messaging/messaging.module';
     AdminModule,
     MarketingModule,
     MessagingModule,
+    NotificationsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

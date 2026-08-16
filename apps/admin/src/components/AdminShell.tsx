@@ -163,7 +163,7 @@ export default function AdminShell() {
           <AdminNotifications />
         </header>
 
-        <main className="px-4 py-6 lg:px-8 lg:pb-10 flex-1 min-h-0 min-w-0 overflow-y-auto">
+        <main className="px-4 py-6 lg:px-8 lg:pb-10 flex-1 min-h-0 min-w-0 overflow-y-auto [overflow-anchor:none]">
           <Outlet />
         </main>
       </div>

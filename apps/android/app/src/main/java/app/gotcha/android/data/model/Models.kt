@@ -1,13 +1,25 @@
 package app.gotcha.android.data.model
 
+import app.gotcha.android.data.resolveMediaUrl
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlinx.serialization.KSerializer
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
+import kotlinx.serialization.descriptors.PrimitiveKind
+import kotlinx.serialization.descriptors.PrimitiveSerialDescriptor
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.doubleOrNull
 
 @Serializable
 data class LoginRequest(
     val email: String,
     val password: String,
-    val deviceName: String? = "android",
 )
 
 @Serializable
@@ -15,12 +27,75 @@ data class RegisterRequest(
     val email: String,
     val password: String,
     val displayName: String? = null,
-    val nativeLanguage: String = "en",
-    val targetLanguages: List<String> = listOf("en"),
+    val nativeLanguage: String,
+    val targetLanguages: List<String>,
+)
+
+/**
+ * `/auth/register` does NOT return session tokens in production — it always requires email
+ * verification first (see AuthService.register, which returns `{requiresEmailVerification,
+ * email, message}` with no `user`/tokens). Only the dev-auth bypass path returns real tokens.
+ * All fields are therefore optional so this single response type can decode either shape.
+ */
+@Serializable
+data class RegisterResponse(
+    val user: AuthUser? = null,
+    val accessToken: String? = null,
+    val refreshToken: String? = null,
+    val isAdmin: Boolean = false,
+    val adminRole: String? = null,
+    val requiresEmailVerification: Boolean = false,
+    val email: String? = null,
+    val message: String? = null,
 )
 
 @Serializable
 data class RefreshRequest(val refreshToken: String)
+
+@Serializable
+data class ForgotPasswordRequest(val email: String)
+
+@Serializable
+data class ResendVerificationRequest(val email: String)
+
+@Serializable
+data class ResetPasswordRequest(
+    val token: String,
+    val password: String,
+)
+
+@Serializable
+data class ResetPasswordResponse(
+    val reset: Boolean = false,
+    val email: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class VerifyEmailResponse(
+    val verified: Boolean = false,
+    val email: String? = null,
+    val message: String? = null,
+)
+
+@Serializable
+data class OkMessageResponse(
+    val sent: Boolean = false,
+    val message: String? = null,
+)
+
+/**
+ * Canonical set of learning languages, matching `@gotcha/shared`'s compiled `APP_LANGUAGES`
+ * (en/ru/uz) — the same 3 languages web-learner offers. Do NOT hardcode a divergent list
+ * elsewhere; reuse this everywhere a language picker is needed (sign-up, settings, etc.).
+ */
+data class AppLanguageOption(val code: String, val nativeLabel: String, val englishLabel: String, val flag: String)
+
+val APP_LANGUAGE_OPTIONS = listOf(
+    AppLanguageOption("en", "English", "English", "\uD83C\uDDEC\uD83C\uDDE7"),
+    AppLanguageOption("ru", "Русский", "Russian", "\uD83C\uDDF7\uD83C\uDDFA"),
+    AppLanguageOption("uz", "O'zbek", "Uzbek", "\uD83C\uDDFA\uD83C\uDDFF"),
+)
 
 @Serializable
 data class AuthUser(
@@ -33,10 +108,13 @@ data class AuthUser(
     val avatarUrl: String? = null,
 )
 
+@OptIn(ExperimentalSerializationApi::class)
 @Serializable
 data class AuthResponse(
     val user: AuthUser,
+    @JsonNames("token", "access_token")
     val accessToken: String,
+    @JsonNames("refresh_token")
     val refreshToken: String,
     val isAdmin: Boolean = false,
     val adminRole: String? = null,
@@ -54,6 +132,8 @@ data class ContentItem(
     val wordCount: Int? = null,
     val segmentCount: Int? = null,
     val coverImageUrl: String? = null,
+    val coverImageKey: String? = null,
+    val author: String? = null,
     val authorName: String? = null,
     val description: String? = null,
     val progressPct: Double? = null,
@@ -62,6 +142,7 @@ data class ContentItem(
     val status: String? = null,
     val publishStatus: String? = null,
     val isFree: Boolean? = null,
+    @Serializable(with = FlexibleDoubleSerializer::class)
     val priceUsd: Double? = null,
     val salesCount: Int? = null,
     val viewCount: Int? = null,
@@ -86,7 +167,17 @@ data class FeedResponse(
     val continueReading: List<ContentItem> = emptyList(),
     val featuredCollections: List<FeaturedCollection> = emptyList(),
     val recentlyPublished: List<ContentItem> = emptyList(),
-)
+) {
+    fun readerWarmIds(): List<ContentItem> = buildList {
+        addAll(continueReading)
+        addAll(recentlyPublished)
+        featuredCollections.forEach { collection ->
+            collection.items.forEach { entry ->
+                entry.content?.let { add(it) }
+            }
+        }
+    }
+}
 
 @Serializable
 data class ContentListResponse(
@@ -131,6 +222,35 @@ data class LookupResponse(
 )
 
 @Serializable
+data class TranslateRequest(
+    val text: String,
+    val sourceLang: String,
+    val targetLang: String,
+)
+
+@Serializable
+data class TranslateResponse(
+    val translation: String? = null,
+    val sourceLang: String? = null,
+    val targetLang: String? = null,
+    val cached: Boolean = false,
+)
+
+@Serializable
+data class KnownWord(
+    val lemma: String,
+    val status: String? = null,
+    val sourceLang: String? = null,
+)
+
+@Serializable
+data class MarkKnownWordRequest(
+    val lemma: String,
+    val sourceLang: String,
+    val status: String,
+)
+
+@Serializable
 data class SaveVocabularyRequest(
     val lemma: String,
     val sourceLang: String,
@@ -151,6 +271,12 @@ data class VocabContentRef(
 @Serializable
 data class ReviewVocabularyRequest(
     val rating: String,
+)
+
+@Serializable
+data class UpdateVocabularyRequest(
+    val mastered: Boolean? = null,
+    val notes: String? = null,
 )
 
 @Serializable
@@ -285,6 +411,17 @@ data class ImportApplyResponse(
 )
 
 @Serializable
+data class ImportCancelRequest(
+    val reason: String? = null,
+)
+
+@Serializable
+data class ImportCancelResponse(
+    val paymentId: String,
+    val status: String,
+)
+
+@Serializable
 data class UserImport(
     val id: String,
     val title: String? = null,
@@ -367,6 +504,17 @@ data class UpdateProfileRequest(
 )
 
 @Serializable
+data class ChangePasswordRequest(
+    val currentPassword: String,
+    val newPassword: String,
+)
+
+@Serializable
+data class DeleteAccountRequest(
+    val currentPassword: String,
+)
+
+@Serializable
 data class UpdatePreferencesRequest(
     val dailyGoalMinutes: Int? = null,
     val readerFontScale: Double? = null,
@@ -382,6 +530,19 @@ data class UserTargetLanguage(
     val targetLanguage: String,
     val cefrLevel: String? = null,
     val isPrimary: Boolean = false,
+)
+
+@Serializable
+data class AddTargetLanguageRequest(
+    val targetLanguage: String,
+    val cefrLevel: String? = null,
+    val isPrimary: Boolean? = null,
+)
+
+@Serializable
+data class UpdateTargetLanguageRequest(
+    val cefrLevel: String? = null,
+    val isPrimary: Boolean? = null,
 )
 
 @Serializable
@@ -604,12 +765,85 @@ data class UpdateImportFreeLimitsRequest(
 data class AdminCreateContentRequest(
     val title: String,
     val description: String? = null,
+    val author: String? = null,
+    val genre: String? = null,
     val language: String = "en",
     val cefrLevel: String = "b1",
     val contentType: String = "article",
-    val plainText: String = "",
+    val plainText: String? = null,
+    val sourceUrl: String? = null,
     val priceUsd: Double? = null,
     val isFree: Boolean = false,
+    val chapters: List<AdminChapterPayload>? = null,
+)
+
+@Serializable
+data class AdminUpdateContentRequest(
+    val title: String? = null,
+    val description: String? = null,
+    val author: String? = null,
+    val genre: String? = null,
+    val language: String? = null,
+    val cefrLevel: String? = null,
+    val contentType: String? = null,
+    val priceUsd: Double? = null,
+    val isFree: Boolean? = null,
+)
+
+@Serializable
+data class AdminChapterPayload(
+    val title: String,
+    val text: String,
+)
+
+@Serializable
+data class AdminContentChapterPage(
+    val pageIndex: Int = 0,
+    val title: String = "",
+    val wordCount: Int = 0,
+    val preview: String = "",
+)
+
+@Serializable
+data class AdminContentChapter(
+    val title: String,
+    val chapterIndex: Int = 0,
+    val wordCount: Int = 0,
+    val pages: List<AdminContentChapterPage> = emptyList(),
+)
+
+@Serializable
+data class AdminIngestPreview(
+    val wordCount: Int = 0,
+    val uniqueWordCount: Int = 0,
+    val chapterCount: Int = 0,
+    val pageCount: Int = 0,
+    val chapters: List<AdminContentChapter> = emptyList(),
+    val chaptersPayload: List<AdminChapterPayload> = emptyList(),
+)
+
+@Serializable
+data class AdminContentDetail(
+    val id: String,
+    val title: String? = null,
+    val author: String? = null,
+    val description: String? = null,
+    val genre: String? = null,
+    val language: String? = null,
+    val cefrLevel: String? = null,
+    val contentType: String? = null,
+    val isFree: Boolean = true,
+    @Serializable(with = FlexibleDoubleSerializer::class)
+    val priceUsd: Double? = null,
+    val sourceUrl: String? = null,
+    val coverImageKey: String? = null,
+    val chapters: List<AdminContentChapter> = emptyList(),
+)
+
+@Serializable
+data class AdminCoverUploadResponse(
+    val id: String? = null,
+    val coverImageKey: String? = null,
 )
 
 @Serializable
@@ -927,6 +1161,8 @@ data class AdminUpdateSettingsRequest(
 data class ApiErrorBody(
     val message: JsonElement? = null,
     val statusCode: Int? = null,
+    val code: String? = null,
+    val email: String? = null,
 )
 
 @Serializable
@@ -943,6 +1179,9 @@ data class MessagingPeer(
     val stats: MessagingPeerStats? = null,
     val currentlyReading: MessagingReadingProgress? = null,
     val sharedReadingsNote: String? = null,
+    val online: Boolean = false,
+    val lastSeenAt: String? = null,
+    val typing: Boolean = false,
 )
 
 @Serializable
@@ -983,6 +1222,16 @@ data class MessagingLastMessage(
     val translation: String? = null,
     val senderId: String? = null,
     val createdAt: String? = null,
+    val deleted: Boolean = false,
+    val status: String? = null,
+)
+
+@Serializable
+data class MessageReplyToDto(
+    val id: String,
+    val body: String = "",
+    val senderId: String = "",
+    val deleted: Boolean = false,
 )
 
 @Serializable
@@ -1014,6 +1263,10 @@ data class ChatMessageDto(
     val sender: ChatMessageSender? = null,
     val mine: Boolean = false,
     val createdAt: String? = null,
+    val editedAt: String? = null,
+    val deleted: Boolean = false,
+    val replyTo: MessageReplyToDto? = null,
+    val status: String? = null,
 )
 
 @Serializable
@@ -1024,6 +1277,26 @@ data class ConversationDetail(
     val content: MessagingContentRef? = null,
     val messages: List<ChatMessageDto> = emptyList(),
     val lastMessageAt: String? = null,
+    val peerLastReadAt: String? = null,
+)
+
+@Serializable
+data class ConversationStatusDto(
+    val peerLastReadAt: String? = null,
+    val peer: ConversationPeerStatus? = null,
+)
+
+@Serializable
+data class ConversationPeerStatus(
+    val id: String? = null,
+    val online: Boolean = false,
+    val lastSeenAt: String? = null,
+    val typing: Boolean = false,
+)
+
+@Serializable
+data class TypingRequest(
+    val typing: Boolean = true,
 )
 
 @Serializable
@@ -1038,6 +1311,14 @@ data class SendMessageRequest(
     val body: String,
     val translation: String? = null,
     val bodyLang: String? = null,
+    val replyToId: String? = null,
+)
+
+@Serializable
+data class EditMessageRequest(
+    val body: String,
+    val translation: String? = null,
+    val bodyLang: String? = null,
 )
 
 @Serializable
@@ -1045,6 +1326,108 @@ data class MessagingOkResponse(
     val ok: Boolean = true,
 )
 
-fun MessagingContentRef?.coverUrl(): String? = this?.coverImageKey?.takeIf { it.isNotBlank() }
+@Serializable
+data class LearnerNotification(
+    val id: String,
+    val kind: String,
+    val title: String,
+    val body: String,
+    val href: String? = null,
+    val refId: String? = null,
+    val unread: Boolean = true,
+    val createdAt: String? = null,
+)
 
-fun MessagingReadingProgress.coverUrl(): String? = coverImageKey?.takeIf { it.isNotBlank() }
+@Serializable
+data class NotificationsInboxResponse(
+    val items: List<LearnerNotification> = emptyList(),
+    val unreadCount: Int = 0,
+)
+
+@Serializable
+data class NotificationReadResponse(
+    val ok: Boolean = true,
+    val unreadCount: Int = 0,
+    val item: LearnerNotification? = null,
+)
+
+fun MessagingContentRef?.coverUrl(): String? = resolveMediaUrl(this?.coverImageKey)
+
+fun MessagingReadingProgress.coverUrl(): String? = resolveMediaUrl(coverImageKey)
+
+/** Prisma Decimal and mixed admin payloads arrive as number or string. */
+object FlexibleDoubleSerializer : KSerializer<Double> {
+    override val descriptor: SerialDescriptor =
+        PrimitiveSerialDescriptor("FlexibleDouble", PrimitiveKind.DOUBLE)
+
+    override fun deserialize(decoder: Decoder): Double {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: return runCatching { decoder.decodeDouble() }.getOrDefault(0.0)
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            JsonNull -> 0.0
+            is JsonPrimitive -> element.doubleOrNull ?: element.content.toDoubleOrNull() ?: 0.0
+            else -> 0.0
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: Double) {
+        encoder.encodeDouble(value)
+    }
+}
+
+// ---- Practice / quiz (mirrors services/api practice module + web-learner PracticePage) ----
+
+@Serializable
+data class StartPracticeRequest(
+    val contentId: String? = null,
+    val segmentId: String? = null,
+    val practiceType: String,
+)
+
+@Serializable
+data class PracticeQuestion(
+    val id: String,
+    val questionIndex: Int = 0,
+    val prompt: String,
+    val options: List<String>? = null,
+    val correctAnswer: String,
+    val explanation: String? = null,
+)
+
+@Serializable
+data class PracticeSession(
+    val id: String,
+    val contentId: String? = null,
+    val segmentId: String? = null,
+    val practiceType: String,
+    val questionCount: Int = 0,
+    val correctCount: Int? = null,
+    val completedAt: String? = null,
+    val questions: List<PracticeQuestion> = emptyList(),
+)
+
+@Serializable
+data class SubmitAnswerItem(
+    val questionId: String,
+    val userAnswer: String,
+)
+
+@Serializable
+data class SubmitPracticeRequest(
+    val answers: List<SubmitAnswerItem>,
+)
+
+@Serializable
+data class PracticeAnswerResult(
+    val questionId: String,
+    val userAnswer: String,
+    val isCorrect: Boolean,
+    val explanation: String? = null,
+)
+
+@Serializable
+data class PracticeResultResponse(
+    val session: PracticeSession? = null,
+    val results: List<PracticeAnswerResult> = emptyList(),
+    val score: Double = 0.0,
+)

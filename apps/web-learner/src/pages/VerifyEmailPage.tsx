@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { api, clearTokens } from '../lib/api';
+import { openEmailInbox } from '../lib/emailInbox';
 import { VerifyIcon, verifyAssets as a } from '../assets/verify';
 
 type Phase = 'sent' | 'verifying' | 'success' | 'error';
@@ -90,7 +91,10 @@ export default function VerifyEmailPage() {
   }, [token]);
 
   const openEmailApp = () => {
-    window.location.href = 'mailto:';
+    const opened = openEmailInbox(email);
+    if (!opened) {
+      toast.message(`Open the inbox for ${email || 'your email'} and tap the verification link.`);
+    }
   };
 
   const resend = async () => {

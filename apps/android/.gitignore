@@ -1,0 +1,28 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build/
+/app/build/
+/captures/
+.externalNativeBuild/
+.cxx/
+*.apk
+*.ap_
+*.aab
+.icon-work/
+.kotlin/
+.ui-compare/
+
+# QA/debug artifacts accumulated from adb screenshots, gradle log redirects, and UI dumps
+# taken during manual verification passes — not part of the app source.
+*.png
+!app/src/main/res/**/*.png
+compile_*.txt
+install_*.txt
+ui_dump.xml
+ui.xml
+_dirs.txt
+figma_refs/
+s21_caps/

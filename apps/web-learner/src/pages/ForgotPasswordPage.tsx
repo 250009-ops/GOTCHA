@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { api, clearTokens } from '../lib/api';
+import { openEmailInbox } from '../lib/emailInbox';
 import { MARKETING_URL } from '../lib/links';
 
 /** Figma 187:8 — Reset password request (email → send link). */
@@ -141,7 +142,10 @@ export default function ForgotPasswordPage() {
               <Button
                 type="button"
                 onClick={() => {
-                  window.location.href = 'mailto:';
+                  const opened = openEmailInbox(email);
+                  if (!opened) {
+                    toast.message(`Open the inbox for ${email || 'your email'} and tap the reset link.`);
+                  }
                 }}
                 className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
               >

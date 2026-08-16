@@ -8,7 +8,7 @@ import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
-import { APP_LANGUAGES, LANGUAGE_META, type AppLanguage } from '../lib/types';
+import { LIVE_LANGUAGES, LANGUAGE_META, type AppLanguage } from '../lib/types';
 import { cn } from '../components/ui/utils';
 
 export default function AuthPage() {
@@ -31,11 +31,12 @@ export default function AuthPage() {
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Registration onboarding step: after credentials, pick native + target language(s)
-  // instead of hardcoding nativeLanguage: 'en' / targetLanguages: ['ru'] for every signup.
+  // Registration onboarding step: after credentials, pick native + target language(s).
+  // Start with no target selected — pre-selecting RU made every fresh account look like a
+  // Russian learner on Progress even when they only read English.
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>('en');
-  const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(['ru']);
+  const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>([]);
 
   useEffect(() => {
     // Clear leftover tokens when opening auth screens (once on mount).
@@ -204,7 +205,7 @@ export default function AuthPage() {
                   onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
                   className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
                 >
-                  {APP_LANGUAGES.map((code) => (
+                  {LIVE_LANGUAGES.map((code) => (
                     <option key={code} value={code}>
                       {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
                     </option>
@@ -216,7 +217,7 @@ export default function AuthPage() {
                   Languages you want to learn <span className="text-[#9ca3af] font-normal">(pick at least one)</span>
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {APP_LANGUAGES.filter((code) => code !== nativeLanguage).map((code) => {
+                  {LIVE_LANGUAGES.filter((code) => code !== nativeLanguage).map((code) => {
                     const selected = targetLanguages.includes(code);
                     return (
                       <button

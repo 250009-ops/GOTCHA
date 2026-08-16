@@ -95,3 +95,25 @@ export async function api<T>(
   if (res.status === 204) return undefined as T;
   return res.json();
 }
+
+export async function apiUpload<T>(path: string, file: File, field = 'file'): Promise<T> {
+  const accessToken = getToken();
+  const send = async (token: string | null) => {
+    const form = new FormData();
+    form.append(field, file);
+    const headers: Record<string, string> = {};
+    if (token) headers.Authorization = `Bearer ${token}`;
+    return fetch(`${API_BASE}${path}`, { method: 'POST', headers, body: form });
+  };
+  let res = await send(accessToken);
+  if (res.status === 401 && accessToken) {
+    const newToken = await refreshAccessToken();
+    if (newToken) res = await send(newToken);
+  }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ message: res.statusText }));
+    const message = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Upload failed');
+    throw new Error(message);
+  }
+  return res.json();
+}

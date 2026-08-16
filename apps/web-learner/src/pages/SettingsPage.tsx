@@ -19,13 +19,14 @@ import {
   Zap,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { UserAvatar } from '../components/UserAvatar';
 import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
-  avatarInitials,
   CEFR_LEVELS,
   LANGUAGE_META,
+  LIVE_LANGUAGES,
   type AppLanguage,
   type CatalogLanguage,
   type CefrLevel,
@@ -375,7 +376,7 @@ function DeleteAccountModal({ onClose, onDeleted }: { onClose: () => void; onDel
 
 export default function SettingsPage() {
   const navigate = useNavigate();
-  const { user, preferences, updateProfile, updatePreferences, refreshProfile, logout } = useAuth();
+  const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
 
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
@@ -385,6 +386,8 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
+  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'en');
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
@@ -403,6 +406,7 @@ export default function SettingsPage() {
     if (user) {
       setDisplayName(user.displayName ?? '');
       setNativeLanguage(user.nativeLanguage ?? 'en');
+      setUiLanguage(user.uiLanguage ?? 'en');
     }
   }, [user]);
 
@@ -431,22 +435,23 @@ export default function SettingsPage() {
       .finally(() => setSubLoading(false));
   }, []);
 
-  const languageOptions =
+  const languageOptions = (
     catalogLangs.length > 0
       ? catalogLangs
-      : Object.entries(LANGUAGE_META).map(([code, meta]) => ({
+      : LIVE_LANGUAGES.map((code) => ({
           code,
-          name: meta.label,
-          nativeName: meta.label,
-          flagEmoji: meta.flag,
+          name: LANGUAGE_META[code].label,
+          nativeName: LANGUAGE_META[code].nativeName,
+          flagEmoji: LANGUAGE_META[code].flag,
           isEnabled: true,
-        }));
+        }))
+  ).filter((l) => LIVE_LANGUAGES.includes(l.code as (typeof LIVE_LANGUAGES)[number]));
 
   const saveAll = async () => {
     setSaving(true);
     try {
       await Promise.all([
-        updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage }),
+        updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage, uiLanguage }),
         updatePreferences({
           dailyGoalMinutes: dailyGoal,
           readerFontScale: fontScale,
@@ -469,7 +474,6 @@ export default function SettingsPage() {
   const quota = subscription?.usage.quota ?? plan?.aiDailyQuota ?? 50;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
   const usagePct = quota > 0 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
-  const initials = avatarInitials(user?.displayName ?? user?.email ?? 'G');
   const targetLanguages = user?.targetLanguages ?? [];
 
   const handleExportData = async () => {
@@ -550,6 +554,30 @@ export default function SettingsPage() {
       </div>
 
       <Section title="Account">
+        <Row label="Photo" description="Used on Home, Profile, and chat. JPG, PNG, or WebP up to 2 MB.">
+          <div className="flex items-center gap-3">
+            <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
+            <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer">
+              {avatarBusy ? 'Uploading…' : 'Change photo'}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={avatarBusy}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  e.target.value = '';
+                  if (!file) return;
+                  setAvatarBusy(true);
+                  void uploadAvatar(file)
+                    .then(() => toast.success('Photo updated'))
+                    .catch((err) => toast.error(err instanceof Error ? err.message : 'Upload failed'))
+                    .finally(() => setAvatarBusy(false));
+                }}
+              />
+            </label>
+          </div>
+        </Row>
         <Row label="Display name" description="Shown on your profile and leaderboard">
           <input
             type="text"
@@ -568,6 +596,19 @@ export default function SettingsPage() {
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
                 {l.flagEmoji} {l.name}
+              </option>
+            ))}
+          </select>
+        </Row>
+        <Row label="App language" description="Interface language on web and mobile. Same account value.">
+          <select
+            value={uiLanguage}
+            onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
+            className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+          >
+            {(['en', 'ru', 'uz'] as const).map((code) => (
+              <option key={code} value={code}>
+                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
               </option>
             ))}
           </select>
@@ -782,8 +823,11 @@ export default function SettingsPage() {
 
       <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5 flex items-center justify-between gap-4">
         <div className="flex items-center gap-2 text-xs text-gray-400">
-          <AlertTriangle className="w-3.5 h-3.5" />
-          Signed in as <span className="font-medium text-gray-600">{initials}</span>
+          <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
+          Signed in as{' '}
+          <span className="font-medium text-gray-600 truncate max-w-[180px]">
+            {user?.displayName ?? user?.email}
+          </span>
         </div>
         <Button
           variant="outline"

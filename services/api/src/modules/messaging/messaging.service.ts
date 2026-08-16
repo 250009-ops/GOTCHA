@@ -6,7 +6,23 @@ import {
 } from '@nestjs/common';
 import { AppLanguage } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { EditMessageDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+
+const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
+const ONLINE_WINDOW_MS = 90 * 1000;
+const TYPING_WINDOW_MS = 4 * 1000;
+
+const messageInclude = {
+  sender: { select: { id: true, displayName: true, avatarUrl: true } },
+  replyTo: {
+    select: {
+      id: true,
+      body: true,
+      senderId: true,
+      deletedAt: true,
+    },
+  },
+} as const;
 
 type PeerUser = {
   id: string;
@@ -14,12 +30,37 @@ type PeerUser = {
   email: string;
   avatarUrl: string | null;
   nativeLanguage: AppLanguage;
+  lastSeenAt?: Date | null;
   targetLanguages: Array<{ targetLanguage: AppLanguage; isPrimary: boolean; cefrLevel: string }>;
 };
 
 @Injectable()
 export class MessagingService {
+  private typingUntil = new Map<string, number>();
+
   constructor(private prisma: PrismaService) {}
+
+  private presenceOf(lastSeenAt?: Date | null) {
+    const online = !!lastSeenAt && Date.now() - lastSeenAt.getTime() < ONLINE_WINDOW_MS;
+    return {
+      online,
+      lastSeenAt: lastSeenAt ? lastSeenAt.toISOString() : null,
+    };
+  }
+
+  private typingKey(conversationId: string, userId: string) {
+    return `${conversationId}:${userId}`;
+  }
+
+  private isTyping(conversationId: string, userId: string) {
+    return (this.typingUntil.get(this.typingKey(conversationId, userId)) ?? 0) > Date.now();
+  }
+
+  private messageStatus(mine: boolean, createdAt: Date, peerLastReadAt?: Date | null) {
+    if (!mine) return null;
+    if (peerLastReadAt && peerLastReadAt.getTime() >= createdAt.getTime()) return 'read';
+    return 'sent';
+  }
 
   private pairKey(a: string, b: string) {
     return [a, b].sort().join(':');
@@ -44,12 +85,65 @@ export class MessagingService {
       avatarUrl: user.avatarUrl,
       nativeLanguage: user.nativeLanguage,
       primaryLanguage: primary,
+      ...this.presenceOf(user.lastSeenAt),
       targetLanguages: user.targetLanguages.map((t) => ({
         language: t.targetLanguage,
         cefrLevel: t.cefrLevel,
         isPrimary: t.isPrimary,
       })),
     };
+  }
+
+  private presentMessage(
+    m: {
+      id: string;
+      body: string;
+      translation: string | null;
+      bodyLang: AppLanguage | null;
+      senderId: string;
+      createdAt: Date;
+      editedAt?: Date | null;
+      deletedAt?: Date | null;
+      replyToId?: string | null;
+      sender?: { id: string; displayName: string | null; avatarUrl: string | null };
+      replyTo?: { id: string; body: string; senderId: string; deletedAt: Date | null } | null;
+    },
+    userId: string,
+    peerLastReadAt?: Date | null,
+  ) {
+    const deleted = !!m.deletedAt;
+    const mine = m.senderId === userId;
+    return {
+      id: m.id,
+      body: deleted ? '' : m.body,
+      translation: deleted ? null : m.translation,
+      bodyLang: m.bodyLang,
+      senderId: m.senderId,
+      sender: m.sender,
+      mine,
+      createdAt: m.createdAt,
+      editedAt: m.editedAt ?? null,
+      status: this.messageStatus(mine, m.createdAt, peerLastReadAt),
+      deleted,
+      replyTo: m.replyTo
+        ? {
+            id: m.replyTo.id,
+            body: m.replyTo.deletedAt ? '' : m.replyTo.body,
+            senderId: m.replyTo.senderId,
+            deleted: !!m.replyTo.deletedAt,
+          }
+        : m.replyToId
+          ? { id: m.replyToId, body: '', senderId: '', deleted: true }
+          : null,
+    };
+  }
+
+  private async peerLastReadAt(conversationId: string, userId: string) {
+    const peer = await this.prisma.conversationParticipant.findFirst({
+      where: { conversationId, userId: { not: userId } },
+      select: { lastReadAt: true },
+    });
+    return peer?.lastReadAt ?? null;
   }
 
   private async assertParticipant(conversationId: string, userId: string) {
@@ -91,6 +185,7 @@ export class MessagingService {
         const me = c.participants.find((p) => p.userId === userId);
         const peer = peerPart ? this.peerSummary(peerPart.user) : null;
         const last = c.messages[0] ?? null;
+        const peerLastReadAt = peerPart?.lastReadAt ?? null;
         const unreadCount = await this.prisma.message.count({
           where: {
             conversationId: c.id,
@@ -106,10 +201,12 @@ export class MessagingService {
           lastMessage: last
             ? {
                 id: last.id,
-                body: last.body,
-                translation: last.translation,
+                body: last.deletedAt ? 'Message deleted' : last.body,
+                translation: last.deletedAt ? null : last.translation,
                 senderId: last.senderId,
                 createdAt: last.createdAt,
+                deleted: !!last.deletedAt,
+                status: this.messageStatus(last.senderId === userId, last.createdAt, peerLastReadAt),
               }
             : null,
           unreadCount,
@@ -146,30 +243,26 @@ export class MessagingService {
         messages: {
           orderBy: { createdAt: 'asc' },
           take: 200,
-          include: {
-            sender: { select: { id: true, displayName: true, avatarUrl: true } },
-          },
+          include: messageInclude,
         },
       },
     });
     if (!c) throw new NotFoundException('Conversation not found');
 
     const peerPart = c.participants.find((p) => p.userId !== userId);
+    const peerLastReadAt = peerPart?.lastReadAt ?? null;
     return {
       id: c.id,
       language: c.language,
       content: c.content,
-      peer: peerPart ? this.peerSummary(peerPart.user) : null,
-      messages: c.messages.map((m) => ({
-        id: m.id,
-        body: m.body,
-        translation: m.translation,
-        bodyLang: m.bodyLang,
-        senderId: m.senderId,
-        sender: m.sender,
-        mine: m.senderId === userId,
-        createdAt: m.createdAt,
-      })),
+      peer: peerPart
+        ? {
+            ...this.peerSummary(peerPart.user),
+            typing: this.isTyping(conversationId, peerPart.userId),
+          }
+        : null,
+      peerLastReadAt,
+      messages: c.messages.map((m) => this.presentMessage(m, userId, peerLastReadAt)),
       lastMessageAt: c.lastMessageAt,
     };
   }
@@ -215,6 +308,15 @@ export class MessagingService {
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('Message body required');
 
+    let replyToId: string | undefined;
+    if (dto.replyToId) {
+      const parent = await this.prisma.message.findFirst({
+        where: { id: dto.replyToId, conversationId },
+      });
+      if (!parent) throw new BadRequestException('Reply target not found');
+      replyToId = parent.id;
+    }
+
     const message = await this.prisma.message.create({
       data: {
         conversationId,
@@ -222,10 +324,9 @@ export class MessagingService {
         body,
         translation: dto.translation?.trim() || null,
         bodyLang: dto.bodyLang,
+        replyToId,
       },
-      include: {
-        sender: { select: { id: true, displayName: true, avatarUrl: true } },
-      },
+      include: messageInclude,
     });
 
     await this.prisma.$transaction([
@@ -239,15 +340,99 @@ export class MessagingService {
       }),
     ]);
 
+    return this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
+  }
+
+  async editMessage(userId: string, conversationId: string, messageId: string, dto: EditMessageDto) {
+    await this.assertParticipant(conversationId, userId);
+    const existing = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+    });
+    if (!existing) throw new NotFoundException('Message not found');
+    if (existing.senderId !== userId) throw new ForbiddenException('You can only edit your own messages');
+    if (existing.deletedAt) throw new BadRequestException('Cannot edit a deleted message');
+    if (Date.now() - existing.createdAt.getTime() > EDIT_WINDOW_MS) {
+      throw new BadRequestException('Edit window has expired');
+    }
+
+    const body = dto.body.trim();
+    if (!body) throw new BadRequestException('Message body required');
+
+    const message = await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        body,
+        translation: dto.translation?.trim() || null,
+        bodyLang: dto.bodyLang ?? existing.bodyLang,
+        editedAt: new Date(),
+      },
+      include: messageInclude,
+    });
+
+    return this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
+  }
+
+  async deleteMessage(userId: string, conversationId: string, messageId: string) {
+    await this.assertParticipant(conversationId, userId);
+    const existing = await this.prisma.message.findFirst({
+      where: { id: messageId, conversationId },
+    });
+    if (!existing) throw new NotFoundException('Message not found');
+    if (existing.senderId !== userId) throw new ForbiddenException('You can only delete your own messages');
+    if (existing.deletedAt) {
+      return this.presentMessage(
+        { ...existing, sender: undefined, replyTo: null },
+        userId,
+        await this.peerLastReadAt(conversationId, userId),
+      );
+    }
+
+    const message = await this.prisma.message.update({
+      where: { id: messageId },
+      data: {
+        deletedAt: new Date(),
+        body: '',
+        translation: null,
+      },
+      include: messageInclude,
+    });
+
+    return this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
+  }
+
+  async heartbeat(userId: string) {
+    const row = await this.prisma.user.update({
+      where: { id: userId },
+      data: { lastSeenAt: new Date() },
+      select: { lastSeenAt: true },
+    });
+    return { ok: true, lastSeenAt: row.lastSeenAt };
+  }
+
+  async setTyping(userId: string, conversationId: string, typing: boolean) {
+    await this.assertParticipant(conversationId, userId);
+    const key = this.typingKey(conversationId, userId);
+    if (typing) this.typingUntil.set(key, Date.now() + TYPING_WINDOW_MS);
+    else this.typingUntil.delete(key);
+    return { ok: true };
+  }
+
+  async conversationStatus(userId: string, conversationId: string) {
+    await this.assertParticipant(conversationId, userId);
+    const parts = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId },
+      include: { user: { select: { id: true, lastSeenAt: true } } },
+    });
+    const peer = parts.find((p) => p.userId !== userId);
     return {
-      id: message.id,
-      body: message.body,
-      translation: message.translation,
-      bodyLang: message.bodyLang,
-      senderId: message.senderId,
-      sender: message.sender,
-      mine: true,
-      createdAt: message.createdAt,
+      peerLastReadAt: peer?.lastReadAt ?? null,
+      peer: peer
+        ? {
+            id: peer.userId,
+            ...this.presenceOf(peer.user.lastSeenAt),
+            typing: this.isTyping(conversationId, peer.userId),
+          }
+        : null,
     };
   }
 

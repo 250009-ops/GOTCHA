@@ -1,4 +1,4 @@
-import { IsEnum, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class LookupDto {
@@ -15,6 +15,19 @@ export class LookupDto {
   @IsString()
   @MaxLength(80)
   lemma?: string;
+
+  @IsEnum(AppLanguage)
+  sourceLang!: AppLanguage;
+
+  @IsEnum(AppLanguage)
+  targetLang!: AppLanguage;
+}
+
+export class TranslateDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  text!: string;
 
   @IsEnum(AppLanguage)
   sourceLang!: AppLanguage;

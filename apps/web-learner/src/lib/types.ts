@@ -1,6 +1,7 @@
 /** Re-exported from `@gotcha/shared` — the single source of truth shared with the API. */
 import {
   APP_LANGUAGES,
+  LIVE_LANGUAGES,
   LANGUAGE_META,
   CEFR_LEVELS,
   CONTENT_TYPES,
@@ -12,6 +13,7 @@ import {
 
 export {
   APP_LANGUAGES,
+  LIVE_LANGUAGES,
   LANGUAGE_META,
   CEFR_LEVELS,
   CONTENT_TYPES,
@@ -104,6 +106,7 @@ export interface ContentItem {
   cefrLevel: CefrLevel;
   genre?: string | null;
   coverImageUrl?: string | null;
+  authorName?: string | null;
   wordCount: number;
   segmentCount?: number;
   progressPct?: number;
@@ -113,6 +116,9 @@ export interface ContentItem {
 export interface ContentSegment {
   id: string;
   segmentIndex: number;
+  chapterIndex?: number;
+  chapterTitle?: string | null;
+  pageIndex?: number;
   title?: string | null;
   plainText: string;
   tokenMap: Array<{

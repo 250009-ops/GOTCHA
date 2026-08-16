@@ -225,10 +225,32 @@ export default function ReaderPage() {
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
   const [showUnknownOnly, setShowUnknownOnly] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(true);
+  const [openChapterKeys, setOpenChapterKeys] = useState<Record<number, boolean>>({});
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
 
   const segment = segments[segmentIndex];
+  const literary = content?.contentType === 'book' || content?.contentType === 'story';
+  const chapterGroups = useMemo(() => {
+    if (!literary) return null;
+    const groups: Array<{ key: number; title: string; indices: number[] }> = [];
+    const byKey = new Map<number, { key: number; title: string; indices: number[] }>();
+    segments.forEach((seg, i) => {
+      const key = seg.chapterIndex ?? 0;
+      let group = byKey.get(key);
+      if (!group) {
+        group = {
+          key,
+          title: seg.chapterTitle || seg.title?.split(' · ')[0] || `Chapter ${key + 1}`,
+          indices: [],
+        };
+        byKey.set(key, group);
+        groups.push(group);
+      }
+      group.indices.push(i);
+    });
+    return groups;
+  }, [literary, segments]);
   const targetLang = user?.nativeLanguage ?? 'en';
   const sourceLang = content?.language ?? 'en';
   const ttsEnabled = preferences?.ttsEnabled ?? false;
@@ -469,9 +491,16 @@ export default function ReaderPage() {
   const tokens = segment.tokenMap ?? [];
   const currentChapterLabel = chapterLabel(segment, segmentIndex);
   const zoomPct = Math.round(fontScale * 100);
+  const readerTheme = preferences?.readerTheme ?? 'light';
+  const pageTone =
+    readerTheme === 'sepia'
+      ? 'bg-[#F4E8D0] text-[#3D2B1F]'
+      : readerTheme === 'dark'
+        ? 'bg-[#1C1917] text-[#F5F5F4]'
+        : 'bg-[#FDFCFF]';
 
   return (
-    <div className="flex flex-col h-screen max-h-dvh bg-[#FDFCFF] overflow-hidden">
+    <div className={cn('flex flex-col h-screen max-h-dvh overflow-hidden', pageTone)}>
       {/* Header — Figma 8:5841 */}
       <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shrink-0 min-w-0">
         <button
@@ -561,27 +590,71 @@ export default function ReaderPage() {
                 <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">Chapters</div>
               </div>
               <div className="flex-1 overflow-y-auto py-2">
-                {segments.map((seg, i) => {
-                  const active = i === segmentIndex;
-                  return (
-                    <button
-                      key={seg.id}
-                      type="button"
-                      onClick={() => goToSegment(i)}
-                      className={cn(
-                        'w-full text-left px-4 py-3 transition-colors',
-                        active ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
-                      )}
-                    >
-                      <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                        Ch. {seg.segmentIndex + 1}
-                      </div>
-                      <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
-                        {sidebarChapterTitle(seg)}
-                      </div>
-                    </button>
-                  );
-                })}
+                {chapterGroups
+                  ? chapterGroups.map((group) => {
+                      const open = openChapterKeys[group.key] !== false;
+                      const activeHere = group.indices.includes(segmentIndex);
+                      return (
+                        <div key={group.key}>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setOpenChapterKeys((prev) => ({ ...prev, [group.key]: !open }))
+                            }
+                            className={cn(
+                              'w-full text-left px-4 py-2.5 transition-colors',
+                              activeHere ? 'bg-[#f5f3ff]' : 'hover:bg-gray-50',
+                            )}
+                          >
+                            <div className={cn('text-xs font-semibold', activeHere ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                              Ch. {group.key + 1}
+                            </div>
+                            <div className={cn('text-sm font-medium truncate mt-0.5', activeHere ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                              {group.title}
+                            </div>
+                          </button>
+                          {open &&
+                            group.indices.map((i) => {
+                              const seg = segments[i];
+                              const active = i === segmentIndex;
+                              return (
+                                <button
+                                  key={seg.id}
+                                  type="button"
+                                  onClick={() => goToSegment(i)}
+                                  className={cn(
+                                    'w-full text-left pl-7 pr-4 py-1.5 text-xs transition-colors',
+                                    active ? 'text-[#7008e7] font-semibold' : 'text-[#6a7282] hover:text-[#4a5565]',
+                                  )}
+                                >
+                                  Page {(seg.pageIndex ?? group.indices.indexOf(i)) + 1}
+                                </button>
+                              );
+                            })}
+                        </div>
+                      );
+                    })
+                  : segments.map((seg, i) => {
+                      const active = i === segmentIndex;
+                      return (
+                        <button
+                          key={seg.id}
+                          type="button"
+                          onClick={() => goToSegment(i)}
+                          className={cn(
+                            'w-full text-left px-4 py-3 transition-colors',
+                            active ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                          )}
+                        >
+                          <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                            {segments.length > 1 ? `Page ${i + 1}` : 'Content'}
+                          </div>
+                          <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                            {sidebarChapterTitle(seg)}
+                          </div>
+                        </button>
+                      );
+                    })}
               </div>
               <button
                 type="button"

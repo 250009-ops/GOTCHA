@@ -18,8 +18,18 @@ import {
   SupportTicketPriority,
   SupportTicketStatus,
 } from '@prisma/client';
+import { mkdir, writeFile } from 'fs/promises';
+import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { tokenizeText, slugify, uniqueWordCount } from '../../utils/tokenizer';
+import { AiService } from '../ai/ai.service';
+import {
+  buildSegmentsFromChapters,
+  extractSourceDocument,
+  previewFromSegments,
+  segmentStats,
+  type BuiltSegment,
+} from './content-ingest';
 import {
   ADMIN_METRICS_KEY,
   FIGMA_ADMIN_METRICS,
@@ -39,6 +49,7 @@ export class AdminService {
   constructor(
     private prisma: PrismaService,
     private auth: AuthService,
+    private ai: AiService,
   ) {}
 
   private async getMetrics(): Promise<FigmaAdminMetrics> {
@@ -752,6 +763,8 @@ export class AdminService {
         isFree: item.isFree,
         priceUsd: Number(item.priceUsd ?? 0),
         salesCount: item.salesCount,
+        author: item.author,
+        coverImageKey: item.coverImageKey,
       };
     });
   }
@@ -766,43 +779,155 @@ export class AdminService {
     };
   }
 
+  private literaryType(type: string) {
+    return type === 'book' || type === 'story';
+  }
+
+  private async ingestSegments(body: Record<string, unknown>): Promise<BuiltSegment[]> {
+    const contentType = String(body.contentType ?? 'article');
+    const mode = this.literaryType(contentType) ? 'literary' : 'tight';
+    const incoming = Array.isArray(body.chapters)
+      ? (body.chapters as Array<{ title?: string; text?: string }>)
+          .map((c) => ({ title: String(c.title ?? 'Chapter'), text: String(c.text ?? '') }))
+          .filter((c) => c.text.trim())
+      : null;
+    if (incoming?.length) {
+      return buildSegmentsFromChapters(incoming, mode);
+    }
+    const extracted = await extractSourceDocument({
+      plainText: body.plainText ? String(body.plainText) : undefined,
+      sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
+      title: body.title ? String(body.title) : undefined,
+    });
+    let chapters = extracted.chapters;
+    if (mode === 'literary' && chapters.length) {
+      chapters = await this.ai.cleanImportChapters(chapters, {
+        source: 'url',
+        documentTitle: extracted.title,
+      });
+    }
+    if (mode === 'tight') {
+      const text = extracted.text || chapters.map((c) => c.text).join('\n\n');
+      return buildSegmentsFromChapters([{ title: extracted.title || 'Content', text }], 'tight');
+    }
+    return buildSegmentsFromChapters(chapters, 'literary');
+  }
+
+  async previewContentIngest(body: Record<string, unknown>) {
+    const segments = await this.ingestSegments(body);
+    const stats = segmentStats(segments);
+    return {
+      title: body.title ? String(body.title) : undefined,
+      wordCount: stats.wordCount,
+      uniqueWordCount: stats.uniqueWordCount,
+      chapterCount: new Set(segments.map((s) => s.chapterIndex)).size,
+      pageCount: segments.length,
+      chapters: previewFromSegments(segments),
+      chaptersPayload: segments.reduce<Array<{ title: string; text: string }>>((acc, seg) => {
+        const existing = acc[seg.chapterIndex];
+        if (!existing) acc[seg.chapterIndex] = { title: seg.chapterTitle, text: seg.plainText };
+        else existing.text = `${existing.text}\n\n${seg.plainText}`;
+        return acc;
+      }, []),
+    };
+  }
+
   async createContent(adminId: string, body: Record<string, unknown>) {
     const title = String(body.title ?? 'Untitled');
-    const plainText = String(body.plainText ?? '');
-    const { tokenMap, sentenceMap, wordCount } = tokenizeText(plainText);
+    const contentType = (body.contentType as ContentType) ?? ContentType.article;
     const pricing = this.parseContentPricing(body);
+    const segments = await this.ingestSegments(body);
+    const stats = segmentStats(segments);
+    const author = body.author ? String(body.author).trim() : undefined;
 
     return this.prisma.contentItem.create({
       data: {
         slug: `${slugify(title)}-${Date.now()}`,
         title,
+        author,
+        subtitle: author,
         description: body.description ? String(body.description) : undefined,
         language: (body.language as never) ?? 'en',
-        contentType: (body.contentType as ContentType) ?? ContentType.article,
+        contentType,
         contentSource: (body.contentSource as ContentSource) ?? ContentSource.public_domain,
         cefrLevel: (body.cefrLevel as never) ?? 'b1',
         genre: body.genre ? String(body.genre) : undefined,
+        sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
         licenseId: body.licenseId ? String(body.licenseId) : undefined,
         isFree: pricing.isFree,
         priceUsd: pricing.priceUsd,
-        wordCount,
-        uniqueWordCount: uniqueWordCount(tokenMap as never),
+        wordCount: stats.wordCount,
+        uniqueWordCount: stats.uniqueWordCount,
         publishStatus: PublishStatus.draft,
         createdById: adminId,
-        segments: plainText
+        segments: segments.length
           ? {
-              create: {
-                segmentIndex: 0,
-                title: 'Chapter 1',
-                plainText,
-                tokenMap: tokenMap as never,
-                sentenceMap: sentenceMap as never,
-                wordCount,
-              },
+              create: segments.map((s) => ({
+                segmentIndex: s.segmentIndex,
+                chapterIndex: s.chapterIndex,
+                chapterTitle: s.chapterTitle,
+                pageIndex: s.pageIndex,
+                title: s.title,
+                plainText: s.plainText,
+                tokenMap: s.tokenMap as never,
+                sentenceMap: s.sentenceMap as never,
+                wordCount: s.wordCount,
+              })),
             }
           : undefined,
       },
-      include: { segments: true, license: true },
+      include: { segments: { orderBy: { segmentIndex: 'asc' } }, license: true },
+    });
+  }
+
+  async getContent(id: string) {
+    const item = await this.prisma.contentItem.findUnique({
+      where: { id },
+      include: { segments: { orderBy: { segmentIndex: 'asc' } }, license: true },
+    });
+    if (!item) throw new NotFoundException('Content not found');
+    return {
+      ...item,
+      priceUsd: Number(item.priceUsd ?? 0),
+      chapters: previewFromSegments(
+        item.segments.map((s) => ({
+          segmentIndex: s.segmentIndex,
+          chapterIndex: s.chapterIndex,
+          chapterTitle: s.chapterTitle ?? s.title ?? 'Chapter',
+          pageIndex: s.pageIndex,
+          title: s.title ?? 'Page',
+          plainText: s.plainText,
+          tokenMap: s.tokenMap,
+          sentenceMap: s.sentenceMap,
+          wordCount: s.wordCount,
+        })),
+      ),
+    };
+  }
+
+  async uploadContentCover(id: string, file: Express.Multer.File) {
+    const existing = await this.prisma.contentItem.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Content not found');
+    const extByMime: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+    const ext = extByMime[file.mimetype];
+    if (!ext) throw new BadRequestException('Use a JPG, PNG, or WebP image.');
+    if (file.size > 4 * 1024 * 1024) {
+      throw new BadRequestException('Cover must be 4 MB or smaller.');
+    }
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const dir = join(root, 'covers');
+    await mkdir(dir, { recursive: true });
+    const fileName = `${id}.${ext}`;
+    await writeFile(join(dir, fileName), file.buffer);
+    const coverImageKey = `/uploads/covers/${fileName}?v=${Date.now()}`;
+    return this.prisma.contentItem.update({
+      where: { id },
+      data: { coverImageKey },
+      select: { id: true, coverImageKey: true },
     });
   }
 
@@ -823,7 +948,10 @@ export class AdminService {
       where: { id },
       data: {
         title: body.title !== undefined ? String(body.title) : undefined,
+        author: body.author !== undefined ? String(body.author) : undefined,
+        subtitle: body.author !== undefined ? String(body.author) : undefined,
         description: body.description !== undefined ? String(body.description) : undefined,
+        genre: body.genre !== undefined ? String(body.genre) : undefined,
         language: body.language !== undefined ? (body.language as never) : undefined,
         contentType: body.contentType !== undefined ? (body.contentType as ContentType) : undefined,
         cefrLevel: body.cefrLevel !== undefined ? (body.cefrLevel as never) : undefined,

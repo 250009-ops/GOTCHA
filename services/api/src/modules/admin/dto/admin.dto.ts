@@ -1,4 +1,5 @@
 import {
+  Allow,
   IsBoolean,
   IsEmail,
   IsIn,
@@ -27,6 +28,14 @@ export class CreateContentDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceUrl?: string;
 
   @IsOptional()
   @IsString()
@@ -59,6 +68,10 @@ export class CreateContentDto {
   @IsOptional()
   @IsNumber()
   priceUsd?: number;
+
+  @IsOptional()
+  @Allow()
+  chapters?: Array<{ title: string; text: string }>;
 }
 
 export class UpdateContentDto {
@@ -70,6 +83,14 @@ export class UpdateContentDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsString()
+  author?: string;
+
+  @IsOptional()
+  @IsString()
+  genre?: string;
 
   @IsOptional()
   @IsIn(['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'])

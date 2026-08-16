@@ -1,13 +1,18 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthUserPayload, CurrentUser } from '../../common/decorators';
-import { SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { EditMessageDto, SendMessageDto, StartConversationDto, TypingDto } from './dto/messaging.dto';
 import { MessagingService } from './messaging.service';
 
 @ApiTags('messaging')
 @Controller('messaging')
 export class MessagingController {
   constructor(private messaging: MessagingService) {}
+
+  @Post('presence')
+  heartbeat(@CurrentUser() user: AuthUserPayload) {
+    return this.messaging.heartbeat(user.sub);
+  }
 
   @Get('conversations')
   list(@CurrentUser() user: AuthUserPayload, @Query('q') q?: string) {
@@ -31,6 +36,39 @@ export class MessagingController {
     @Body() dto: SendMessageDto,
   ) {
     return this.messaging.sendMessage(user.sub, id, dto);
+  }
+
+  @Patch('conversations/:id/messages/:messageId')
+  edit(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+    @Body() dto: EditMessageDto,
+  ) {
+    return this.messaging.editMessage(user.sub, id, messageId, dto);
+  }
+
+  @Delete('conversations/:id/messages/:messageId')
+  remove(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('messageId', ParseUUIDPipe) messageId: string,
+  ) {
+    return this.messaging.deleteMessage(user.sub, id, messageId);
+  }
+
+  @Post('conversations/:id/typing')
+  typing(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: TypingDto,
+  ) {
+    return this.messaging.setTyping(user.sub, id, dto.typing !== false);
+  }
+
+  @Get('conversations/:id/status')
+  status(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.messaging.conversationStatus(user.sub, id);
   }
 
   @Post('conversations/:id/read')

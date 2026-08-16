@@ -197,6 +197,7 @@ model User {
   emailVerificationExpires DateTime? @map("email_verification_expires")
   passwordResetToken       String?   @unique @map("password_reset_token")
   passwordResetExpires     DateTime? @map("password_reset_expires")
+  lastSeenAt       DateTime? @map("last_seen_at")
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   deletedAt        DateTime? @map("deleted_at")
@@ -223,6 +224,7 @@ model User {
   importPayments    ImportPayment[]
   conversationParticipants ConversationParticipant[]
   sentMessages      Message[]
+  notifications     UserNotification[]
 
   @@map("users")
 }
@@ -352,6 +354,7 @@ model ContentItem {
   slug            String        @unique
   title           String
   subtitle        String?
+  author          String?
   description     String?
   language        AppLanguage
   contentType     ContentType   @map("content_type")
@@ -489,6 +492,9 @@ model ContentSegment {
   contentId       String  @map("content_id") @db.Uuid
   parentSegmentId String? @map("parent_segment_id") @db.Uuid
   segmentIndex    Int     @map("segment_index")
+  chapterIndex    Int     @default(0) @map("chapter_index")
+  chapterTitle    String? @map("chapter_title")
+  pageIndex       Int     @default(0) @map("page_index")
   title           String?
   plainText       String  @map("plain_text")
   tokenMap        Json    @map("token_map")
@@ -815,6 +821,27 @@ model NotificationCampaign {
   @@map("notification_campaigns")
 }
 
+model UserNotification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  kind      String
+  title     String
+  body      String
+  href      String?
+  refId     String?   @map("ref_id")
+  dedupeKey String    @map("dedupe_key")
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, createdAt])
+  @@index([userId, readAt])
+  @@map("user_notifications")
+}
+
 model Achievement {
   id          String              @id @default(uuid()) @db.Uuid
   code        String              @unique
@@ -896,11 +923,17 @@ model Message {
   body           String
   translation    String?
   bodyLang       AppLanguage? @map("body_lang")
+  replyToId      String?      @map("reply_to_id") @db.Uuid
+  editedAt       DateTime?    @map("edited_at")
+  deletedAt      DateTime?    @map("deleted_at")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies      Message[]    @relation("MessageReply")
 
   @@index([conversationId, createdAt])
+  @@index([replyToId])
   @@map("messages")
 }
