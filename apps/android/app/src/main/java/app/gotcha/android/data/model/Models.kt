@@ -170,10 +170,19 @@ data class ContentItem(
     val isFree: Boolean? = null,
     @Serializable(with = FlexibleDoubleSerializer::class)
     val priceUsd: Double? = null,
+    @Serializable(with = FlexibleDoubleSerializer::class)
+    val priceUzs: Double? = null,
+    val accessGranted: Boolean? = null,
     val salesCount: Int? = null,
     val viewCount: Int? = null,
 ) {
     fun resolvedStatus(): String = (publishStatus ?: status ?: "draft").lowercase()
+    fun catalogPriceUzs(): Double = priceUzs ?: priceUsd ?: 0.0
+    fun needsCatalogPayment(): Boolean {
+        if (accessGranted == true) return false
+        if (accessGranted == false) return catalogPriceUzs() > 0
+        return isFree == false && catalogPriceUzs() > 0
+    }
 }
 
 @Serializable
@@ -389,6 +398,21 @@ data class ImportQuoteResponse(
     val freeReason: String? = null,
     val minAmountUzs: Double? = null,
     val belowMinimum: Boolean = false,
+)
+
+@Serializable
+data class CatalogCheckoutResponse(
+    val contentId: String? = null,
+    val title: String? = null,
+    val isFree: Boolean = false,
+    @Serializable(with = FlexibleDoubleSerializer::class)
+    val priceUzs: Double = 0.0,
+    val accessGranted: Boolean = false,
+    val paymentId: String? = null,
+    val status: String? = null,
+    val step: String? = null,
+    val transactionId: Long? = null,
+    val gatewayEnabled: Boolean = false,
 )
 
 @Serializable

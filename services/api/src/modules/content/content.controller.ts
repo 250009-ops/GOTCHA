@@ -15,8 +15,8 @@ export class ContentController {
   }
 
   @Get()
-  list(@Query() query: ContentQueryDto) {
-    return this.content.list(query);
+  list(@CurrentUser() user: AuthUserPayload, @Query() query: ContentQueryDto) {
+    return this.content.list(query, user.sub, user.isAdmin);
   }
 
   /** Enabled languages for learner UI (admin LanguageCatalog toggles). */
@@ -28,7 +28,7 @@ export class ContentController {
 
   @Get(':id')
   getById(@CurrentUser() user: AuthUserPayload, @Param('id') id: string) {
-    return this.content.getById(id, user.sub);
+    return this.content.getById(id, user.sub, user.isAdmin);
   }
 
   @Get(':id/segments')
@@ -38,7 +38,7 @@ export class ContentController {
     @Query('from') from?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.content.getSegments(id, Number(from ?? 0), Number(limit ?? 100), user.sub);
+    return this.content.getSegments(id, Number(from ?? 0), Number(limit ?? 100), user.sub, user.isAdmin);
   }
 
   @Put(':id/progress')
@@ -47,6 +47,6 @@ export class ContentController {
     @Param('id') id: string,
     @Body() dto: UpdateProgressDto,
   ) {
-    return this.content.updateProgress(user.sub, id, dto);
+    return this.content.updateProgress(user.sub, id, dto, user.isAdmin);
   }
 }

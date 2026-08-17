@@ -21,6 +21,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
+import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
@@ -273,6 +274,7 @@ export default function ReaderPage() {
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
   const [pageDraft, setPageDraft] = useState('1');
+  const [accessNonce, setAccessNonce] = useState(0);
   const readingPaneRef = useRef<HTMLDivElement>(null);
 
   const pageCount = outline.length;
@@ -369,6 +371,11 @@ export default function ReaderPage() {
       api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
     ]).then(async ([item, known]) => {
       setContent(item);
+      if (item.accessGranted === false) {
+        setOutline([]);
+        setPageCache({});
+        return;
+      }
       let pages = item.outline ?? [];
       const cache: Record<number, ContentSegment> = {};
       if (!pages.length) {
@@ -405,7 +412,7 @@ export default function ReaderPage() {
       setWordStatuses(map);
       lastProgressAtRef.current = Date.now();
     }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  }, [id]);
+  }, [id, accessNonce]);
 
   const lemmaStatus = useCallback(
     (lemma: string): WordStatus => wordStatuses[lemma.toLowerCase()] ?? 'unknown',
@@ -620,6 +627,30 @@ export default function ReaderPage() {
           </button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">Content not found</div>
+      </div>
+    );
+  }
+
+  if (content.accessGranted === false) {
+    return (
+      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+        <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
+          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+            <ArrowLeft className="w-4 h-4" />
+            Library
+          </button>
+        </header>
+        <div className="flex-1 flex items-center justify-center p-6">
+          <CatalogPaywall
+            contentId={content.id}
+            title={content.title}
+            priceUzs={content.priceUzs ?? 0}
+            onUnlocked={() => {
+              setLoading(true);
+              setAccessNonce((n) => n + 1);
+            }}
+          />
+        </div>
       </div>
     );
   }

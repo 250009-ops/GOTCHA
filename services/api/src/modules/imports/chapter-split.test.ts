@@ -5,7 +5,14 @@ import {
   splitByOutlineTitles,
   stripGutenbergBoilerplate,
 } from './chapter-split';
-import { parseGutenbergId, gutenbergPlainTextUrls } from './gutenberg';
+import {
+  parseGutenbergId,
+  gutenbergAlephPath,
+  gutenbergHtmlBookUrls,
+  gutenbergPlainTextUrls,
+  isGutenbergIllustratedHtmlUrl,
+  looksLikeGutenbergLandingPage,
+} from './gutenberg';
 
 function titles(text: string, fallback = 'Moby Dick') {
   return splitAccurateChapters(text, fallback).map((c) => c.title);
@@ -167,6 +174,43 @@ assert.equal(outlined![1].title, 'The Carpet-Bag');
 assert.equal(parseGutenbergId('https://www.gutenberg.org/cache/epub/2701/pg2701-images.html'), '2701');
 assert.equal(parseGutenbergId('https://www.gutenberg.org/ebooks/2701'), '2701');
 assert.equal(parseGutenbergId('https://www.gutenberg.org/files/2701/2701-0.txt'), '2701');
+assert.equal(
+  parseGutenbergId('https://www.gutenberg.org/cache/epub/65238/pg65238-images.html'),
+  '65238',
+);
+const pg65238Txt = gutenbergPlainTextUrls('65238');
+assert.ok(pg65238Txt[0].includes('65238-0.txt'));
+assert.ok(pg65238Txt.some((u) => u.includes('pg65238.txt')));
 assert.ok(gutenbergPlainTextUrls('2701')[0].includes('2701-0.txt'));
+assert.equal(gutenbergAlephPath('2701'), '2/7/0/2701');
+const htmlUrls = gutenbergHtmlBookUrls('65238');
+const compactIdx = htmlUrls.findIndex((u) => /pg65238\.html$/i.test(u));
+const imagesIdx = htmlUrls.findIndex((u) => u.includes('pg65238-images.html'));
+assert.ok(compactIdx >= 0, 'compact pg{id}.html should be in the HTML fallback list');
+assert.ok(imagesIdx >= 0, 'illustrated HTML remains a last-resort fallback');
+assert.ok(compactIdx < imagesIdx, 'compact HTML must be tried before *-images.html');
+assert.equal(
+  isGutenbergIllustratedHtmlUrl('https://www.gutenberg.org/cache/epub/65238/pg65238-images.html'),
+  true,
+);
+assert.equal(
+  isGutenbergIllustratedHtmlUrl('https://www.gutenberg.org/cache/epub/65238/pg65238.html'),
+  false,
+);
+assert.ok(gutenbergHtmlBookUrls('2701').some((u) => u.includes('2701-h.htm')));
+assert.equal(
+  looksLikeGutenbergLandingPage('Download This eBook Plain Text UTF-8 bibrec', 400),
+  true,
+);
+assert.equal(looksLikeGutenbergLandingPage('CHAPTER 1. Loomings. Call me Ishmael.', 12_000), false);
+
+const glued = splitAccurateChapters(
+  'CHAPTER 1. Loomings. Call me Ishmael. Some years ago I thought I would sail. CHAPTER 2. The Carpet-Bag. I stuffed a shirt or two into my old carpet-bag.',
+  'Book',
+);
+assert.equal(glued.length >= 2, true);
+assert.match(glued[0].title, /Chapter 1/);
+assert.match(glued[glued.length - 1].title, /Chapter 2/);
+assert.match(glued[glued.length - 1].text, /stuffed a shirt/);
 
 console.log('chapter-split tests passed');

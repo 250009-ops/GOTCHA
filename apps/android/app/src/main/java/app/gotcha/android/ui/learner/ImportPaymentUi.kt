@@ -70,14 +70,14 @@ fun ImportPaymentStepUi(
                 label = "Card Number",
                 value = cardNumber,
                 onValueChange = { onCardNumberChange(it.filter(Char::isDigit).take(16)) },
-                placeholder = "5614 6819 0687 2829",
+                placeholder = "0000 0000 0000 0000",
             )
             Spacer(Modifier.height(12.dp))
             GotchaTextField(
                 label = "Expiry (MM/YY)",
                 value = cardExpiry,
                 onValueChange = { onCardExpiryChange(it.filter { c -> c.isDigit() || c == '/' }.take(5)) },
-                placeholder = "03/30",
+                placeholder = "00/00",
             )
             if (error != null) {
                 Spacer(Modifier.height(12.dp))

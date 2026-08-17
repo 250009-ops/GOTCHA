@@ -3,11 +3,13 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  OnModuleDestroy,
+  OnModuleInit,
 } from '@nestjs/common';
 import { mkdir, unlink, writeFile } from 'fs/promises';
 import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
-import { ContentSource, ContentType, ImportType, ModerationStatus, PublishStatus } from '@prisma/client';
+import { ContentSource, ContentType, ImportType, IngestionStatus, ModerationStatus, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { ImportCommerceService } from '../billing/import-commerce.service';
@@ -32,15 +34,26 @@ import {
 import { ImportCleanupSource, isImportAiCleanupEnabled } from './import-ai-cleanup';
 import { preparePastedText } from './import-text-cleaner';
 import { chaptersHaveRealTitles } from './chapter-split';
+import { isGutenbergUrl } from './gutenberg';
 
 /** Above this size, finish processing in the background so the client can poll status. */
 const ASYNC_PASTE_CHARS = 40_000;
 /** Large EPUBs finish in background; PDFs always async (OCR / many pages). */
 const ASYNC_FILE_BYTES = 5 * 1024 * 1024;
+/** URL/paste background jobs must not hang the UI if extract stalls or the process restarts. */
+const BACKGROUND_URL_TIMEOUT_MS = 4 * 60 * 1000;
+const BACKGROUND_FILE_TIMEOUT_MS = 15 * 60 * 1000;
+const STALE_URL_IMPORT_MS = 6 * 60 * 1000;
+const STALE_FILE_IMPORT_MS = 20 * 60 * 1000;
+const STALE_WATCH_MS = 60_000;
+const STALE_URL_MESSAGE =
+  'Import timed out. Try again — Gutenberg books are imported from the plain-text file, not the illustrated HTML page.';
+const STALE_FILE_MESSAGE = 'Import timed out while processing the file. Try again, or use a smaller PDF.';
 
 @Injectable()
-export class ImportsService {
+export class ImportsService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportsService.name);
+  private staleWatch: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private prisma: PrismaService,
@@ -48,6 +61,18 @@ export class ImportsService {
     private importCommerce: ImportCommerceService,
     private ai: AiService,
   ) {}
+
+  async onModuleInit() {
+    await this.failStaleImports();
+    this.staleWatch = setInterval(() => {
+      void this.failStaleImports();
+    }, STALE_WATCH_MS);
+    this.staleWatch.unref?.();
+  }
+
+  onModuleDestroy() {
+    if (this.staleWatch) clearInterval(this.staleWatch);
+  }
 
   private async requirePaymentIfNeeded(
     userId: string,
@@ -188,7 +213,7 @@ export class ImportsService {
     };
 
     if (text.length >= ASYNC_PASTE_CHARS) {
-      void this.finishInBackground(userImport.id, null, run);
+      void this.finishInBackground(userImport.id, null, run, BACKGROUND_URL_TIMEOUT_MS);
       return this.prisma.userImport.findUniqueOrThrow({
         where: { id: userImport.id },
         include: { content: true },
@@ -235,12 +260,10 @@ export class ImportsService {
       const extracted = await extractTextFromUrl(dto.url);
       assertMinWords(extracted.text, 'text from URL');
       const finalTitle = (dto.title?.trim() || extracted.detectedTitle || title).slice(0, 200);
-      const chapters = await this.aiCleanChapters(
-        extracted.chapters,
-        'url',
-        finalTitle,
-        userId,
-      );
+      // Match admin literary ingest: Gutenberg / long-form books skip OpenAI cleanup.
+      const chapters = this.shouldSkipAiCleanup(extracted.chapters, dto.url)
+        ? extracted.chapters
+        : await this.aiCleanChapters(extracted.chapters, 'url', finalTitle, userId);
       const content = await this.createImportContent(
         userId,
         finalTitle,
@@ -266,9 +289,14 @@ export class ImportsService {
       });
     };
 
-    // AI cleanup can exceed reverse-proxy timeouts — finish in background when enabled.
-    if (isImportAiCleanupEnabled() && Boolean(process.env.OPENAI_API_KEY?.trim())) {
-      void this.finishInBackground(userImport.id, job.id, run);
+    // Large book URLs (Gutenberg, .txt) can exceed reverse-proxy timeouts.
+    // Article AI cleanup is also backgrounded so nginx does not time out.
+    const largeUrl = /gutenberg\.org|archive\.org|\.txt(\?|#|$)/i.test(dto.url);
+    if (
+      largeUrl ||
+      (isImportAiCleanupEnabled() && Boolean(process.env.OPENAI_API_KEY?.trim()))
+    ) {
+      void this.finishInBackground(userImport.id, job.id, run, BACKGROUND_URL_TIMEOUT_MS);
       return this.prisma.userImport.findUniqueOrThrow({
         where: { id: userImport.id },
         include: { content: true },
@@ -387,7 +415,7 @@ export class ImportsService {
     // PDFs always async (multi-page extract / OCR must not block the HTTP request).
     // Large EPUBs also finish in the background.
     if (isPdf || file.size >= ASYNC_FILE_BYTES) {
-      void this.finishInBackground(userImport.id, job.id, run);
+      void this.finishInBackground(userImport.id, job.id, run, BACKGROUND_FILE_TIMEOUT_MS);
       return this.prisma.userImport.findUniqueOrThrow({
         where: { id: userImport.id },
         include: { content: true },
@@ -402,6 +430,16 @@ export class ImportsService {
   }
 
   /**
+   * Skip OpenAI for novels the same way admin literary ingest does.
+   * Gutenberg / long-form already has titled chapters from splitAccurateChapters.
+   */
+  private shouldSkipAiCleanup(chapters: ExtractedChapter[], sourceUrl?: string | null): boolean {
+    if (sourceUrl && isGutenbergUrl(sourceUrl)) return true;
+    if (chaptersHaveRealTitles(chapters) && chapters.length >= 4) return true;
+    return countWords(chapters.map((c) => c.text).join('\n\n')) >= 8_000;
+  }
+
+  /**
    * AI post-extract cleanup for URL/PDF/EPUB. Always returns usable chapters
    * (falls back to the deterministic extract when AI is off, fails, or over-trims).
    */
@@ -411,7 +449,7 @@ export class ImportsService {
     documentTitle: string,
     userId: string,
   ): Promise<ExtractedChapter[]> {
-    if (chaptersHaveRealTitles(chapters) && chapters.length >= 8) {
+    if (this.shouldSkipAiCleanup(chapters)) {
       return chapters;
     }
     try {
@@ -450,17 +488,98 @@ export class ImportsService {
       .catch(() => undefined);
   }
 
+  private withTimeout<T>(run: Promise<T>, timeoutMs: number, message: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+    });
+    return Promise.race([run, timeout]).finally(() => {
+      if (timer) clearTimeout(timer);
+    });
+  }
+
   private finishInBackground(
     importId: string,
     jobId: string | null,
     run: () => Promise<unknown>,
+    timeoutMs: number,
   ) {
-    Promise.resolve()
-      .then(() => run())
-      .catch((err) => {
-        this.logger.warn(`Background import ${importId} failed: ${err instanceof Error ? err.message : err}`);
+    const timeoutMessage =
+      timeoutMs <= BACKGROUND_URL_TIMEOUT_MS ? STALE_URL_MESSAGE : STALE_FILE_MESSAGE;
+    this.withTimeout(Promise.resolve().then(() => run()), timeoutMs, timeoutMessage).catch(
+      (err) => {
+        this.logger.warn(
+          `Background import ${importId} failed: ${err instanceof Error ? err.message : err}`,
+        );
         return this.markFailed(importId, jobId, err, 'Import failed');
-      });
+      },
+    );
+  }
+
+  private async failStaleImports() {
+    const now = Date.now();
+    const urlCutoff = new Date(now - STALE_URL_IMPORT_MS);
+    const fileCutoff = new Date(now - STALE_FILE_IMPORT_MS);
+    const pendingStatuses: IngestionStatus[] = [
+      IngestionStatus.queued,
+      IngestionStatus.processing,
+      IngestionStatus.tokenizing,
+    ];
+
+    try {
+      const [urlResult, fileResult, urlJobs, fileJobs] = await Promise.all([
+        this.prisma.userImport.updateMany({
+          where: {
+            ingestionStatus: { in: pendingStatuses },
+            importType: { in: [ImportType.url, ImportType.paste] },
+            createdAt: { lt: urlCutoff },
+          },
+          data: { ingestionStatus: 'failed', errorMessage: STALE_URL_MESSAGE },
+        }),
+        this.prisma.userImport.updateMany({
+          where: {
+            ingestionStatus: { in: pendingStatuses },
+            importType: { in: [ImportType.pdf, ImportType.epub] },
+            createdAt: { lt: fileCutoff },
+          },
+          data: { ingestionStatus: 'failed', errorMessage: STALE_FILE_MESSAGE },
+        }),
+        this.prisma.ingestionJob.updateMany({
+          where: {
+            status: { in: pendingStatuses },
+            finishedAt: null,
+            createdAt: { lt: urlCutoff },
+            sourceType: { in: ['url', 'paste', 'gutenberg'] },
+          },
+          data: {
+            status: 'failed',
+            errorMessage: STALE_URL_MESSAGE,
+            finishedAt: new Date(),
+          },
+        }),
+        this.prisma.ingestionJob.updateMany({
+          where: {
+            status: { in: pendingStatuses },
+            finishedAt: null,
+            createdAt: { lt: fileCutoff },
+            sourceType: { in: ['pdf', 'epub'] },
+          },
+          data: {
+            status: 'failed',
+            errorMessage: STALE_FILE_MESSAGE,
+            finishedAt: new Date(),
+          },
+        }),
+      ]);
+      const n = urlResult.count + fileResult.count + urlJobs.count + fileJobs.count;
+      if (n > 0) {
+        this.logger.warn(`Marked ${n} stale import record(s) as failed`);
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Stale import watchdog failed: ${err instanceof Error ? err.message : err}`,
+      );
+    }
   }
 
   private async markFailed(
@@ -471,14 +590,27 @@ export class ImportsService {
   ) {
     const message = err instanceof Error ? err.message : fallback;
     if (jobId) {
-      await this.prisma.ingestionJob.update({
-        where: { id: jobId },
-        data: { status: 'failed', errorMessage: message, finishedAt: new Date() },
-      });
+      await this.prisma.ingestionJob
+        .updateMany({
+          where: {
+            id: jobId,
+            status: { in: ['queued', 'processing', 'tokenizing'] },
+          },
+          data: { status: 'failed', errorMessage: message, finishedAt: new Date() },
+        })
+        .catch(() => undefined);
     }
-    return this.prisma.userImport.update({
+    await this.prisma.userImport
+      .updateMany({
+        where: {
+          id: importId,
+          ingestionStatus: { in: ['queued', 'processing', 'tokenizing'] },
+        },
+        data: { ingestionStatus: 'failed', errorMessage: message },
+      })
+      .catch(() => undefined);
+    return this.prisma.userImport.findUniqueOrThrow({
       where: { id: importId },
-      data: { ingestionStatus: 'failed', errorMessage: message },
       include: { content: true },
     });
   }

@@ -83,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(profile);
     setStats({
       streakCount: profile.streakCount ?? 0,
-      todayMinutes: userStats.totalReadMinutes ?? 0,
+      todayMinutes: Number(userStats.todayReadMinutes ?? 0),
       dailyGoalMinutes: profile.preferences?.dailyGoalMinutes ?? 15,
       wordsLearned: userStats.vocabularyTotal ?? 0,
       wordsKnown: userStats.vocabularyMastered ?? 0,

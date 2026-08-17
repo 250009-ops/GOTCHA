@@ -75,6 +75,10 @@ export class CreateContentDto {
   priceUsd?: number;
 
   @IsOptional()
+  @IsNumber()
+  priceUzs?: number;
+
+  @IsOptional()
   @Allow()
   chapters?: Array<{ title: string; text: string }>;
 }
@@ -120,6 +124,26 @@ export class UpdateContentDto {
   @IsOptional()
   @IsNumber()
   priceUsd?: number;
+
+  @IsOptional()
+  @IsNumber()
+  priceUzs?: number;
+
+  @IsOptional()
+  @IsIn(['public_domain', 'licensed', 'rss', 'user_import', 'ai_generated'])
+  contentSource?: string;
+
+  @IsOptional()
+  @IsString()
+  sourceUrl?: string;
+
+  @IsOptional()
+  @IsString()
+  plainText?: string;
+
+  @IsOptional()
+  @Allow()
+  chapters?: Array<{ title: string; text: string }>;
 
   @IsOptional()
   @IsNumber()

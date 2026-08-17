@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { SiteFooter, SiteNav } from '../components/SiteChrome';
+import { Seo } from '../components/Seo';
 
 // ---------------------------------------------------------------------------
 // Shared content model for Terms of Service / Privacy Policy
@@ -569,6 +570,11 @@ export function TermsPage() {
 
   return (
     <div className="bg-white">
+      <Seo
+        title="Terms of Service"
+        description="Terms of Service for GOTCHA, the reading-first language learning app."
+        path="/terms"
+      />
       <SiteNav />
       <div className="mx-auto flex max-w-[1195px] items-start gap-12 px-5 py-10 md:px-12 lg:px-12 lg:py-14">
         <TocTerms sections={TERMS_SECTIONS} active={active} />
@@ -608,6 +614,11 @@ export function PrivacyPage() {
 
   return (
     <div className="bg-white">
+      <Seo
+        title="Privacy Policy"
+        description="How GOTCHA collects, uses, and protects your data when you learn by reading."
+        path="/privacy"
+      />
       <SiteNav />
 
       <div className="border-b border-[#e5e7eb] bg-[#f9fafb]">
@@ -661,9 +672,22 @@ export function PrivacyPage() {
 // Simple legal page wrapper — used by pages without a dedicated Figma design
 // ---------------------------------------------------------------------------
 
-function LegalPage({ title, updated, children }: { title: string; updated: string; children: ReactNode }) {
+function LegalPage({
+  title,
+  updated,
+  description,
+  path,
+  children,
+}: {
+  title: string;
+  updated: string;
+  description: string;
+  path: string;
+  children: ReactNode;
+}) {
   return (
     <div className="relative overflow-hidden bg-white">
+      <Seo title={title} description={description} path={path} />
       <SiteNav />
 
       <img
@@ -704,7 +728,12 @@ function LegalPage({ title, updated, children }: { title: string; updated: strin
 
 export function RoadmapPage() {
   return (
-    <LegalPage title="Product Roadmap" updated="August 6, 2026">
+    <LegalPage
+      title="Product Roadmap"
+      updated="August 6, 2026"
+      path="/roadmap"
+      description="What GOTCHA is building next for reading-first fluency across English, Russian, and Uzbek."
+    >
       <p className="text-base leading-[1.7] text-[#4a5565]">
         What we're building next for reading-first fluency across English, Russian, and Uzbek.
       </p>
@@ -716,7 +745,7 @@ export function RoadmapPage() {
       </ul>
       <h2 className="mt-8 mb-3 text-xl font-bold tracking-[-0.3px] text-[#101828]">Next</h2>
       <ul className="list-disc pl-5 space-y-1 text-base leading-[1.7] text-[#4a5565]">
-        <li>Offline reading for Premium</li>
+        <li>Offline reading</li>
         <li>Richer CEFR progress analytics</li>
         <li>More curated library titles with licensed partners</li>
       </ul>

@@ -1,0 +1,22 @@
+{
+  "name": "GOTCHA",
+  "short_name": "GOTCHA",
+  "description": "Reading-first language learning. Tap words for AI definitions and review with spaced repetition.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#2107AA",
+  "theme_color": "#2107AA",
+  "icons": [
+    {
+      "src": "/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/apple-touch-icon.png",
+      "sizes": "180x180",
+      "type": "image/png"
+    }
+  ]
+}

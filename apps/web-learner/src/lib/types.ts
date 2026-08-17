@@ -113,6 +113,9 @@ export interface ContentItem {
   knownWordRatio?: number;
   currentSegmentId?: string | null;
   outline?: ContentOutlineSegment[];
+  isFree?: boolean;
+  priceUzs?: number;
+  accessGranted?: boolean;
 }
 
 export interface ContentOutlineSegment {

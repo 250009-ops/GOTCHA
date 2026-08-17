@@ -272,7 +272,7 @@ export class NotificationsService {
         kind: 'system',
         title: campaign.subject || campaign.name,
         body: campaign.body.slice(0, 220),
-        href: 'library',
+        href: 'home',
         refId: campaign.id,
         dedupeKey: `campaign:${campaign.id}`,
       });
@@ -291,7 +291,7 @@ export class NotificationsService {
         kind: 'content',
         title: `New ${kindLabel} in the library`,
         body: `${item.title} is now available to read.`,
-        href: `content/${item.id}`,
+        href: `home?item=${item.id}`,
         refId: item.id,
         dedupeKey: `content:${item.id}`,
         eventAt: item.publishedAt ?? undefined,

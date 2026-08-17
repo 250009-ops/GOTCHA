@@ -539,6 +539,7 @@ class ImportRepository(private val api: GotchaApi) {
     ) = api.importCheckout(
         ImportCheckoutRequest(importType, contentFormat, textLength, wordCount, pageCount, "android"),
     )
+    suspend fun catalogCheckout(contentId: String) = api.catalogCheckout(contentId)
     suspend fun paymentStatus(id: String) = api.importPayment(id)
     suspend fun preApply(paymentId: String, cardNumber: String, expiry: String) =
         api.importPreApply(paymentId, ImportPreApplyRequest(cardNumber, expiry))

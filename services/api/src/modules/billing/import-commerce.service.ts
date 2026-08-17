@@ -5,11 +5,19 @@ import {
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { ImportPaymentStatus, ImportType, Prisma } from '@prisma/client';
+import { ImportPaymentStatus, ImportType, Prisma, PurchaseStatus } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { formatIsAllowed, normalizeAllowedFormats, normalizeImportFormat } from '../../common/import-format';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AtmosClient, validateCardForAtmos } from './atmos.client';
+import {
+  catalogAccessGranted,
+  catalogContentIdFromFormat,
+  catalogPaymentFormat,
+  catalogPriceUzs,
+  paidCatalogIds,
+  requiresCatalogPayment,
+} from '../content/catalog-access';
 
 function envFlagTrue(value: string | undefined): boolean {
   const v = (value ?? '').trim().toLowerCase();
@@ -400,7 +408,7 @@ export class ImportCommerceService {
       });
 
       if (result.confirmed) {
-        await this.prisma.importPayment.update({
+        const paid = await this.prisma.importPayment.update({
           where: { id: payment.id },
           data: {
             status: ImportPaymentStatus.paid,
@@ -409,6 +417,7 @@ export class ImportCommerceService {
             rawCallbackJson: result.raw as Prisma.InputJsonValue,
           },
         });
+        await this.fulfillCatalogPurchase(paid);
 
         return {
           paymentId,
@@ -494,7 +503,7 @@ export class ImportCommerceService {
       const remote = await this.atmos.getTransaction(transactionId);
       
       if (remote?.confirmed) {
-        await this.prisma.importPayment.update({
+        const paid = await this.prisma.importPayment.update({
           where: { id: payment.id },
           data: {
             status: ImportPaymentStatus.paid,
@@ -503,6 +512,7 @@ export class ImportCommerceService {
             rawCallbackJson: remote.raw as Prisma.InputJsonValue,
           },
         });
+        await this.fulfillCatalogPurchase(paid);
         return this.prisma.importPayment.findFirstOrThrow({ where: { id: paymentId, userId } });
       }
     }
@@ -520,7 +530,7 @@ export class ImportCommerceService {
     if (!existing) return null;
     if (existing.status === ImportPaymentStatus.paid) return existing;
 
-    return this.prisma.importPayment.update({
+    const updated = await this.prisma.importPayment.update({
       where: { id: existing.id },
       data: {
         status: ImportPaymentStatus.paid,
@@ -530,6 +540,8 @@ export class ImportCommerceService {
         rawCallbackJson: opts?.raw != null ? (opts.raw as Prisma.InputJsonValue) : undefined,
       },
     });
+    await this.fulfillCatalogPurchase(updated);
+    return updated;
   }
 
   /**
@@ -546,6 +558,9 @@ export class ImportCommerceService {
       where: { id: paymentId, userId },
     });
     if (!payment) throw new NotFoundException('Payment not found');
+    if (catalogContentIdFromFormat(payment.contentFormat)) {
+      throw new ForbiddenException('This payment is for a catalog book, not an import');
+    }
     if (payment.userImportId) {
       throw new ForbiddenException('This payment was already used for an import');
     }
@@ -614,6 +629,118 @@ export class ImportCommerceService {
       totalImportsToday: paidToday,
       freeImportsUsedToday: freeToday,
     };
+  }
+
+  catalogPaymentsEnabled() {
+    return envFlagTrue(process.env.PAYMENT_GATEWAY_ENABLED) && this.atmos.configured();
+  }
+
+  async catalogAccess(userId: string, contentId: string, isAdmin?: boolean) {
+    const item = await this.prisma.contentItem.findUnique({ where: { id: contentId } });
+    if (!item) throw new NotFoundException('Content not found');
+    const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
+    const accessGranted = catalogAccessGranted({ item, userId, isAdmin, purchasedIds });
+    const priceUzs = catalogPriceUzs(item);
+    return {
+      contentId: item.id,
+      title: item.title,
+      isFree: !requiresCatalogPayment(item),
+      priceUzs,
+      currency: 'UZS' as const,
+      accessGranted,
+      gatewayEnabled: this.catalogPaymentsEnabled(),
+    };
+  }
+
+  async catalogCheckout(userId: string, contentId: string, isAdmin?: boolean) {
+    const access = await this.catalogAccess(userId, contentId, isAdmin);
+    if (access.accessGranted) {
+      return {
+        ...access,
+        paymentId: null,
+        account: null,
+        transactionId: null,
+        status: 'paid',
+        step: 'done' as const,
+      };
+    }
+
+    if (!this.catalogPaymentsEnabled()) {
+      throw new ServiceUnavailableException('Payment gateway is not available for catalog purchases');
+    }
+
+    const amountTiyins = Math.round(access.priceUzs * 100);
+    const minTiyins = this.atmos.minAmountTiyins();
+    if (amountTiyins < minTiyins) {
+      throw new BadRequestException(
+        'Payment could not be processed for this book. Please try again later or contact support.',
+      );
+    }
+
+    const account = `cat_${randomUUID().replace(/-/g, '')}`;
+    const atmosTx = await this.atmos.createTransaction({
+      account,
+      amountTiyins,
+    });
+
+    const payment = await this.prisma.importPayment.create({
+      data: {
+        userId,
+        status: ImportPaymentStatus.pending,
+        importType: ImportType.url,
+        contentFormat: catalogPaymentFormat(contentId),
+        estimatedPages: 1,
+        amountTiyins,
+        account,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        providerPaymentId: String(atmosTx.transactionId),
+        rawCreateJson: atmosTx.raw as Prisma.InputJsonValue,
+      },
+    });
+
+    return {
+      ...access,
+      paymentId: payment.id,
+      account: payment.account,
+      transactionId: atmosTx.transactionId,
+      status: payment.status,
+      step: 'card' as const,
+    };
+  }
+
+  private async fulfillCatalogPurchase(payment: {
+    userId: string;
+    status: ImportPaymentStatus;
+    contentFormat: string;
+    amountTiyins: number;
+    providerPaymentId: string | null;
+  }) {
+    if (payment.status !== ImportPaymentStatus.paid) return;
+    const contentId = catalogContentIdFromFormat(payment.contentFormat);
+    if (!contentId) return;
+
+    const existing = await this.prisma.contentPurchase.findFirst({
+      where: { userId: payment.userId, contentId, status: PurchaseStatus.completed },
+      select: { id: true },
+    });
+    if (existing) return;
+
+    await this.prisma.$transaction([
+      this.prisma.contentPurchase.create({
+        data: {
+          userId: payment.userId,
+          contentId,
+          amountUsd: payment.amountTiyins / 100,
+          status: PurchaseStatus.completed,
+          provider: 'atmos',
+          providerRef: payment.providerPaymentId,
+        },
+      }),
+      this.prisma.contentItem.update({
+        where: { id: contentId },
+        data: { salesCount: { increment: 1 } },
+      }),
+    ]);
   }
 
   fingerprintAccount(parts: string[]) {

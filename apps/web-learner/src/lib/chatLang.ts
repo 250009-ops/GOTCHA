@@ -15,9 +15,10 @@ export function enabledChatLangCodes() {
 }
 
 const UZ_HINTS = new Set([
-  'salom', 'rahmat', 'yaxshi', 'qanday', 'nima', 'qayerda', 'bugun', 'kecha',
+  'salom', 'rahmat', 'yaxshi', 'qanday', 'nima', 'nega', 'qayerda', 'bugun', 'kecha',
   'kitob', 'dost', "do'st", 'ha', 'yoq', "yo'q", 'men', 'sen', 'biz', 'ular',
-  'kerak', 'mumkin', 'iltimos', 'kechirasiz',
+  'kerak', 'mumkin', 'iltimos', 'kechirasiz', 'xafa', 'shunchalik', 'qolding',
+  'qoldi', "bo'lib", 'bolib', 'uchun', 'bilan', 'endi', 'hali', 'emas', 'kerakmi',
 ]);
 
 const EN_HINTS = new Set([
@@ -111,7 +112,7 @@ export function looksLikeLang(text: string, lang: string): boolean {
   if (!trimmed) return false;
   const want = normalizeChatLang(lang);
   const got = detectChatLang(trimmed);
-  return want === 'RU' ? got === 'RU' : got !== 'RU';
+  return Boolean(got && got === want);
 }
 
 const CHAT_META: Record<string, { name: string; flag: string }> = {
@@ -319,6 +320,7 @@ export type PresentedBubble = {
 export function presentBubble(args: {
   body: string;
   translation?: string | null;
+  bodyLang?: string | null;
   nativeLang: string;
   toLang: string;
   forcedTo?: string | null;
@@ -326,26 +328,37 @@ export function presentBubble(args: {
 }): PresentedBubble {
   const native = normalizeChatLang(args.nativeLang);
   const to = normalizeChatLang(args.toLang);
-  const pickTo = (...candidates: Array<string | null | undefined>) =>
-    candidates.find((candidate) => {
-      const t = candidate?.trim() ?? '';
-      return t && looksLikeLang(t, to);
-    })?.trim() ?? '';
+  const body = args.body.trim();
+  const stored = args.translation?.trim() ?? '';
+  const bodyLang = args.bodyLang
+    ? normalizeChatLang(args.bodyLang)
+    : (detectChatLang(body) ?? null);
+  const forcedTo = args.forcedTo?.trim() ?? '';
+  const forcedNative = args.forcedNative?.trim() ?? '';
 
-  const toLine = pickTo(args.forcedTo, args.body, args.translation);
+  const inTo = (text: string, lang?: string | null) => {
+    if (!text) return false;
+    if (lang && normalizeChatLang(lang) === to) return true;
+    return looksLikeLang(text, to);
+  };
+
+  const toLine =
+    (forcedTo && (inTo(forcedTo) || !detectChatLang(forcedTo)) ? forcedTo : '')
+    || (inTo(body, bodyLang) ? body : '')
+    || (inTo(stored) ? stored : '')
+    || forcedTo
+    || body;
+
   const nativeLine =
-    [
-      args.forcedNative?.trim(),
-      looksLikeLang(args.body, native) ? args.body : null,
-      args.translation && looksLikeLang(args.translation, native) ? args.translation : null,
-      args.translation && looksLikeLang(args.body, to) ? args.translation : null,
-    ].find((item) => item?.trim()) ?? '';
+    (forcedNative && !sameChatText(forcedNative, toLine) ? forcedNative : '')
+    || (body && !sameChatText(body, toLine) ? body : '')
+    || (stored && !sameChatText(stored, toLine) ? stored : '');
 
   return {
     primary: toLine,
     secondary: visibleNativeLine(toLine, nativeLine, to, native),
     primaryLang: to,
-    secondaryLang: native,
+    secondaryLang: bodyLang && bodyLang !== to ? bodyLang : native,
   };
 }
 

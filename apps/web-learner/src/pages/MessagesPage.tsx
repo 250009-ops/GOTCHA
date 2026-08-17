@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Check, CheckCheck, ChevronDown, Clock, Languages, MessageSquare, MoreHorizontal, Search, Send, X } from 'lucide-react';
+import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
 import { UserAvatar } from '../components/UserAvatar';
@@ -22,7 +22,7 @@ import {
   tokenizeChatText,
   tryTranslateChat,
 } from '../lib/chatLang';
-import type { LookupResult } from '../lib/types';
+import type { LookupResult, VocabItem } from '../lib/types';
 
 type Peer = {
   id: string;
@@ -64,6 +64,8 @@ type ConversationRow = {
 type MessageReplyTo = {
   id: string;
   body: string;
+  translation?: string | null;
+  bodyLang?: string | null;
   senderId: string;
   deleted: boolean;
 };
@@ -95,31 +97,52 @@ type Suggestion = Peer & { reading?: ContentRef | null };
 
 type LinePair = { to: string; native: string };
 
-function langBadge(code?: string | null) {
-  const c = (code ?? 'en').toUpperCase().slice(0, 2);
-  const styles: Record<string, string> = {
-    RU: 'bg-[#f0e7ff] text-[#7008e7]',
-    EN: 'bg-[#e0f2fe] text-[#0369a1]',
-    UZ: 'bg-[#ecfdf5] text-[#047857]',
-    FR: 'bg-[#fef3c7] text-[#b45309]',
-    JA: 'bg-[#ffe4e6] text-[#be123c]',
-    DE: 'bg-[#e0e7ff] text-[#3730a3]',
-    ES: 'bg-[#ffedd5] text-[#c2410c]',
-  };
-  return styles[c] ?? 'bg-gray-100 text-gray-600';
+const TEMPLATE_PEER_NAMES = new Set([
+  'john doe',
+  'yuki t.',
+  'yuki t',
+  'marc l.',
+  'marc l',
+  'elena r.',
+  'elena r',
+  'elena read',
+]);
+
+function isTemplatePeerName(name?: string | null) {
+  return TEMPLATE_PEER_NAMES.has((name ?? '').trim().toLowerCase());
 }
 
-function relativeTime(iso?: string | null) {
+function langBadge(_code?: string | null) {
+  return 'bg-[#f3f4f6] text-[#4a5565]';
+}
+
+function inboxTimestamp(iso?: string | null) {
   if (!iso) return '';
-  const ms = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'now';
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  return `${days}d ago`;
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  const now = new Date();
+  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const startThat = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
+  const diffDays = Math.round((startToday - startThat) / 86_400_000);
+  if (diffDays === 0) {
+    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  }
+  if (diffDays === 1) return 'Yesterday';
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function useMinWidth(px: number) {
+  const [matches, setMatches] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia(`(min-width: ${px}px)`).matches,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${px}px)`);
+    const onChange = () => setMatches(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, [px]);
+  return matches;
 }
 
 function formatTime(iso: string) {
@@ -182,7 +205,7 @@ function TappableMessageText({
 }) {
   const parts = useMemo(() => tokenizeChatText(text), [text]);
   return (
-    <p className={cx(className, 'select-none')}>
+    <p className={cx(className, 'select-none break-words whitespace-pre-wrap')}>
       {parts.map((part, i) => {
         if (part.type !== 'word') {
           return <span key={`${i}-${part.value}`}>{part.value}</span>;
@@ -193,6 +216,7 @@ function TappableMessageText({
             key={`${i}-${part.value}`}
             role="button"
             tabIndex={0}
+            title="Tap to look up"
             onPointerDown={(e) => {
               e.preventDefault();
               onWordTap(part.value);
@@ -204,8 +228,8 @@ function TappableMessageText({
               }
             }}
             className={cx(
-              'cursor-pointer underline decoration-dotted underline-offset-2 hover:decoration-solid',
-              selected && 'font-bold decoration-solid decoration-2',
+              'cursor-pointer underline decoration-[#c4b4ff] underline-offset-[3px] hover:decoration-[#7f22fe]',
+              selected && 'font-semibold decoration-solid decoration-2',
             )}
           >
             {part.value}
@@ -281,8 +305,126 @@ function ToLangPicker({
   );
 }
 
+function WordMeaningPanel({
+  word,
+  lookup,
+  loading,
+  error,
+  savedMsg,
+  context,
+  contextTranslation,
+  onBack,
+  onSave,
+  onKnown,
+  onIgnore,
+}: {
+  word: string;
+  lookup: LookupResult | null;
+  loading: boolean;
+  error: string | null;
+  savedMsg: string | null;
+  context: string;
+  contextTranslation: string;
+  onBack: () => void;
+  onSave: () => void;
+  onKnown: () => void;
+  onIgnore: () => void;
+}) {
+  const lemma = lookup?.lemma || word;
+  const phonetic = lookup?.phonetic?.trim();
+  const canAct = !loading && !!lookup?.translation;
+  return (
+    <div className="h-full w-full bg-white flex flex-col min-h-0">
+      <div className="flex items-center gap-3 px-5 pt-5 pb-4 shrink-0">
+        <button
+          type="button"
+          onClick={onBack}
+          className="size-8 rounded-lg bg-[#f2f5f5] border border-[#e4e7ec] grid place-items-center text-[#6b7382] hover:text-gray-800"
+          aria-label="Close word meaning"
+        >
+          <ArrowLeft className="w-4 h-4" />
+        </button>
+        <h2 className="text-base font-semibold text-[#0f1729]">Word Meaning</h2>
+      </div>
+      <div className="h-px bg-[#e5e8eb] shrink-0" />
+      <div className="flex-1 overflow-y-auto min-h-0 px-5 py-5 space-y-5">
+        <div className="space-y-1.5">
+          <p className="text-[22px] font-extrabold text-[#0f1729] leading-tight break-words">{lemma}</p>
+          {phonetic ? (
+            <p className="text-sm text-[#6b7382]">[{phonetic}]</p>
+          ) : loading ? (
+            <p className="text-sm text-[#6b7382]">Looking up…</p>
+          ) : null}
+          <div className="flex flex-wrap gap-1.5 pt-1">
+            {lookup?.partOfSpeech ? (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-md bg-[#f3f4f6] text-[#4a5565] capitalize">
+                {lookup.partOfSpeech}
+              </span>
+            ) : null}
+          </div>
+        </div>
+
+        {error ? <p className="text-sm text-red-600">{error}</p> : null}
+        {savedMsg ? <p className="text-sm text-[#047857]">{savedMsg}</p> : null}
+
+        <section>
+          <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Translation</h3>
+          <p className="text-sm text-[#0f1729] leading-6">
+            {loading ? '…' : (lookup?.translation || 'No translation yet.')}
+          </p>
+        </section>
+
+        {lookup?.grammarNote ? (
+          <section>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Grammar note</h3>
+            <p className="text-sm text-[#4a5565] leading-6 whitespace-pre-wrap">{lookup.grammarNote}</p>
+          </section>
+        ) : null}
+
+        {context.trim() ? (
+          <section>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Context example</h3>
+            <p className="text-sm text-[#0f1729] leading-6">{context}</p>
+            {contextTranslation.trim() && !sameChatText(contextTranslation, context) ? (
+              <p className="text-sm italic text-[#6b7382] leading-6 mt-1">{contextTranslation}</p>
+            ) : null}
+          </section>
+        ) : null}
+      </div>
+
+      <div className="shrink-0 border-t border-[#e4e7ec] p-4 grid grid-cols-3 gap-2">
+        <button
+          type="button"
+          disabled={!canAct}
+          onClick={onSave}
+          className="h-10 rounded-xl bg-[#7f22fe] text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          disabled={!canAct}
+          onClick={onKnown}
+          className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#0f1729] disabled:opacity-40 hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
+        >
+          <Check className="w-4 h-4 text-[#16a34a]" />
+          Known
+        </button>
+        <button
+          type="button"
+          onClick={onIgnore}
+          className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#6b7382] hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
+        >
+          <X className="w-4 h-4" />
+          Ignore
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function MessagesPage() {
-  const { user, refreshVocab } = useAuth();
+  const { user, refreshVocab, vocabItems, markVocabMastered } = useAuth();
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -311,6 +453,8 @@ export default function MessagesPage() {
   const threadEndRef = useRef<HTMLDivElement>(null);
   const backfillKeyRef = useRef('');
   const typingSentAt = useRef(0);
+  const isDesktop = useMinWidth(1024);
+  const isXl = useMinWidth(1280);
 
   const nativeLang = normalizeChatLang(user?.nativeLanguage);
   const toOptions = useMemo(() => otherChatLangs(nativeLang), [nativeLang]);
@@ -344,19 +488,23 @@ export default function MessagesPage() {
         api<ConversationRow[]>(`/messaging/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
         api<Suggestion[]>('/messaging/suggestions'),
       ]);
-      setConversations(inbox);
-      setSuggestions(suggested);
-      if (!selectedId && inbox[0]) setSelectedId(inbox[0].id);
+      setConversations(inbox.filter((c) => !isTemplatePeerName(c.peer?.displayName)));
+      setSuggestions(suggested.filter((s) => !isTemplatePeerName(s.displayName)));
     } catch (e) {
       if (!silent) setError(e instanceof Error ? e.message : 'Failed to load messages');
     } finally {
       if (!silent) setLoadingList(false);
     }
-  }, [selectedId]);
+  }, []);
 
   useEffect(() => {
     void loadInbox();
   }, []);
+
+  useEffect(() => {
+    if (!isDesktop || selectedId || conversations.length === 0) return;
+    setSelectedId(conversations[0].id);
+  }, [isDesktop, selectedId, conversations]);
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -652,6 +800,8 @@ export default function MessagesPage() {
           ? {
               id: replyTarget.id,
               body: replyTarget.body,
+              translation: replyTarget.translation,
+              bodyLang: replyTarget.bodyLang,
               senderId: replyTarget.senderId,
               deleted: !!replyTarget.deleted,
             }
@@ -829,22 +979,33 @@ export default function MessagesPage() {
     };
   }, [selectedWord, selectedSentence, selectedLineLang, nativeLang]);
 
-  const saveWord = async () => {
+  const saveWord = async (mastered = false) => {
     if (!selectedWord || !lookup?.translation) return;
     try {
       const lemma = (lookup.lemma || selectedWord).toLowerCase();
-      await api('/vocabulary', {
-        method: 'POST',
-        body: JSON.stringify({
-          lemma,
-          sourceLang: apiChatLang(selectedLineLang),
-          targetLang: apiChatLang(nativeLang),
-          translation: lookup.translation,
-          contextSentence: (selectedNativeLine || selectedSentence).slice(0, 200) || undefined,
-        }),
-      });
-      setSavedMsg('Saved to vocabulary');
-      toast.success(`"${lemma}" saved to vocabulary`);
+      const existing = vocabItems.find((item) => item.lemma.toLowerCase() === lemma);
+      let vocabId = existing?.id;
+      if (!vocabId) {
+        const saved = await api<VocabItem>('/vocabulary', {
+          method: 'POST',
+          body: JSON.stringify({
+            lemma,
+            sourceLang: apiChatLang(selectedLineLang),
+            targetLang: apiChatLang(nativeLang),
+            translation: lookup.translation,
+            contextSentence: (selectedNativeLine || selectedSentence).slice(0, 200) || undefined,
+          }),
+        });
+        vocabId = saved.id;
+      }
+      if (mastered && vocabId) {
+        await markVocabMastered(vocabId, true);
+        setSavedMsg('Marked as known');
+        toast.success(`"${lemma}" marked as known`);
+      } else {
+        setSavedMsg('Saved to vocabulary');
+        toast.success(`"${lemma}" saved to vocabulary`);
+      }
       void refreshVocab().catch(() => undefined);
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Save failed';
@@ -860,10 +1021,34 @@ export default function MessagesPage() {
     setSavedMsg(null);
   };
 
+  const wordPanel = selectedWord ? (
+    <WordMeaningPanel
+      word={selectedWord}
+      lookup={lookup}
+      loading={lookupLoading}
+      error={lookupError}
+      savedMsg={savedMsg}
+      context={selectedSentence}
+      contextTranslation={selectedNativeLine}
+      onBack={closeLookup}
+      onSave={() => void saveWord(false)}
+      onKnown={() => void saveWord(true)}
+      onIgnore={closeLookup}
+    />
+  ) : null;
+  const showList = isDesktop || !selectedId;
+  const showThread = isDesktop || !!selectedId;
+
   return (
     <div className="absolute inset-0 flex bg-white overflow-hidden">
-      <aside className="w-[360px] shrink-0 border-r border-[#e5e7eb] flex flex-col min-h-0 bg-white">
-        <div className="p-4 border-b border-[#e5e7eb]">
+      <aside
+        className={cx(
+          'shrink-0 border-r border-[#e5e7eb] flex-col min-h-0 bg-white w-full lg:w-[360px]',
+          showList ? 'flex' : 'hidden',
+        )}
+      >
+        <div className="px-4 pt-4 pb-3 border-b border-[#e5e7eb]">
+          <h1 className="text-lg font-bold text-gray-900 mb-3">Messages</h1>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#99a1af]" />
             <input
@@ -918,7 +1103,7 @@ export default function MessagesPage() {
           ) : conversations.length === 0 ? (
             <div className="p-6 text-sm text-[#99a1af] flex flex-col items-center gap-2 text-center">
               <MessageSquare className="w-8 h-8 text-[#c4b4ff]" />
-              <p>No conversations yet. Start from Suggested from Readings.</p>
+              <p>No conversations yet. Search for learners or pick someone from Suggested from Readings.</p>
             </div>
           ) : (
             conversations.map((c) => {
@@ -928,7 +1113,7 @@ export default function MessagesPage() {
                   key={c.id}
                   className={cx(
                     'w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#f3f4f6] text-left transition-colors',
-                    active ? 'bg-[#f5f3ff]' : 'hover:bg-[#f9fafb]',
+                    active ? 'bg-[#f4efff]' : 'hover:bg-[#f9fafb]',
                   )}
                 >
                   <button
@@ -955,7 +1140,7 @@ export default function MessagesPage() {
                         </span>
                       </div>
                       <span className="text-[11px] text-[#99a1af] shrink-0">
-                        {relativeTime(c.lastMessageAt ?? c.lastMessage?.createdAt)}
+                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
@@ -982,21 +1167,42 @@ export default function MessagesPage() {
         </div>
       </aside>
 
-      <section className="flex-1 min-w-0 flex flex-col bg-[#f9fafb]">
-        {!selectedId || !detail ? (
-          <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
-            <MessageSquare className="w-10 h-10 text-[#c4b4ff]" />
-            <p className="text-sm">Select a conversation to start chatting</p>
+      <section
+        className={cx(
+          'flex-1 min-w-0 flex-col bg-[#f9fafb] relative',
+          showThread ? 'flex' : 'hidden',
+        )}
+      >
+        {!selectedId ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3">
+            <div className="size-16 rounded-full bg-[#f4efff] grid place-items-center text-[28px]">💬</div>
+            <p className="text-base font-semibold text-[#0f1729]">Select a conversation</p>
+            <p className="text-sm text-[#6b7382] max-w-sm">
+              Choose a chat from the list or search for learners to start messaging.
+            </p>
             {error && <p className="text-xs text-red-500">{error}</p>}
+          </div>
+        ) : !detail ? (
+          <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
+            <p className="text-sm">{loadingThread ? 'Loading conversation…' : (error || 'Could not open this chat.')}</p>
           </div>
         ) : (
           <>
-            <header className="h-14 bg-white border-b border-[#e5e7eb] px-5 flex items-center justify-between shrink-0">
-              <button
-                type="button"
-                onClick={() => openPeerProfile(detail.peer?.id)}
-                className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-[#f5f3ff] px-1 py-0.5 -ml-1"
-              >
+            <header className="h-14 bg-white border-b border-[#e5e7eb] px-3 sm:px-5 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1 min-w-0">
+                <button
+                  type="button"
+                  className="lg:hidden size-9 rounded-lg grid place-items-center text-[#6b7382] hover:bg-[#f4efff] shrink-0"
+                  aria-label="Back to chats"
+                  onClick={() => setSelectedId(null)}
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => openPeerProfile(detail.peer?.id)}
+                  className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-[#f5f3ff] px-1 py-0.5"
+                >
                 <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
                 <div className="min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
@@ -1008,19 +1214,20 @@ export default function MessagesPage() {
                   )}>
                     {presenceLabel(detail.peer) || detail.peer?.handle}
                   </div>
-                </div>
-              </button>
+                  </div>
+                </button>
+              </div>
               <ToLangPicker selected={toLang} options={toOptions} onSelect={persistTo} />
             </header>
 
             {!tipDismissed && (
-              <div className="bg-[#f4efff] px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
-                <p className="text-[13px] font-semibold text-[#7008e7]">
-                  Tips: Tap underlined words to save them to your vocabulary list.
+              <div className="bg-[#f4efff] border-b border-[#d3c2ff] px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0">
+                <p className="text-[12px] text-[#5b21b6] leading-5">
+                  Tips: Tap underlined words to save them to your vocabulary.
                 </p>
                 <button
                   type="button"
-                  className="text-[#7008e7] text-sm px-1"
+                  className="text-[#7c3aed] hover:text-[#5b21b6] text-sm leading-none px-1"
                   onClick={() => setTipDismissed(true)}
                   aria-label="Dismiss tip"
                 >
@@ -1029,15 +1236,17 @@ export default function MessagesPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto min-h-0 px-5 py-4 space-y-4">
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-3 bg-[#f5f3ff]">
               {loadingThread && detail.messages.length === 0 ? (
                 <p className="text-sm text-[#99a1af]">Loading messages…</p>
               ) : (
                 detail.messages.map((m) => {
+                  const mine = Boolean(m.mine || (user?.id && m.senderId === user.id));
                   const forced = linesById[m.id];
                   const presented = presentBubble({
                     body: m.body,
                     translation: m.translation,
+                    bodyLang: m.bodyLang,
                     nativeLang,
                     toLang,
                     forcedTo: forced?.to,
@@ -1045,6 +1254,18 @@ export default function MessagesPage() {
                   });
                   const primary = presented.primary || m.body;
                   const secondary = presented.secondary;
+                  const replyForced = m.replyTo ? linesById[m.replyTo.id] : undefined;
+                  const replyPresented = m.replyTo && !m.replyTo.deleted
+                    ? presentBubble({
+                        body: m.replyTo.body,
+                        translation: m.replyTo.translation,
+                        bodyLang: m.replyTo.bodyLang,
+                        nativeLang,
+                        toLang,
+                        forcedTo: replyForced?.to,
+                        forcedNative: replyForced?.native,
+                      })
+                    : null;
                   const replyName = m.replyTo
                     ? m.replyTo.senderId === user?.id
                       ? 'You'
@@ -1053,30 +1274,44 @@ export default function MessagesPage() {
                   return (
                     <div
                       key={m.id}
-                      className={cx('group flex flex-col gap-1', m.mine ? 'items-end' : 'items-start')}
+                      className={cx('group flex w-full flex-col gap-1', mine ? 'items-end' : 'items-start')}
                     >
-                      <div className={cx('flex items-center gap-1 max-w-[78%]', m.mine ? 'flex-row-reverse' : 'flex-row')}>
+                      <div className={cx('flex items-end gap-1.5 max-w-[min(86%,32rem)]', mine && 'flex-row-reverse')}>
+                        {!mine && (
+                          <button
+                            type="button"
+                            className="hidden sm:block mb-0.5"
+                            onClick={() => openPeerProfile(detail.peer?.id)}
+                            aria-label={detail.peer?.displayName ?? 'Learner'}
+                          >
+                            <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={28} />
+                          </button>
+                        )}
                         <div
                           className={cx(
-                            'px-3.5 py-3 rounded-2xl text-[15px] leading-5',
+                            'w-fit max-w-full px-3.5 py-2.5 text-[15px] leading-5 shadow-sm',
                             m.deleted
-                              ? 'bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic'
-                              : m.mine
-                                ? 'bg-[#2107aa] text-white rounded-br-sm'
-                                : 'bg-white border border-[#e5e7eb] text-gray-900 rounded-bl-sm',
+                              ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic shadow-none'
+                              : mine
+                                ? 'rounded-2xl rounded-br-md bg-[#7f22fe] text-white'
+                                : 'rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-gray-900',
                           )}
                         >
                           {m.replyTo && !m.deleted && (
                             <div
                               className={cx(
                                 'mb-2 pl-2 border-l-2 text-[12px] leading-4',
-                                m.mine ? 'border-white/50 text-white/80' : 'border-[#7008e7] text-[#6a7282]',
+                                mine ? 'border-white/50 text-white/80' : 'border-[#7008e7] text-[#6a7282]',
                               )}
                             >
-                              <div className={cx('font-semibold', m.mine ? 'text-white' : 'text-[#7008e7]')}>
+                              <div className={cx('font-semibold', mine ? 'text-white' : 'text-[#7008e7]')}>
                                 {replyName}
                               </div>
-                              <div className="truncate">{messageSnippet(m.replyTo)}</div>
+                              <div className="line-clamp-2 break-words">
+                                {replyPresented
+                                  ? (replyPresented.primary || messageSnippet(m.replyTo))
+                                  : messageSnippet(m.replyTo)}
+                              </div>
                             </div>
                           )}
                           {m.deleted ? (
@@ -1106,7 +1341,7 @@ export default function MessagesPage() {
                                   }}
                                   className={cx(
                                     'italic text-[13px] mt-1',
-                                    m.mine ? 'text-white/80' : 'text-[#6a7282]',
+                                    mine ? 'text-white/80' : 'text-[#6a7282]',
                                   )}
                                 />
                               ) : null}
@@ -1114,13 +1349,12 @@ export default function MessagesPage() {
                           )}
                         </div>
                         {!m.deleted && (
-                          <div className="relative shrink-0">
+                          <div className="relative shrink-0 self-center">
                             <button
                               type="button"
                               className={cx(
-                                'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] hover:bg-[#eef2f7] hover:text-[#4a5565]',
-                                'opacity-100 md:opacity-0 md:group-hover:opacity-100',
-                                menuId === m.id && 'opacity-100 bg-[#eef2f7] text-[#4a5565]',
+                                'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] bg-white/80 border border-[#e5e7eb] shadow-sm hover:bg-white hover:text-[#4a5565] cursor-pointer',
+                                menuId === m.id && 'bg-white text-[#4a5565] border-[#c4b4ff]',
                               )}
                               aria-label="Message actions"
                               onClick={() => setMenuId((id) => (id === m.id ? null : m.id))}
@@ -1137,32 +1371,35 @@ export default function MessagesPage() {
                                 />
                                 <div
                                   className={cx(
-                                    'absolute z-30 mt-1 min-w-[132px] rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg',
-                                    m.mine ? 'right-0' : 'left-0',
+                                    'absolute z-30 bottom-8 min-w-[148px] rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg',
+                                    mine ? 'right-0' : 'left-0',
                                   )}
                                 >
                                   <button
                                     type="button"
-                                    className="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff]"
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
                                     onClick={() => startReply(m)}
                                   >
+                                    <CornerUpLeft className="w-3.5 h-3.5 text-[#7008e7]" />
                                     Reply
                                   </button>
                                   {canEditMessage(m) && (
                                     <button
                                       type="button"
-                                      className="w-full px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff]"
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
                                       onClick={() => startEdit(m)}
                                     >
+                                      <Pencil className="w-3.5 h-3.5 text-[#6a7282]" />
                                       Edit
                                     </button>
                                   )}
-                                  {m.mine && (
+                                  {mine && (
                                     <button
                                       type="button"
-                                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 cursor-pointer"
                                       onClick={() => void deleteMessage(m)}
                                     >
+                                      <Trash2 className="w-3.5 h-3.5" />
                                       Delete
                                     </button>
                                   )}
@@ -1172,10 +1409,10 @@ export default function MessagesPage() {
                           </div>
                         )}
                       </div>
-                      <span className="text-[10px] text-[#99a1af] inline-flex items-center gap-1">
+                      <span className="text-[10px] text-[#99a1af] inline-flex items-center gap-1 px-1">
                         {formatTime(m.createdAt)}
                         {m.editedAt && !m.deleted ? ' · edited' : ''}
-                        {m.mine && !m.deleted && (
+                        {mine && !m.deleted && (
                           m.status === 'sending' ? (
                             <Clock className="w-3 h-3 animate-pulse" />
                           ) : m.status === 'failed' ? (
@@ -1192,8 +1429,8 @@ export default function MessagesPage() {
                 })
               )}
               {detail.peer?.typing && (
-                <div className="flex items-start">
-                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-sm bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold">
+                <div className="flex justify-start">
+                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold shadow-sm">
                     typing…
                   </div>
                 </div>
@@ -1201,45 +1438,14 @@ export default function MessagesPage() {
               <div ref={threadEndRef} />
             </div>
 
-            {selectedWord && (
-              <div className="mx-5 mb-2 rounded-2xl border border-[#e5e7eb] bg-white p-4 shadow-sm shrink-0">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-[22px] font-extrabold text-[#7008e7] leading-7">
-                      {lookup?.translation || selectedWord}
-                    </p>
-                    {lookup?.translation && !sameChatText(lookup.lemma || selectedWord, lookup.translation) && (
-                      <p className="text-sm text-[#6a7282] mt-0.5">{lookup.lemma || selectedWord}</p>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={closeLookup}
-                    className="text-[#99a1af] hover:text-gray-700"
-                    aria-label="Close lookup"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
+            {selectedWord && !isXl ? (
+              <div className="absolute inset-0 z-40 flex justify-end bg-black/30">
+                <button type="button" className="flex-1 h-full cursor-default" aria-label="Close word meaning" onClick={closeLookup} />
+                <div className="h-full w-full max-w-[380px] bg-white shadow-2xl">
+                  {wordPanel}
                 </div>
-                {lookupLoading && <p className="text-sm text-[#99a1af] mt-2">Looking up…</p>}
-                {lookupError && <p className="text-sm text-red-600 mt-2">{lookupError}</p>}
-                {lookup?.partOfSpeech && (
-                  <p className="text-xs text-[#99a1af] mt-2">{lookup.partOfSpeech}</p>
-                )}
-                {lookup?.grammarNote && (
-                  <p className="text-sm text-[#4a5565] mt-2">{lookup.grammarNote}</p>
-                )}
-                {savedMsg && <p className="text-sm text-[#047857] mt-2">{savedMsg}</p>}
-                <button
-                  type="button"
-                  disabled={lookupLoading || !lookup?.translation}
-                  onClick={() => void saveWord()}
-                  className="mt-3 w-full h-10 rounded-xl bg-[#7008e7] text-white text-sm font-bold disabled:opacity-40 hover:bg-[#5b07c4]"
-                >
-                  Save to vocabulary
-                </button>
               </div>
-            )}
+            ) : null}
 
             <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
               {(replyTo || editing) && (
@@ -1279,7 +1485,7 @@ export default function MessagesPage() {
                     placeholder={editing ? 'Edit message...' : 'Type a message...'}
                     className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder:text-[#99a1af]"
                   />
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#e0f2fe] text-[#0369a1]">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#f3f4f6] text-[#4a5565]">
                     {nativeLang.slice(0, 2)}
                   </span>
                 </div>
@@ -1298,6 +1504,12 @@ export default function MessagesPage() {
           </>
         )}
       </section>
+
+      {selectedWord && isXl ? (
+        <aside className="w-[min(380px,32vw)] shrink-0 border-l border-[#e4e7ec] bg-white min-h-0 hidden xl:flex flex-col">
+          {wordPanel}
+        </aside>
+      ) : null}
 
       <PeerProfileModal
         peerId={profilePeerId}

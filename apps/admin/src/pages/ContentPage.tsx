@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { BookOpen, Pencil, Plus, Trash2 } from 'lucide-react';
+import { BookOpen, Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { LibraryPreviewModal, type LibraryPreviewItem } from '../components/LibraryPreviewModal';
 import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { APP_LANGUAGES, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
@@ -21,6 +22,10 @@ interface CurriculumItem {
   priceUsd: number;
   priceUzs?: number;
   salesCount: number;
+  author?: string | null;
+  subtitle?: string | null;
+  description?: string | null;
+  coverImageKey?: string | null;
 }
 
 interface LicenseRow {
@@ -127,6 +132,7 @@ export default function ContentPage() {
   // 403 for them. Track that separately so the moderation queue still renders instead of
   // the whole page getting stuck on a permissions error.
   const [catalogForbidden, setCatalogForbidden] = useState(false);
+  const [previewItem, setPreviewItem] = useState<LibraryPreviewItem | null>(null);
 
   const loadCurriculum = useCallback(async () => {
     setError(null);
@@ -452,6 +458,15 @@ export default function ContentPage() {
                     <button
                       type="button"
                       className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      aria-label="Preview in learner library"
+                      title="Preview in learner library"
+                      onClick={() => setPreviewItem(item)}
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
                       aria-label="Edit"
                       onClick={() => navigate(`/content/${item.id}/edit`)}
                     >
@@ -503,6 +518,10 @@ export default function ContentPage() {
           <Button variant="secondary" onClick={() => navigate('/import-pricing')}>Open Import & Pricing</Button>
         </div>
       )}
+
+      {previewItem ? (
+        <LibraryPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
+      ) : null}
     </div>
   );
 }

@@ -60,6 +60,7 @@ import app.gotcha.android.data.model.ImportApplyRequest
 import app.gotcha.android.data.model.ImportApplyResponse
 import app.gotcha.android.data.model.ImportCancelRequest
 import app.gotcha.android.data.model.ImportCancelResponse
+import app.gotcha.android.data.model.CatalogCheckoutResponse
 import app.gotcha.android.data.model.ImportCheckoutRequest
 import app.gotcha.android.data.model.ImportCheckoutResponse
 import app.gotcha.android.data.model.ImportPasteRequest
@@ -231,6 +232,9 @@ interface GotchaApi {
 
     @POST("billing/imports/checkout")
     suspend fun importCheckout(@Body body: ImportCheckoutRequest): ImportCheckoutResponse
+
+    @POST("billing/content/{id}/checkout")
+    suspend fun catalogCheckout(@Path("id") id: String): CatalogCheckoutResponse
 
     @GET("billing/imports/payments/{id}")
     suspend fun importPayment(@Path("id") id: String): ImportPaymentStatus

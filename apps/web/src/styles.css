@@ -18,8 +18,9 @@
   --color-success: #10b981;
   --color-star: #f59e0b;
   --color-lavender: #ddd6ff;
-  --font-family-brand: 'Bagel Fat One', cursive;
-  --font-family-body: 'Inter', system-ui, sans-serif;
+  --font-family-brand: 'Manrope', sans-serif;
+  --font-family-heading: 'Manrope', sans-serif;
+  --font-family-body: 'Geist', system-ui, sans-serif;
 }
 
 :root {
@@ -60,7 +61,7 @@
 
   body {
     margin: 0;
-    font-family: Inter, system-ui, sans-serif;
+    font-family: Geist, system-ui, sans-serif;
     color: var(--text);
     background: var(--surface);
     -webkit-font-smoothing: antialiased;
@@ -87,4 +88,40 @@
   display: block;
   flex-shrink: 0;
   object-fit: contain;
+}
+
+.landing-catalog-track {
+  display: flex;
+  gap: 24px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding-bottom: 4px;
+}
+
+.landing-catalog-track::-webkit-scrollbar {
+  display: none;
+}
+
+@media (pointer: coarse) {
+  .landing-catalog-track {
+    scrollbar-width: thin;
+  }
+
+  .landing-catalog-track::-webkit-scrollbar {
+    display: block;
+    height: 6px;
+  }
+}
+
+.landing-catalog-card {
+  flex: 0 0 220px;
+  width: 220px;
+  scroll-snap-align: start;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }

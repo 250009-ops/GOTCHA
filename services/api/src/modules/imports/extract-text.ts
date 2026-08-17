@@ -15,7 +15,13 @@ import {
   splitAccurateChapters,
   splitByOutlineTitles,
 } from './chapter-split';
-import { gutenbergPlainTextUrls, parseGutenbergId } from './gutenberg';
+import {
+  gutenbergHtmlBookUrls,
+  gutenbergPlainTextUrls,
+  isGutenbergIllustratedHtmlUrl,
+  looksLikeGutenbergLandingPage,
+  parseGutenbergId,
+} from './gutenberg';
 
 export const MIN_IMPORT_WORDS = 50;
 /** Paste / extracted text hard cap — long novels and multi-volume books. */
@@ -30,8 +36,17 @@ const IMPORT_USER_AGENT =
   'GotchaImporter/2.1 (+https://gotcha.app; contact=imports@gotcha.app) Mozilla/5.0 (compatible; AppleWebKit/537.36; Chrome/122.0.0.0 Safari/537.36)';
 /** OCR is expensive; keep a tight cap even when text-layer PDFs may be huge. */
 export const OCR_MAX_PAGES = 200;
-const URL_FETCH_TIMEOUT_MS = 120_000;
-const URL_MAX_BYTES = 25 * 1024 * 1024;
+const URL_FETCH_TIMEOUT_MS = 180_000;
+const URL_MAX_BYTES = 40 * 1024 * 1024;
+/** Gutenberg mirrors: fail fast instead of waiting 3 minutes per 404/hang. */
+const GUTENBERG_FETCH_TIMEOUT_MS = 15_000;
+/** Cheerio/JSDOM on illustrated HTML can OOM the API process (502s, stuck imports). */
+const HTML_PARSE_MAX_CHARS = 2_500_000;
+const GUTENBERG_TXT_MAX_BYTES = 8 * 1024 * 1024;
+const GUTENBERG_HTML_MAX_BYTES = 6 * 1024 * 1024;
+const GUTENBERG_ILLUSTRATED_HTML_MAX_BYTES = 2 * 1024 * 1024;
+/** Generic web pages — do not buffer tens of MB into cheerio. */
+const GENERIC_HTML_MAX_BYTES = 8 * 1024 * 1024;
 /** OCR pages in batches to bound peak memory (screenshots + tesseract). */
 export const OCR_BATCH_SIZE = 15;
 /** Render scale for OCR (~144 DPI at 2.0 × 72). Higher = better Latin accuracy, more RAM. */
@@ -243,12 +258,18 @@ function looksLikeLongFormBook(html: string, url: string): boolean {
   return headingHits >= 20 || chapterHits >= 8;
 }
 
+function boundHtmlForParse(html: string): string {
+  if (html.length <= HTML_PARSE_MAX_CHARS) return html;
+  return html.slice(0, HTML_PARSE_MAX_CHARS);
+}
+
 function htmlToReadable(html: string, url: string): { text: string; title?: string } {
+  const bounded = boundHtmlForParse(html);
   let readability: { text: string; title?: string; words: number } | null = null;
-  const preferFullBook = looksLikeLongFormBook(html, url);
+  const preferFullBook = looksLikeLongFormBook(bounded, url);
   try {
     if (!preferFullBook) {
-      const dom = new JSDOM(html, { url });
+      const dom = new JSDOM(bounded, { url });
       const reader = new Readability(dom.window.document);
       const article = reader.parse();
       // Prefer Readability's HTML fragment so tables/images can be converted properly.
@@ -268,7 +289,7 @@ function htmlToReadable(html: string, url: string): { text: string; title?: stri
     // fall through to cheerio path
   }
 
-  const fromRoot = extractFromContentRoots(html);
+  const fromRoot = extractFromContentRoots(bounded);
 
   // Readability often stops early on multi-section builders (Weebly parallax breaks, etc.).
   // Prefer a known content root when it clearly continues the same article further.
@@ -288,9 +309,9 @@ function htmlToReadable(html: string, url: string): { text: string; title?: stri
     return { text: readability.text, title: readability.title };
   }
 
-  const $ = cheerio.load(html);
+  const $ = cheerio.load(bounded);
   const title = pageTitleFromHtml($);
-  const mainHtml = $('body').html() || html;
+  const mainHtml = $('body').html() || bounded;
   const fromBody = htmlToCleanText(mainHtml);
   const bodyWords = countWords(fromBody);
 
@@ -440,13 +461,84 @@ async function extractWikipediaViaApi(
   return chaptersToDocument(chapters, title || displayTitle);
 }
 
-async function readUrlBody(url: string, accept: string): Promise<{ body: string; contentType: string; finalUrl: string }> {
+function decodeFetchedText(buf: Buffer, charsetHint: string): string {
+  const hint = charsetHint.toLowerCase().replace(/['"]/g, '');
+  if (
+    hint.includes('iso-8859') ||
+    hint.includes('latin') ||
+    hint.includes('windows-1252') ||
+    hint.includes('cp1252')
+  ) {
+    return buf.toString('latin1');
+  }
+  const utf8 = buf.toString('utf8');
+  const bad = (utf8.match(/\uFFFD/g) ?? []).length;
+  if (bad > 40 && bad / Math.max(utf8.length, 1) > 0.002) {
+    return buf.toString('latin1');
+  }
+  return utf8;
+}
+
+type ReadUrlOptions = {
+  timeoutMs?: number;
+  maxBytes?: number;
+};
+
+function tooLargeMessage(bytes: number, maxBytes: number): Error {
+  return new Error(
+    `This page is too large to import (${Math.round(bytes / (1024 * 1024))} MB). Maximum is ${Math.round(maxBytes / (1024 * 1024))} MB.`,
+  );
+}
+
+async function readResponseBounded(response: Response, maxBytes: number): Promise<Buffer> {
+  const declared = Number(response.headers.get('content-length') || 0);
+  if (declared > maxBytes) throw tooLargeMessage(declared, maxBytes);
+
+  const stream = response.body;
+  if (!stream) {
+    const buf = Buffer.from(await response.arrayBuffer());
+    if (buf.length > maxBytes) throw tooLargeMessage(buf.length, maxBytes);
+    return buf;
+  }
+
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.length) continue;
+      size += value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => undefined);
+        throw tooLargeMessage(size, maxBytes);
+      }
+      chunks.push(value);
+    }
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {
+      // already cancelled
+    }
+  }
+  return Buffer.concat(chunks, size);
+}
+
+async function readUrlBody(
+  url: string,
+  accept: string,
+  options: ReadUrlOptions = {},
+): Promise<{ body: string; contentType: string; finalUrl: string }> {
+  const timeoutMs = options.timeoutMs ?? URL_FETCH_TIMEOUT_MS;
+  const maxBytes = options.maxBytes ?? URL_MAX_BYTES;
   let response: Response;
   try {
     response = await fetch(url, {
       headers: fetchHeaders(accept),
       redirect: 'follow',
-      signal: AbortSignal.timeout(URL_FETCH_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
     throw mapFetchError(err);
@@ -454,21 +546,12 @@ async function readUrlBody(url: string, accept: string): Promise<{ body: string;
   if (!response.ok) {
     throw mapFetchError(undefined, response.status);
   }
-  const length = Number(response.headers.get('content-length') || 0);
-  if (length > URL_MAX_BYTES) {
-    throw new Error(
-      `This file is too large to import (${Math.round(length / (1024 * 1024))} MB). Maximum is ${Math.round(URL_MAX_BYTES / (1024 * 1024))} MB.`,
-    );
-  }
-  const body = await response.text();
-  if (body.length > URL_MAX_BYTES) {
-    throw new Error(
-      `This page is too large to import (${Math.round(body.length / (1024 * 1024))} MB). Maximum is ${Math.round(URL_MAX_BYTES / (1024 * 1024))} MB.`,
-    );
-  }
+  const buf = await readResponseBounded(response, maxBytes);
+  const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
+  const charset = contentType.match(/charset=([^\s;]+)/i)?.[1] ?? '';
   return {
-    body,
-    contentType: (response.headers.get('content-type') ?? '').toLowerCase(),
+    body: decodeFetchedText(buf, charset),
+    contentType,
     finalUrl: response.url || url,
   };
 }
@@ -476,13 +559,44 @@ async function readUrlBody(url: string, accept: string): Promise<{ body: string;
 async function extractGutenbergPlainText(id: string): Promise<ExtractedDocument | null> {
   for (const txtUrl of gutenbergPlainTextUrls(id)) {
     try {
-      const { body } = await readUrlBody(txtUrl, 'text/plain,*/*;q=0.8');
+      const { body } = await readUrlBody(txtUrl, 'text/plain,*/*;q=0.8', {
+        timeoutMs: GUTENBERG_FETCH_TIMEOUT_MS,
+        maxBytes: GUTENBERG_TXT_MAX_BYTES,
+      });
       const text = clampText(cleanImportPlainText(body));
       if (countWords(text) < MIN_IMPORT_WORDS) continue;
       const chapters = splitAccurateChapters(text, titleFromUrl(txtUrl));
       return chaptersToDocument(chapters, titleFromUrl(txtUrl));
     } catch {
       // Try the next Gutenberg text mirror.
+    }
+  }
+  return null;
+}
+
+async function extractGutenbergHtmlBook(id: string): Promise<ExtractedDocument | null> {
+  for (const htmlUrl of gutenbergHtmlBookUrls(id)) {
+    const illustrated = isGutenbergIllustratedHtmlUrl(htmlUrl);
+    try {
+      const { body, finalUrl } = await readUrlBody(
+        htmlUrl,
+        'text/html,application/xhtml+xml,*/*;q=0.8',
+        {
+          timeoutMs: GUTENBERG_FETCH_TIMEOUT_MS,
+          maxBytes: illustrated ? GUTENBERG_ILLUSTRATED_HTML_MAX_BYTES : GUTENBERG_HTML_MAX_BYTES,
+        },
+      );
+      if (illustrated && body.length > HTML_PARSE_MAX_CHARS) continue;
+      if (looksLikeGutenbergLandingPage(body, countWords(htmlToCleanText(boundHtmlForParse(body))))) {
+        continue;
+      }
+      const { text, title } = htmlToReadable(body, finalUrl);
+      const cleaned = clampText(cleanImportPlainText(text));
+      if (countWords(cleaned) < 2_000) continue;
+      const chapters = splitAccurateChapters(cleaned, title || titleFromUrl(htmlUrl));
+      return chaptersToDocument(chapters, title || titleFromUrl(htmlUrl));
+    } catch {
+      // Try the next HTML book mirror (compact before illustrated).
     }
   }
   return null;
@@ -495,6 +609,13 @@ export async function extractTextFromUrl(url: string): Promise<ExtractedDocument
     if (fromTxt && countWords(fromTxt.text) >= MIN_IMPORT_WORDS) {
       return fromTxt;
     }
+    const fromHtml = await extractGutenbergHtmlBook(gutenbergId);
+    if (fromHtml && countWords(fromHtml.text) >= MIN_IMPORT_WORDS) {
+      return fromHtml;
+    }
+    throw new Error(
+      'Could not download the full Project Gutenberg book. Use the Plain Text UTF-8 file URL, or paste the text.',
+    );
   }
 
   const wiki = parseWikipediaUrl(url);
@@ -510,6 +631,7 @@ export async function extractTextFromUrl(url: string): Promise<ExtractedDocument
   const { body, contentType, finalUrl } = await readUrlBody(
     url,
     'text/html,application/xhtml+xml,text/plain;q=0.9,*/*;q=0.8',
+    { maxBytes: GENERIC_HTML_MAX_BYTES },
   );
 
   if (contentType.includes('text/plain') || /\.txt(\?|$)/i.test(url)) {

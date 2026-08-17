@@ -66,9 +66,23 @@ export default function LearnerShell() {
     return location.pathname.startsWith(path);
   };
 
+  const todayMinutes = stats?.todayMinutes ?? 0;
+  const dailyGoal = Math.max(1, stats?.dailyGoalMinutes ?? 15);
+  const goalPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
+
   useEffect(() => {
     document.documentElement.lang = user?.uiLanguage || 'en';
   }, [user?.uiLanguage]);
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1024px)');
+    const sync = () => {
+      if (!mq.matches) setExpanded(false);
+    };
+    sync();
+    mq.addEventListener('change', sync);
+    return () => mq.removeEventListener('change', sync);
+  }, []);
 
   useEffect(() => {
     if (!user) return;
@@ -110,7 +124,7 @@ export default function LearnerShell() {
         {!collapsed && <span className="truncate">{item.label}</span>}
         {item.path === '/app/notifications' && unreadNotifs > 0 && (
           <span className={cn(
-            'min-w-5 h-5 px-1 rounded-full bg-[#f59e0b] text-[10px] font-bold text-white grid place-items-center',
+            'min-w-5 h-5 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center',
             collapsed ? 'absolute top-1 right-1' : 'ml-auto',
           )}>
             {unreadNotifs > 9 ? '9+' : unreadNotifs}
@@ -146,7 +160,7 @@ export default function LearnerShell() {
         <div
           className={cn(
             'shrink-0 relative z-20 h-full transition-[width] duration-200',
-            expanded ? 'w-60' : 'w-[3.75rem]',
+            expanded ? 'w-60' : 'w-14',
           )}
         >
           <aside className="h-full w-full bg-[#0E0B2A] flex flex-col overflow-hidden">
@@ -212,7 +226,7 @@ export default function LearnerShell() {
           <button
             type="button"
             aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
-            className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-[#7f22fe] shadow-sm z-30 flex"
+            className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-[#7f22fe] shadow-sm z-30 hidden lg:flex"
             onClick={() => setExpanded((e) => !e)}
           >
             {expanded ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -220,15 +234,31 @@ export default function LearnerShell() {
         </div>
 
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
-          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center gap-3 sm:gap-4 px-3 sm:px-4 lg:px-5 z-30 shrink-0 overflow-visible">
-            <div className="flex-1 min-w-0 max-w-[512px]">
+          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
+            <div className="w-full max-w-[400px] min-w-0">
               <GlobalSearch />
             </div>
 
-            <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
-              <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1.5">
+            <div className="flex items-center h-9 gap-2 sm:gap-2.5 shrink-0">
+              <div className="h-9 flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5">
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />
-                <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-4">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
+                <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-none">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
+              </div>
+
+              <div
+                className="hidden sm:flex h-9 items-center gap-1.5 bg-[#f0fdf4] border border-[#bbf7d0] rounded-full px-2.5"
+                title={`Daily reading goal: ${todayMinutes} / ${dailyGoal} min`}
+              >
+                <span className="relative size-3.5 shrink-0">
+                  <span className="absolute inset-0 rounded-full border-2 border-[#bbf7d0]" />
+                  <span
+                    className="absolute inset-0 rounded-full border-2 border-[#16a34a] border-l-transparent border-b-transparent"
+                    style={{ transform: `rotate(${Math.round((goalPct / 100) * 360)}deg)` }}
+                  />
+                </span>
+                <span className="text-xs font-bold text-[#15803d] tabular-nums leading-none">
+                  {todayMinutes}/{dailyGoal}m
+                </span>
               </div>
 
               <button
@@ -239,7 +269,7 @@ export default function LearnerShell() {
               >
                 <Bell className="w-4 h-4" />
                 {unreadNotifs > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#7f22fe] text-[10px] font-bold text-white grid place-items-center">
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center">
                     {unreadNotifs > 9 ? '9+' : unreadNotifs}
                   </span>
                 )}
@@ -250,7 +280,7 @@ export default function LearnerShell() {
                   <button
                     type="button"
                     aria-label="Account menu"
-                    className="rounded-full shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.1)]"
+                    className="size-9 rounded-full grid place-items-center shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.1)]"
                   >
                     <UserAvatar
                       name={user?.displayName ?? user?.email}
@@ -285,7 +315,12 @@ export default function LearnerShell() {
             </div>
           </header>
 
-          <main className="flex-1 min-h-0 min-w-0 overflow-y-auto relative z-0">
+          <main
+            className={cn(
+              'flex-1 min-h-0 min-w-0 relative z-0',
+              location.pathname.startsWith('/app/messages') ? 'overflow-hidden' : 'overflow-y-auto',
+            )}
+          >
             <Outlet />
           </main>
         </div>

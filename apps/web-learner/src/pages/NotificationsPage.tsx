@@ -65,13 +65,23 @@ export function notificationHref(href?: string | null) {
   const raw = (href ?? '').trim();
   if (!raw) return '/app';
   if (raw.startsWith('/app')) return raw;
-  const route = raw.replace(/^\//, '');
-  if (route === 'streak' || route === 'daily_goal') return '/app/stats';
-  if (route === 'vocab_review' || route === 'words') return '/app/vocabulary';
-  if (route === 'library') return '/app/browse';
-  if (route === 'messages') return '/app/messages';
-  if (route.startsWith('chat/')) return '/app/messages';
-  if (route.startsWith('content/')) return `/app/read/${route.slice('content/'.length)}`;
+  const stripped = raw.replace(/^\//, '');
+  const qIndex = stripped.indexOf('?');
+  const path = qIndex >= 0 ? stripped.slice(0, qIndex) : stripped;
+  const query = qIndex >= 0 ? stripped.slice(qIndex + 1) : '';
+  const params = new URLSearchParams(query);
+  const itemId = params.get('item') || params.get('id');
+  if (path === 'streak' || path === 'daily_goal') return '/app/stats';
+  if (path === 'vocab_review' || path === 'words') return '/app/vocabulary';
+  if (path === 'library' || path === 'home') {
+    return itemId ? `/app?item=${encodeURIComponent(itemId)}` : '/app';
+  }
+  if (path.startsWith('chat/')) return '/app/messages';
+  if (path === 'messages') return '/app/messages';
+  if (path.startsWith('content/')) {
+    const id = path.slice('content/'.length).split('/')[0];
+    return id ? `/app?item=${encodeURIComponent(id)}` : '/app';
+  }
   return '/app';
 }
 

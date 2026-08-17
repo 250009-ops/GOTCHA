@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AppLanguage } from '@prisma/client';
+import { AppLanguage, Prisma } from '@prisma/client';
+import {
+  isFigmaSampleDisplayName,
+  isSyntheticUserEmail,
+  liveMessagingPeerWhere,
+} from '../../common/production-users';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EditMessageDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
 
@@ -18,6 +23,8 @@ const messageInclude = {
     select: {
       id: true,
       body: true,
+      translation: true,
+      bodyLang: true,
       senderId: true,
       deletedAt: true,
     },
@@ -32,7 +39,19 @@ type PeerUser = {
   nativeLanguage: AppLanguage;
   lastSeenAt?: Date | null;
   targetLanguages: Array<{ targetLanguage: AppLanguage; isPrimary: boolean; cefrLevel: string }>;
+  adminProfile?: { userId: string } | null;
 };
+
+function isLiveMessagingPeer(user: {
+  email: string;
+  displayName: string | null;
+  adminProfile?: { userId: string } | null;
+}) {
+  if (user.adminProfile) return false;
+  if (isSyntheticUserEmail(user.email)) return false;
+  if (isFigmaSampleDisplayName(user.displayName)) return false;
+  return true;
+}
 
 @Injectable()
 export class MessagingService {
@@ -106,7 +125,14 @@ export class MessagingService {
       deletedAt?: Date | null;
       replyToId?: string | null;
       sender?: { id: string; displayName: string | null; avatarUrl: string | null };
-      replyTo?: { id: string; body: string; senderId: string; deletedAt: Date | null } | null;
+      replyTo?: {
+        id: string;
+        body: string;
+        translation?: string | null;
+        bodyLang?: AppLanguage | null;
+        senderId: string;
+        deletedAt: Date | null;
+      } | null;
     },
     userId: string,
     peerLastReadAt?: Date | null,
@@ -129,6 +155,8 @@ export class MessagingService {
         ? {
             id: m.replyTo.id,
             body: m.replyTo.deletedAt ? '' : m.replyTo.body,
+            translation: m.replyTo.deletedAt ? null : m.replyTo.translation,
+            bodyLang: m.replyTo.bodyLang,
             senderId: m.replyTo.senderId,
             deleted: !!m.replyTo.deletedAt,
           }
@@ -165,6 +193,7 @@ export class MessagingService {
             user: {
               include: {
                 targetLanguages: true,
+                adminProfile: { select: { userId: true } },
               },
             },
           },
@@ -179,8 +208,12 @@ export class MessagingService {
     });
 
     const query = q?.trim().toLowerCase();
+    const liveRows = rows.filter((c) => {
+      const peer = c.participants.find((p) => p.userId !== userId)?.user;
+      return !peer || isLiveMessagingPeer(peer);
+    });
     const withUnread = await Promise.all(
-      rows.map(async (c) => {
+      liveRows.map(async (c) => {
         const peerPart = c.participants.find((p) => p.userId !== userId);
         const me = c.participants.find((p) => p.userId === userId);
         const peer = peerPart ? this.peerSummary(peerPart.user) : null;
@@ -273,9 +306,9 @@ export class MessagingService {
     }
     const peer = await this.prisma.user.findFirst({
       where: { id: dto.peerUserId, deletedAt: null },
-      include: { targetLanguages: true },
+      include: { targetLanguages: true, adminProfile: { select: { userId: true } } },
     });
-    if (!peer) throw new NotFoundException('User not found');
+    if (!peer || !isLiveMessagingPeer(peer)) throw new NotFoundException('User not found');
 
     const key = this.pairKey(userId, dto.peerUserId);
     let conversation = await this.prisma.conversation.findUnique({
@@ -457,7 +490,7 @@ export class MessagingService {
       const peers = await this.prisma.user.findMany({
         where: {
           id: { not: userId },
-          deletedAt: null,
+          ...liveMessagingPeerWhere(),
           readingProgress: { some: {} },
         },
         include: {
@@ -481,7 +514,7 @@ export class MessagingService {
     const peers = await this.prisma.user.findMany({
       where: {
         id: { not: userId },
-        deletedAt: null,
+        ...liveMessagingPeerWhere(),
         readingProgress: { some: { contentId: { in: contentIds } } },
       },
       include: {
@@ -516,26 +549,29 @@ export class MessagingService {
       contentIds = myProgress.map((p) => p.contentId);
     }
 
+    const searchAnd: Prisma.UserWhereInput[] = [];
+    if (query) {
+      searchAnd.push({
+        OR: [
+          { displayName: { contains: query, mode: 'insensitive' } },
+          { email: { contains: query, mode: 'insensitive' } },
+        ],
+      });
+    }
+    if (lang) {
+      searchAnd.push({
+        OR: [
+          { nativeLanguage: lang as AppLanguage },
+          { targetLanguages: { some: { targetLanguage: lang as AppLanguage } } },
+        ],
+      });
+    }
+
     const peers = await this.prisma.user.findMany({
       where: {
         id: { not: userId },
-        deletedAt: null,
-        ...(query
-          ? {
-              OR: [
-                { displayName: { contains: query, mode: 'insensitive' } },
-                { email: { contains: query, mode: 'insensitive' } },
-              ],
-            }
-          : {}),
-        ...(lang
-          ? {
-              OR: [
-                { nativeLanguage: lang as AppLanguage },
-                { targetLanguages: { some: { targetLanguage: lang as AppLanguage } } },
-              ],
-            }
-          : {}),
+        ...liveMessagingPeerWhere(),
+        AND: searchAnd,
         ...(sameReadings && contentIds.length
           ? { readingProgress: { some: { contentId: { in: contentIds } } } }
           : {}),
@@ -565,6 +601,7 @@ export class MessagingService {
       where: { id: peerUserId, deletedAt: null },
       include: {
         targetLanguages: true,
+        adminProfile: { select: { userId: true } },
         preferences: true,
         readingProgress: {
           take: 1,
@@ -575,7 +612,7 @@ export class MessagingService {
         },
       },
     });
-    if (!peer) throw new NotFoundException('User not found');
+    if (!peer || !isLiveMessagingPeer(peer)) throw new NotFoundException('User not found');
 
     const [booksRead, wordsLearned, chats] = await Promise.all([
       this.prisma.readingProgress.count({

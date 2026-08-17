@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight, FileText, ImagePlus, Sparkles } from 'lucide-react';
+import { ChevronDown, ChevronRight, Eye, FileText, ImagePlus, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { LibraryPreviewModal } from '../components/LibraryPreviewModal';
 import { Button, Card, ErrorBlock, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { api, apiUpload } from '../lib/api';
 import { APP_LANGUAGES } from '../lib/utils';
@@ -55,6 +56,8 @@ export default function ContentEditorPage() {
   const [analyzing, setAnalyzing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(editing);
+  const [publishStatus, setPublishStatus] = useState('draft');
+  const [showLibraryPreview, setShowLibraryPreview] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -69,8 +72,10 @@ export default function ContentEditorPage() {
       contentType: string;
       isFree: boolean;
       priceUsd: number;
+      priceUzs?: number;
       sourceUrl?: string | null;
       coverImageKey?: string | null;
+      publishStatus?: string;
       chapters?: ChapterPreview[];
     }>(`/admin/content/${id}`)
       .then((item) => {
@@ -82,8 +87,9 @@ export default function ContentEditorPage() {
         setCefrLevel(item.cefrLevel);
         setContentType(item.contentType);
         setIsFree(item.isFree);
-        setPriceUsd(String(item.priceUsd ?? 0));
+        setPriceUsd(String(item.priceUzs ?? item.priceUsd ?? 0));
         setSourceUrl(item.sourceUrl ?? '');
+        setPublishStatus(item.publishStatus ?? 'draft');
         if (item.coverImageKey) setCoverPreview(coverSrc(item.coverImageKey));
         if (item.chapters?.length) {
           setPreview({
@@ -141,6 +147,11 @@ export default function ContentEditorPage() {
     e.preventDefault();
     setBusy(true);
     setError(null);
+    if (!isFree && Number(priceUsd || 0) < 500) {
+      setError('Paid books need a price of at least 500 soʻm (Atmos minimum).');
+      setBusy(false);
+      return;
+    }
     try {
       const payload = {
         title,
@@ -152,6 +163,7 @@ export default function ContentEditorPage() {
         contentType,
         isFree,
         priceUsd: isFree ? 0 : Number(priceUsd || 0),
+        priceUzs: isFree ? 0 : Number(priceUsd || 0),
         contentSource: 'public_domain',
         plainText: sourceMode === 'paste' ? plainText || undefined : undefined,
         sourceUrl: sourceMode === 'url' ? sourceUrl || undefined : undefined,
@@ -198,9 +210,16 @@ export default function ContentEditorPage() {
         title={editing ? 'Edit material' : 'New material'}
         subtitle="Add catalog details, then detect exact chapter names from the source (Gutenberg text, HTML headings, or the PDF outline). Pages stay word-count slices inside each chapter."
         actions={
-          <Button type="button" variant="secondary" onClick={() => navigate('/content')}>
-            Back to library
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {title.trim() ? (
+              <Button type="button" variant="secondary" onClick={() => setShowLibraryPreview(true)}>
+                <Eye className="size-4" /> Preview library
+              </Button>
+            ) : null}
+            <Button type="button" variant="secondary" onClick={() => navigate('/content')}>
+              Back to library
+            </Button>
+          </div>
         }
       />
       {error && <ErrorBlock message={error} />}
@@ -242,7 +261,21 @@ export default function ContentEditorPage() {
               </Select>
             </div>
             {!isFree && (
-              <Input type="number" min="0" step="1" value={priceUsd} onChange={(e) => setPriceUsd(e.target.value)} placeholder="Price (UZS)" />
+              <label className="block">
+                <span className="text-sm font-medium text-slate-600">Price (soʻm)</span>
+                <Input
+                  className="mt-1"
+                  type="number"
+                  min="500"
+                  step="1"
+                  value={priceUsd}
+                  onChange={(e) => setPriceUsd(e.target.value)}
+                  placeholder="e.g. 22000"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  Learners pay this amount via Atmos before they can open the book. Minimum 500 soʻm.
+                </p>
+              </label>
             )}
             <label className="block">
               <span className="text-sm font-medium text-slate-600">Cover image</span>
@@ -329,10 +362,21 @@ export default function ContentEditorPage() {
                 required={!editing && !preview}
               />
             )}
+            {sourceMode === 'url' && (
+              <p className="text-xs text-slate-500">
+                Large novels are fetched in full (plain text when available) and split on printed chapter headings. Detection can take up to a few minutes.
+              </p>
+            )}
             <div className="flex flex-wrap gap-2">
               <Button type="button" disabled={!canAnalyze || analyzing} onClick={() => void analyze()}>
                 <Sparkles className="size-4" />
-                {analyzing ? 'Detecting chapters…' : literary(contentType) ? 'Detect chapters' : 'Prepare body'}
+                {analyzing
+                  ? literary(contentType)
+                    ? 'Fetching and splitting chapters…'
+                    : 'Preparing body…'
+                  : literary(contentType)
+                    ? 'Detect chapters'
+                    : 'Prepare body'}
               </Button>
               <Button type="submit" disabled={busy}>
                 {busy ? 'Saving…' : editing ? 'Save changes' : 'Create draft'}
@@ -386,6 +430,26 @@ export default function ContentEditorPage() {
           </div>
         </Card>
       </form>
+
+      {showLibraryPreview ? (
+        <LibraryPreviewModal
+          item={{
+            id: id ?? 'preview-draft',
+            title: title.trim() || 'Untitled',
+            description: description || null,
+            author: author || null,
+            language,
+            cefrLevel,
+            contentType,
+            wordCount: preview?.wordCount ?? 0,
+            isFree,
+            priceUzs: Number(priceUsd) || 0,
+            publishStatus,
+            coverImageKey: coverPreview,
+          }}
+          onClose={() => setShowLibraryPreview(false)}
+        />
+      ) : null}
     </div>
   );
 }

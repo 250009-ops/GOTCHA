@@ -8,6 +8,7 @@ import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { resolveMediaUrl } from '../lib/media';
+import { formatUzs } from '../lib/importBilling';
 import { type ContentItem, gradientForId } from '../lib/types';
 
 const cefrStyle: Record<string, string> = {
@@ -62,17 +63,31 @@ function CefrBadge({ level }: { level: string }) {
   );
 }
 
-function ContentCard({ item, view = 'grid' }: { item: ContentItem; view?: 'grid' | 'list'; compact?: boolean }) {
+function ContentCard({
+  item,
+  view = 'grid',
+  highlighted = false,
+}: {
+  item: ContentItem;
+  view?: 'grid' | 'list';
+  compact?: boolean;
+  highlighted?: boolean;
+}) {
   const navigate = useNavigate();
   const isProg = (item.progressPct ?? 0) > 0;
   const subtitle = itemSubtitle(item);
+  const highlightClass = highlighted ? 'ring-2 ring-[#7008e7] ring-offset-2' : '';
 
   if (view === 'list') {
     return (
       <button
         type="button"
+        id={`catalog-item-${item.id}`}
         onClick={() => navigate(`/app/read/${item.id}`)}
-        className="w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 hover:border-violet-200 hover:shadow-sm hover:shadow-violet-100 transition-all text-left group"
+        className={cn(
+          'w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 hover:border-violet-200 hover:shadow-sm hover:shadow-violet-100 transition-all text-left group',
+          highlightClass,
+        )}
       >
         <CoverArt item={item} className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
@@ -92,6 +107,9 @@ function ContentCard({ item, view = 'grid' }: { item: ContentItem; view?: 'grid'
               {formatWordCount(item.wordCount)}
             </span>
             <span className="capitalize">{item.contentType.replace('_', ' ')}</span>
+            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
+              <span className="text-[#7008e7] font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
+            )}
             {isProg && <span className="text-[#7f22fe] font-medium">{Math.round(item.progressPct ?? 0)}% read</span>}
           </div>
           {isProg && (
@@ -108,8 +126,12 @@ function ContentCard({ item, view = 'grid' }: { item: ContentItem; view?: 'grid'
   return (
     <button
       type="button"
+      id={`catalog-item-${item.id}`}
       onClick={() => navigate(`/app/read/${item.id}`)}
-      className="bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full"
+      className={cn(
+        'bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full',
+        highlightClass,
+      )}
     >
       <div className="relative shrink-0 w-full aspect-[3/4]">
         <CoverArt item={item} className="absolute inset-0 w-full h-full" />
@@ -120,7 +142,14 @@ function ContentCard({ item, view = 'grid' }: { item: ContentItem; view?: 'grid'
             {item.contentType.replace('_', ' ')}
           </span>
         </div>
-        <div className="absolute top-2 right-2 text-lg leading-none drop-shadow">{langFlag[item.language] ?? '🌐'}</div>
+        <div className="absolute top-2 right-2 flex items-center gap-1">
+          {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
+            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-[#7008e7] shadow-sm">
+              {formatUzs(item.priceUzs ?? 0)}
+            </span>
+          )}
+          <span className="text-lg leading-none drop-shadow">{langFlag[item.language] ?? '🌐'}</span>
+        </div>
       </div>
       <div className="p-3 flex-1 flex flex-col min-h-0">
         <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-[#7008e7] transition-colors mb-1">{item.title}</div>
@@ -173,7 +202,11 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
             {itemSubtitle(item) && <div className="text-white/60 text-sm line-clamp-1">{itemSubtitle(item)}</div>}
           </div>
           <div className="flex items-center justify-between gap-3 sm:ml-4 sm:flex-col sm:items-end sm:gap-2 shrink-0">
-            <span className="text-white/90 font-bold text-xl sm:text-2xl tabular-nums">{item.progressPct ?? 0}%</span>
+            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+              <span className="text-white font-bold text-sm sm:text-base">{formatUzs(item.priceUzs ?? 0)}</span>
+            ) : (
+              <span className="text-white/90 font-bold text-xl sm:text-2xl tabular-nums">{item.progressPct ?? 0}%</span>
+            )}
             <Button
               size="sm"
               className="bg-white text-gray-900 hover:bg-white/90 rounded-xl h-8 px-4 text-xs font-semibold shadow-lg"
@@ -348,6 +381,18 @@ export default function LibraryPage() {
       ...(feed.featuredCollections?.flatMap((c) => c.items.map((i) => i.content).filter(Boolean)) ?? []),
     ]);
   }, [feed]);
+
+  const highlightId = searchParams.get('item');
+  const highlightedItem = useMemo(() => {
+    if (!highlightId) return null;
+    return uniqueItems.find((item) => item.id === highlightId) ?? null;
+  }, [highlightId, uniqueItems]);
+
+  useEffect(() => {
+    if (!highlightedItem || isBrowse) return;
+    const el = document.getElementById(`catalog-item-${highlightedItem.id}`);
+    el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlightedItem, isBrowse]);
 
   const browseBaseItems = useMemo(() => {
     if (!activeCollection) return uniqueItems;
@@ -533,6 +578,19 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {highlightedItem && (
+        <section className="space-y-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#7008e7]">New material</p>
+            <h2 className="text-gray-900 font-bold mt-0.5">{highlightedItem.title}</h2>
+            <p className="text-gray-400 text-sm">On your library dashboard — open it when you want to read or purchase.</p>
+          </div>
+          <div className="max-w-[10.5rem] sm:max-w-[12rem]">
+            <ContentCard item={highlightedItem} highlighted />
+          </div>
+        </section>
+      )}
+
       {hero && (
         <div
           className={cn(
@@ -578,7 +636,7 @@ export default function LibraryPage() {
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
             {feed!.recentlyPublished.slice(0, 10).map((item) => (
               <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
-                <ContentCard item={item} compact />
+                <ContentCard item={item} compact highlighted={item.id === highlightId} />
               </div>
             ))}
             <div className="shrink-0 w-1 lg:hidden" aria-hidden />

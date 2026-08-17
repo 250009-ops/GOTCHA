@@ -48,3 +48,37 @@ export function liveLearnerWhere(): Prisma.UserWhereInput {
     NOT: syntheticUserEmailWhere(),
   };
 }
+
+/** Figma messaging mock names — never show these as live learners. */
+export const FIGMA_SAMPLE_DISPLAY_NAMES = [
+  'John Doe',
+  'Yuki T.',
+  'Yuki T',
+  'Marc L.',
+  'Marc L',
+  'Elena R.',
+  'Elena R',
+  'Elena Read',
+] as const;
+
+export function isFigmaSampleDisplayName(name: string | null | undefined): boolean {
+  const value = name?.trim().toLowerCase() ?? '';
+  if (!value) return false;
+  return FIGMA_SAMPLE_DISPLAY_NAMES.some((n) => n.toLowerCase() === value);
+}
+
+/** Learners who may appear in messaging lists, suggestions, and search. */
+export function liveMessagingPeerWhere(): Prisma.UserWhereInput {
+  return {
+    deletedAt: null,
+    adminProfile: { is: null },
+    NOT: {
+      OR: [
+        ...(syntheticUserEmailWhere().OR ?? []),
+        ...FIGMA_SAMPLE_DISPLAY_NAMES.map((name) => ({
+          displayName: { equals: name, mode: 'insensitive' as const },
+        })),
+      ],
+    },
+  };
+}

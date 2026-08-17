@@ -328,9 +328,21 @@ export function stripContentsListing(text: string): string {
   return [...lines.slice(0, start), ...lines.slice(i)].join('\n').trim();
 }
 
+/**
+ * HTML / Readability often glues the next chapter onto the previous paragraph.
+ * Put Gutenberg-style headings back on their own lines so line-based detection works
+ * on huge books. Only split after sentence punctuation so "see Chapter 1 of" stays intact.
+ */
+export function ensureChapterLineBreaks(text: string): string {
+  return text.replace(
+    /([.!?…]["”'\)]{0,3}\s+)((?:#{1,3}\s+)?(?:CHAPTER|Chapter|ГЛАВА|Глава)\s+(?:\d{1,4}|[IVXLCDM]{1,8})\s*[.:—–-])/g,
+    '$1\n\n$2',
+  );
+}
+
 export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1'): SplitChapter[] {
   const prepared = stripContentsListing(
-    stripGutenbergBoilerplate(text.replace(/\r\n/g, '\n')),
+    stripGutenbergBoilerplate(ensureChapterLineBreaks(text.replace(/\r\n/g, '\n'))),
   ).trim();
   if (!prepared) return [];
 

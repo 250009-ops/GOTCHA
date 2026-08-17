@@ -75,6 +75,7 @@ fun HomeScreen(
     onOpenStreak: () -> Unit = {},
     onOpenDailyGoal: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
+    highlightContentId: String? = null,
 ) {
     val container = LocalAppContainer.current
     var user by remember { mutableStateOf<AuthUser?>(null) }
@@ -163,7 +164,12 @@ fun HomeScreen(
     val pct = (minutes / goal.toFloat()).coerceIn(0f, 1f)
     val todayWords = stats?.todayWordsSaved ?: 0
     val continueItems = feed?.continueReading.orEmpty()
-    val recommendedItems = feed?.recentlyPublished.orEmpty()
+    val recommendedItems = remember(feed, highlightContentId) {
+        val items = feed?.recentlyPublished.orEmpty()
+        val id = highlightContentId
+        if (id.isNullOrBlank()) items
+        else items.sortedByDescending { it.id == id }
+    }
     val myImportItems = feed?.myImports.orEmpty()
 
     LazyColumn(
@@ -428,6 +434,7 @@ fun HomeScreen(
                             items(recommendedItems.take(8)) { item ->
                                 RecommendCard(
                                     item,
+                                    highlighted = item.id == highlightContentId,
                                     onClick = offline.guardClick { onOpenReader(item.id) },
                                 )
                             }
@@ -584,13 +591,17 @@ fun CoverThumb(url: String?, modifier: Modifier = Modifier, corner: Int = 8) {
 }
 
 @Composable
-private fun RecommendCard(item: ContentItem, onClick: () -> Unit) {
+private fun RecommendCard(item: ContentItem, highlighted: Boolean = false, onClick: () -> Unit) {
     Column(
         modifier = Modifier
             .width(160.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Color.White)
-            .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
+            .border(
+                if (highlighted) 2.dp else 1.dp,
+                if (highlighted) GotchaColors.BrandPurple else GotchaColors.Border,
+                RoundedCornerShape(16.dp),
+            )
             .clickable(onClick = onClick)
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),

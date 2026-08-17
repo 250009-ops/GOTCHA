@@ -30,7 +30,6 @@ import {
   segmentStats,
   type BuiltSegment,
 } from './content-ingest';
-import { chaptersHaveRealTitles } from '../imports/chapter-split';
 import {
   ADMIN_METRICS_KEY,
   FIGMA_ADMIN_METRICS,
@@ -814,6 +813,8 @@ export class AdminService {
         priceUzs: Number(item.priceUsd ?? 0),
         salesCount: item.salesCount,
         author: item.author,
+        subtitle: item.subtitle,
+        description: item.description,
         coverImageKey: item.coverImageKey,
       };
     });
@@ -821,11 +822,15 @@ export class AdminService {
 
   private parseContentPricing(body: Record<string, unknown>) {
     const isFree = body.isFree === true || body.isFree === 'true' || body.pricing === 'free';
-    const rawPrice = body.priceUsd ?? body.price;
+    const rawPrice = body.priceUsd ?? body.priceUzs ?? body.price;
     const priceUsd = isFree ? 0 : Number(rawPrice ?? 0);
+    const amount = Number.isFinite(priceUsd) ? priceUsd : 0;
+    if (!isFree && amount > 0 && amount < 500) {
+      throw new BadRequestException('Paid catalog items must be at least 500 soʻm (Atmos minimum).');
+    }
     return {
       isFree,
-      priceUsd: Number.isFinite(priceUsd) ? priceUsd : 0,
+      priceUsd: amount,
     };
   }
 
@@ -851,15 +856,9 @@ export class AdminService {
       pdfBuffer: Buffer.isBuffer(body.pdfBuffer) ? body.pdfBuffer : undefined,
     });
     let chapters = extracted.chapters;
-    if (mode === 'literary' && chapters.length) {
-      const alreadyStructured = chaptersHaveRealTitles(chapters) && chapters.length >= 8;
-      if (!alreadyStructured) {
-        chapters = await this.ai.cleanImportChapters(chapters, {
-          source: 'url',
-          documentTitle: extracted.title,
-        });
-      }
-    }
+    // Books/stories: keep the deterministic chapter tree. AI cleanup is for
+    // article chrome and truncates novels (chunk budget), which looks like
+    // "chapters missing" on Gutenberg-scale URLs.
     if (mode === 'tight') {
       const text = extracted.text || chapters.map((c) => c.text).join('\n\n');
       return buildSegmentsFromChapters([{ title: extracted.title || 'Content', text }], 'tight');
@@ -957,6 +956,7 @@ export class AdminService {
     return {
       ...item,
       priceUsd: Number(item.priceUsd ?? 0),
+      priceUzs: Number(item.priceUsd ?? 0),
       chapters: previewFromSegments(
         item.segments.map((s) => ({
           segmentIndex: s.segmentIndex,
@@ -1004,10 +1004,14 @@ export class AdminService {
     if (!existing) throw new NotFoundException('Content not found');
 
     const pricing =
-      body.isFree !== undefined || body.priceUsd !== undefined || body.price !== undefined || body.pricing !== undefined
+      body.isFree !== undefined ||
+      body.priceUsd !== undefined ||
+      body.priceUzs !== undefined ||
+      body.price !== undefined ||
+      body.pricing !== undefined
         ? this.parseContentPricing({
             isFree: body.isFree ?? existing.isFree,
-            priceUsd: body.priceUsd ?? body.price ?? existing.priceUsd,
+            priceUsd: body.priceUsd ?? body.priceUzs ?? body.price ?? existing.priceUsd,
             pricing: body.pricing,
           })
         : null;
@@ -1024,6 +1028,8 @@ export class AdminService {
         contentType: body.contentType !== undefined ? (body.contentType as ContentType) : undefined,
         cefrLevel: body.cefrLevel !== undefined ? (body.cefrLevel as never) : undefined,
         publishStatus: body.publishStatus !== undefined ? (body.publishStatus as PublishStatus) : undefined,
+        contentSource: body.contentSource !== undefined ? (body.contentSource as ContentSource) : undefined,
+        sourceUrl: body.sourceUrl !== undefined ? String(body.sourceUrl) : undefined,
         isFree: pricing?.isFree,
         priceUsd: pricing?.priceUsd,
         salesCount: body.salesCount !== undefined ? Number(body.salesCount) : undefined,

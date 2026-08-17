@@ -182,6 +182,7 @@ fun LearnerShell(
 
     val scope = rememberCoroutineScope()
     var unreadMessages by remember { mutableStateOf(0) }
+    var highlightContentId by remember { mutableStateOf<String?>(null) }
     DisposableEffect(Unit) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -286,6 +287,7 @@ fun LearnerShell(
                         onOpenStreak = { nav.navigate("streak") },
                         onOpenDailyGoal = { nav.navigate("daily_goal") },
                         onOpenProfile = { navigateLearnerTab(nav, "profile") },
+                        highlightContentId = highlightContentId,
                     )
                 }
                 learnerTabComposable("library") {
@@ -474,7 +476,9 @@ fun LearnerShell(
                     NotificationsListScreen(
                         onBack = { nav.popBackStack() },
                         onOpenSettings = { nav.navigate("notification_settings") },
-                        onOpenHref = { href -> openNotificationHref(nav, href) },
+                        onOpenHref = { href ->
+                            openNotificationHref(nav, href) { id -> highlightContentId = id }
+                        },
                     )
                 }
                 learnerSlideComposable("notification_settings") {
@@ -587,21 +591,51 @@ fun LearnerShell(
  * mirrors [FrostedBottomBar]: clear-glass sheet in the status-bar zone + floating
  * roundish white pill (brand + notifications). Content scrolls under the frost.
  */
-private fun openNotificationHref(nav: NavHostController, href: String) {
+private fun notificationQueryValue(route: String, key: String): String? {
+    val query = route.substringAfter('?', missingDelimiterValue = "")
+    if (query.isBlank()) return null
+    return query.split('&').firstNotNullOfOrNull { part ->
+        val idx = part.indexOf('=')
+        if (idx <= 0) null
+        else if (part.substring(0, idx) == key) part.substring(idx + 1).ifBlank { null } else null
+    }
+}
+
+private fun notificationContentId(route: String): String? {
+    val path = route.substringBefore('?')
+    notificationQueryValue(route, "item")?.let { return it }
+    notificationQueryValue(route, "id")?.let { return it }
+    if (path.startsWith("content/")) {
+        return path.removePrefix("content/").substringBefore('/').ifBlank { null }
+    }
+    return null
+}
+
+/**
+ * New-catalog news opens the Home dashboard (not Library directory, not Reader paywall).
+ */
+private fun openNotificationHref(
+    nav: NavHostController,
+    href: String,
+    onHighlightContent: (String?) -> Unit = {},
+) {
     val route = href.trim().trimStart('/')
+    val path = route.substringBefore('?')
     when {
         route.isBlank() -> return
-        route == "streak" -> nav.navigate("streak")
-        route == "daily_goal" -> nav.navigate("daily_goal")
-        route == "vocab_review" -> nav.navigate("vocab_review")
-        route == "words" -> navigateLearnerTab(nav, "words")
-        route == "messages" -> nav.navigate("messages")
-        route == "achievements" -> nav.navigate("achievements")
-        route == "library" -> navigateLearnerTab(nav, "library")
-        route == "notification_settings" -> nav.navigate("notification_settings")
-        route.startsWith("chat/") -> nav.navigate(route)
-        route.startsWith("content/") -> nav.navigate(route)
-        route.startsWith("peer/") -> nav.navigate(route)
+        path == "streak" -> nav.navigate("streak")
+        path == "daily_goal" -> nav.navigate("daily_goal")
+        path == "vocab_review" -> nav.navigate("vocab_review")
+        path == "words" -> navigateLearnerTab(nav, "words")
+        path == "messages" -> nav.navigate("messages")
+        path == "achievements" -> nav.navigate("achievements")
+        path == "library" || path == "home" || path.startsWith("content/") -> {
+            onHighlightContent(notificationContentId(route))
+            navigateLearnerTab(nav, "home")
+        }
+        path == "notification_settings" -> nav.navigate("notification_settings")
+        path.startsWith("chat/") -> nav.navigate(path)
+        path.startsWith("peer/") -> nav.navigate(path)
         else -> nav.navigate(route)
     }
 }

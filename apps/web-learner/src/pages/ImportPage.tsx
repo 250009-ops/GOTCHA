@@ -65,6 +65,10 @@ function isPendingStatus(status: string) {
   return status === 'queued' || status === 'processing' || status === 'tokenizing';
 }
 
+function pendingForMs(iso: string) {
+  return Date.now() - new Date(iso).getTime();
+}
+
 function statusBadge(status: string) {
   switch (status) {
     case 'ready':
@@ -644,7 +648,7 @@ function PaymentConfirmModal({
                   autoComplete="cc-number"
                   value={cardNumber}
                   onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                  placeholder="5614 6819 0687 2829"
+                  placeholder="0000 0000 0000 0000"
                   disabled={loading}
                   className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
@@ -657,7 +661,7 @@ function PaymentConfirmModal({
                   autoComplete="cc-exp"
                   value={expiry}
                   onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                  placeholder="03/30"
+                  placeholder="00/00"
                   disabled={loading}
                   className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
@@ -1137,6 +1141,11 @@ export default function ImportPage() {
                                 {item.progressPagesTotal} pages
                               </span>
                             )}
+                          {isPendingStatus(item.ingestionStatus) && pendingForMs(item.createdAt) > 3 * 60_000 && (
+                            <span className="text-xs text-[#bb4d00]">
+                              Still working — this will fail automatically if it stays stuck.
+                            </span>
+                          )}
                           {item.ingestionStatus === 'failed' && item.errorMessage && (
                             <span className="text-xs text-[#fb2c36] truncate max-w-full">{item.errorMessage}</span>
                           )}

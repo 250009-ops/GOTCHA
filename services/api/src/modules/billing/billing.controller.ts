@@ -112,6 +112,16 @@ export class BillingController {
     return this.importCommerce.getPayment(user.sub, id);
   }
 
+  @Get('content/:id/access')
+  catalogAccess(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.importCommerce.catalogAccess(user.sub, id, user.isAdmin);
+  }
+
+  @Post('content/:id/checkout')
+  catalogCheckout(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.importCommerce.catalogCheckout(user.sub, id, user.isAdmin);
+  }
+
   /**
    * Atmos (and browsers) sometimes probe the callback URL with GET.
    * Real payment callbacks are POST only — see atmosWebhook below.

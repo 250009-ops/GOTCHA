@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
 import { ensureLanguageCatalog } from '../../common/language-catalog';
@@ -11,6 +11,13 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { StreakService } from '../../services/streak.service';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
+import {
+  catalogAccessGranted,
+  catalogPriceUzs,
+  paidCatalogIds,
+  requiresCatalogPayment,
+  type CatalogPricedItem,
+} from './catalog-access';
 
 const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = {
   en: { name: 'English', nativeName: 'English', flagEmoji: '🇬🇧' },
@@ -24,17 +31,31 @@ const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; fla
   pt: { name: 'Portuguese', nativeName: 'Português', flagEmoji: '🇵🇹' },
 };
 
-/** Map Prisma content fields → learner app DTO (cover + author). */
-function serializeContent(item: object) {
-  const row = item as {
+/** Map Prisma content fields → learner app DTO (cover + author + catalog commerce). */
+function serializeContent(item: object, access?: { granted: boolean }) {
+  const row = item as CatalogPricedItem & {
     coverImageKey?: string | null;
     subtitle?: string | null;
     author?: string | null;
+    isFree?: boolean;
   };
+  const priced: CatalogPricedItem = {
+    id: row.id,
+    isFree: row.isFree ?? true,
+    priceUsd: row.priceUsd,
+    contentSource: row.contentSource,
+    contentType: row.contentType,
+    createdById: row.createdById,
+  };
+  const locked = requiresCatalogPayment(priced);
+  const priceUzs = catalogPriceUzs(priced);
   return {
     ...row,
     coverImageUrl: row.coverImageKey ?? null,
     authorName: row.author ?? row.subtitle ?? null,
+    isFree: !locked,
+    priceUzs,
+    accessGranted: access?.granted ?? !locked,
   };
 }
 
@@ -47,6 +68,36 @@ export class ContentService {
 
   private useDevContent() {
     return isDevAuthEnabled() && !this.prisma.dbAvailable;
+  }
+
+  private async decorateLearnerItems(
+    items: object[],
+    userId?: string,
+    isAdmin?: boolean,
+  ) {
+    const priced = items as CatalogPricedItem[];
+    const purchasedIds = await paidCatalogIds(
+      this.prisma,
+      userId,
+      priced.map((item) => item.id),
+    );
+    return priced.map((item) =>
+      serializeContent(item, {
+        granted: catalogAccessGranted({ item, userId, isAdmin, purchasedIds }),
+      }),
+    );
+  }
+
+  private async assertLearnerCanRead(contentId: string, userId?: string, isAdmin?: boolean) {
+    const item = await this.prisma.contentItem.findFirst({
+      where: this.readableByLearnerWhere(contentId, userId),
+    });
+    if (!item) throw new NotFoundException('Content not found');
+    const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
+    if (!catalogAccessGranted({ item, userId, isAdmin, purchasedIds })) {
+      throw new ForbiddenException('Payment required to read this book');
+    }
+    return item;
   }
 
   /**
@@ -171,6 +222,23 @@ export class ContentService {
       }),
     ]);
 
+    const featuredContents = featured.flatMap((c) =>
+      c.items
+        .filter(
+          (i) =>
+            i.content.contentSource !== ContentSource.user_import &&
+            i.content.contentType !== ContentType.user_import,
+        )
+        .map((i) => i.content),
+    );
+    const [continueRows, featuredRows, recentRows, importRows] = await Promise.all([
+      this.decorateLearnerItems(progress.map((p) => p.content), userId),
+      this.decorateLearnerItems(featuredContents, userId),
+      this.decorateLearnerItems(recent, userId),
+      this.decorateLearnerItems(myImports, userId),
+    ]);
+    const featuredById = new Map(featuredRows.map((row) => [row.id, row]));
+
     const catalogFeatured = featured.map((c) => ({
       ...c,
       items: c.items
@@ -181,24 +249,24 @@ export class ContentService {
         )
         .map((i) => ({
           ...i,
-          content: serializeContent(i.content),
+          content: featuredById.get(i.content.id) ?? serializeContent(i.content),
         })),
     }));
 
     return {
-      continueReading: progress.map((p) => ({
-        ...serializeContent(p.content),
-        progressPct: p.progressPct,
-        lastReadAt: p.lastReadAt,
-        knownWordRatio: p.knownWordRatio ?? null,
+      continueReading: continueRows.map((row, index) => ({
+        ...row,
+        progressPct: progress[index]?.progressPct,
+        lastReadAt: progress[index]?.lastReadAt,
+        knownWordRatio: progress[index]?.knownWordRatio ?? null,
       })),
       featuredCollections: catalogFeatured,
-      recentlyPublished: recent.map((item) => serializeContent(item)),
-      myImports: myImports.map((item) => serializeContent(item)),
+      recentlyPublished: recentRows,
+      myImports: importRows,
     };
   }
 
-  async list(query: ContentQueryDto) {
+  async list(query: ContentQueryDto, userId?: string, isAdmin?: boolean) {
     if (this.useDevContent()) {
       let items = getDevFeed().recentlyPublished;
       if (query.lang) items = items.filter((i) => i.language === query.lang);
@@ -252,7 +320,7 @@ export class ContentService {
     ]);
 
     return {
-      items: items.map((item) => serializeContent(item)),
+      items: await this.decorateLearnerItems(items, userId, isAdmin),
       total,
       page,
       pageSize,
@@ -260,7 +328,7 @@ export class ContentService {
     };
   }
 
-  async getById(id: string, userId?: string) {
+  async getById(id: string, userId?: string, isAdmin?: boolean) {
     if (this.useDevContent()) {
       const item = getDevContentById(id);
       if (!item) throw new NotFoundException('Content not found');
@@ -299,8 +367,9 @@ export class ContentService {
       : null;
 
     const { segments, ...rest } = item;
+    const [decorated] = await this.decorateLearnerItems([rest], userId, isAdmin);
     return {
-      ...serializeContent(rest),
+      ...decorated,
       segmentCount: segments.length,
       outline: segments,
       progressPct: progress?.progressPct ?? 0,
@@ -309,7 +378,7 @@ export class ContentService {
     };
   }
 
-  async getSegments(contentId: string, from = 0, limit = 5, userId?: string) {
+  async getSegments(contentId: string, from = 0, limit = 5, userId?: string, isAdmin?: boolean) {
     if (this.useDevContent()) {
       const result = getDevSegments(contentId);
       if (!result) throw new NotFoundException('Content not found');
@@ -319,10 +388,7 @@ export class ContentService {
       };
     }
 
-    const content = await this.prisma.contentItem.findFirst({
-      where: this.readableByLearnerWhere(contentId, userId),
-    });
-    if (!content) throw new NotFoundException('Content not found');
+    await this.assertLearnerCanRead(contentId, userId, isAdmin);
 
     const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 1, 1), 200);
     const segments = await this.prisma.contentSegment.findMany({
@@ -334,7 +400,7 @@ export class ContentService {
     return { contentId, segments };
   }
 
-  async updateProgress(userId: string, contentId: string, dto: UpdateProgressDto) {
+  async updateProgress(userId: string, contentId: string, dto: UpdateProgressDto, isAdmin?: boolean) {
     if (this.useDevContent()) {
       return {
         userId,
@@ -347,6 +413,8 @@ export class ContentService {
         completedAt: dto.completed ? new Date() : null,
       };
     }
+
+    await this.assertLearnerCanRead(contentId, userId, isAdmin);
 
     const existing = await this.prisma.readingProgress.findUnique({
       where: { userId_contentId: { userId, contentId } },

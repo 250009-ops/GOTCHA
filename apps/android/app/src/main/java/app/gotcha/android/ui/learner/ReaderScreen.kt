@@ -69,6 +69,7 @@ import app.gotcha.android.data.model.LookupResponse
 import app.gotcha.android.data.model.SaveVocabularyRequest
 import app.gotcha.android.data.model.Segment
 import app.gotcha.android.ui.components.GlassLoadingScreen
+import app.gotcha.android.ui.components.GotchaPrimaryButton
 import app.gotcha.android.ui.components.OfflineBannerIfNeeded
 import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.components.rememberOfflineInteraction
@@ -113,6 +114,14 @@ fun ReaderScreen(
     var preparedAnnotated by remember(contentId) { mutableStateOf<AnnotatedString?>(null) }
     var fetchError by remember(contentId) { mutableStateOf(false) }
     var reloadKey by remember(contentId) { mutableIntStateOf(0) }
+    var payStep by remember(contentId) { mutableStateOf("price") }
+    var paymentId by remember(contentId) { mutableStateOf<String?>(null) }
+    var cardNumber by remember(contentId) { mutableStateOf("") }
+    var cardExpiry by remember(contentId) { mutableStateOf("") }
+    var otpCode by remember(contentId) { mutableStateOf("") }
+    var maskedPhone by remember(contentId) { mutableStateOf<String?>(null) }
+    var payLoading by remember(contentId) { mutableStateOf(false) }
+    var payError by remember(contentId) { mutableStateOf<String?>(null) }
     val offline = rememberOfflineInteraction(container.connectivityObserver)
     val navBottom = max(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), 24.dp)
     val bodyScrollState = rememberScrollState()
@@ -141,6 +150,10 @@ fun ReaderScreen(
         try {
             val freshContent = container.contentRepository.getFetch(targetId).data
             if (targetId == contentId) content = freshContent
+            if (freshContent.needsCatalogPayment()) {
+                if (targetId == contentId) segments = emptyList()
+                return
+            }
             val freshSegments = container.contentRepository.segmentsFetch(targetId).data.segments
             if (targetId == contentId) segments = freshSegments
         } catch (e: CancellationException) {
@@ -194,6 +207,13 @@ fun ReaderScreen(
         val peekedContent = container.contentRepository.getPeek(targetId)?.data
         val peekedSegments = container.contentRepository.segmentsPeek(targetId)?.data?.segments.orEmpty()
         if (peekedContent != null) loadProgress = 30
+        if (peekedContent?.needsCatalogPayment() == true) {
+            if (targetId != contentId) return@LaunchedEffect
+            content = peekedContent
+            segments = emptyList()
+            loadProgress = 100
+            return@LaunchedEffect
+        }
         if (peekedSegments.isNotEmpty()) loadProgress = 70
 
         val bothCached = peekedContent != null && peekedSegments.isNotEmpty()
@@ -216,6 +236,11 @@ fun ReaderScreen(
             if (targetId != contentId) return@LaunchedEffect
             content = fetchedContent
             loadProgress = 30
+            if (fetchedContent.needsCatalogPayment()) {
+                segments = emptyList()
+                loadProgress = 100
+                return@LaunchedEffect
+            }
 
             val fetchedSegments = if (peekedSegments.isNotEmpty()) {
                 peekedSegments
@@ -297,6 +322,12 @@ fun ReaderScreen(
     }
     BackHandler(onBack = handleBack)
 
+    LaunchedEffect(payStep) {
+        if (payStep != "celebrate") return@LaunchedEffect
+        delay(2200)
+        reloadKey += 1
+    }
+
     // Periodic autosave while actively reading, in addition to the on-exit save in handleBack —
     // covers the common case of the user backgrounding the app instead of tapping the back arrow.
     LaunchedEffect(contentId, segments) {
@@ -307,10 +338,185 @@ fun ReaderScreen(
         }
     }
 
-    val readerReady = content != null && segments.isNotEmpty() && preparedAnnotated != null
-    val showGlassLoader = !readerReady && !fetchError
+    val paymentRequired = content?.needsCatalogPayment() == true
+    val readerReady = !paymentRequired && content != null && segments.isNotEmpty() && preparedAnnotated != null
+    val showGlassLoader = !paymentRequired && !readerReady && !fetchError
 
     when {
+        paymentRequired -> {
+            val book = content!!
+            val amount = book.catalogPriceUzs()
+            Box(Modifier.fillMaxSize().background(Color.White)) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .statusBarsPadding()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        "Library",
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        color = GotchaColors.TextMuted,
+                        modifier = Modifier.clickable(onClick = handleBack),
+                    )
+                    if (payStep == "celebrate") {
+                        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.ic_party_popper),
+                                    contentDescription = null,
+                                    tint = GotchaColors.BrandPurple,
+                                    modifier = Modifier.size(48.dp),
+                                )
+                                Text(
+                                    "Congratulations!",
+                                    fontFamily = Manrope,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 24.sp,
+                                    color = GotchaColors.Ink,
+                                )
+                                Text(
+                                    "${book.title?.takeIf { it.isNotBlank() } ?: "This book"} is yours. Opening…",
+                                    fontFamily = Manrope,
+                                    fontSize = 14.sp,
+                                    color = GotchaColors.TextMuted,
+                                )
+                                GotchaPrimaryButton(
+                                    text = "Start reading",
+                                    onClick = { reloadKey += 1 },
+                                )
+                            }
+                        }
+                    } else {
+                    Text(
+                        book.title?.takeIf { it.isNotBlank() } ?: "Paid book",
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = GotchaColors.Ink,
+                    )
+                    Text(
+                        "Pay once to unlock this book in your library.",
+                        fontFamily = Manrope,
+                        fontSize = 14.sp,
+                        color = GotchaColors.TextMuted,
+                    )
+                    Text(
+                        formatSom(amount),
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 24.sp,
+                        color = GotchaColors.BrandPurple,
+                    )
+                    if (payStep == "price") {
+                        if (payError != null) {
+                            Text(payError!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
+                        }
+                        GotchaPrimaryButton(
+                            text = "Unlock for ${formatSom(amount)}",
+                            loading = payLoading,
+                            onClick = {
+                                scope.launch {
+                                    payLoading = true
+                                    payError = null
+                                    try {
+                                        val checkout = container.importRepository.catalogCheckout(contentId)
+                                        if (checkout.accessGranted || checkout.step == "done") {
+                                            payStep = "celebrate"
+                                        } else {
+                                            paymentId = checkout.paymentId
+                                            payStep = "card"
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        payError = apiErrorMessage(e)
+                                    } finally {
+                                        payLoading = false
+                                    }
+                                }
+                            },
+                        )
+                    } else {
+                        ImportPaymentStepUi(
+                            step = payStep,
+                            amountLabel = formatSom(amount),
+                            cardNumber = cardNumber,
+                            onCardNumberChange = { cardNumber = it },
+                            cardExpiry = cardExpiry,
+                            onCardExpiryChange = { cardExpiry = it },
+                            otpCode = otpCode,
+                            onOtpChange = { otpCode = it },
+                            maskedPhone = maskedPhone,
+                            loading = payLoading,
+                            error = payError,
+                            onSubmitCard = {
+                                val id = paymentId ?: return@ImportPaymentStepUi
+                                scope.launch {
+                                    payLoading = true
+                                    payError = null
+                                    try {
+                                        val result = container.importRepository.preApply(
+                                            id,
+                                            cardNumber.filter(Char::isDigit),
+                                            cardExpiry.filter(Char::isDigit),
+                                        )
+                                        maskedPhone = result.maskedPhone
+                                        payStep = "otp"
+                                        otpCode = ""
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        payError = apiErrorMessage(e)
+                                    } finally {
+                                        payLoading = false
+                                    }
+                                }
+                            },
+                            onConfirmOtp = {
+                                val id = paymentId ?: return@ImportPaymentStepUi
+                                scope.launch {
+                                    payLoading = true
+                                    payError = null
+                                    try {
+                                        val result = container.importRepository.apply(id, otpCode)
+                                        if (result.step == "paid") {
+                                            payStep = "celebrate"
+                                        } else {
+                                            payError = "Payment not confirmed yet. Check the SMS code and try again."
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        payError = apiErrorMessage(e)
+                                    } finally {
+                                        payLoading = false
+                                    }
+                                }
+                            },
+                            onResendOtp = {
+                                val id = paymentId ?: return@ImportPaymentStepUi
+                                scope.launch {
+                                    runCatching { container.importRepository.retryOtp(id) }
+                                        .onFailure { payError = apiErrorMessage(it) }
+                                }
+                            },
+                            onCancel = {
+                                payStep = "price"
+                                payError = null
+                            },
+                        )
+                    }
+                    }
+                }
+            }
+        }
         readerReady -> {
             val hasSegments = segments.isNotEmpty()
             val body = preparedSource ?: readerBodyText(segments, FIRST_PAGE_CHAR_LIMIT)

@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
+import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 
 @Injectable()
 export class PracticeService {
@@ -27,6 +28,13 @@ export class PracticeService {
         where: { id: dto.segmentId },
       });
       if (!segment) throw new NotFoundException('Segment not found');
+      const item = await this.prisma.contentItem.findUnique({ where: { id: segment.contentId } });
+      if (item && requiresCatalogPayment(item)) {
+        const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
+        if (!catalogAccessGranted({ item, userId, purchasedIds })) {
+          throw new ForbiddenException('Payment required to read this book');
+        }
+      }
       segmentText = segment.plainText;
     }
 

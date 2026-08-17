@@ -1,125 +1,207 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { Icon, landingAssets as a } from '../assets/landing';
+import { Seo } from '../components/Seo';
 import { SiteFooter, SiteNav } from '../components/SiteChrome';
-import { fetchMarketingPlans, fetchMarketingStats, type MarketingPlan } from '../lib/api';
 import {
-  FALLBACK_LEARNER_COUNT,
-  FALLBACK_PLANS,
-  registerUrl,
-} from '../lib/links';
+  fetchMarketingLanding,
+  type LandingPayload,
+} from '../lib/api';
+import { libraryUrl, registerUrl } from '../lib/links';
+import { resolveMediaUrl } from '../lib/media';
+
+const STORAGE_KEY = 'gotcha.landing.v1';
+const STORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+const LANG_LABELS: Record<string, string> = {
+  en: 'English',
+  ru: 'Russian',
+  uz: 'Uzbek',
+};
 
 const steps = [
   {
     n: '01',
-    title: 'Choose what to read',
-    body: 'Pick from our curated library or import your own content from any URL, PDF, or ePUB.',
+    title: 'Choose a book',
+    body: 'Pick a story from our curated Uzbek/Russian/English library, or drag & drop any PDF, ePub, or web article to start instantly.',
     icon: a.bookOpen,
+    iconSize: 22,
   },
   {
     n: '02',
-    title: 'Read with smart word lookup',
-    body: 'Tap any word for instant AI definitions, phonetics, grammar notes, and context examples.',
-    icon: a.brain,
+    title: 'Read & learn',
+    body: 'Simply tap any unfamiliar word for immediate contextual translations. No more tab-switching or app hopping.',
+    icon: a.circleX,
+    iconSize: 22,
   },
   {
     n: '03',
-    title: 'Review with spaced repetition',
-    body: 'Saved words are automatically added to your SRS deck and reviewed at the right moment.',
-    icon: a.refreshCw,
+    title: 'Track progress',
+    body: 'Build your active vocabulary vault, track daily reading streaks, and see your fluency rise tier by tier.',
+    icon: a.chartLine,
+    iconSize: 22,
   },
 ] as const;
 
 const features = [
   {
-    title: 'Reading-first learning',
-    body: 'Immersive reading with word-status tracking. Every page teaches you something.',
-    icon: a.bookOpenSm,
+    title: 'Curated Library',
+    body: 'A master catalog of classic literature, modern shorts, and news articles carefully graded from level A1 up to C2.',
+    icon: a.library,
   },
   {
-    title: 'AI word lookup',
-    body: 'Instant translation, phonetics, part of speech, and grammar notes from real context.',
-    icon: a.brainSm,
+    title: 'Tap-to-Translate',
+    body: 'Tap any word to view a quick definition, sentence contextual usage, and phonetic pronunciation guide instantly.',
+    icon: a.mousePointerClick,
   },
   {
-    title: 'Spaced repetition (SRS)',
-    body: "Proven flashcard algorithm schedules reviews so you never forget what you've learned.",
-    icon: a.refreshCwSm,
+    title: 'Vocabulary Builder',
+    body: 'Automatically save tapped words into personal decks. Review them anytime with optimized spaced repetition.',
+    icon: a.sparkles,
   },
   {
-    title: '3 languages',
-    body: 'English, Russian, and Uzbek - with more on the way.',
-    icon: a.globe,
+    title: 'Reading Streaks',
+    body: 'Gamified streak goals and weekly milestones designed by language experts to help you stay accountable every day.',
+    icon: a.flame,
   },
   {
-    title: 'Progress analytics',
-    body: 'Track reading time, streak, words learned, and CEFR level progression over time.',
-    icon: a.barChart,
+    title: 'Import Your Own',
+    body: 'Bring any digital material into your workspace — support for URLs, PDF, text pasting, and popular eBook formats.',
+    icon: a.cloudUpload,
   },
   {
-    title: 'Import anything',
-    body: 'Bring your own texts - news, blog posts, PDFs, or ePubs - and tokenized instantly.',
-    icon: a.upload,
+    title: 'Pay As You Go',
+    body: 'No recurring subscriptions. Pay only for what you actually import, instantly integrated with Uzcard & Humo via Atmos.',
+    icon: a.creditCard,
   },
 ] as const;
 
-const testimonials = [
-  {
-    quote:
-      "I've tried Duolingo, Babbel, LingQ. Gotcha is the first app that actually makes me enjoy reading. I went from A2 to B1 in 4 months.",
-    initials: 'AT',
-    name: 'Alina T.',
-    meta: 'Learning English',
-  },
-  {
-    quote:
-      'The 3-panel reader is incredible for desktop. I can read a whole chapter and look up words without losing my flow. Game changer.',
-    initials: 'RK',
-    name: 'Rustam K.',
-    meta: 'Learning Russian',
-  },
-  {
-    quote:
-      "I import BBC articles every morning. By the time I finish reading, I've already saved 10 new words for review. So efficient.",
-    initials: 'DM',
-    name: 'Dilnoza M.',
-    meta: 'Learning English',
-  },
-] as const;
+type LoadState = 'loading' | 'ready' | 'degraded';
 
-function Stars() {
-  return (
-    <div className="flex gap-1" aria-label="5 out of 5 stars">
-      {Array.from({ length: 5 }).map((_, i) => (
-        <Icon key={i} src={a.star} size={16} />
-      ))}
-    </div>
-  );
+function formatUzs(n: number) {
+  const grouped = Math.round(n)
+    .toString()
+    .replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
+  return `${grouped} soʻm`;
 }
 
 function formatLearners(n: number) {
   return n.toLocaleString('en-US');
 }
 
+function cefrLabel(code: string) {
+  return code.trim().toUpperCase();
+}
+
+function languageLabel(code: string, languages: LandingPayload['languages']) {
+  return languages.find((l) => l.code === code)?.name ?? LANG_LABELS[code] ?? code.toUpperCase();
+}
+
+function readCachedLanding(): LandingPayload | null {
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { savedAt: number; payload: LandingPayload };
+    if (!parsed?.payload || Date.now() - parsed.savedAt > STORAGE_MAX_AGE_MS) return null;
+    return parsed.payload;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedLanding(payload: LandingPayload) {
+  try {
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), payload }));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function FadeIn({ children, className = '' }: { children: ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [shown, setShown] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      setShown(true);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShown(true);
+          io.disconnect();
+        }
+      },
+      { threshold: 0.12 },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={`transition-all duration-700 ease-out ${
+        shown ? 'translate-y-0 opacity-100' : 'translate-y-4 opacity-0'
+      } ${className}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CatalogCover({ title, coverImageUrl }: { title: string; coverImageUrl: string | null }) {
+  const src = resolveMediaUrl(coverImageUrl);
+  const [failed, setFailed] = useState(false);
+  const letter = title.trim().charAt(0).toUpperCase() || 'G';
+
+  if (!src || failed) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#2107aa]">
+        <span className="font-['Manrope',sans-serif] text-6xl font-extrabold text-white">{letter}</span>
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt=""
+      className="h-full w-full object-cover"
+      onError={() => setFailed(true)}
+    />
+  );
+}
+
 export default function LandingPage() {
   const { hash } = useLocation();
-  const [plans, setPlans] = useState<MarketingPlan[]>(FALLBACK_PLANS);
-  const [learnerCount, setLearnerCount] = useState(FALLBACK_LEARNER_COUNT);
+  const [payload, setPayload] = useState<LandingPayload | null>(null);
+  const [loadState, setLoadState] = useState<LoadState>('loading');
+  const [selectedLang, setSelectedLang] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
+    const cached = readCachedLanding();
+    if (cached) {
+      setPayload(cached);
+      setLoadState('ready');
+    }
 
-    Promise.allSettled([fetchMarketingPlans(), fetchMarketingStats()]).then(
-      ([plansResult, statsResult]) => {
+    fetchMarketingLanding()
+      .then((data) => {
         if (cancelled) return;
-        if (plansResult.status === 'fulfilled' && plansResult.value.length > 0) {
-          setPlans(plansResult.value);
-        }
-        if (statsResult.status === 'fulfilled') {
-          setLearnerCount(statsResult.value.displayLearnerCount);
-        }
-      },
-    );
+        setPayload(data);
+        setLoadState('ready');
+        writeCachedLanding(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState(cached ? 'degraded' : 'degraded');
+        if (!cached) setPayload(null);
+      });
 
     return () => {
       cancelled = true;
@@ -133,332 +215,413 @@ export default function LandingPage() {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [hash]);
 
-  const freePlan = plans.find((p) => p.tier === 'free') ?? FALLBACK_PLANS[0];
-  const payPerImportPlan = plans.find((p) => p.tier === 'pay-per-import') ?? FALLBACK_PLANS[1];
+  useEffect(() => {
+    if (selectedLang || !payload?.languages.length) return;
+    setSelectedLang(payload.languages[0].code);
+  }, [payload, selectedLang]);
+
+  const learnerCount = payload?.stats.learnerCount ?? 0;
+  const languages = payload?.languages ?? [];
+  const catalogItems = payload?.catalog.items ?? [];
+  const pricing = payload?.importPricing;
+  const topReaders = loadState === 'degraded' ? [] : (payload?.topReaders ?? []);
+  const hideReaders = loadState === 'degraded';
+  const catalogLoading = loadState === 'loading' && !payload;
+  const registerHref = registerUrl({
+    plan: 'free',
+    lang: selectedLang ?? undefined,
+  });
 
   return (
-    <div className="relative overflow-x-clip bg-white">
+    <div className="relative overflow-x-clip bg-[#f3f0ff] font-['Geist',sans-serif] text-[#101828]">
+      <Seo
+        title="GOTCHA — Get fluent by actually reading"
+        description="Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek. Pay as you go in soʻm — no subscription."
+        path="/"
+      />
       <SiteNav />
 
-      <main className="relative bg-white">
-        {/* Background accents */}
-        <img
-          className="absolute -top-[120px] -right-[120px] w-[360px] h-[360px] pointer-events-none z-0"
-          src={a.bgAccent1}
-          alt=""
-          aria-hidden
-        />
-        <img
-          className="absolute -bottom-[180px] -left-[80px] w-[280px] h-[280px] pointer-events-none z-0"
-          src={a.bgAccent2}
-          alt=""
-          aria-hidden
-        />
+      <main>
+        <header className="flex flex-col items-center gap-10 px-5 pb-16 pt-16 md:px-10 md:pt-20 lg:px-20 lg:pb-20 lg:pt-24">
+          <div className="flex max-w-[860px] flex-col items-center gap-6 text-center">
+            <p className="rounded-full bg-[#f3f0ff] px-3 py-1.5 font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">
+              Reading-first language learning
+            </p>
+            <h1 className="font-['Manrope',sans-serif] text-[36px] font-extrabold leading-[1.15] tracking-tight text-[#101828] md:text-5xl lg:text-[56px]">
+              Learn any language by reading the stories you actually love
+            </h1>
+            <p className="max-w-[640px] text-base leading-[1.5] text-[#4a5565] lg:text-lg">
+              Ditch the boring drills. Translate instantly, build your native vocabulary naturally, and level up your
+              comprehension with books and articles matched to your tier.
+            </p>
+          </div>
 
-        {/* Hero Section */}
-        <header className="relative z-10 w-full bg-white px-4 py-12 md:px-12 lg:px-[120px] lg:py-24">
-          <div className="mx-auto max-w-[1200px] flex flex-col lg:flex-row lg:items-center gap-8 lg:gap-16">
-            {/* Hero Copy */}
-            <div className="flex flex-col items-start gap-5 flex-1 min-w-0">
-              {/* Eyebrow */}
-              <div className="inline-flex items-center gap-2 px-2.5 py-1.5 bg-[#f3f4f6] border border-[#e5e7eb] rounded-full">
-                <Icon src={a.sparkles} size={16} />
-                <span className="text-xs font-semibold tracking-[0.6px] uppercase text-[#6a7282]">
-                  Reading-first language learning
-                </span>
-              </div>
-
-              {/* Heading */}
-              <h1 className="text-4xl md:text-5xl lg:text-[56px] font-extrabold leading-[1.1] tracking-[-1.5px] text-[#101828]">
-                Get fluent by actually reading
-              </h1>
-
-              {/* Subtitle */}
-              <p className="text-base lg:text-lg leading-[1.6] text-[#6a7282] max-w-[616px]">
-                Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced
-                repetition, and watch comprehension grow page by page.
-              </p>
-
-              {/* CTAs */}
-              <div className="flex flex-col sm:flex-row gap-3 w-full sm:w-auto">
-                <a
-                  className="inline-flex items-center justify-center gap-2.5 h-12 px-[18px] bg-[#2107aa] text-white text-[15px] font-bold rounded-[14px] shadow-[0_12px_14px_rgba(33,7,170,0.15)] hover:translate-y-[-1px] transition-transform"
-                  href={registerUrl({ plan: 'free' })}
-                >
-                  Start reading for free
-                  <Icon src={a.arrowRightLg} size={18} />
-                </a>
-                <a
-                  className="inline-flex items-center justify-center gap-2.5 h-12 px-[18px] bg-white border border-[#e5e7eb] text-[#101828] text-[15px] font-semibold rounded-[14px] hover:translate-y-[-1px] transition-transform"
-                  href="#how"
-                >
-                  <Icon src={a.play} size={18} />
-                  Watch demo
-                </a>
-              </div>
-
-              {/* Meta */}
-              <div className="flex flex-col sm:flex-row gap-4">
-                <span className="inline-flex items-center gap-2 text-[13px] text-[#6a7282]">
-                  <Icon src={a.check} size={16} />
-                  No credit card required
-                </span>
-                <span className="inline-flex items-center gap-2 text-[13px] text-[#6a7282]">
-                  <Icon src={a.check} size={16} />
-                  Free forever plan available
-                </span>
-              </div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="flex flex-col items-center gap-4 sm:flex-row">
+              <a
+                className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px"
+                href={registerHref}
+              >
+                Get started free
+              </a>
+              <a
+                className="inline-flex h-12 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[#101828] transition-transform hover:-translate-y-px"
+                href="#how"
+              >
+                See how it works
+              </a>
             </div>
-
-            {/* Hero Visual */}
-            <div className="relative w-full lg:w-[520px] h-[320px] lg:h-[420px] flex-shrink-0 rounded-3xl overflow-hidden shadow-[0_6px_16px_-6px_rgba(0,0,0,0.06),0_18px_40px_-12px_rgba(0,0,0,0.07)]">
-              <img
-                className="absolute inset-0 w-full h-full object-cover"
-                src={a.heroVisual}
-                alt="GOTCHA reader on a desktop"
-              />
-              <div className="absolute inset-0 bg-black/[0.08]" />
-
-              {/* Language chips */}
-              <div className="absolute top-4 left-4 inline-flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur-[9px] border border-[#e5e7eb] rounded-full">
-                <span className="w-2 h-2 bg-[#2107aa] rounded" />
-                <span className="text-[13px] font-semibold text-[#101828]">English</span>
-              </div>
-              <div className="absolute top-4 right-4 inline-flex items-center gap-2 px-3 py-2 bg-white/90 backdrop-blur-[9px] border border-[#e5e7eb] rounded-full">
-                <span className="w-2 h-2 bg-[#6c1d95] rounded" />
-                <span className="text-[13px] font-semibold text-[#101828]">Russian</span>
-              </div>
-
-              {/* Badge */}
-              <div className="absolute bottom-4 right-4 inline-flex items-center gap-2 px-3 py-2.5 bg-[#2107aa] rounded-[14px] shadow-[0_10px_12px_rgba(0,0,0,0.1)]">
-                <Icon src={a.sparklesWhite} size={18} />
-                <span className="text-[13px] font-bold text-white">AI-powered word lookup</span>
-              </div>
+            <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-[#4a5565]">
+                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
+                  <Icon src={a.check} size={14} />
+                </span>
+                No credit card required
+              </span>
+              <span className="inline-flex items-center gap-1.5 text-[13px] text-[#4a5565]">
+                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
+                  <Icon src={a.check} size={14} />
+                </span>
+                No subscription — pay as you go in soʻm
+              </span>
             </div>
           </div>
+
+          {languages.length > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              <p className="text-[13px] font-semibold uppercase text-[#99a1af]">I want to learn</p>
+              {languages.map((lang) => {
+                const active = selectedLang === lang.code;
+                return (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    onClick={() => setSelectedLang(lang.code)}
+                    className={`rounded-[30px] px-3 py-1.5 text-[13px] font-medium transition-colors ${
+                      active
+                        ? 'bg-[#101828] text-white'
+                        : 'border border-[#e2e8f0] bg-white text-[#4a5565] hover:border-[#101828]'
+                    }`}
+                  >
+                    {lang.name}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </header>
 
-        {/* How it Works Section */}
-        <section id="how" className="relative z-10 w-full bg-[#f9fafb] px-4 py-12 md:px-12 lg:px-[120px] lg:py-24">
-          <div className="mx-auto max-w-[1200px] flex flex-col gap-8">
-            {/* Section Header */}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <p className="text-xs font-semibold tracking-[1.4px] uppercase text-[#2107aa]">
-                How it works
-              </p>
-              <h2 className="text-[28px] md:text-4xl lg:text-[40px] font-extrabold leading-[1.1] text-[#101828]">
-                Three steps to fluency
+        <section id="how" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
+          <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-10 lg:gap-14">
+            <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
+              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
+                How GOTCHA works
               </h2>
-              <p className="text-sm md:text-base leading-[1.6] text-[#6a7282] max-w-[720px]">
-                A clear path from "I don't know this word" to "I understand the whole page".
+              <p className="text-base leading-[1.5] text-[#4a5565]">
+                A scientifically proven reading flow that turns authentic text into active language acquisition.
               </p>
             </div>
-
-            {/* Steps Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="grid w-full grid-cols-1 gap-8 md:grid-cols-3">
               {steps.map((step) => (
                 <article
                   key={step.n}
-                  className="flex flex-col gap-4 p-6 bg-white border border-[#e5e7eb] rounded-[20px] shadow-[0_2px_5px_rgba(0,0,0,0.05)]"
+                  className="flex flex-col gap-5 rounded-2xl border border-[#e2e8f0] bg-white p-8"
                 >
-                  <div className="flex items-center gap-4">
-                    <div className="flex items-center justify-center w-12 h-12 bg-[#f3f4f6] rounded-[14px]">
-                      <Icon src={step.icon} size={22} />
+                  <div className="flex items-center justify-between">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-[#f3f0ff]">
+                      <span className="inline-flex h-[22px] w-[22px] items-center justify-center">
+                        <Icon src={step.icon} size={step.iconSize} />
+                      </span>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-bold text-[#2107aa]">{step.n}</span>
-                      <h3 className="text-lg font-bold leading-[1.3] text-[#101828]">{step.title}</h3>
-                    </div>
-                  </div>
-                  <p className="text-sm leading-[1.6] text-[#6a7282]">{step.body}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Features Section */}
-        <section id="features" className="relative z-10 w-full bg-white px-4 py-12 md:px-12 lg:px-[120px] lg:py-24">
-          <div className="mx-auto max-w-[1200px] flex flex-col gap-8">
-            {/* Section Header */}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <p className="text-xs font-semibold tracking-[1.4px] uppercase text-[#2107aa]">
-                Features
-              </p>
-              <h2 className="text-[28px] md:text-4xl lg:text-[40px] font-extrabold leading-[1.1] text-[#101828]">
-                Everything you need to read and learn
-              </h2>
-              <p className="text-sm md:text-base leading-[1.6] text-[#6a7282] max-w-[720px]">
-                A complete reading-first system - from discovery to retention.
-              </p>
-            </div>
-
-            {/* Features Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {features.map((f) => (
-                <article
-                  key={f.title}
-                  className="flex flex-col gap-3 p-5 bg-white border border-[#e5e7eb] rounded-2xl shadow-[0_2px_5px_rgba(0,0,0,0.05)]"
-                >
-                  <div className="flex items-center justify-center w-10 h-10 bg-[#f3f4f6] rounded-xl">
-                    <Icon src={f.icon} size={20} />
-                  </div>
-                  <h3 className="text-base font-bold leading-[1.3] text-[#101828]">{f.title}</h3>
-                  <p className="text-sm leading-[1.6] text-[#6a7282]">{f.body}</p>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Testimonials Section */}
-        <section id="testimonials" className="relative z-10 w-full bg-[#f9fafb] px-4 py-12 md:px-12 lg:px-[120px] lg:py-24">
-          <div className="mx-auto max-w-[1200px] flex flex-col gap-8">
-            {/* Section Header */}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <p className="text-xs font-semibold tracking-[1.4px] uppercase text-[#2107aa]">
-                Testimonials
-              </p>
-              <h2 className="text-[28px] md:text-4xl lg:text-[40px] font-extrabold leading-[1.1] text-[#101828]">
-                Learners love GOTCHA
-              </h2>
-              <p className="text-sm md:text-base leading-[1.6] text-[#6a7282] max-w-[720px]">
-                Real learners, real progress - built on a reading-first workflow.
-              </p>
-            </div>
-
-            {/* Testimonials Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {testimonials.map((t) => (
-                <article
-                  key={t.initials}
-                  className="flex flex-col gap-4 p-6 bg-white border border-[#e5e7eb] rounded-[20px] shadow-[0_2px_5px_rgba(0,0,0,0.05)]"
-                >
-                  <Stars />
-                  <p className="text-sm italic leading-[1.6] text-[#4a5565] flex-1">
-                    "{t.quote}"
-                  </p>
-                  <div className="flex items-center gap-3">
-                    <div className="flex items-center justify-center w-10 h-10 bg-[#2107aa] rounded-full">
-                      <span className="text-sm font-bold text-white">{t.initials}</span>
-                    </div>
-                    <div className="flex flex-col gap-0.5">
-                      <strong className="text-sm font-semibold text-[#101828]">{t.name}</strong>
-                      <span className="text-[13px] text-[#99a1af]">{t.meta}</span>
-                    </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Pricing Section */}
-        <section id="pricing" className="relative z-10 w-full bg-white px-4 py-12 md:px-12 lg:px-[120px] lg:py-24">
-          <div className="mx-auto max-w-[1200px] flex flex-col gap-8">
-            {/* Section Header */}
-            <div className="flex flex-col items-center gap-3 text-center">
-              <p className="text-xs font-semibold tracking-[1.4px] uppercase text-[#2107aa]">
-                Pricing
-              </p>
-              <h2 className="text-[28px] md:text-4xl lg:text-[40px] font-extrabold leading-[1.1] text-[#101828]">
-                Simple, honest pricing
-              </h2>
-              <p className="text-sm md:text-base leading-[1.6] text-[#6a7282] max-w-[720px]">
-                Start free. No subscription, ever — pay only for what you import.
-              </p>
-            </div>
-
-            {/* Pricing Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Free Plan */}
-              <article className="flex flex-col gap-4 p-6 bg-white border border-[#e5e7eb] rounded-[20px] shadow-[0_2px_5px_rgba(0,0,0,0.05)]">
-                <div className="flex flex-col gap-2">
-                  <p className="text-sm font-semibold text-[#6a7282]">{freePlan.name}</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[40px] font-extrabold leading-[1.1] text-[#101828]">
-                      {freePlan.priceLabel}
+                    <span aria-hidden="true" className="font-['Manrope',sans-serif] text-[32px] font-extrabold text-[#c7d1de]">
+                      {step.n}
                     </span>
-                    <span className="text-sm text-[#99a1af]">{freePlan.priceUnit}</span>
                   </div>
-                </div>
-                <ul className="flex flex-col gap-2.5 flex-1">
-                  {freePlan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2.5 text-sm leading-5 text-[#4a5565]">
-                      <Icon src={a.check} size={16} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  className="flex items-center justify-center h-11 bg-[#2107aa] text-white text-sm font-bold rounded-[14px] hover:translate-y-[-1px] transition-transform"
-                  href={registerUrl({ plan: 'free' })}
-                >
-                  {freePlan.cta}
-                </a>
-              </article>
-
-              {/* Pay-per-import Plan */}
-              <article className="flex flex-col gap-4 p-6 bg-gradient-to-r from-[#2107aa] to-[#6c1d95] rounded-[20px] shadow-[0_6px_16px_-8px_rgba(0,0,0,0.08),0_18px_40px_-12px_rgba(33,7,170,0.2)] text-white overflow-hidden">
-                <div className="flex flex-col gap-2.5">
-                  {payPerImportPlan.popular && (
-                    <div className="inline-flex items-center gap-2 w-fit px-2.5 py-1.5 bg-white/15 border border-white/20 rounded-full">
-                      <Icon src={a.sparklesBadge} size={16} />
-                      <span className="text-xs font-bold text-white">No subscription</span>
-                    </div>
-                  )}
-                  <p className="text-sm font-semibold text-white/80">{payPerImportPlan.name}</p>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[32px] md:text-[40px] font-extrabold leading-[1.1] text-white">
-                      {payPerImportPlan.priceLabel}
-                    </span>
-                    <span className="text-sm text-white/80">{payPerImportPlan.priceUnit}</span>
+                  <div className="flex flex-col gap-2">
+                    <h3 className="font-['Manrope',sans-serif] text-xl font-bold text-[#101828]">{step.title}</h3>
+                    <p className="text-sm leading-[1.5] text-[#4a5565]">{step.body}</p>
                   </div>
-                </div>
-                <ul className="flex flex-col gap-2.5 flex-1">
-                  {payPerImportPlan.features.map((f) => (
-                    <li key={f} className="flex items-center gap-2.5 text-sm leading-5 text-white/80">
-                      <Icon src={a.checkWhite} size={16} />
-                      {f}
-                    </li>
-                  ))}
-                </ul>
-                <a
-                  className="flex items-center justify-center h-11 bg-white text-[#2107aa] text-sm font-bold rounded-[14px] hover:translate-y-[-1px] transition-transform"
-                  href={registerUrl({ plan: 'pay-per-import' })}
-                >
-                  {payPerImportPlan.cta}
-                </a>
-              </article>
+                </article>
+              ))}
             </div>
-          </div>
+          </FadeIn>
         </section>
 
-        {/* Final CTA Section */}
-        <section className="relative z-10 w-full px-4 md:px-12 lg:px-[120px] mb-16 lg:mb-24" aria-label="Get started">
-          <div className="mx-auto max-w-[1200px]">
-            <div className="flex flex-col items-center gap-4 px-6 py-12 md:px-12 lg:px-20 lg:py-24 bg-gradient-to-r from-[#7008e7] via-[#372aac] to-[#4d179a] rounded-2xl lg:rounded-3xl text-center text-white overflow-hidden">
-              <h2 className="text-[26px] md:text-4xl lg:text-[40px] font-black leading-[1.1] text-white">
-                Ready to read your way to fluency?
+        <section id="features" className="scroll-mt-24 bg-[#f3f0ff] px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
+          <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-10 lg:gap-14">
+            <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
+              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
+                Everything you need for reading fluency
               </h2>
-              <p className="text-[15px] lg:text-lg leading-[1.6] text-[#ddd6ff] max-w-[720px]">
-                Join {formatLearners(learnerCount)} learners already using Gotcha every day.
+              <p className="text-base leading-[1.5] text-[#4a5565]">
+                Smarter tooling built specifically to keep your brain focused on context and comprehension.
               </p>
-              <div className="flex flex-col sm:flex-row gap-3 mt-2 w-full sm:w-auto">
-                <a
-                  className="inline-flex items-center justify-center h-12 px-[22px] bg-white text-[#2107aa] text-[15px] font-bold rounded-[14px] shadow-[0_10px_11px_rgba(0,0,0,0.15)] hover:translate-y-[-1px] transition-transform"
-                  href={registerUrl({ plan: 'free' })}
+            </div>
+            <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {features.map((feature) => (
+                <article
+                  key={feature.title}
+                  className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(16,24,40,0.08)]"
                 >
-                  Start for free - no card needed
-                </a>
-                <a
-                  className="inline-flex items-center justify-center h-12 px-[18px] border border-white/40 text-white text-[15px] font-semibold rounded-[14px] hover:translate-y-[-1px] transition-transform"
-                  href="mailto:sales@gotcha.app"
-                >
-                  Contact sales
-                </a>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#f3f0ff]">
+                    <span className="inline-flex h-5 w-5 items-center justify-center">
+                      <Icon src={feature.icon} size={20} />
+                    </span>
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <h3 className="font-['Manrope',sans-serif] text-base font-bold text-[#101828]">{feature.title}</h3>
+                    <p className="text-[13px] leading-[1.5] text-[#4a5565]">{feature.body}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          </FadeIn>
+        </section>
+
+        <section id="catalog" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
+          <div className="mx-auto flex max-w-[1280px] flex-col gap-12">
+            <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+              <div className="flex flex-col gap-2">
+                <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">Library</p>
+                <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-[32px]">
+                  Explore the catalog
+                </h2>
               </div>
+              <a
+                href={libraryUrl()}
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#2107aa] transition-colors hover:text-[#101828]"
+              >
+                Browse full library
+                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
+                  <Icon src={a.arrowRight} size={14} />
+                </span>
+              </a>
             </div>
+
+            {catalogLoading ? (
+              <div className="landing-catalog-track">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="landing-catalog-card animate-pulse">
+                    <div className="h-[320px] w-[220px] rounded-lg bg-[#e2e8f0]" />
+                    <div className="mt-3 h-3 w-28 rounded bg-[#e2e8f0]" />
+                    <div className="mt-2 h-4 w-40 rounded bg-[#e2e8f0]" />
+                  </div>
+                ))}
+              </div>
+            ) : catalogItems.length === 0 ? (
+              <p className="py-12 text-center text-sm text-[#4a5565]">
+                Library is being curated — check back soon.
+              </p>
+            ) : (
+              <div className="landing-catalog-track">
+                {catalogItems.map((item) => (
+                  <a key={item.id} href={libraryUrl()} className="landing-catalog-card group">
+                    <div className="relative h-[320px] w-[220px] overflow-hidden rounded-lg">
+                      <CatalogCover title={item.title} coverImageUrl={item.coverImageUrl} />
+                      <span className="absolute right-3 top-3 rounded bg-[#101828] px-2 py-1 font-['Manrope',sans-serif] text-[11px] font-bold text-white">
+                        {cefrLabel(item.cefr)}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5 text-xs text-[#4a5565]">
+                        <span className="font-semibold">{languageLabel(item.language, languages)}</span>
+                        {item.author && (
+                          <>
+                            <span className="h-[3px] w-[3px] rounded-full bg-[#99a1af]" />
+                            <span className="min-w-0 truncate font-medium">{item.author}</span>
+                          </>
+                        )}
+                      </div>
+                      <p className="truncate font-['Manrope',sans-serif] text-[15px] font-bold text-[#101828] group-hover:text-[#2107aa]">
+                        {item.title}
+                      </p>
+                      {item.isFree ? (
+                        <span className="w-fit rounded bg-[#def2e4] px-1.5 py-0.5 text-[11px] font-bold text-[#047d57]">
+                          Free
+                        </span>
+                      ) : (
+                        <p className="text-[13px] font-bold text-[#101828]">{formatUzs(item.priceUzs)}</p>
+                      )}
+                    </div>
+                  </a>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section id="pricing" className="scroll-mt-24 bg-[#f3f0ff] px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
+          <FadeIn className="mx-auto flex max-w-[640px] flex-col items-center gap-12">
+            <div className="flex flex-col items-center gap-3 text-center">
+              <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">Pricing</p>
+              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
+                Pay as you go. No subscription.
+              </h2>
+              <p className="max-w-[540px] text-[15px] leading-[1.5] text-[#4a5565]">
+                Secure instant payments in soʻm processed via Atmos. No monthly cards linked, absolute control over your
+                spend.
+              </p>
+            </div>
+
+            {pricing && (
+              <div className="flex w-full items-center gap-4 rounded-xl border border-[#059669] bg-white p-5">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-[#def2e4]">
+                  <span className="inline-flex h-4 w-4 items-center justify-center">
+                    <Icon src={a.gift} size={16} />
+                  </span>
+                </div>
+                <div className="min-w-0">
+                  <p className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">Generous Free Daily Tier</p>
+                  <p className="text-[13px] text-[#4a5565]">
+                    {pricing.freeLimits.dailyFreeImportsPerUser} free imports per day ·{' '}
+                    {pricing.freeLimits.monthlyFreePageLimit} free pages per month
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {catalogLoading ? (
+              <div className="w-full animate-pulse overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-14 border-b border-[#e2e8f0] last:border-0" />
+                ))}
+              </div>
+            ) : pricing && pricing.tiers.length > 0 ? (
+              <div className="w-full overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white">
+                <div className="flex items-center justify-between bg-[#f3f0ff] px-6 py-4 font-['Manrope',sans-serif] text-xs font-bold uppercase text-[#4a5565]">
+                  <span>Document volume</span>
+                  <span>Price per import</span>
+                </div>
+                {pricing.tiers.map((tier) => (
+                  <div
+                    key={tier.id}
+                    className="flex items-center justify-between border-t border-[#e2e8f0] px-6 py-4 text-[15px] text-[#101828]"
+                  >
+                    <span className="font-['Manrope',sans-serif] font-semibold">{tier.label}</span>
+                    <span className="font-bold">{formatUzs(tier.priceUzs)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
+            <p className="text-center text-xs text-[#99a1af]">
+              Minimum Atmos transaction charge is {formatUzs(pricing?.atmosMinAmountSom ?? 500)}. All payments are
+              securely encrypted.
+            </p>
+          </FadeIn>
+        </section>
+
+        {!hideReaders && (
+          <section id="readers" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
+            <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-12">
+              <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
+                <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">Community</p>
+                <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-[32px]">
+                  Our top readers this week
+                </h2>
+                <p className="text-[15px] leading-[1.5] text-[#4a5565]">
+                  Meet fellow learners in Uzbekistan expanding their world and fluency through consistent daily reading.
+                </p>
+              </div>
+
+              {catalogLoading ? (
+                <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
+                  {Array.from({ length: 3 }).map((_, i) => (
+                    <div key={i} className="h-48 animate-pulse rounded-2xl border border-[#e2e8f0] bg-[#f8fafc]" />
+                  ))}
+                </div>
+              ) : topReaders.length === 0 ? (
+                <div className="flex w-full max-w-[540px] flex-col items-center gap-4 rounded-2xl border border-[#e2e8f0] bg-[#f3f0ff] px-6 py-10 text-center">
+                  <p className="text-sm leading-[1.5] text-[#4a5565]">
+                    Be among the first to build a reading streak on GOTCHA.
+                  </p>
+                  <a
+                    href={registerHref}
+                    className="inline-flex h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-sm font-semibold text-white"
+                  >
+                    Get started free
+                  </a>
+                </div>
+              ) : (
+                <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+                  {topReaders.map((reader) => (
+                    <article
+                      key={`${reader.rank}-${reader.displayName}`}
+                      className="flex flex-col gap-5 rounded-2xl border border-[#e2e8f0] bg-white p-6"
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#101828]">
+                          <span className="font-['Manrope',sans-serif] text-base font-bold text-white">
+                            {reader.initials}
+                          </span>
+                        </div>
+                        <p className="truncate font-['Manrope',sans-serif] text-base font-bold text-[#101828]">
+                          {reader.displayName}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2.5 text-[13px]">
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
+                            <span className="inline-flex h-4 w-4 items-center justify-center">
+                              <Icon src={a.flameSm} size={16} />
+                            </span>
+                            Streak days
+                          </span>
+                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
+                            {reader.streakDays} days
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
+                            <span className="inline-flex h-4 w-4 items-center justify-center">
+                              <Icon src={a.alarmClock} size={16} />
+                            </span>
+                            Time read
+                          </span>
+                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
+                            {reader.minutesRead} mins
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
+                            <span className="inline-flex h-4 w-4 items-center justify-center">
+                              <Icon src={a.bookOpenSm} size={16} />
+                            </span>
+                            Words learned
+                          </span>
+                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
+                            {reader.wordsLearned} words
+                          </span>
+                        </div>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              )}
+            </FadeIn>
+          </section>
+        )}
+
+        <section className="bg-[#101828] px-5 py-20 md:px-10 lg:px-20 lg:py-[120px]" aria-label="Get started">
+          <div className="mx-auto flex max-w-[720px] flex-col items-center gap-8 text-center">
+            <div className="flex flex-col items-center gap-4">
+              <h2 className="font-['Manrope',sans-serif] text-[32px] font-extrabold leading-[1.2] text-white md:text-[44px]">
+                Start reading in a new language today
+              </h2>
+              {learnerCount > 0 ? (
+                <p className="text-base font-medium text-[#99a1af]">
+                  {formatLearners(learnerCount)} readers already learning
+                </p>
+              ) : (
+                <p className="text-base font-medium text-[#99a1af]">Start reading for free</p>
+              )}
+            </div>
+            <a
+              className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px"
+              href={registerHref}
+            >
+              Get started free
+            </a>
           </div>
         </section>
       </main>

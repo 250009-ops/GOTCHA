@@ -143,6 +143,34 @@ export async function cancelPayment(paymentId: string, reason?: string) {
   });
 }
 
+export type CatalogAccess = {
+  contentId: string;
+  title: string;
+  isFree: boolean;
+  priceUzs: number;
+  currency: 'UZS';
+  accessGranted: boolean;
+  gatewayEnabled: boolean;
+};
+
+export type CatalogCheckout = CatalogAccess & {
+  paymentId: string | null;
+  account: string | null;
+  transactionId: number | null;
+  status: string;
+  step: 'done' | 'card' | 'otp' | 'paid';
+};
+
+export async function catalogAccess(contentId: string) {
+  return api<CatalogAccess>(`/billing/content/${contentId}/access`);
+}
+
+export async function checkoutCatalog(contentId: string) {
+  return api<CatalogCheckout>(`/billing/content/${contentId}/checkout`, {
+    method: 'POST',
+  });
+}
+
 export async function getImportPayment(paymentId: string) {
   return api<{ id: string; status: string; paymentUrl?: string | null; amountTiyins: number; ofdUrl?: string }>(
     `/billing/imports/payments/${paymentId}`,
