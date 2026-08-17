@@ -1,11 +1,14 @@
+import { Type } from 'class-transformer';
 import {
   Allow,
   IsBoolean,
   IsEmail,
   IsIn,
+  IsInt,
   IsNumber,
   IsOptional,
   IsString,
+  Min,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -185,7 +188,9 @@ export class UpdateSettingsDto {
   aiEnabled?: boolean;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
+  @Min(0)
   aiDailyLimit?: number;
 
   @IsOptional()
@@ -201,6 +206,22 @@ export class UpdateSettingsDto {
   aiImportCleanupModel?: string;
 
   @IsOptional()
+  @Type(() => Number)
   @IsNumber()
+  @Min(0)
   aiDefaultUserQuota?: number;
+}
+
+export class UpdateAiLimitsDto {
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  aiDefaultUserQuota?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  aiDailyLimit?: number;
 }

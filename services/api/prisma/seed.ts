@@ -180,15 +180,14 @@ const SAMPLE_STORIES: Array<{
 async function main() {
   console.log('Seeding Gotcha database...');
 
-  // Free: 50 lookups/day, 15 imports (raised for demos); Premium: $9, unlimited.
+  // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
+  // Premium: unlimited.
   const UNLIMITED = 1_000_000;
   await prisma.subscriptionPlan.upsert({
     where: { tier: 'free' },
     update: {
       name: 'Free',
       priceMonthly: 0,
-      aiDailyQuota: 50,
-      importLimit: 15,
       offlineEnabled: false,
     },
     create: {
@@ -857,13 +856,9 @@ async function main() {
   for (const tier of pageTiers) {
     await prisma.importPageTier.upsert({
       where: { id: tier.id },
-      // IDEMPOTENT: Only update labels/ranges/sort — preserve admin-edited priceUsd
+      // IDEMPOTENT: Preserve admin-edited prices AND page ranges (gaps are closed in admin).
       update: {
-        label: tier.label,
-        minPages: tier.minPages,
-        maxPages: tier.maxPages,
         sortOrder: tier.sortOrder,
-        // NOTE: priceUsd intentionally NOT included — admin edits are the source of truth
       },
       create: tier,
     });
@@ -933,11 +928,11 @@ async function main() {
     update: { value: true },
     create: { key: 'aiEnabled', value: true },
   });
-  await prisma.platformSetting.upsert({
-    where: { key: 'aiDailyLimit' },
-    update: { value: 150000 },
-    create: { key: 'aiDailyLimit', value: 150000 },
-  });
+  // IDEMPOTENT: Do not overwrite admin lookup / platform AI caps on redeploy.
+  const existingAiDailyLimit = await prisma.platformSetting.findUnique({ where: { key: 'aiDailyLimit' } });
+  if (!existingAiDailyLimit) {
+    await prisma.platformSetting.create({ data: { key: 'aiDailyLimit', value: 150000 } });
+  }
   await prisma.platformSetting.upsert({
     where: { key: 'aiLookupModel' },
     update: { value: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-4.1-mini' },
@@ -964,11 +959,10 @@ async function main() {
         'gpt-4.1-mini',
     },
   });
-  await prisma.platformSetting.upsert({
-    where: { key: 'aiDefaultUserQuota' },
-    update: { value: 50 },
-    create: { key: 'aiDefaultUserQuota', value: 50 },
-  });
+  const existingAiUserQuota = await prisma.platformSetting.findUnique({ where: { key: 'aiDefaultUserQuota' } });
+  if (!existingAiUserQuota) {
+    await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 50 } });
+  }
 
   await prisma.notificationCampaign.deleteMany({
     where: {

@@ -8,6 +8,32 @@ export const AI_SETTING_KEYS = {
   defaultUserQuota: 'aiDefaultUserQuota',
 } as const;
 
+/** Paid Premium plans use this threshold for “unlimited” lookups. */
+export const UNLIMITED_AI_QUOTA = 1_000_000;
+
+export function coerceNonNegInt(raw: unknown, fallback: number): number {
+  const n =
+    typeof raw === 'number'
+      ? raw
+      : typeof raw === 'string' && raw.trim() !== ''
+        ? Number(raw)
+        : NaN;
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : fallback;
+}
+
+/**
+ * Free learners follow the admin platform quota.
+ * Premium (plan quota ≥ 1e6) stays unlimited.
+ * 0 on the platform setting means unlimited for Free.
+ */
+export function resolveLearnerDailyAiQuota(
+  planQuota: number | null | undefined,
+  platformDefault: number,
+): number {
+  if (planQuota != null && planQuota >= UNLIMITED_AI_QUOTA) return planQuota;
+  return platformDefault;
+}
+
 export type AiPlatformSettings = {
   enabled: boolean;
   dailyLimit: number;
@@ -42,10 +68,7 @@ export function parseAiPlatformSettings(map: Record<string, unknown>): AiPlatfor
 
   return {
     enabled: typeof enabledRaw === 'boolean' ? enabledRaw : defaults.enabled,
-    dailyLimit:
-      typeof dailyLimitRaw === 'number' && Number.isFinite(dailyLimitRaw)
-        ? Math.max(0, Math.floor(dailyLimitRaw))
-        : defaults.dailyLimit,
+    dailyLimit: coerceNonNegInt(dailyLimitRaw, defaults.dailyLimit),
     lookupModel:
       typeof lookupModelRaw === 'string' && lookupModelRaw.trim()
         ? lookupModelRaw.trim()
@@ -58,9 +81,6 @@ export function parseAiPlatformSettings(map: Record<string, unknown>): AiPlatfor
       typeof importCleanupModelRaw === 'string' && importCleanupModelRaw.trim()
         ? importCleanupModelRaw.trim()
         : defaults.importCleanupModel,
-    defaultUserQuota:
-      typeof defaultQuotaRaw === 'number' && Number.isFinite(defaultQuotaRaw)
-        ? Math.max(0, Math.floor(defaultQuotaRaw))
-        : defaults.defaultUserQuota,
+    defaultUserQuota: coerceNonNegInt(defaultQuotaRaw, defaults.defaultUserQuota),
   };
 }

@@ -19,7 +19,7 @@ import { AdminRole, LicenseStatus, ModerationStatus, PublishStatus } from '@pris
 import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
-import { CreateContentDto, UpdateAdminProfileDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
+import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
 @ApiTags('admin')
@@ -176,6 +176,18 @@ export class AdminController {
     return this.admin.createContent(user.sub, body as unknown as Record<string, unknown>);
   }
 
+  @Get('content/:id/reader')
+  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  getContentReader(@Param('id') id: string) {
+    return this.admin.getContentReader(id);
+  }
+
+  @Get('content/:id/reader/page')
+  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  getContentReaderPage(@Param('id') id: string, @Query('from') from?: string) {
+    return this.admin.getContentReaderPage(id, Number(from ?? 0));
+  }
+
   @Get('content/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
   getContent(@Param('id') id: string) {
@@ -307,6 +319,15 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
   aiUsage(@Query('range') range?: string) {
     return this.admin.aiUsage(range);
+  }
+
+  @Patch('ai-usage/limits')
+  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  updateAiUsageLimits(@Body() body: UpdateAiLimitsDto) {
+    return this.admin.updateSettings({
+      aiDefaultUserQuota: body.aiDefaultUserQuota,
+      aiDailyLimit: body.aiDailyLimit,
+    });
   }
 
   @Get('analytics')

@@ -219,22 +219,29 @@ export default function SettingsPage() {
                 Enable AI for learners
               </label>
               <label className="text-sm">
-                <span className="text-slate-500 block mb-1">Platform daily AI limit (all users)</span>
+                <span className="text-slate-500 block mb-1">Platform daily AI limit (all learners)</span>
                 <Input
                   type="number"
                   min={0}
                   value={Number(settings.aiDailyLimit ?? 0)}
                   onChange={(e) => setSettings({ ...settings, aiDailyLimit: Number(e.target.value) })}
                 />
+                <span className="text-xs text-slate-400 mt-1 block">
+                  Shared cap for lookups + quizzes today. 0 = unlimited. Learners are blocked when this is reached.
+                </span>
               </label>
               <label className="text-sm">
-                <span className="text-slate-500 block mb-1">Daily AI quota per learner</span>
+                <span className="text-slate-500 block mb-1">Daily word-lookup quota per learner</span>
                 <Input
                   type="number"
                   min={0}
                   value={Number(settings.aiDefaultUserQuota ?? 50)}
                   onChange={(e) => setSettings({ ...settings, aiDefaultUserQuota: Number(e.target.value) })}
                 />
+                <span className="text-xs text-slate-400 mt-1 block">
+                  Each learner’s word lookups per day in books and chat. Editable here and on Dashboard / AI Usage.
+                  0 = unlimited. This is the warning they see after tapping too many words.
+                </span>
               </label>
               <label className="text-sm">
                 <span className="text-slate-500 block mb-1">Lookup model</span>

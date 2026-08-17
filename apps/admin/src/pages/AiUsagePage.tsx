@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { Cpu } from 'lucide-react';
 import { HorizontalBars, LineChart } from '../components/charts';
+import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
 import { Badge, Card, DataTable, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { formatNumber, initials } from '../lib/utils';
 
 interface AiUsageData {
@@ -26,6 +28,10 @@ interface AiUsageData {
     priorLookups?: number;
     growthPct: number;
     avgLookupsPerUser: number;
+    todayLookups?: number;
+    todayPlatformUsed?: number;
+    usersAtQuota?: number;
+    rateLimitedUsers?: number;
   };
   hourlyLookups: number[];
   featureUsage: Array<{ name: string; pct: number; color: string }>;
@@ -47,6 +53,8 @@ function growthHint(growthPct: number, priorLookups?: number, lookups = 0) {
 }
 
 export default function AiUsagePage() {
+  const { user } = useAuth();
+  const canEditLimits = canEditAiLimits(user?.role);
   const [data, setData] = useState<AiUsageData | null>(null);
   const [range, setRange] = useState('today');
   const [loading, setLoading] = useState(false);
@@ -54,7 +62,8 @@ export default function AiUsagePage() {
   async function load(nextRange = range) {
     setLoading(true);
     try {
-      setData(await api<AiUsageData>(`/admin/ai-usage?range=${encodeURIComponent(nextRange)}`));
+      const next = await api<AiUsageData>(`/admin/ai-usage?range=${encodeURIComponent(nextRange)}`);
+      setData(next);
     } finally {
       setLoading(false);
     }
@@ -110,6 +119,36 @@ export default function AiUsagePage() {
           <Badge className="bg-slate-100 text-slate-600">Model {data.settings.lookupModel}</Badge>
         )}
       </div>
+
+      {(() => {
+        const usersAtQuota = data.today.usersAtQuota ?? data.today.rateLimitedUsers ?? 0;
+        const todayUsed = data.today.todayPlatformUsed ?? data.today.lookups;
+        const cap = data.settings?.dailyLimit ?? 0;
+        const platformHit = cap > 0 && todayUsed >= cap;
+        const platformHot = cap > 0 && todayUsed / cap >= 0.8;
+        if (!usersAtQuota && !platformHit && !platformHot) return null;
+        return (
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {platformHit
+              ? `Platform daily AI limit reached (${formatNumber(todayUsed)} / ${formatNumber(cap)}). Learners see a lookup warning until tomorrow or you raise the cap below.`
+              : platformHot
+                ? `Platform AI usage is at ${Math.round((todayUsed / cap) * 100)}% of today’s cap (${formatNumber(todayUsed)} / ${formatNumber(cap)}).`
+                : `${formatNumber(usersAtQuota)} learner${usersAtQuota === 1 ? '' : 's'} hit the per-person daily lookup quota (${formatNumber(data.settings?.defaultUserQuota ?? 50)}). Raise “Daily word-lookup quota per learner” below to stop the warning.`}
+          </div>
+        );
+      })()}
+
+      <div className="mb-4">
+        <LookupLimitsCard
+          defaultUserQuota={data.settings?.defaultUserQuota ?? 50}
+          dailyLimit={data.settings?.dailyLimit ?? 0}
+          usersAtQuota={data.today.usersAtQuota ?? data.today.rateLimitedUsers ?? 0}
+          todayPlatformUsed={data.today.todayPlatformUsed ?? data.today.lookups}
+          canEdit={canEditLimits}
+          onSaved={() => void load(range)}
+        />
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
           label={`Total Lookups (${rangeLabel})`}

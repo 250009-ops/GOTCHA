@@ -1,5 +1,12 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import {
+  AI_SETTING_KEYS,
+  coerceNonNegInt,
+  defaultAiPlatformSettings,
+  resolveLearnerDailyAiQuota,
+  UNLIMITED_AI_QUOTA,
+} from '../modules/ai/ai-settings';
 
 function envFlagTrue(value: string | undefined): boolean {
   const v = (value ?? '').trim().toLowerCase();
@@ -86,8 +93,15 @@ export class LimitsService {
 
   async assertQuizAllowed(userId: string) {
     const plan = await this.getActivePlan(userId);
-    const quota = plan?.aiDailyQuota ?? 50;
-    if (quota >= 1_000_000) return;
+    const row = await this.prisma.platformSetting.findUnique({
+      where: { key: AI_SETTING_KEYS.defaultUserQuota },
+    });
+    const platformDefault = coerceNonNegInt(
+      row?.value,
+      defaultAiPlatformSettings().defaultUserQuota,
+    );
+    const quota = resolveLearnerDailyAiQuota(plan?.aiDailyQuota, platformDefault);
+    if (quota <= 0 || quota >= UNLIMITED_AI_QUOTA) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const usage = await this.prisma.aiUsageDaily.findUnique({

@@ -37,14 +37,16 @@ import {
 } from './admin-figma-metrics';
 import {
   AI_SETTING_KEYS,
+  coerceNonNegInt,
   defaultAiPlatformSettings,
   parseAiPlatformSettings,
 } from '../ai/ai-settings';
 import { AuthService } from '../auth/auth.service';
 import { UpdateAdminProfileDto } from './dto/admin.dto';
 import { assertAtmosMinPriceSom, atmosMinAmountSom } from '../billing/atmos.client';
+import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import { liveLearnerWhere, syntheticUserEmailWhere } from '../../common/production-users';
-import { normalizeAllowedFormats } from '../../common/import-format';
+import { describePageTierGaps, normalizeAllowedFormats } from '../../common/import-format';
 import {
   normalizeCampaignAudience,
   PUSH_CAMPAIGN_CHANNELS,
@@ -336,6 +338,7 @@ export class AdminService {
       revenueGrowthPct,
       aiLookupsToday,
       aiLimit,
+      aiDefaultUserQuota: aiSettings.defaultUserQuota,
       aiUsagePct,
       userGrowthPct,
       conversionPct,
@@ -973,6 +976,55 @@ export class AdminService {
     };
   }
 
+  async getContentReader(id: string) {
+    const item = await this.prisma.contentItem.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        title: true,
+        author: true,
+        language: true,
+        cefrLevel: true,
+        wordCount: true,
+        publishStatus: true,
+        segments: {
+          select: {
+            id: true,
+            segmentIndex: true,
+            chapterIndex: true,
+            chapterTitle: true,
+            pageIndex: true,
+            title: true,
+            wordCount: true,
+          },
+          orderBy: { segmentIndex: 'asc' },
+        },
+      },
+    });
+    if (!item) throw new NotFoundException('Content not found');
+    return item;
+  }
+
+  async getContentReaderPage(id: string, from = 0) {
+    const exists = await this.prisma.contentItem.findUnique({ where: { id }, select: { id: true } });
+    if (!exists) throw new NotFoundException('Content not found');
+    const page = await this.prisma.contentSegment.findFirst({
+      where: { contentId: id, segmentIndex: Number.isFinite(from) ? from : 0 },
+      select: {
+        id: true,
+        segmentIndex: true,
+        chapterIndex: true,
+        chapterTitle: true,
+        pageIndex: true,
+        title: true,
+        wordCount: true,
+        plainText: true,
+      },
+    });
+    if (!page) throw new NotFoundException('Page not found');
+    return page;
+  }
+
   async uploadContentCover(id: string, file: Express.Multer.File) {
     const existing = await this.prisma.contentItem.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Content not found');
@@ -983,6 +1035,7 @@ export class AdminService {
     };
     const ext = extByMime[file.mimetype];
     if (!ext) throw new BadRequestException('Use a JPG, PNG, or WebP image.');
+    assertJpegPngOrWebp(file, 'Cover');
     if (file.size > 4 * 1024 * 1024) {
       throw new BadRequestException('Cover must be 4 MB or smaller.');
     }
@@ -1229,6 +1282,7 @@ export class AdminService {
         priceUzs: Number(t.priceUsd),
         sortOrder: t.sortOrder,
       })),
+      pageTierGaps: describePageTierGaps(tiers),
       freeLimits,
     };
   }
@@ -1276,8 +1330,14 @@ export class AdminService {
       where: { id },
       data: {
         label: body.label !== undefined ? String(body.label) : undefined,
-        minPages: body.minPages !== undefined ? Number(body.minPages) : undefined,
-        maxPages: body.maxPages === null ? null : body.maxPages !== undefined ? Number(body.maxPages) : undefined,
+        minPages:
+          body.minPages !== undefined ? Math.max(1, Math.floor(Number(body.minPages))) : undefined,
+        maxPages:
+          body.maxPages === null
+            ? null
+            : body.maxPages !== undefined
+              ? Math.max(1, Math.floor(Number(body.maxPages)))
+              : undefined,
         priceUsd:
           body.priceUzs !== undefined
             ? Number(body.priceUzs)
@@ -1327,6 +1387,10 @@ export class AdminService {
       where: { key: 'importFreeLimits' },
       update: { value: next as never },
       create: { key: 'importFreeLimits', value: next as never },
+    });
+    await this.prisma.subscriptionPlan.updateMany({
+      where: { tier: 'free' },
+      data: { importLimit: Math.max(0, Math.floor(next.dailyFreeImportsPerUser)) },
     });
     return next;
   }
@@ -1731,7 +1795,10 @@ export class AdminService {
     chartStart.setHours(0, 0, 0, 0);
     chartStart.setDate(chartStart.getDate() - 6);
 
-    const [rows, priorAgg, monthRows, chartRows] = await Promise.all([
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    const [rows, priorAgg, monthRows, chartRows, todayRows] = await Promise.all([
       this.prisma.aiUsageDaily.findMany({
         where: { usageDate: { gte: start, lte: end }, ...liveUsage },
         include: { user: { select: { id: true, email: true, displayName: true } } },
@@ -1751,6 +1818,10 @@ export class AdminService {
         where: { usageDate: { gte: chartStart }, ...liveUsage },
         select: { usageDate: true, lookupCount: true, tokensUsed: true },
       }),
+      this.prisma.aiUsageDaily.findMany({
+        where: { usageDate: todayStart, ...liveUsage },
+        select: { lookupCount: true, quizCount: true },
+      }),
     ]);
 
     const lookups = rows.reduce((sum, r) => sum + r.lookupCount, 0);
@@ -1765,6 +1836,15 @@ export class AdminService {
         : lookups > 0
           ? 100
           : 0;
+
+    const todayLookups = todayRows.reduce((sum, r) => sum + r.lookupCount, 0);
+    const todayQuizzes = todayRows.reduce((sum, r) => sum + r.quizCount, 0);
+    const todayPlatformUsed = todayLookups + todayQuizzes;
+    const userQuota = aiSettings.defaultUserQuota;
+    const usersAtQuota =
+      userQuota > 0 && userQuota < 1_000_000
+        ? todayRows.filter((r) => r.lookupCount >= userQuota).length
+        : 0;
 
     const monthByUser = new Map<string, number>();
     for (const r of monthRows) {
@@ -1881,8 +1961,11 @@ export class AdminService {
         avgLookupsTarget: aiSettings.defaultUserQuota,
         apiCostToday: 0,
         avgCostPerLookup: 0,
-        rateLimitedUsers: 0,
-        flagAlerts: 0,
+        rateLimitedUsers: usersAtQuota,
+        flagAlerts: usersAtQuota,
+        todayLookups,
+        todayPlatformUsed,
+        usersAtQuota,
       },
       allTime: {
         lookups,
@@ -2526,8 +2609,23 @@ export class AdminService {
   }
 
   async updateSettings(body: Record<string, unknown>) {
-    const entries = Object.entries(body).filter(
-      ([key]) => key !== ADMIN_METRICS_KEY && key !== 'aiConfigured',
+    const defaults = defaultAiPlatformSettings();
+    const nextBody = { ...body };
+    if (nextBody[AI_SETTING_KEYS.defaultUserQuota] !== undefined) {
+      nextBody[AI_SETTING_KEYS.defaultUserQuota] = coerceNonNegInt(
+        nextBody[AI_SETTING_KEYS.defaultUserQuota],
+        defaults.defaultUserQuota,
+      );
+    }
+    if (nextBody[AI_SETTING_KEYS.dailyLimit] !== undefined) {
+      nextBody[AI_SETTING_KEYS.dailyLimit] = coerceNonNegInt(
+        nextBody[AI_SETTING_KEYS.dailyLimit],
+        defaults.dailyLimit,
+      );
+    }
+    const entries = Object.entries(nextBody).filter(
+      ([key, value]) =>
+        key !== ADMIN_METRICS_KEY && key !== 'aiConfigured' && value !== undefined,
     );
     await Promise.all(
       entries.map(([key, value]) =>
@@ -2538,6 +2636,12 @@ export class AdminService {
         }),
       ),
     );
+    if (nextBody[AI_SETTING_KEYS.defaultUserQuota] !== undefined) {
+      await this.prisma.subscriptionPlan.updateMany({
+        where: { tier: 'free' },
+        data: { aiDailyQuota: nextBody[AI_SETTING_KEYS.defaultUserQuota] as number },
+      });
+    }
     return this.settings();
   }
 

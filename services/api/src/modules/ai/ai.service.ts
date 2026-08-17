@@ -14,6 +14,7 @@ import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
   parseAiPlatformSettings,
+  resolveLearnerDailyAiQuota,
   AI_SETTING_KEYS,
 } from './ai-settings';
 import { ExtractedChapter } from '../imports/extract-text';
@@ -32,6 +33,8 @@ import {
 type MemoryLookup = {
   lemma: string;
   translation: string;
+  contextualMeaning: string | null;
+  phrase: string | null;
   grammarNote: string | null;
   partOfSpeech: string | null;
 };
@@ -39,21 +42,91 @@ type MemoryLookup = {
 const LOOKUP_CONTEXT_MAX = 500;
 const LOOKUP_GLOSS_MAX_CHARS = 80;
 const LOOKUP_GLOSS_MAX_WORDS = 12;
+const LOOKUP_CONTEXTUAL_MAX_CHARS = 220;
 /** In-memory LRU size in front of DB (and for offline/dev). */
 const MEMORY_LRU_MAX = 800;
 /** Cache key scheme — bump when normalization/keying rules change. */
-const LOOKUP_CACHE_VERSION = 'v3';
+const LOOKUP_CACHE_VERSION = 'v7';
+const LOOKUP_PHRASE_MAX_WORDS = 8;
+const LOOKUP_PHRASE_MAX_CHARS = 80;
 
 const LOOKUP_SYSTEM_PROMPT = `You are a bilingual dictionary for language learners.
-Return ONLY JSON: {"lemma":"","translation":"","phraseIfAny":null}
+Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
 
 Rules:
-- Focus ONLY on the tapped target word (surface/lemma).
-- If that word is clearly part of an idiom, phrasal verb, or multi-word expression with adjacent words in the context, set phraseIfAny to that short phrase (2–5 words) and gloss THAT phrase instead.
-- "translation" = a short gloss in the learner's language (1–6 words). Never a sentence, paragraph, story, or full-context translation.
-- "lemma" = dictionary form of the target word, or the short phrase when phraseIfAny is set.
-- Do NOT include explanations, grammar notes, part-of-speech lectures, senses, or example sentences.
-- Use the context sentence only to pick the right short meaning — never translate the context itself.`;
+- Focus on the tapped target (surface form) in this sentence.
+- If the target is part of a multi-word idiom, phrasal verb, collocation, or fixed expression, set phraseIfAny to the EXACT 2–6 word span from the sentence (e.g. "on record", "looked up", "in spite of"). Then lemma = dictionary form of that phrase.
+- If the target is already a multi-word selection, treat that whole span as the phrase (copy it to phraseIfAny).
+- If it is a standalone word, phraseIfAny = null. lemma = dictionary headword (e.g. impel for impelling).
+- "translation" = short idiomatic gloss in the learner's language (1–6 words). NEVER translate word-by-word (bad: "on record" → "eng yozuv"; good: "qayd etilgan" / "tarixdagi").
+- "contextualMeaning" is REQUIRED: the natural meaning of this word/phrase as used HERE, in the learner's language (6–20 words). Example: "hottest summer on record" → "tarixda qayd etilgan eng issiq yoz".
+- Do NOT paste or translate the whole context sentence. Do NOT add grammar lectures.`;
+
+function sanitizeContextualMeaning(raw: unknown, fallbackGloss: string): string | null {
+  if (typeof raw !== 'string') return null;
+  let t = raw.replace(/\s+/g, ' ').trim();
+  if (!t) return null;
+  if (t.length > LOOKUP_CONTEXTUAL_MAX_CHARS) {
+    t = t.slice(0, LOOKUP_CONTEXTUAL_MAX_CHARS).trim();
+  }
+  if (sameLooseText(t, fallbackGloss)) return null;
+  return t;
+}
+
+function compactLookupText(raw: string) {
+  return raw
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sanitizePhrase(raw: unknown, sentence: string, surface: string): string | null {
+  if (typeof raw !== 'string') return null;
+  let t = raw.replace(/\s+/g, ' ').trim();
+  t = t.replace(/^[\s"'«»„“”‘’]+|[\s"'«»„“”‘’.,!?;:]+$/g, '').trim();
+  if (!t) return null;
+  const words = t.split(/\s+/).filter(Boolean);
+  if (words.length < 2 || words.length > LOOKUP_PHRASE_MAX_WORDS || t.length > LOOKUP_PHRASE_MAX_CHARS) {
+    return null;
+  }
+  const needle = compactLookupText(t);
+  const hay = compactLookupText(sentence);
+  if (!needle) return null;
+  if (hay && needle === hay) return null;
+  if (hay.includes(needle) || compactLookupText(surface) === needle) return t;
+  return null;
+}
+
+function packLookupNote(contextual: string | null, phrase: string | null): string | null {
+  if (!phrase) return contextual;
+  return JSON.stringify({ v: 1, contextualMeaning: contextual, phrase });
+}
+
+function unpackLookupNote(raw: string | null | undefined): {
+  contextualMeaning: string | null;
+  phrase: string | null;
+} {
+  if (!raw?.trim()) return { contextualMeaning: null, phrase: null };
+  if (raw.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(raw) as { v?: number; contextualMeaning?: string | null; phrase?: string | null };
+      if (parsed?.v === 1) {
+        return {
+          contextualMeaning: typeof parsed.contextualMeaning === 'string' ? parsed.contextualMeaning : null,
+          phrase: typeof parsed.phrase === 'string' ? parsed.phrase : null,
+        };
+      }
+    } catch {
+      // Fall through to plain-text note.
+    }
+  }
+  return { contextualMeaning: raw, phrase: null };
+}
+
+function sameLooseText(a: string, b: string) {
+  return a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
+}
 
 function clampContext(text: string): string {
   const trimmed = (text ?? '').trim();
@@ -173,7 +246,7 @@ export class AiService {
     }
 
     if (this.useMemory()) {
-      if (this.memoryPlatformLookups >= settings.dailyLimit) {
+      if (settings.dailyLimit > 0 && this.memoryPlatformLookups >= settings.dailyLimit) {
         throw new ForbiddenException('Platform AI daily limit reached. Try again tomorrow.');
       }
       return;
@@ -186,7 +259,7 @@ export class AiService {
       _sum: { lookupCount: true, quizCount: true },
     });
     const used = (agg._sum.lookupCount ?? 0) + (agg._sum.quizCount ?? 0);
-    if (used >= settings.dailyLimit) {
+    if (settings.dailyLimit > 0 && used >= settings.dailyLimit) {
       throw new ForbiddenException('Platform AI daily limit reached. Try again tomorrow.');
     }
   }
@@ -247,9 +320,9 @@ export class AiService {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
       const used = this.memoryUsage.get(key) ?? 0;
       const quota = defaultUserQuota;
-      if (used >= quota) {
+      if (quota > 0 && quota < 1_000_000 && used >= quota) {
         throw new ForbiddenException(
-          'Daily AI quota exceeded. Try again tomorrow or upgrade your plan.',
+          'Daily AI lookup limit reached. Try again tomorrow.',
         );
       }
       return { quota, usage: { lookupCount: used }, today, memoryKey: key };
@@ -260,16 +333,16 @@ export class AiService {
       include: { plan: true },
       orderBy: { createdAt: 'desc' },
     });
-    const quota = sub?.plan.aiDailyQuota ?? defaultUserQuota;
+    const quota = resolveLearnerDailyAiQuota(sub?.plan.aiDailyQuota, defaultUserQuota);
 
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },
     });
 
     // Values >= 1e6 match Premium "Unlimited AI lookups" from Landing pricing.
-    if (quota < 1_000_000 && (usage?.lookupCount ?? 0) >= quota) {
+    if (quota > 0 && quota < 1_000_000 && (usage?.lookupCount ?? 0) >= quota) {
       throw new ForbiddenException(
-        'Daily AI quota exceeded. Try again tomorrow or upgrade your plan.',
+        'Daily AI lookup limit reached. Try again tomorrow.',
       );
     }
 
@@ -310,13 +383,7 @@ export class AiService {
 
     const fromMemory = this.memoryGet(hash);
     if (fromMemory) {
-      return {
-        lemma: fromMemory.lemma || cacheKeyLemma,
-        translation: sanitizeGloss(fromMemory.translation, surface),
-        grammarNote: fromMemory.grammarNote,
-        partOfSpeech: fromMemory.partOfSpeech,
-        cached: true,
-      };
+      return this.presentLookup(fromMemory, surface, true);
     }
 
     if (!this.useMemory()) {
@@ -332,14 +399,17 @@ export class AiService {
       });
 
       if (cached) {
+        const unpacked = unpackLookupNote(cached.grammarNote);
         const payload: MemoryLookup = {
           lemma: cached.lemma || cacheKeyLemma,
           translation: sanitizeGloss(cached.translation, surface),
+          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation),
+          phrase: sanitizePhrase(unpacked.phrase, context, surface),
           grammarNote: null,
           partOfSpeech: cached.partOfSpeech ?? null,
         };
         this.memorySet(hash, payload);
-        return { ...payload, cached: true };
+        return this.presentLookup(payload, surface, true);
       }
     }
 
@@ -351,6 +421,8 @@ export class AiService {
     const client = this.getClient();
     let lemma = cacheKeyLemma;
     let translation = surface;
+    let contextualMeaning: string | null = null;
+    let phrase: string | null = compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null;
     const grammarNote: string | null = null;
     const partOfSpeech: string | null = null;
     const model = settings.lookupModel;
@@ -361,7 +433,7 @@ export class AiService {
         const response = await client.chat.completions.create({
           model,
           temperature: 0.1,
-          max_tokens: 120,
+          max_tokens: 180,
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
@@ -370,10 +442,10 @@ export class AiService {
               content: [
                 `Target word (surface): "${surface}"`,
                 dto.lemma ? `Lemma hint: "${dto.lemma}"` : null,
-                `Context (disambiguation only — do NOT translate this): "${context}"`,
+                `Sentence: "${context}"`,
                 `Gloss language: ${dto.targetLang}`,
                 `Source language of the text: ${dto.sourceLang}`,
-                'Return only the short gloss for the target word or short MWE.',
+                                'Return a short idiom gloss AND a required contextualMeaning (natural meaning in this sentence). Never translate the whole sentence word-by-word.',
               ]
                 .filter(Boolean)
                 .join('\n'),
@@ -386,14 +458,14 @@ export class AiService {
           const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
             lemma?: string;
             translation?: string;
+            contextualMeaning?: string;
             phraseIfAny?: string | null;
           };
-          const phrase =
-            typeof parsed.phraseIfAny === 'string' && parsed.phraseIfAny.trim()
-              ? parsed.phraseIfAny.trim()
-              : null;
-          lemma = normalizeLemmaKey(phrase || parsed.lemma || cacheKeyLemma) || cacheKeyLemma;
+          phrase = sanitizePhrase(parsed.phraseIfAny, context, surface)
+            ?? (compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null);
+          lemma = normalizeLemmaKey(parsed.lemma || phrase || cacheKeyLemma) || cacheKeyLemma;
           translation = sanitizeGloss(parsed.translation, surface);
+          contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation);
         } catch {
           translation = sanitizeGloss(response.choices[0]?.message?.content, surface);
         }
@@ -410,7 +482,16 @@ export class AiService {
     }
 
     translation = sanitizeGloss(translation, surface);
-    const payload: MemoryLookup = { lemma, translation, grammarNote, partOfSpeech };
+    phrase = sanitizePhrase(phrase, context, surface)
+      ?? (compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null);
+    const payload: MemoryLookup = {
+      lemma,
+      translation,
+      contextualMeaning,
+      phrase,
+      grammarNote,
+      partOfSpeech,
+    };
     this.memorySet(hash, payload);
 
     if (!this.useMemory()) {
@@ -429,14 +510,14 @@ export class AiService {
             sourceLang: dto.sourceLang,
             targetLang: dto.targetLang,
             translation,
-            grammarNote,
+            grammarNote: packLookupNote(contextualMeaning, phrase),
             partOfSpeech,
             modelVersion: client ? model : 'offline',
             contentHash: hash,
           },
           update: {
             translation,
-            grammarNote,
+            grammarNote: packLookupNote(contextualMeaning, phrase),
             partOfSpeech,
             modelVersion: client ? model : 'offline',
           },
@@ -451,12 +532,27 @@ export class AiService {
       await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
     }
 
-    return { lemma, translation, grammarNote, partOfSpeech, cached: false };
+    return this.presentLookup(payload, surface, false);
+  }
+
+  private presentLookup(row: MemoryLookup, surface: string, cached: boolean) {
+    const translation = sanitizeGloss(row.translation, surface);
+    return {
+      lemma: row.lemma,
+      translation,
+      contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation),
+      phrase: row.phrase,
+      grammarNote: row.grammarNote,
+      partOfSpeech: row.partOfSpeech,
+      cached,
+    };
   }
 
   /**
    * Sentence/message translation for chat From→To.
-   * Auth + quota match lookup. Never logs raw message text.
+   * Does not consume the per-learner word-lookup quota (that cap is for tap lookups).
+   * Still respects admin AI enabled + platform daily OpenAI budget.
+   * Never logs raw message text.
    */
   async translate(userId: string, dto: TranslateDto) {
     const text = (dto.text ?? '').trim();
@@ -482,10 +578,8 @@ export class AiService {
 
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const { today, memoryKey } = await this.checkQuota(userId, settings.defaultUserQuota);
     const client = this.getClient();
     let translation = text;
-    let usedOpenAi = false;
 
     if (client) {
       try {
@@ -498,7 +592,7 @@ export class AiService {
             {
               role: 'system',
               content:
-                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Keep meaning and tone. Do not add quotes, labels, or explanations. If the text is already in the target language, return it unchanged.',
+                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Keep meaning and tone. Do not add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
             },
             {
               role: 'user',
@@ -506,7 +600,6 @@ export class AiService {
             },
           ],
         });
-        usedOpenAi = true;
         try {
           const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
             translation?: string;
@@ -525,10 +618,14 @@ export class AiService {
       }
     }
 
-    this.memorySet(hash, { lemma: hash, translation, grammarNote: null, partOfSpeech: null });
-    if (usedOpenAi) {
-      await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
-    }
+    this.memorySet(hash, {
+      lemma: hash,
+      translation,
+      contextualMeaning: null,
+      phrase: null,
+      grammarNote: null,
+      partOfSpeech: null,
+    });
     return { translation, sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: false };
   }
 
