@@ -14,7 +14,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { ImportCommerceService } from '../billing/import-commerce.service';
 import { AiService } from '../ai/ai.service';
-import { tokenizeText, slugify, paginateText } from '../../utils/tokenizer';
+import { slugify } from '../../utils/tokenizer';
 import { ImportFileDto, ImportPasteDto, ImportUrlDto } from './dto/imports.dto';
 import { assertPdfOrEpubMagic } from '../../common/upload-magic';
 import {
@@ -36,6 +36,10 @@ import { ImportCleanupSource, isImportAiCleanupEnabled } from './import-ai-clean
 import { preparePastedText } from './import-text-cleaner';
 import { chaptersHaveRealTitles } from './chapter-split';
 import { isGutenbergUrl } from './gutenberg';
+import {
+  buildSegmentsFromChapters,
+  resolveLiteraryChapters,
+} from '../admin/content-ingest';
 
 /** Above this size, finish processing in the background so the client can poll status. */
 const ASYNC_PASTE_CHARS = 40_000;
@@ -194,7 +198,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     if (payment) await this.importCommerce.attachUserImport(payment.id, userImport.id);
 
     const run = async () => {
-      const chapters = splitTextIntoChapters(text, title);
+      const chapters = resolveLiteraryChapters(splitTextIntoChapters(text, title), title, text);
       const content = await this.createImportContent(
         userId,
         title,
@@ -261,10 +265,11 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       const extracted = await extractTextFromUrl(dto.url);
       assertMinWords(extracted.text, 'text from URL');
       const finalTitle = (dto.title?.trim() || extracted.detectedTitle || title).slice(0, 200);
+      const literary = resolveLiteraryChapters(extracted.chapters, finalTitle, extracted.text);
       // Match admin literary ingest: Gutenberg / long-form books skip OpenAI cleanup.
-      const chapters = this.shouldSkipAiCleanup(extracted.chapters, dto.url)
-        ? extracted.chapters
-        : await this.aiCleanChapters(extracted.chapters, 'url', finalTitle, userId);
+      const chapters = this.shouldSkipAiCleanup(literary, dto.url)
+        ? literary
+        : await this.aiCleanChapters(literary, 'url', finalTitle, userId);
       const content = await this.createImportContent(
         userId,
         finalTitle,
@@ -379,12 +384,10 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         : await extractTextFromEpub(buffer);
       const sourceLabel = isPdf ? 'text from PDF' : 'text from EPUB';
       assertMinWords(extracted.text, sourceLabel);
-      const chapters = await this.aiCleanChapters(
-        extracted.chapters,
-        isPdf ? 'pdf' : 'epub',
-        title,
-        userId,
-      );
+      const literary = resolveLiteraryChapters(extracted.chapters, title, extracted.text);
+      const chapters = this.shouldSkipAiCleanup(literary)
+        ? literary
+        : await this.aiCleanChapters(literary, isPdf ? 'pdf' : 'epub', title, userId);
       const content = await this.createImportContent(
         userId,
         title,
@@ -437,7 +440,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
    */
   private shouldSkipAiCleanup(chapters: ExtractedChapter[], sourceUrl?: string | null): boolean {
     if (sourceUrl && isGutenbergUrl(sourceUrl)) return true;
-    if (chaptersHaveRealTitles(chapters) && chapters.length >= 4) return true;
+    if (chaptersHaveRealTitles(chapters) && chapters.length >= 2) return true;
     return countWords(chapters.map((c) => c.text).join('\n\n')) >= 8_000;
   }
 
@@ -625,54 +628,24 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     sourceUrl?: string | null,
     userImportId?: string,
   ) {
-    const chapters: ExtractedChapter[] =
+    const incoming: ExtractedChapter[] =
       typeof chaptersOrText === 'string'
-        ? splitTextIntoChapters(chaptersOrText, title)
+        ? [{ title, text: chaptersOrText }]
         : chaptersOrText;
+    const chapters = resolveLiteraryChapters(incoming, title);
+    const segments = buildSegmentsFromChapters(chapters, 'literary');
 
-    if (chapters.length === 0) {
+    if (segments.length === 0) {
       throw new Error('Import text is empty');
     }
 
-    const segmentCreates: {
-      segmentIndex: number;
-      title: string;
-      plainText: string;
-      tokenMap: never;
-      sentenceMap: never;
-      wordCount: number;
-    }[] = [];
-
-    for (const chapter of chapters) {
-      const chunks = paginateText(chapter.text);
-      for (const chunk of chunks) {
-        const { tokenMap, sentenceMap, wordCount } = tokenizeText(chunk.plainText);
-        const segmentTitle =
-          chunks.length === 1
-            ? chapter.title
-            : `${chapter.title} · ${chunk.title}`;
-        segmentCreates.push({
-          segmentIndex: segmentCreates.length,
-          title: segmentTitle.slice(0, 200),
-          plainText: chunk.plainText,
-          tokenMap: tokenMap as never,
-          sentenceMap: sentenceMap as never,
-          wordCount,
-        });
-      }
-    }
-
-    if (segmentCreates.length === 0) {
-      throw new Error('Import text is empty');
-    }
-
-    const totalWordCount = segmentCreates.reduce((sum, s) => sum + s.wordCount, 0);
+    const totalWordCount = segments.reduce((sum, s) => sum + s.wordCount, 0);
     if (totalWordCount < MIN_IMPORT_WORDS) {
       throw new Error(`Need at least ${MIN_IMPORT_WORDS} words (found ${totalWordCount})`);
     }
 
     const allLemmas = new Set<string>();
-    for (const seg of segmentCreates) {
+    for (const seg of segments) {
       for (const t of seg.tokenMap as { isWord?: boolean; lemma?: string | null }[]) {
         if (t.isWord && t.lemma) allLemmas.add(t.lemma);
       }
@@ -700,12 +673,27 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         publishedAt: autoApprove ? new Date() : null,
         createdById: userId,
         sourceUrl: sourceUrl ?? undefined,
-        segments: {
-          create: segmentCreates,
-        },
       },
-      include: { segments: true },
     });
+
+    const BATCH = 80;
+    for (let i = 0; i < segments.length; i += BATCH) {
+      const batch = segments.slice(i, i + BATCH);
+      await this.prisma.contentSegment.createMany({
+        data: batch.map((s) => ({
+          contentId: content.id,
+          segmentIndex: s.segmentIndex,
+          chapterIndex: s.chapterIndex,
+          chapterTitle: s.chapterTitle,
+          pageIndex: s.pageIndex,
+          title: s.title,
+          plainText: s.plainText,
+          tokenMap: s.tokenMap as never,
+          sentenceMap: s.sentenceMap as never,
+          wordCount: s.wordCount,
+        })),
+      });
+    }
 
     if (!autoApprove) {
       await this.prisma.moderationQueue.create({

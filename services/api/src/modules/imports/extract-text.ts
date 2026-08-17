@@ -820,7 +820,7 @@ function chaptersFromPdfPages(
     outlineTitles.length >= 2 ? splitByOutlineTitles(joined, outlineTitles, fallbackTitle) : null;
 
   if (fromOutline && chaptersHaveRealTitles(fromOutline)) {
-    if (!chaptersHaveRealTitles(headed) || fromOutline.length >= headed.length) {
+    if (!chaptersHaveRealTitles(headed) || fromOutline.length > headed.length) {
       return fromOutline;
     }
   }

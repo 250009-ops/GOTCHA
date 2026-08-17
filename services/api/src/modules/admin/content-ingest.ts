@@ -127,18 +127,29 @@ function finalizeExtractedDoc(
 ): { title?: string; chapters: ExtractedChapter[]; text: string } {
   const title = doc.detectedTitle || fallbackTitle;
   const text = doc.text || doc.chapters.map((c) => c.text).join('\n\n');
-  if (chaptersHaveRealTitles(doc.chapters)) {
-    return {
-      title,
-      text,
-      chapters: doc.chapters.filter((c) => !isFrontMatterChapter(c.title, c.text)),
-    };
+  const chapters = resolveLiteraryChapters(doc.chapters, title, text);
+  return { title, text, chapters };
+}
+
+/** Keep real chapter titles; otherwise re-split the full text on printed headings / contents. */
+export function resolveLiteraryChapters(
+  chapters: ExtractedChapter[],
+  fallbackTitle: string,
+  fullText?: string,
+): ExtractedChapter[] {
+  const cleaned = chapters
+    .map((c) => ({
+      title: (c.title || fallbackTitle).trim() || fallbackTitle,
+      text: c.text.trim(),
+    }))
+    .filter((c) => c.text.length > 0);
+  if (chaptersHaveRealTitles(cleaned)) {
+    const withoutFront = cleaned.filter((c) => !isFrontMatterChapter(c.title, c.text));
+    if (withoutFront.length) return withoutFront;
   }
-  return {
-    title,
-    text,
-    chapters: splitLiteraryChapters(text, title),
-  };
+  const joined = (fullText || cleaned.map((c) => c.text).join('\n\n')).trim();
+  if (!joined) return cleaned;
+  return splitLiteraryChapters(joined, fallbackTitle);
 }
 
 export async function extractSourceDocument(opts: {

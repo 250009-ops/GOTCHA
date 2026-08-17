@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import {
+  extractContentsTitles,
   looksLikeTitleLine,
   splitAccurateChapters,
   splitByOutlineTitles,
@@ -212,5 +213,78 @@ assert.equal(glued.length >= 2, true);
 assert.match(glued[0].title, /Chapter 1/);
 assert.match(glued[glued.length - 1].title, /Chapter 2/);
 assert.match(glued[glued.length - 1].text, /stuffed a shirt/);
+
+const chimneys = splitAccurateChapters(
+  `
+*** START OF THE PROJECT GUTENBERG EBOOK THE SECRET OF CHIMNEYS ***
+
+The Secret of Chimneys
+
+Contents
+
+1 ANTHONY CADE SIGNS ON _1_
+
+2 A LADY IN DISTRESS _11_
+
+3 ANXIETY IN HIGH PLACES _20_
+
+1
+
+Anthony Cade Signs on
+
+"Gentleman Joe!" Why, if it isn't old Jimmy McGrath. Castle's Select Tour
+looked on with considerable interest. They all admired Mr. Cade so much,
+his tall lean figure, his sun-tanned face, and the light-hearted manner
+with which he settled disputes.
+
+2
+
+A Lady in Distress
+
+"So that's that," said Anthony, finishing off his glass and replacing it
+on the table. What boat were you going on? Passage booked in your name,
+I suppose, so I'd better travel as James McGrath.
+
+3
+
+Anxiety in High Places
+
+"Quite so, my dear fellow, quite so," said Lord Caterham. He had used the
+same words three times already, each time in the hope that they would end
+the interview and permit him to escape from the club steps.
+
+*** END OF THE PROJECT GUTENBERG EBOOK THE SECRET OF CHIMNEYS ***
+`,
+  'The Secret of Chimneys',
+);
+assert.equal(chimneys.length >= 3, true, `expected 3+ chapters, got ${chimneys.map((c) => c.title).join(' | ')}`);
+assert.match(chimneys[0].title, /Anthony Cade Signs on/i);
+assert.match(chimneys[1].title, /A Lady in Distress/i);
+assert.match(chimneys[2].title, /Anxiety in High Places/i);
+assert.match(chimneys[0].text, /Gentleman Joe/);
+assert.match(chimneys[1].text, /So that's that/);
+assert.equal(chimneys.some((c) => /contents/i.test(c.title)), false);
+
+const ordinalTitle = splitAccurateChapters(
+  `25\n\nTuesday Night at Chimneys\n\nLord Caterham sat in the library after dinner on Tuesday evening with enough words here to fill a chapter body out properly so it is kept.\n\n26\n\nThe 13th of October\n\nAt ten o'clock on the morning of Wednesday Anthony walked into the hotel with enough words here to fill a chapter body out properly so it is kept.\n\n27\n\nThe 13th of October (contd.)\n\nThe clock in the Council Chamber struck nine and everyone gathered with enough words here to fill a chapter body out properly so it is kept.`,
+  'Book',
+);
+assert.equal(ordinalTitle.length >= 3, true, ordinalTitle.map((c) => c.title).join(' | '));
+assert.equal(ordinalTitle.some((c) => /13th of October/i.test(c.title) && !/contd/i.test(c.title)), true);
+assert.equal(ordinalTitle.some((c) => /13th of October/i.test(c.title) && /contd/i.test(c.title)), true);
+
+const tocTitles = extractContentsTitles(`Contents\n\n1 ANTHONY CADE SIGNS ON _1_\n\n2 A LADY IN DISTRESS _11_\n`);
+assert.equal(tocTitles.length >= 2, true);
+assert.match(tocTitles[0], /Anthony Cade Signs on/i);
+
+const wordChapters = titles(`Chapter One. The Beginning\n\nOnce upon a time there was a long story here with enough words to keep.\n\nChapter Two. The Middle\n\nThen something else happened in the second part of this short book.`);
+assert.match(wordChapters[0], /Chapter One/i);
+assert.match(wordChapters[1], /Chapter Two/i);
+
+const gluedBare = splitAccurateChapters(
+  `They drank the toast solemnly. 2 A Lady in Distress "So that's that," said Anthony, finishing off his glass and replacing it on the table.`,
+  'Book',
+);
+assert.equal(gluedBare.some((c) => /Lady in Distress/i.test(c.title)), true);
 
 console.log('chapter-split tests passed');

@@ -526,7 +526,8 @@ fun ReaderScreen(
             val hasSegments = segments.isNotEmpty()
             val body = preparedSource ?: readerBodyText(segments, FIRST_PAGE_CHAR_LIMIT)
             val pageAnnotated = preparedAnnotated!!
-            val chapterTitle = segments.firstOrNull()?.title?.takeIf { it.isNotBlank() }
+            val chapterTitle = segments.firstOrNull()?.chapterTitle?.takeIf { it.isNotBlank() }
+                ?: segments.firstOrNull()?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
             val bookTitle = content?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
             // Honest API progress only — never invent a Figma % (same rule as Content Detail).
             val displayProgress = ((content?.progressPct ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
@@ -686,7 +687,7 @@ fun ReaderScreen(
                                 )
                             }
                             Text(
-                                "Chapter ${(segments.firstOrNull()?.segmentIndex ?: 0) + 1}",
+                                "Chapter ${(segments.firstOrNull()?.chapterIndex ?: 0) + 1}",
                                 color = GotchaColors.TextMuted,
                                 fontFamily = Manrope,
                                 fontWeight = FontWeight.Medium,

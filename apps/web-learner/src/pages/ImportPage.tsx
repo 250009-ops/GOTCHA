@@ -180,7 +180,7 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
             className="w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
           />
         </div>
-        <p className="text-xs text-[#99a1af] mt-1">Works with Wikipedia, public articles, blogs, and .txt URLs. Paywalled or login-gated pages will fail with a clear error.</p>
+        <p className="text-xs text-[#99a1af] mt-1">Works with Gutenberg, Wikipedia, public articles, and .txt URLs. Novels are split into printed chapters. Paywalled pages will fail with a clear error.</p>
       </div>
       <div className="pt-4">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
@@ -233,7 +233,7 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
           value={text}
           disabled={loading}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`Paste your text here… (minimum ${MIN_PASTE_WORDS} words; long texts are split into reader pages)`}
+          placeholder={`Paste your text here… (minimum ${MIN_PASTE_WORDS} words). Books are split into printed chapters, then pages.`}
           rows={8}
           className="w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
@@ -324,7 +324,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
           <>
             <Upload className="w-8 h-8 text-gray-300 mb-2" />
             <div className="text-sm text-[#6a7282]">Drop a PDF or ePub here, or <span className="text-[#7f22fe] font-medium">browse</span></div>
-            <div className="text-xs text-[#99a1af] mt-1">Max {MAX_FILE_MB} MB · PDF and EPUB</div>
+            <div className="text-xs text-[#99a1af] mt-1">Max {MAX_FILE_MB} MB · PDF and EPUB · books split into printed chapters</div>
           </>
         )}
       </div>

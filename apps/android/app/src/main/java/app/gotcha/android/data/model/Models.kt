@@ -258,6 +258,9 @@ data class ContentListResponse(
 data class Segment(
     val id: String,
     val segmentIndex: Int = 0,
+    val chapterIndex: Int = 0,
+    val chapterTitle: String? = null,
+    val pageIndex: Int = 0,
     val title: String? = null,
     val plainText: String? = null,
     val wordCount: Int? = null,

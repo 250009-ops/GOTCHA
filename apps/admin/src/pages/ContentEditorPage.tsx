@@ -208,7 +208,7 @@ export default function ContentEditorPage() {
     <div>
       <PageHeader
         title={editing ? 'Edit material' : 'New material'}
-        subtitle="Add catalog details, then detect exact chapter names from the source (Gutenberg text, HTML headings, or the PDF outline). Pages stay word-count slices inside each chapter."
+        subtitle="Add catalog details, then detect chapters from pasted text, a PDF, or a URL. Printed headings and the contents list become the outline; pages stay word-count slices inside each chapter."
         actions={
           <div className="flex flex-wrap gap-2">
             {title.trim() ? (
@@ -352,7 +352,7 @@ export default function ContentEditorPage() {
               <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm text-slate-600">
                 {pdfFile
                   ? `Ready to analyze: ${pdfFile.name}`
-                  : 'Choose a PDF above, then detect chapters from its outline and headings.'}
+                  : 'Choose a PDF above, then detect chapters from its outline, contents list, and printed headings.'}
               </div>
             ) : (
               <Input
@@ -364,7 +364,7 @@ export default function ContentEditorPage() {
             )}
             {sourceMode === 'url' && (
               <p className="text-xs text-slate-500">
-                Large novels are fetched in full (plain text when available) and split on printed chapter headings. Detection can take up to a few minutes.
+                Large novels are fetched in full (plain text when available) and split into printed chapters from the contents list and headings. Detection can take up to a few minutes.
               </p>
             )}
             <div className="flex flex-wrap gap-2">

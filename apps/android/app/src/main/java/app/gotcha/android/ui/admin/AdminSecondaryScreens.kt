@@ -822,7 +822,7 @@ fun AdminAddProductScreen(
                         GotchaTextField("Source URL", sourceUrl, { sourceUrl = it }, placeholder = "https://…/article")
                     } else if (sourceMode == "pdf") {
                         Text(
-                            if (pdfName.isNullOrBlank()) "Choose a PDF above, then detect chapters from its outline and headings."
+                            if (pdfName.isNullOrBlank()) "Choose a PDF above, then detect chapters from its outline, contents list, and printed headings."
                             else "Ready to analyze: $pdfName",
                             fontSize = 13.sp,
                             color = GotchaColors.TextMuted,

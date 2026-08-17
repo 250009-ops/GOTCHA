@@ -4,10 +4,12 @@ export interface SplitChapter {
 }
 
 const CHAPTER_WORD =
-  'chapter|глава|главы|bob|qism|часть|part|section|book|canto|act|scene';
+  'chapter|глава|главы|bob|qism|часть|part|section|book|canto|act|scene|adventure';
 
-const ROMAN = 'M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})';
+const ROMAN = '(?=[IVXLCDM])M{0,3}(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{0,3})';
 const NUM = `(?:\\d{1,4}|${ROMAN})`;
+const WORD_NUM =
+  'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth';
 
 const MARKDOWN_HEADING = /^(#{1,3})\s+(.+)$/;
 const NUMBERED_CHAPTER = new RegExp(
@@ -16,6 +18,10 @@ const NUMBERED_CHAPTER = new RegExp(
 );
 const NUMBERED_CHAPTER_ONLY = new RegExp(
   `^(?:#{1,3}\\s+)?(?:${CHAPTER_WORD})\\s+(${NUM})\\.?$`,
+  'i',
+);
+const NUMBERED_WORD_CHAPTER = new RegExp(
+  `^(?:#{1,3}\\s+)?(?:${CHAPTER_WORD})\\s+(${WORD_NUM})(?:\\s*[.:—–\\-]\\s*|\\s+)?(.*)$`,
   'i',
 );
 const UZ_BOB = /^(\d{1,3})[-.]?\s*bob\b(?:\s*[.:—–-]\s*|\s+)?(.*)$/i;
@@ -28,7 +34,30 @@ const GUTENBERG_END = /\*{3}\s*END OF (?:THE|THIS) PROJECT GUTENBERG[\s\S]*?\*{3
 
 /** Isolated roman like "II." or "XIV" — never a lone "I" followed by a sentence. */
 const ISOLATED_ROMAN = new RegExp(`^(${ROMAN})\\.?$`, 'i');
-const ISOLATED_NUMBER = /^(\d{1,3})\.$/;
+const ISOLATED_NUMBER = /^(\d{1,3})\.?$/;
+/** "1 ANTHONY CADE SIGNS ON" / "I. A Lady in Distress" — number without the word Chapter. */
+const BARE_NUMBERED_TITLE = new RegExp(`^(?:#{1,3}\\s+)?(${NUM})(?:[.:—–-]|\\s+)\\s*(.+)$`, 'i');
+
+const TITLE_STOP = new Set([
+  'of',
+  'the',
+  'a',
+  'an',
+  'and',
+  'in',
+  'on',
+  'at',
+  'to',
+  'for',
+  'or',
+  'nor',
+  'vs',
+  'versus',
+  'de',
+  'del',
+  'van',
+  'von',
+]);
 
 export function stripGutenbergBoilerplate(text: string): string {
   let out = text.replace(/\r\n/g, '\n');
@@ -46,6 +75,18 @@ function collapseWs(s: string): string {
   return s.replace(/\s+/g, ' ').trim();
 }
 
+/** Drop dotted leaders / italic page refs from TOC lines: `_12_` or `.... 12`. */
+function stripTocPageRef(s: string): string {
+  const t = collapseWs(s)
+    .replace(/\s*_{1,2}\d+[a-z]?_{1,2}\s*$/i, '')
+    .replace(/\s*[\.·•…─\-—]{2,}\s*\d{1,4}\s*$/g, '');
+  // "1 TITLE 12" — trailing page number, not the chapter number in "CHAPTER 4".
+  if (/^(?:(?:chapter|глава|part|book|adventure)\s+)?(?:\d+|[ivxlcdm]+)\b.+\s+\d{1,4}$/i.test(t)) {
+    return t.replace(/\s+\d{1,4}$/, '').trim();
+  }
+  return t;
+}
+
 function normalizeTitleKey(title: string): string {
   return collapseWs(title)
     .toLowerCase()
@@ -60,7 +101,7 @@ const NAMED_SECTION =
   /^(etymology|extracts|epilogue|prologue|preface|introduction|afterword|coda|interlude|appendix|overture)$/i;
 
 function titleKeys(title: string): string[] {
-  const full = normalizeTitleKey(title);
+  const full = normalizeTitleKey(stripTocPageRef(title));
   const noNum = full.replace(/^(?:\d+|[ivxlcdm]+)\s+/, '');
   const first = full.split(' ')[0] || '';
   const keys = [full, noNum];
@@ -79,6 +120,7 @@ function isEnglishSentence(line: string): boolean {
 export function looksLikeTitleLine(line: string): boolean {
   const t = collapseWs(line);
   if (!t || t.length > 80) return false;
+  if (/^[“"‘']/.test(t)) return false;
   if (isEnglishSentence(t)) return false;
   const words = t.split(/\s+/);
   if (words.length === 0 || words.length > 12) return false;
@@ -86,11 +128,34 @@ export function looksLikeTitleLine(line: string): boolean {
   return true;
 }
 
+function looksLikeChapterTitle(line: string): boolean {
+  const t = stripTocPageRef(line).replace(/\s*\(_?\s*(?:contd\.?|continued)_?\s*\)\s*$/i, '');
+  if (!looksLikeTitleLine(t) && !looksLikeTitleLine(line)) return false;
+  const probe = looksLikeTitleLine(t) ? t : stripTocPageRef(line);
+  if (/^[(_[]/.test(probe)) return false;
+  if (/^(i|we|you|he|she|they|it|call|there|this|that|what|when|where|why|how|if|as)\s+/i.test(probe)) {
+    return false;
+  }
+  const words = probe.replace(/[.:]+$/, '').split(/\s+/).filter(Boolean);
+  if (!words.length) return false;
+  if (!/^[\p{Lu}]/u.test(words[0]) && !/^\d/.test(words[0])) return false;
+  if (words.length === 1 && words[0].length < 4) return false;
+  const filler = /^(?:\d+(?:st|nd|rd|th)?|contd|continued)$/i;
+  const content = words.filter((w) => {
+    const clean = w.replace(/[().,]/g, '');
+    if (filler.test(clean)) return false;
+    return w.length > 3 || !TITLE_STOP.has(w.toLowerCase());
+  });
+  const capitalized = content.filter((w) => /^[\p{Lu}]/u.test(w) || /^\d/.test(w));
+  if (content.length === 0) return true;
+  return capitalized.length >= Math.ceil(content.length * 0.6);
+}
+
 function prettyChapterTitle(raw: string): string {
-  const t = collapseWs(raw.replace(/^#+\s+/, ''));
+  const t = collapseWs(stripTocPageRef(raw.replace(/^#+\s+/, '')));
   if (!t) return 'Chapter';
   return t
-    .replace(/^(chapter|part|section|book)\b/i, (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())
+    .replace(/^(chapter|part|section|book|adventure)\b/i, (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())
     .replace(
       /^(etymology|extracts|epilogue|prologue|preface|introduction|afterword|coda|interlude|appendix|overture)\b/i,
       (m) => m.charAt(0).toUpperCase() + m.slice(1).toLowerCase(),
@@ -98,17 +163,21 @@ function prettyChapterTitle(raw: string): string {
     .slice(0, 160);
 }
 
+type HeadingKind = 'explicit' | 'inferred';
+
+type ParsedHeading = { title: string; consumeNext: boolean; kind: HeadingKind };
+
 function headingFromLine(
   line: string,
   nextLine?: string,
-): { title: string; consumeNext: boolean } | null {
-  const raw = line.trim();
+): ParsedHeading | null {
+  const raw = stripTocPageRef(line.trim());
   if (!raw || raw.length > 160) return null;
 
   const image = raw.match(IMAGE_CAPTION);
   if (image) {
     const inner = headingFromLine(image[1], nextLine);
-    return inner ? { title: inner.title, consumeNext: false } : null;
+    return inner ? { title: inner.title, consumeNext: false, kind: inner.kind } : null;
   }
 
   const md = raw.match(MARKDOWN_HEADING);
@@ -116,7 +185,7 @@ function headingFromLine(
     const inner = collapseWs(md[2]);
     if (!inner || isEnglishSentence(inner)) return null;
     const nested = headingFromLine(inner, nextLine);
-    return nested ?? { title: prettyChapterTitle(inner), consumeNext: false };
+    return nested ?? { title: prettyChapterTitle(inner), consumeNext: false, kind: 'explicit' };
   }
 
   const numbered = raw.match(NUMBERED_CHAPTER);
@@ -128,57 +197,83 @@ function headingFromLine(
     const title = rest
       ? prettyChapterTitle(`Chapter ${numbered[1]}. ${rest}`)
       : prettyChapterTitle(`Chapter ${numbered[1]}`);
-    return { title, consumeNext: false };
+    return { title, consumeNext: false, kind: 'explicit' };
   }
 
   const only = raw.match(NUMBERED_CHAPTER_ONLY);
   if (only) {
     const next = nextLine?.trim() ?? '';
-    if (next && looksLikeTitleLine(next) && !NUMBERED_CHAPTER.test(next) && !NUMBERED_CHAPTER_ONLY.test(next)) {
-      return { title: prettyChapterTitle(`Chapter ${only[1]}. ${next}`), consumeNext: true };
+    if (next && looksLikeChapterTitle(next) && !NUMBERED_CHAPTER.test(next) && !NUMBERED_CHAPTER_ONLY.test(next)) {
+      return { title: prettyChapterTitle(`Chapter ${only[1]}. ${next}`), consumeNext: true, kind: 'explicit' };
     }
-    return { title: prettyChapterTitle(`Chapter ${only[1]}`), consumeNext: false };
+    return { title: prettyChapterTitle(`Chapter ${only[1]}`), consumeNext: false, kind: 'explicit' };
+  }
+
+  const wordNum = raw.match(NUMBERED_WORD_CHAPTER);
+  if (wordNum) {
+    const rest = collapseWs(wordNum[2] || '');
+    if (rest && isEnglishSentence(rest) && rest.length > 60) return null;
+    const title = rest
+      ? prettyChapterTitle(`Chapter ${wordNum[1]}. ${rest}`)
+      : prettyChapterTitle(`Chapter ${wordNum[1]}`);
+    return { title, consumeNext: false, kind: 'explicit' };
   }
 
   const bob = raw.match(UZ_BOB);
   if (bob) {
     const rest = collapseWs(bob[2] || '');
     const title = rest ? `${bob[1]}-bob. ${rest}` : `${bob[1]}-bob`;
-    return { title: prettyChapterTitle(title), consumeNext: false };
+    return { title: prettyChapterTitle(title), consumeNext: false, kind: 'explicit' };
   }
 
   if (CONTENTS_ONLY.test(raw)) {
-    return { title: prettyChapterTitle(raw), consumeNext: false };
+    return { title: prettyChapterTitle(raw), consumeNext: false, kind: 'explicit' };
   }
 
   const named = raw.match(NAMED_FRONT);
   if (named && !isEnglishSentence(raw) && raw.length <= 80) {
     const rest = collapseWs(named[2] || '');
     const title = rest ? `${named[1]} ${rest}` : named[1];
-    return { title: prettyChapterTitle(title), consumeNext: false };
+    return { title: prettyChapterTitle(title), consumeNext: false, kind: 'explicit' };
   }
 
   const isolatedRoman = raw.match(ISOLATED_ROMAN);
   if (isolatedRoman) {
     const token = isolatedRoman[1].toUpperCase();
-    // A lone "I" is almost always English first person unless the next line is a short title.
     const next = nextLine?.trim() ?? '';
-    if (token === 'I' && (!next || !looksLikeTitleLine(next) || isEnglishSentence(next))) {
+    // A lone "I" is almost always English first person unless the next line is a short title.
+    if (token === 'I' && (!next || !looksLikeChapterTitle(next) || isEnglishSentence(next))) {
       return null;
     }
-    if (next && looksLikeTitleLine(next) && !NUMBERED_CHAPTER.test(next)) {
-      return { title: prettyChapterTitle(`Chapter ${token}. ${next}`), consumeNext: true };
+    if (next && looksLikeChapterTitle(next) && !NUMBERED_CHAPTER.test(next)) {
+      return { title: prettyChapterTitle(`Chapter ${token}. ${next}`), consumeNext: true, kind: 'inferred' };
     }
     if (token !== 'I') {
-      return { title: prettyChapterTitle(`Chapter ${token}`), consumeNext: false };
+      return { title: prettyChapterTitle(`Chapter ${token}`), consumeNext: false, kind: 'inferred' };
     }
     return null;
   }
 
   if (ISOLATED_NUMBER.test(raw)) {
     const next = nextLine?.trim() ?? '';
-    if (next && looksLikeTitleLine(next) && !isEnglishSentence(next)) {
-      return { title: prettyChapterTitle(`Chapter ${raw.replace('.', '')}. ${next}`), consumeNext: true };
+    if (next && looksLikeChapterTitle(next) && !isEnglishSentence(next)) {
+      return {
+        title: prettyChapterTitle(`Chapter ${raw.replace('.', '')}. ${next}`),
+        consumeNext: true,
+        kind: 'inferred',
+      };
+    }
+  }
+
+  const bare = raw.match(BARE_NUMBERED_TITLE);
+  if (bare) {
+    const rest = collapseWs(bare[2] || '');
+    if (rest && looksLikeChapterTitle(rest) && !isEnglishSentence(rest)) {
+      return {
+        title: prettyChapterTitle(`Chapter ${bare[1]}. ${rest}`),
+        consumeNext: false,
+        kind: 'inferred',
+      };
     }
   }
 
@@ -200,7 +295,21 @@ function splitMergedHeading(line: string): { title: string; rest: string } | nul
   return { title: prettyChapterTitle(m[1]), rest: m[2].trim() };
 }
 
-type FoundHeading = { index: number; title: string; consumeNext: boolean; rest?: string };
+type FoundHeading = {
+  index: number;
+  title: string;
+  consumeNext: boolean;
+  consumeIndex?: number;
+  rest?: string;
+  kind: HeadingKind;
+};
+
+function nextNonEmptyIndex(lines: string[], from: number): number {
+  for (let i = from; i < lines.length; i++) {
+    if (lines[i].trim()) return i;
+  }
+  return -1;
+}
 
 function isIsolatedLine(lines: string[], index: number): boolean {
   const prev = (lines[index - 1] ?? '').trim();
@@ -208,19 +317,40 @@ function isIsolatedLine(lines: string[], index: number): boolean {
   return index === 0 || prev.length === 0 || next.length === 0;
 }
 
+function headingAt(lines: string[], index: number): ParsedHeading | null {
+  const nextIdx = nextNonEmptyIndex(lines, index + 1);
+  const nextLine = nextIdx >= 0 ? lines[nextIdx] : '';
+  return headingFromLine(lines[index], nextLine);
+}
+
 function collectHeadings(lines: string[]): FoundHeading[] {
   const found: FoundHeading[] = [];
   for (let i = 0; i < lines.length; i++) {
+    const nextIdx = nextNonEmptyIndex(lines, i + 1);
+    const nextLine = nextIdx >= 0 ? lines[nextIdx] : '';
     const merged = splitMergedHeading(lines[i]);
     if (merged && isIsolatedLine(lines, i)) {
-      found.push({ index: i, title: merged.title, consumeNext: false, rest: merged.rest });
+      found.push({
+        index: i,
+        title: merged.title,
+        consumeNext: false,
+        rest: merged.rest,
+        kind: 'explicit',
+      });
       continue;
     }
-    const heading = headingFromLine(lines[i], lines[i + 1]);
+    const heading = headingFromLine(lines[i], nextLine);
     if (!heading) continue;
-    if (!isIsolatedLine(lines, i) && !/^Chapter\s+\d+/i.test(heading.title)) continue;
-    found.push({ index: i, title: heading.title, consumeNext: heading.consumeNext });
-    if (heading.consumeNext) i += 1;
+    if (!isIsolatedLine(lines, i) && heading.kind !== 'explicit') continue;
+    const consumeIndex = heading.consumeNext && nextIdx > i ? nextIdx : undefined;
+    found.push({
+      index: i,
+      title: heading.title,
+      consumeNext: heading.consumeNext,
+      consumeIndex,
+      kind: heading.kind,
+    });
+    if (consumeIndex !== undefined) i = consumeIndex;
   }
   return found;
 }
@@ -236,7 +366,7 @@ function preferNumberedSequence(headings: FoundHeading[]): FoundHeading[] {
     .map((h) => arabicChapterNum(h.title))
     .filter((n): n is number => n !== null);
   const unique = [...new Set(nums)].sort((a, b) => a - b);
-  if (unique.length < 8 || unique[0] > 2) return headings;
+  if (unique.length < 4 || unique[0] > 2) return headings;
   const span = unique[unique.length - 1] - unique[0] + 1;
   if (unique.length < span * 0.7) return headings;
 
@@ -274,11 +404,6 @@ function isTocOrContentsTitle(title: string): boolean {
   return /^(contents|table of contents)$/i.test(title.trim());
 }
 
-/**
- * High-precision literary chapter split.
- * Prefers explicit chapter headings; never treats "I am…" sentences as Roman numerals.
- * Drops Gutenberg license wrappers and table-of-contents duplicates.
- */
 function isMostlyTocListing(text: string): boolean {
   const lines = text
     .split('\n')
@@ -291,9 +416,46 @@ function isMostlyTocListing(text: string): boolean {
       NAMED_FRONT.test(l) ||
       NUMBERED_CHAPTER.test(l) ||
       NUMBERED_CHAPTER_ONLY.test(l) ||
+      BARE_NUMBERED_TITLE.test(stripTocPageRef(l)) ||
       /^(#{1,3}\s+)?(chapter|глава|etymology|extracts|epilogue)\b/i.test(l),
   ).length;
   return hits / lines.length >= 0.45;
+}
+
+function parseTocEntry(line: string): string | null {
+  const t = stripTocPageRef(line);
+  if (!t || CONTENTS_ONLY.test(t)) return null;
+  const heading = headingFromLine(t, '');
+  if (heading && !isTocOrContentsTitle(heading.title)) {
+    return heading.title.replace(/^Chapter\s+(?:\d+|[IVXLCDM]+)\.\s*/i, '').trim() || heading.title;
+  }
+  return null;
+}
+
+/** Titles listed after CONTENTS / Table of Contents, without page numbers. */
+export function extractContentsTitles(text: string): string[] {
+  const lines = text.split('\n');
+  const start = lines.findIndex((l) => CONTENTS_ONLY.test(l.trim().replace(/^#+\s+/, '')));
+  if (start < 0) return [];
+
+  const titles: string[] = [];
+  let blanks = 0;
+  for (let i = start + 1; i < lines.length; i++) {
+    const t = lines[i].trim();
+    if (!t) {
+      blanks += 1;
+      if (titles.length >= 2 && blanks >= 3) break;
+      continue;
+    }
+    blanks = 0;
+    const entry = parseTocEntry(t);
+    if (entry) {
+      titles.push(entry);
+      continue;
+    }
+    if (titles.length >= 2) break;
+  }
+  return titles.length >= 2 ? titles : [];
 }
 
 /** Drop the CONTENTS / TOC listing; keep the real chapter bodies that follow. */
@@ -312,13 +474,18 @@ export function stripContentsListing(text: string): string {
       i += 1;
       continue;
     }
-    const heading = headingFromLine(t, lines[i + 1]);
+    const heading = headingAt(lines, i);
+    if (!heading && parseTocEntry(t)) {
+      i += 1;
+      continue;
+    }
     if (!heading) break;
-    let j = i + 1 + (heading.consumeNext ? 1 : 0);
+    const nextIdx = heading.consumeNext ? nextNonEmptyIndex(lines, i + 1) : i;
+    let j = (nextIdx >= 0 && heading.consumeNext ? nextIdx : i) + 1;
     while (j < lines.length && !lines[j].trim()) j += 1;
-    const next = lines[j]?.trim() ?? '';
-    const nextHeading = next ? headingFromLine(next, lines[j + 1]) : null;
-    if (nextHeading || !next) {
+    const nextHeading = j < lines.length ? headingAt(lines, j) : null;
+    const nextToc = j < lines.length ? parseTocEntry(lines[j].trim()) : null;
+    if (nextHeading || nextToc || !lines[j]?.trim()) {
       i = j;
       continue;
     }
@@ -334,27 +501,22 @@ export function stripContentsListing(text: string): string {
  * on huge books. Only split after sentence punctuation so "see Chapter 1 of" stays intact.
  */
 export function ensureChapterLineBreaks(text: string): string {
-  return text.replace(
-    /([.!?…]["”'\)]{0,3}\s+)((?:#{1,3}\s+)?(?:CHAPTER|Chapter|ГЛАВА|Глава)\s+(?:\d{1,4}|[IVXLCDM]{1,8})\s*[.:—–-])/g,
+  let out = text.replace(
+    /([.!?…]["”'\)]{0,3}\s+)((?:#{1,3}\s+)?(?:CHAPTER|Chapter|ГЛАВА|Глава)\s+(?:\d{1,4}|[IVXLCDM]{1,8}|one|two|three|four|five|six|seven|eight|nine|ten)\s*[.:—–-]?)/gi,
     '$1\n\n$2',
   );
+  // "solemnly. 2 A Lady in Distress" glued after a sentence (PDF / HTML).
+  out = out.replace(
+    /([.!?…]["”'\)]{0,3})\s+(\d{1,3}|[IVXLCDM]{2,8})\s+([A-Z][\p{L}'’\-]*(?:\s+(?:[A-Z][\p{L}'’\-]+|in|on|of|the|a|an|and|at|to|for|or)){0,10})(?=\s+[“"‘']|\s+[A-Z]|\s*$)/gu,
+    (full, punct: string, num: string, title: string) => {
+      if (!looksLikeChapterTitle(title)) return full;
+      return `${punct}\n\n${num}\n\n${title}\n\n`;
+    },
+  );
+  return out;
 }
 
-export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1'): SplitChapter[] {
-  const prepared = stripContentsListing(
-    stripGutenbergBoilerplate(ensureChapterLineBreaks(text.replace(/\r\n/g, '\n'))),
-  ).trim();
-  if (!prepared) return [];
-
-  const lines = prepared.split('\n');
-  const headings = preferNumberedSequence(dropTableOfContents(collectHeadings(lines))).filter(
-    (h) => !isTocOrContentsTitle(h.title),
-  );
-
-  if (headings.length < 1) {
-    return [{ title: fallbackTitle.slice(0, 160), text: prepared }];
-  }
-
+function chaptersFromHeadings(lines: string[], headings: FoundHeading[], fallbackTitle: string): SplitChapter[] {
   const chapters: SplitChapter[] = [];
   const first = headings[0];
   if (first.index > 0) {
@@ -366,7 +528,7 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
 
   for (let i = 0; i < headings.length; i++) {
     const h = headings[i];
-    const start = h.index + 1 + (h.consumeNext ? 1 : 0);
+    const start = (h.consumeIndex ?? h.index) + 1;
     const end = i + 1 < headings.length ? headings[i + 1].index : lines.length;
     const bodyLines = lines.slice(start, end);
     if (h.rest) bodyLines.unshift(h.rest);
@@ -375,10 +537,50 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
     chapters.push({ title: h.title.slice(0, 160), text: body });
   }
 
-  const merged = mergeNamedDuplicates(chapters).filter(
+  return mergeNamedDuplicates(chapters).filter(
     (c) => !isTocOrContentsTitle(c.title) && !isMostlyTocListing(c.text),
   );
-  return merged.length ? merged : [{ title: fallbackTitle.slice(0, 160), text: prepared }];
+}
+
+function scoreSplit(chapters: SplitChapter[]): number {
+  if (chapters.length < 2 || !chaptersHaveRealTitles(chapters)) return 0;
+  const titled = chapters.filter((c) => !/^(page|pages)\s+\d/i.test(c.title.trim())).length;
+  const readable = chapters.filter((c) => /[a-z]/.test(c.title) && /Chapter\s+/i.test(c.title)).length;
+  return titled * 10 + Math.min(chapters.length, 80) + readable;
+}
+
+/**
+ * High-precision literary chapter split.
+ * Prefers explicit chapter headings; never treats "I am…" sentences as Roman numerals.
+ * Drops Gutenberg license wrappers and table-of-contents duplicates.
+ */
+export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1'): SplitChapter[] {
+  const prepared = stripGutenbergBoilerplate(
+    ensureChapterLineBreaks(text.replace(/\r\n/g, '\n')),
+  ).trim();
+  if (!prepared) return [];
+
+  const tocTitles = extractContentsTitles(prepared);
+  const stripped = stripContentsListing(prepared).trim() || prepared;
+  const fromToc =
+    tocTitles.length >= 2 ? splitByOutlineTitles(stripped, tocTitles, fallbackTitle) : null;
+
+  const lines = stripped.split('\n');
+  const headings = preferNumberedSequence(dropTableOfContents(collectHeadings(lines))).filter(
+    (h) => !isTocOrContentsTitle(h.title),
+  );
+
+  let fromHeadings: SplitChapter[] = [];
+  if (headings.length >= 1) {
+    fromHeadings = chaptersFromHeadings(lines, headings, fallbackTitle);
+  }
+
+  const candidates = [fromToc, fromHeadings].filter((c): c is SplitChapter[] => Boolean(c && c.length));
+  candidates.sort((a, b) => scoreSplit(b) - scoreSplit(a));
+  const best = candidates.find((c) => c.length >= 2 && chaptersHaveRealTitles(c)) ?? candidates[0];
+  if (best?.length) return best;
+
+  return [{ title: fallbackTitle.slice(0, 160), text: stripped }];
 }
 
 function namedSectionKey(title: string): string | null {
@@ -419,7 +621,9 @@ export function splitByOutlineTitles(
   titles: string[],
   fallbackTitle = 'Chapter 1',
 ): SplitChapter[] | null {
-  const cleaned = titles.map((t) => collapseWs(t)).filter((t) => t.length >= 2 && t.length <= 120);
+  const cleaned = titles
+    .map((t) => prettyChapterTitle(stripTocPageRef(t)))
+    .filter((t) => t.length >= 2 && t.length <= 120 && !isTocOrContentsTitle(t));
   if (cleaned.length < 2) return null;
 
   const haystack = text.replace(/\r\n/g, '\n');
@@ -442,9 +646,14 @@ export function splitByOutlineTitles(
     const end = i + 1 < positions.length ? positions[i + 1].index : haystack.length;
     let body = haystack.slice(start, end).trim();
     const headingLine = body.split('\n')[0] ?? '';
-    if (normalizeTitleKey(headingLine) === normalizeTitleKey(positions[i].title) || titleKeys(headingLine).some((k) => titleKeys(positions[i].title).includes(k))) {
+    if (
+      normalizeTitleKey(headingLine) === normalizeTitleKey(positions[i].title) ||
+      titleKeys(headingLine).some((k) => titleKeys(positions[i].title).includes(k))
+    ) {
       body = body.slice(headingLine.length).trim();
     }
+    // Drop a leading isolated chapter number left above the title.
+    body = body.replace(/^(?:\d{1,3}|[IVXLCDM]{1,8})\.?\s*\n+/, '');
     if (!body) continue;
     chapters.push({ title: positions[i].title.slice(0, 160), text: body });
   }
@@ -452,7 +661,7 @@ export function splitByOutlineTitles(
   if (chapters.length < 2) return null;
   if (positions[0].index > 0) {
     const preface = haystack.slice(0, positions[0].index).trim();
-    if (preface && wordCount(preface) >= 80) {
+    if (preface && wordCount(preface) >= 80 && !isMostlyTocListing(preface)) {
       chapters.unshift({ title: fallbackTitle.slice(0, 160), text: preface });
     }
   }
@@ -460,23 +669,29 @@ export function splitByOutlineTitles(
 }
 
 function findTitleIndex(text: string, title: string, keys: string[], from: number): number {
-  const direct = text.toLowerCase().indexOf(title.toLowerCase(), from);
-  if (direct >= 0) return direct;
-
+  const titleNorm = normalizeTitleKey(stripTocPageRef(title));
+  const allowSubstring = titleNorm.length >= 12 || titleNorm.split(' ').length >= 3;
   const lines = text.split('\n');
   let offset = 0;
+
   for (const line of lines) {
-    if (offset + line.length < from) {
-      offset += line.length + 1;
-      continue;
-    }
-    const lineKeys = titleKeys(line);
-    if (keys.some((k) => lineKeys.includes(k) || lineKeys.some((lk) => lk === k))) {
-      return offset;
-    }
-    const collapsed = normalizeTitleKey(line);
-    if (keys.includes(collapsed)) return offset;
+    const lineStart = offset;
     offset += line.length + 1;
+    if (lineStart + line.length < from) continue;
+
+    const stripped = stripTocPageRef(line);
+    const collapsed = normalizeTitleKey(stripped);
+    if (!collapsed) continue;
+    if (collapsed === titleNorm || keys.includes(collapsed)) {
+      return lineStart;
+    }
+    const numbered = collapsed.match(/^(?:\d+|[ivxlcdm]+)\s+(.+)$/);
+    if (numbered && (numbered[1] === titleNorm || keys.includes(numbered[1]))) {
+      return lineStart;
+    }
   }
-  return -1;
+
+  if (!allowSubstring) return -1;
+  const direct = text.toLowerCase().indexOf(title.toLowerCase(), from);
+  return direct >= 0 ? direct : -1;
 }

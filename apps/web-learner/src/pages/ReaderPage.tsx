@@ -295,9 +295,11 @@ export default function ReaderPage() {
     content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
   const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
-  const literary = content?.contentType === 'book' || content?.contentType === 'story';
+  const literary =
+    content?.contentType === 'book' ||
+    content?.contentType === 'story' ||
+    content?.contentType === 'user_import';
   const chapterGroups = useMemo(() => {
-    if (!literary) return null;
     const groups: Array<{ key: number; title: string; firstIndex: number; pageCount: number }> = [];
     const byKey = new Map<number, { key: number; title: string; firstIndex: number; pageCount: number }>();
     outline.forEach((seg, i) => {
@@ -315,8 +317,10 @@ export default function ReaderPage() {
       }
       group.pageCount += 1;
     });
+    if (!literary && groups.length < 2) return null;
+    if (content?.contentType === 'user_import' && groups.length < 2) return null;
     return groups;
-  }, [literary, outline]);
+  }, [literary, outline, content?.contentType]);
   const currentChapter = useMemo(() => {
     if (!chapterGroups?.length) return null;
     const current = outline[segmentIndex];
