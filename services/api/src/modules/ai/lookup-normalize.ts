@@ -10,30 +10,38 @@ export const LOOKUP_CONTEXTUAL_MAX_WORDS = 16;
 export const LOOKUP_PHRASE_MAX_WORDS = 8;
 export const LOOKUP_PHRASE_MAX_CHARS = 80;
 /** Bump when prompt/normalization changes so stale lemma_cache rows are skipped. */
-export const LOOKUP_CACHE_VERSION = 'v9';
+export const LOOKUP_CACHE_VERSION = 'v10';
 
 export type LookupKind = 'word' | 'phrase' | 'sentence';
 
 export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader (English, Russian, Uzbek).
 Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
 
-Use the SENTENCE's real domain. Never pick a sports, gambling, finance, or slang sense that does not fit THIS sentence.
+DOMAIN: Use only a sense that fits THIS SENTENCE (ships, hunting, weather, people, literature, daily talk).
+Never pick software, IT, business-process, sports, gambling, finance, or slang senses unless the sentence is clearly about those.
+Bad for a sea chase: "run" → execute/implement (amalga oshirish, bajarish). Good: overtake / pass (quvib o'tmoq).
+
+TENSE vs IDIOM:
+- have/has/had/did + verb is tense, not the meaning. Do not gloss the auxiliary alone (have ≠ bor/есть).
+- If a particle sits near the verb (by, out, up, off, down, over, through), phraseIfAny MUST include that phrasal verb copied from SENTENCE ("run him by", "look outs", "at hand").
 
 WORD (TARGET is one token):
-- translation = dictionary/base gloss of THIS WORD in GLOSS LANGUAGE (1–3 words). Sense-disambiguated by SENTENCE, but still a word gloss — not a sentence fragment, not alternatives joined by "or"/"yoki"/"или".
-- contextualMeaning = natural meaning as used HERE in GLOSS LANGUAGE (2–12 words). If TARGET sits inside an idiom, phrasal verb, or collocation, this is that idiom's meaning in this sentence.
-- phraseIfAny = the exact 2–6 word idiom/phrasal span COPIED from SENTENCE (same spelling) when TARGET is part of one; else null.
+- translation = dictionary/base gloss of THIS WORD in GLOSS LANGUAGE (1–3 words), the sense used HERE. No "or"/"yoki"/"или" lists.
+- contextualMeaning = ONE natural meaning as used HERE (2–12 words). Not a comma-joined synonym dump.
+- phraseIfAny = exact 2–6 word idiom/phrasal span from SENTENCE, else null.
 - lemma = dictionary headword.
 
 Examples when GLOSS LANGUAGE is uz:
 TARGET "hand" / SENTENCE "Nothing! and noon at hand!" → {"lemma":"hand","translation":"yaqin","contextualMeaning":"yaqin vaqt","phraseIfAny":"at hand"}
 TARGET "might" / SENTENCE "I might have known it, too." → {"lemma":"might","translation":"ehtimol","contextualMeaning":"oldin bilish yoki taxmin qilish","phraseIfAny":"might have known"}
 TARGET "outs" / SENTENCE "the regular look outs" → {"lemma":"lookout","translation":"qorovullar","contextualMeaning":"kemadagi kuzatuvchilar","phraseIfAny":"look outs"}
+TARGET "have run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib o'tmoq","contextualMeaning":"kechasi orqadan o'tib ketmoq","phraseIfAny":"run him by"}
+TARGET "run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib o'tmoq","contextualMeaning":"orqadan o'tib ketmoq","phraseIfAny":"run him by"}
 
 PHRASE (TARGET is 2–8 words and is not a full sentence):
-- phraseIfAny = that idiom/phrase (you may drop extra function words, e.g. "the regular look outs" → "look outs").
-- translation = short gloss of the phrase.
-- contextualMeaning = how the phrase is used in SENTENCE.
+- If TARGET is only a slice (have run), expand phraseIfAny to the real phrasal span in SENTENCE (run him by).
+- translation = short gloss of that WHOLE phrase as used here, never of the auxiliary alone.
+- contextualMeaning = how it is used in THIS sentence (one sense, no synonym lists).
 - Do not translate the rest of SENTENCE.
 
 SENTENCE / LONG TARGET (a clause, a full sentence, TARGET ≈ SENTENCE, or many words):
@@ -147,11 +155,13 @@ export function sanitizeContextualMeaning(
   raw: unknown,
   fallbackGloss: string,
   kind: LookupKind = 'word',
+  sentence = '',
 ): string | null {
   if (kind === 'sentence') return null;
   if (typeof raw !== 'string') return null;
   let t = raw.replace(/\s+/g, ' ').trim();
   if (!t) return null;
+  if (looksLikeSynonymDump(t) || looksLikeOffDomainExecute(t, sentence)) return null;
   const words = t.split(/\s+/).filter(Boolean);
   if (words.length > LOOKUP_CONTEXTUAL_MAX_WORDS) t = words.slice(0, LOOKUP_CONTEXTUAL_MAX_WORDS).join(' ');
   if (t.length > LOOKUP_CONTEXTUAL_MAX_CHARS) t = t.slice(0, LOOKUP_CONTEXTUAL_MAX_CHARS).trim();
@@ -206,6 +216,65 @@ export function looksLikeDefinitionGloss(text: string): boolean {
   if (words.length >= 4) return true;
   if (/\b(or|yoki|или|oder)\b/i.test(t)) return true;
   if (/(a person who|someone who|the act of|the state of)/i.test(t)) return true;
+  return false;
+}
+
+const IT_EXECUTE_MARKERS = [
+  'amalga oshirish',
+  'bajarish',
+  'ishga tushirish',
+  'dasturni',
+  'execute',
+  'implement',
+  'запустить',
+  'выполнить',
+  'реализовать',
+];
+
+const AUXILIARY_GLOSSES = new Set([
+  'bor', 'have', 'has', 'had', 'did', 'do', 'does', 'will', 'would',
+  'есть', 'иметь', 'был', 'была',
+]);
+
+export function looksLikeSynonymDump(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  return t.split(/[,;/]| - /).map((part) => part.trim()).filter(Boolean).length >= 2;
+}
+
+export function sentenceLooksTechnical(sentence: string): boolean {
+  return /\b(software|computer|program|code|server|app|database|click|download|algorithm|script)\b/i.test(
+    sentence,
+  );
+}
+
+export function looksLikeOffDomainExecute(text: string, sentence: string): boolean {
+  if (!text?.trim() || sentenceLooksTechnical(sentence)) return false;
+  const t = text.toLowerCase();
+  return IT_EXECUTE_MARKERS.some((marker) => t.includes(marker));
+}
+
+export function looksLikeAuxiliaryOnlyGloss(translation: string, surface: string, kind: LookupKind): boolean {
+  if (kind === 'sentence') return false;
+  const words = compactLookupText(surface).split(' ').filter(Boolean);
+  if (words.length < 2) return false;
+  const gloss = compactLookupText(translation);
+  return Boolean(gloss) && AUXILIARY_GLOSSES.has(gloss);
+}
+
+export function needsLookupRepair(opts: {
+  kind: LookupKind;
+  surface: string;
+  sentence: string;
+  translation: string;
+  contextualMeaning: string | null;
+}): boolean {
+  const { kind, surface, sentence, translation, contextualMeaning } = opts;
+  if (kind === 'sentence') return false;
+  if (contextualMeaning && looksLikeSynonymDump(contextualMeaning)) return true;
+  if (looksLikeOffDomainExecute(contextualMeaning ?? '', sentence)) return true;
+  if (looksLikeOffDomainExecute(translation, sentence)) return true;
+  if (looksLikeAuxiliaryOnlyGloss(translation, surface, kind)) return true;
   return false;
 }
 

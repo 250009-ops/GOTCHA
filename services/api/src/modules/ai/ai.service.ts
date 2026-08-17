@@ -39,6 +39,7 @@ import {
   lookupMaxTokens,
   lookupWordCount,
   looksLikeDefinitionGloss,
+  needsLookupRepair,
   normalizeLemmaKey,
   normalizeSentenceForHash,
   packLookupNote,
@@ -286,7 +287,7 @@ export class AiService {
         const payload: MemoryLookup = {
           lemma: cached.lemma || cacheKeyLemma,
           translation: sanitizeGloss(cached.translation, surface, limits, kind),
-          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation, kind),
+          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation, kind, context),
           phrase: sanitizePhrase(unpacked.phrase, context, surface, kind),
           grammarNote: null,
           partOfSpeech: cached.partOfSpeech ?? null,
@@ -319,8 +320,8 @@ export class AiService {
           kind === 'sentence'
             ? 'MODE=SENTENCE. Translate TARGET completely into GLOSS LANGUAGE. phraseIfAny = null. contextualMeaning = null. Do not summarize.'
             : kind === 'phrase'
-              ? 'MODE=PHRASE. Gloss the selected phrase. translation = short dictionary gloss. contextualMeaning = in-sentence meaning. Do not translate the rest of SENTENCE.'
-              : 'MODE=WORD. translation = dictionary/base gloss of TARGET (1–3 words, sense that fits SENTENCE). contextualMeaning = natural in-context meaning. If TARGET is inside an idiom, phraseIfAny MUST be that exact span copied from SENTENCE.';
+              ? 'MODE=PHRASE. Gloss the whole selected phrase as used in SENTENCE, not the auxiliary alone. If a particle is nearby (by/out/up/off), phraseIfAny must include it. contextualMeaning = one in-sentence meaning, no synonym lists. No software/execute sense.'
+              : 'MODE=WORD. translation = dictionary/base gloss of TARGET (1–3 words, sense that fits SENTENCE). contextualMeaning = natural in-context meaning. If TARGET is inside an idiom or phrasal verb, phraseIfAny MUST be that exact span copied from SENTENCE, including the particle.';
         const response = await client.chat.completions.create({
           model,
           temperature: 0,
@@ -360,7 +361,7 @@ export class AiService {
             phrase = null;
           }
           translation = sanitizeGloss(parsed.translation, surface, limits, kind);
-          contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation, kind);
+          contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation, kind, context);
         } catch {
           translation = sanitizeGloss(response.choices[0]?.message?.content, surface, limits, kind);
         }
@@ -370,8 +371,41 @@ export class AiService {
             const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang);
             if (strict) translation = sanitizeGloss(strict, translation, limits, kind);
           }
+          if (
+            needsLookupRepair({
+              kind,
+              surface,
+              sentence: context,
+              translation,
+              contextualMeaning,
+            })
+          ) {
+            const repaired = await this.repairContextualLookup(client, model, {
+              surface,
+              context,
+              sourceLang: dto.sourceLang,
+              targetLang: dto.targetLang,
+              kind,
+            });
+            if (repaired) {
+              phrase = sanitizePhrase(repaired.phraseIfAny, context, surface, kind)
+                ?? phrase;
+              if (repaired.lemma) lemma = normalizeLemmaKey(repaired.lemma) || lemma;
+              if (kind === 'sentence') {
+                lemma = displaySentenceHead(surface);
+                phrase = null;
+              }
+              translation = sanitizeGloss(repaired.translation, translation, limits, kind);
+              contextualMeaning = sanitizeContextualMeaning(
+                repaired.contextualMeaning,
+                translation,
+                kind,
+                context,
+              );
+            }
+          }
         } catch {
-          // Keep the first-pass gloss — never fail a successful lookup on the optional dictionary pass.
+          // Keep the first-pass gloss — never fail a successful lookup on the optional repair pass.
         }
       } catch (err) {
         // Do not cache errors / billing failures.
@@ -477,6 +511,59 @@ export class AiService {
     }
   }
 
+  /** Second pass when the first gloss is off-domain, a synonym dump, or only the auxiliary. Fail-soft. */
+  private async repairContextualLookup(
+    client: OpenAI,
+    model: string,
+    opts: {
+      surface: string;
+      context: string;
+      sourceLang: string;
+      targetLang: string;
+      kind: 'word' | 'phrase' | 'sentence';
+    },
+  ): Promise<{
+    lemma?: string;
+    translation?: string;
+    contextualMeaning?: string;
+    phraseIfAny?: string | null;
+  } | null> {
+    try {
+      const response = await client.chat.completions.create({
+        model,
+        temperature: 0,
+        max_tokens: 250,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
+          {
+            role: 'user',
+            content: [
+              `TARGET: "${opts.surface}"`,
+              `SENTENCE: "${opts.context}"`,
+              `GLOSS LANGUAGE: ${opts.targetLang}`,
+              `SOURCE LANGUAGE: ${opts.sourceLang}`,
+              'The previous gloss was off-domain or glossed only a tense auxiliary.',
+              'Redo for THIS sentence. No software/execute/implement sense unless the sentence is about computers.',
+              'If have/has/had + verb, gloss the verb + particle as used here (run him by = overtake/pass), not "have".',
+              'contextualMeaning = ONE natural meaning HERE. No comma-joined synonym lists.',
+              'translation = short gloss of the whole phrase/word as used here.',
+              `MODE=${opts.kind.toUpperCase()}.`,
+            ].join('\n'),
+          },
+        ],
+      });
+      return JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
+        lemma?: string;
+        translation?: string;
+        contextualMeaning?: string;
+        phraseIfAny?: string | null;
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private presentLookup(row: MemoryLookup, surface: string, context: string, cached: boolean) {
     const kind = classifyLookup(surface, context);
     const translation = sanitizeGloss(row.translation, surface, glossLimitsFor(kind), kind);
@@ -484,7 +571,7 @@ export class AiService {
     return {
       lemma: kind === 'sentence' ? displaySentenceHead(surface) : row.lemma,
       translation,
-      contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation, kind),
+      contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation, kind, context),
       phrase,
       grammarNote: row.grammarNote,
       partOfSpeech: row.partOfSpeech,

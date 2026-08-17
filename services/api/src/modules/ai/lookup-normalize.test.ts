@@ -3,7 +3,11 @@ import {
   classifyLookup,
   displaySentenceHead,
   glossLimitsFor,
+  looksLikeAuxiliaryOnlyGloss,
   looksLikeDefinitionGloss,
+  looksLikeOffDomainExecute,
+  looksLikeSynonymDump,
+  needsLookupRepair,
   sanitizeContextualMeaning,
   sanitizeGloss,
   sanitizePhrase,
@@ -66,10 +70,47 @@ assert.equal(
 );
 assert.equal(sanitizeContextualMeaning('yaqin', 'yaqin', 'word'), null);
 assert.equal(sanitizeContextualMeaning('tush yaqin', uz, 'sentence'), null);
+assert.equal(
+  sanitizeContextualMeaning('amalga oshirish, bajarish', 'bor', 'phrase', 'I have run him by last night.'),
+  null,
+);
 
 assert.equal(looksLikeDefinitionGloss('yaqin'), false);
 assert.equal(looksLikeDefinitionGloss('yaqin vaqt'), false);
 assert.equal(looksLikeDefinitionGloss('oldin bilish yoki taxmin qilish'), true);
+
+assert.equal(looksLikeSynonymDump('amalga oshirish, bajarish'), true);
+assert.equal(looksLikeSynonymDump('kechasi orqadan o\'tib ketmoq'), false);
+assert.equal(
+  looksLikeOffDomainExecute('amalga oshirish, bajarish', 'Aye, aye, I have run him by last night.'),
+  true,
+);
+assert.equal(
+  looksLikeOffDomainExecute('quvib o\'tmoq', 'Aye, aye, I have run him by last night.'),
+  false,
+);
+assert.equal(looksLikeAuxiliaryOnlyGloss('bor', 'have run', 'phrase'), true);
+assert.equal(looksLikeAuxiliaryOnlyGloss('quvib o\'tmoq', 'have run', 'phrase'), false);
+assert.equal(
+  needsLookupRepair({
+    kind: 'phrase',
+    surface: 'have run',
+    sentence: 'Aye, aye, I have run him by last night.',
+    translation: 'bor',
+    contextualMeaning: 'amalga oshirish, bajarish',
+  }),
+  true,
+);
+assert.equal(
+  needsLookupRepair({
+    kind: 'phrase',
+    surface: 'have run',
+    sentence: 'Aye, aye, I have run him by last night.',
+    translation: 'quvib o\'tmoq',
+    contextualMeaning: 'kechasi orqadan o\'tib ketmoq',
+  }),
+  false,
+);
 
 assert.ok(displaySentenceHead(sentence).includes('Nothing'));
 assert.ok(displaySentenceHead('one '.repeat(40)).endsWith('…'));
