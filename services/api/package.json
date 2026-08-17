@@ -13,7 +13,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
     "db:studio": "prisma studio",
-    "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts"
+    "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts",
+    "test:lookup": "ts-node --transpile-only src/modules/ai/lookup-normalize.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

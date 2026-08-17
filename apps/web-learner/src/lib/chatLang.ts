@@ -15,7 +15,8 @@ export function enabledChatLangCodes() {
 }
 
 const UZ_HINTS = new Set([
-  'salom', 'rahmat', 'yaxshi', 'qanday', 'nima', 'nega', 'qayerda', 'bugun', 'kecha',
+  'salom', 'rahmat', 'yaxshi', 'qanday', 'nima', 'nega', 'qayerda', 'qaysi', 'qachon',
+  'bugun', 'kecha', 'vaqt', 'soat', 'tuman', 'tumani', 'viloyat', 'viloyati',
   'kitob', 'dost', "do'st", 'ha', 'yoq', "yo'q", 'men', 'sen', 'biz', 'ular',
   'kerak', 'mumkin', 'iltimos', 'kechirasiz', 'xafa', 'shunchalik', 'qolding',
   'qoldi', "bo'lib", 'bolib', 'uchun', 'bilan', 'endi', 'hali', 'emas', 'kerakmi',
@@ -23,11 +24,11 @@ const UZ_HINTS = new Set([
 
 const EN_HINTS = new Set([
   'the', 'is', 'are', 'you', 'hello', 'hi', 'hey', 'thanks', 'and', 'this', 'that', 'have',
-  'what', 'how', 'with', 'from', 'your', 'just',
+  'what', 'which', 'when', 'where', 'how', 'with', 'from', 'your', 'just', 'today',
 ]);
 
-const LOOKUP_TOKEN_MAX = 80;
-const LOOKUP_SENTENCE_MAX = 500;
+const LOOKUP_TOKEN_MAX = 4000;
+const LOOKUP_SENTENCE_MAX = 4000;
 
 const translationCache = new Map<string, string>();
 let translateRouteMissing = false;
@@ -85,7 +86,7 @@ export function detectChatLang(text: string): string | null {
   const cyr = letters.filter((ch) => ch >= '\u0400' && ch <= '\u04FF').length;
   if (cyr * 4 >= letters.length) return pick('RU') ?? pick('UZ') ?? pick('EN');
   const lower = text.toLowerCase();
-  if (/[ʻʼ‘’']|o'|g'|oʻ|gʻ/.test(lower)) return pick('UZ') ?? pick('EN');
+  if (/o['ʻʼ‘’]|g['ʻʼ‘’]|[ʻʼ]|oʻ|gʻ/.test(lower)) return pick('UZ') ?? pick('EN');
   const tokens = [...lower.matchAll(/[\p{L}']+/gu)].map((m) => m[0]);
   const score = (hints: Set<string>) => tokens.filter((t) => hints.has(t)).length;
   const ranked: Array<[string, number]> = [
@@ -99,7 +100,18 @@ export function detectChatLang(text: string): string | null {
   ranked.sort((a, b) => b[1] - a[1]);
   const best = ranked.find(([code, hits]) => hits > 0 && allowed.has(code));
   if (best) return best[0];
-  return pick('EN') ?? enabledChatLangs[0] ?? 'EN';
+  // Latin Uzbek and English share a script — do not guess EN for unknown text.
+  return null;
+}
+
+/** Composer chip is native. Treat typed text as native unless it is clearly the To language. */
+export function inferComposerSource(text: string, nativeLang: string, toLang: string): string {
+  const native = normalizeChatLang(nativeLang);
+  const to = normalizeChatLang(toLang);
+  const detected = detectChatLang(text);
+  if (detected === to && to !== native) return to;
+  if (detected === native) return native;
+  return native;
 }
 
 export function sameChatText(a?: string | null, b?: string | null): boolean {
@@ -127,9 +139,44 @@ const CHAT_META: Record<string, { name: string; flag: string }> = {
   PT: { name: 'Portuguese', flag: '🇵🇹' },
 };
 
-export function chatLangName(code: string): string {
+export function chatLangName(code: string, uiLang?: string | null): string {
   const key = normalizeChatLang(code);
-  return CHAT_META[key]?.name ?? key;
+  const ui = normalizeChatLang(uiLang);
+  const localized: Record<string, Record<string, string>> = {
+    EN: { EN: 'English', RU: 'Английский', UZ: 'Inglizcha' },
+    RU: { EN: 'Russian', RU: 'Русский', UZ: 'Ruscha' },
+    UZ: { EN: 'Uzbek', RU: 'Узбекский', UZ: 'Oʻzbekcha' },
+    FR: { EN: 'French', RU: 'Французский', UZ: 'Fransuzcha' },
+    ES: { EN: 'Spanish', RU: 'Испанский', UZ: 'Ispancha' },
+    JA: { EN: 'Japanese', RU: 'Японский', UZ: 'Yaponcha' },
+    DE: { EN: 'German', RU: 'Немецкий', UZ: 'Nemischa' },
+    KO: { EN: 'Korean', RU: 'Корейский', UZ: 'Koreyscha' },
+    PT: { EN: 'Portuguese', RU: 'Португальский', UZ: 'Portugalcha' },
+  };
+  return localized[key]?.[ui] ?? CHAT_META[key]?.name ?? key;
+}
+
+/** Preposition in the To-language picker, in the learner’s UI language. */
+export function chatToLabel(uiLang?: string | null): string {
+  switch (normalizeChatLang(uiLang)) {
+    case 'RU':
+      return 'На';
+    case 'UZ':
+      return 'Ga';
+    default:
+      return 'To';
+  }
+}
+
+export function chatTranslatingLabel(uiLang?: string | null): string {
+  switch (normalizeChatLang(uiLang)) {
+    case 'RU':
+      return 'Перевод…';
+    case 'UZ':
+      return 'Tarjima…';
+    default:
+      return 'Translating…';
+  }
 }
 
 export function chatLangFlag(code: string): string {
@@ -284,12 +331,47 @@ export async function translateToward(
   const dst = normalizeChatLang(destLang);
   if (src === dst) return text;
   const cached = cachedTranslation(text, src, dst);
-  if (cached && !sameChatText(cached, text) && looksLikeLang(cached, dst)) return cached;
+  if (cached && !sameChatText(cached, text) && !(src === 'RU' && looksLikeLang(cached, src))) {
+    return cached;
+  }
   const out = await translateChat(text, src, dst);
   if (!out.trim() || sameChatText(out, text)) throw new Error('Translation unchanged');
-  if (!looksLikeLang(out, dst)) throw new Error(`Translation not in ${dst}`);
+  // Cyrillic is distinctive; Latin UZ/EN overlap so do not reject those pairs.
+  if (src === 'RU' && looksLikeLang(out, src)) throw new Error(`Translation still in ${src}`);
   rememberTranslation(text, src, dst, out);
   return out;
+}
+
+export async function composeChatPair(
+  text: string,
+  nativeLang: string,
+  toLang: string,
+): Promise<{
+  source: string;
+  toText: string | null;
+  nativeText: string | null;
+  sendBody: string;
+  sendLang: string;
+  sendNative?: string;
+}> {
+  const to = normalizeChatLang(toLang);
+  const native = normalizeChatLang(nativeLang);
+  const trimmed = text.trim();
+  const source = inferComposerSource(trimmed, native, to);
+  let toText: string | null = source === to ? trimmed : null;
+  let nativeText: string | null = source === native ? trimmed : null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if (!toText) toText = await tryTranslateChat(trimmed, source, to);
+    if (!nativeText) {
+      nativeText = await tryTranslateChat(trimmed, source, native)
+        ?? (toText ? await tryTranslateChat(toText, to, native) : null);
+    }
+    if (toText && nativeText) break;
+  }
+  const sendBody = toText ?? trimmed;
+  const sendLang = toText ? to : source;
+  const sendNative = nativeText && !sameChatText(nativeText, sendBody) ? nativeText : undefined;
+  return { source, toText, nativeText, sendBody, sendLang, sendNative };
 }
 
 export async function tryTranslateChat(
@@ -336,29 +418,27 @@ export function presentBubble(args: {
   const forcedTo = args.forcedTo?.trim() ?? '';
   const forcedNative = args.forcedNative?.trim() ?? '';
 
-  const inTo = (text: string, lang?: string | null) => {
-    if (!text) return false;
-    if (lang && normalizeChatLang(lang) === to) return true;
-    return looksLikeLang(text, to);
-  };
+  const clearlyNative = (text: string) => looksLikeLang(text, native) && !looksLikeLang(text, to);
+  const clearlyTo = (text: string) => looksLikeLang(text, to) && !looksLikeLang(text, native);
 
+  // Never put a native-language line in the To slot. Empty primary = still translating.
   const toLine =
-    (forcedTo && (inTo(forcedTo) || !detectChatLang(forcedTo)) ? forcedTo : '')
-    || (inTo(body, bodyLang) ? body : '')
-    || (inTo(stored) ? stored : '')
-    || forcedTo
-    || body;
+    (forcedTo && !clearlyNative(forcedTo) ? forcedTo : '')
+    || (body && (clearlyTo(body) || (bodyLang === to && !clearlyNative(body))) ? body : '')
+    || (stored && clearlyTo(stored) ? stored : '')
+    || (forcedTo && !sameChatText(forcedTo, forcedNative) && !clearlyNative(forcedTo) ? forcedTo : '');
 
+  // `translation` is the native line by contract. Trust it even when Latin detection is unsure.
   const nativeLine =
     (forcedNative && !sameChatText(forcedNative, toLine) ? forcedNative : '')
-    || (body && !sameChatText(body, toLine) ? body : '')
-    || (stored && !sameChatText(stored, toLine) ? stored : '');
+    || (stored && !sameChatText(stored, toLine) ? stored : '')
+    || (body && clearlyNative(body) && !sameChatText(body, toLine) ? body : '');
 
   return {
     primary: toLine,
     secondary: visibleNativeLine(toLine, nativeLine, to, native),
     primaryLang: to,
-    secondaryLang: bodyLang && bodyLang !== to ? bodyLang : native,
+    secondaryLang: native,
   };
 }
 

@@ -20,7 +20,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.ClickableText
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Add
@@ -44,6 +45,8 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import app.gotcha.android.R
@@ -51,6 +54,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
@@ -716,15 +720,18 @@ fun ReaderScreen(
                                     scope.launch {
                                         try {
                                             val source = content?.language ?: "ru"
-                                            lookup = container.contentRepository.lookup(
+                                            val result = container.contentRepository.lookup(
                                                 LookupRequest(
-                                                    token = word,
-                                                    lemma = word.lowercase(),
-                                                    sentence = sentence.take(500),
+                                                    token = word.take(4000),
+                                                    lemma = word.lowercase().take(4000),
+                                                    sentence = sentence.take(4000),
                                                     sourceLang = source,
                                                     targetLang = targetLang,
                                                 ),
                                             )
+                                            lookup = result
+                                            selected = if (result.kind == "sentence") word
+                                            else result.phrase?.takeIf { it.isNotBlank() } ?: word
                                         } catch (e: Exception) {
                                             lookupError = e.apiErrorMessage("Lookup failed. Try again.")
                                         } finally {
@@ -899,6 +906,7 @@ private fun TappableText(
         if (text.length > FULL_BODY_CHAR_LIMIT) text.take(FULL_BODY_CHAR_LIMIT) + "…" else text
     }
     var annotated by remember(display) { mutableStateOf(prepared) }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
     LaunchedEffect(prepared) {
         annotated = prepared
     }
@@ -911,7 +919,28 @@ private fun TappableText(
         if (!isActive) return@LaunchedEffect
         annotated = built
     }
-    ClickableText(
+
+    fun offsetAt(pos: Offset): Int? {
+        val layout = layoutResult ?: return null
+        return layout.getOffsetForPosition(pos)
+    }
+
+    fun sentenceFor(span: String): String {
+        if (span.length > 280) return span.take(4000)
+        return display.lineSequence().firstOrNull { it.contains(span, ignoreCase = true) } ?: display.take(280)
+    }
+
+    fun wordsBetween(start: Int, end: Int): String {
+        val lo = minOf(start, end)
+        val hi = maxOf(start, end)
+        return annotated.getStringAnnotations("word", lo, hi)
+            .distinctBy { it.start }
+            .sortedBy { it.start }
+            .take(400)
+            .joinToString(" ") { it.item }
+    }
+
+    Text(
         text = annotated,
         style = androidx.compose.ui.text.TextStyle(
             fontFamily = FontFamily.Serif,
@@ -919,12 +948,36 @@ private fun TappableText(
             lineHeight = (fontSize.value * 1.75f).sp,
             color = textColor,
         ),
-        onClick = { offset ->
-            annotated.getStringAnnotations("word", offset, offset).firstOrNull()?.let { ann ->
-                val sentence = display.lineSequence().firstOrNull { it.contains(ann.item) } ?: display.take(200)
-                onWordClick(ann.item, sentence)
+        onTextLayout = { layoutResult = it },
+        modifier = Modifier
+            .pointerInput(annotated) {
+                detectTapGestures(
+                    onTap = { pos ->
+                        val off = offsetAt(pos) ?: return@detectTapGestures
+                        annotated.getStringAnnotations("word", off, off).firstOrNull()?.let { ann ->
+                            onWordClick(ann.item, sentenceFor(ann.item))
+                        }
+                    },
+                )
             }
-        },
+            .pointerInput(annotated) {
+                var startOff = 0
+                var endOff = 0
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { pos ->
+                        startOff = offsetAt(pos) ?: 0
+                        endOff = startOff
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        endOff = offsetAt(change.position) ?: endOff
+                    },
+                    onDragEnd = {
+                        val phrase = wordsBetween(startOff, endOff)
+                        if (phrase.isNotBlank()) onWordClick(phrase, sentenceFor(phrase))
+                    },
+                )
+            },
     )
 }
 
@@ -957,13 +1010,26 @@ private fun LookupCard(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                val sentenceLike = lookup?.kind == "sentence"
                 Text(
-                    lookup?.lemma ?: word,
+                    if (sentenceLike) word else lookup?.phrase?.takeIf { it.isNotBlank() } ?: lookup?.lemma ?: word,
                     color = GotchaColors.BrandPurple,
                     fontFamily = Manrope,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 22.sp,
+                    fontSize = if (sentenceLike && word.length > 48) 16.sp else 22.sp,
                 )
+                if (!sentenceLike) {
+                    lookup?.lemma?.takeIf {
+                        it.isNotBlank() && !it.equals(lookup?.phrase, ignoreCase = true) && lookup?.phrase?.isNotBlank() == true
+                    }?.let { head ->
+                        Text(
+                            head,
+                            color = GotchaColors.TextSubtle,
+                            fontFamily = Manrope,
+                            fontSize = 13.sp,
+                        )
+                    }
+                }
                 Text(
                     buildString {
                         val meta = listOfNotNull(lookup?.partOfSpeech, lookup?.grammarNote)
@@ -972,7 +1038,7 @@ private fun LookupCard(
                             meta.isNotBlank() -> append(meta)
                             loading -> append("Looking up…")
                             error != null -> append("Lookup failed")
-                            else -> append("word")
+                            else -> append(if (sentenceLike) "sentence" else "word")
                         }
                     },
                     color = GotchaColors.TextSubtle,
@@ -1011,26 +1077,40 @@ private fun LookupCard(
             }
         }
         HorizontalDivider(color = GotchaColors.Border, thickness = 1.dp)
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(
-                when {
-                    loading -> "Translating…"
-                    error != null -> error
-                    else -> lookup?.translation ?: "—"
-                },
-                fontFamily = Manrope,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 15.sp,
-                color = if (error != null) Color(0xFFDC2626) else GotchaColors.Ink,
-            )
-            if (!contextSentence.isNullOrBlank() && error == null) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val sentenceLike = lookup?.kind == "sentence"
+            val natural = lookup?.contextualMeaning?.takeIf { it.isNotBlank() && !sentenceLike }
+            if (loading) {
                 Text(
-                    "Context: '…${contextSentence.take(80)}…'",
-                    color = GotchaColors.TextMuted,
+                    "Looking up…",
                     fontFamily = Manrope,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 15.sp,
+                    color = GotchaColors.Ink,
                 )
+            } else if (error != null) {
+                Text(error, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFFDC2626))
+            } else {
+                if (natural != null) {
+                    Text(
+                        "NATURAL MEANING",
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        color = GotchaColors.BrandPurple,
+                    )
+                    Text(natural, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = GotchaColors.Ink)
+                }
+                lookup?.translation?.takeIf { it.isNotBlank() && it != natural }?.let { tr ->
+                    Text(
+                        "TRANSLATION",
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        color = GotchaColors.BrandPurple,
+                    )
+                    Text(tr, fontFamily = Manrope, fontSize = 14.sp, lineHeight = 20.sp, color = GotchaColors.Ink)
+                }
             }
             if (savedMsg != null) {
                 Text(savedMsg, color = GotchaColors.SuccessText, fontFamily = Manrope, fontSize = 13.sp)
@@ -1067,20 +1147,60 @@ private fun readerBodyText(segments: List<Segment>, limit: Int): String {
     return if (joined.length > limit) joined.take(limit) + "…" else joined
 }
 
+private fun phraseParts(selected: String?): List<String> {
+    if (selected.isNullOrBlank()) return emptyList()
+    return selected.split(Regex("[\\s-]+")).map { raw ->
+        raw.trim().trim { ch -> ch in ".,!?;:\"'()[]«»—–-" }.lowercase()
+    }.filter { it.isNotEmpty() }
+}
+
 private fun buildTappableAnnotated(
     text: String,
     selected: String? = null,
     knownLemmas: Set<String> = emptySet(),
 ): AnnotatedString {
+    val tokens = Regex("""\S+|\s+""").findAll(text).toList()
+    val wordIndexes = mutableListOf<Int>()
+    val cleans = mutableListOf<String>()
+    tokens.forEachIndexed { index, match ->
+        val token = match.value
+        val clean = token.trim().trim { ch -> ch in ".,!?;:\"'()[]«»—–-" }
+        if (clean.isNotEmpty() && token.any { it.isLetter() }) {
+            wordIndexes.add(index)
+            cleans.add(clean.lowercase())
+        }
+    }
+    val parts = phraseParts(selected)
+    val selectedTokenIndexes = hashSetOf<Int>()
+    if (parts.size == 1) {
+        wordIndexes.forEachIndexed { i, tokIndex ->
+            if (cleans[i] == parts[0]) selectedTokenIndexes.add(tokIndex)
+        }
+    } else if (parts.size >= 2) {
+        for (i in 0..cleans.size - parts.size) {
+            if (cleans.subList(i, i + parts.size) == parts) {
+                repeat(parts.size) { k -> selectedTokenIndexes.add(wordIndexes[i + k]) }
+            }
+        }
+        val closed = parts.joinToString("")
+        if (closed.length >= 6 && selectedTokenIndexes.isEmpty()) {
+            for (n in 2..minOf(3, cleans.size)) {
+                for (i in 0..cleans.size - n) {
+                    if (cleans.subList(i, i + n).joinToString("") == closed) {
+                        repeat(n) { k -> selectedTokenIndexes.add(wordIndexes[i + k]) }
+                    }
+                }
+            }
+        }
+    }
     return buildAnnotatedString {
-        val regex = Regex("""\S+|\s+""")
-        regex.findAll(text).forEach { match ->
+        tokens.forEachIndexed { index, match ->
             val token = match.value
             val clean = token.trim().trim { ch -> ch in ".,!?;:\"'()[]«»—–-" }
             val isWord = clean.isNotEmpty() && token.any { it.isLetter() }
             if (isWord) {
                 pushStringAnnotation("word", clean)
-                if (selected != null && clean == selected) {
+                if (selectedTokenIndexes.contains(index)) {
                     withStyle(
                         SpanStyle(
                             fontWeight = FontWeight.Bold,

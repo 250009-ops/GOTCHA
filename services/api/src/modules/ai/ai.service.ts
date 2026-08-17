@@ -29,6 +29,24 @@ import {
   processCleanupChunk,
   ImportCleanupSource,
 } from '../imports/import-ai-cleanup';
+import {
+  LOOKUP_CACHE_VERSION,
+  LOOKUP_SYSTEM_PROMPT,
+  classifyLookup,
+  clampContext,
+  displaySentenceHead,
+  glossLimitsFor,
+  lookupMaxTokens,
+  lookupWordCount,
+  looksLikeDefinitionGloss,
+  normalizeLemmaKey,
+  normalizeSentenceForHash,
+  packLookupNote,
+  sanitizeContextualMeaning,
+  sanitizeGloss,
+  sanitizePhrase,
+  unpackLookupNote,
+} from './lookup-normalize';
 
 type MemoryLookup = {
   lemma: string;
@@ -39,145 +57,8 @@ type MemoryLookup = {
   partOfSpeech: string | null;
 };
 
-const LOOKUP_CONTEXT_MAX = 500;
-const LOOKUP_GLOSS_MAX_CHARS = 80;
-const LOOKUP_GLOSS_MAX_WORDS = 12;
-const LOOKUP_CONTEXTUAL_MAX_CHARS = 220;
 /** In-memory LRU size in front of DB (and for offline/dev). */
 const MEMORY_LRU_MAX = 800;
-/** Cache key scheme — bump when normalization/keying rules change. */
-const LOOKUP_CACHE_VERSION = 'v7';
-const LOOKUP_PHRASE_MAX_WORDS = 8;
-const LOOKUP_PHRASE_MAX_CHARS = 80;
-
-const LOOKUP_SYSTEM_PROMPT = `You are a bilingual dictionary for language learners.
-Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
-
-Rules:
-- Focus on the tapped target (surface form) in this sentence.
-- If the target is part of a multi-word idiom, phrasal verb, collocation, or fixed expression, set phraseIfAny to the EXACT 2–6 word span from the sentence (e.g. "on record", "looked up", "in spite of"). Then lemma = dictionary form of that phrase.
-- If the target is already a multi-word selection, treat that whole span as the phrase (copy it to phraseIfAny).
-- If it is a standalone word, phraseIfAny = null. lemma = dictionary headword (e.g. impel for impelling).
-- "translation" = short idiomatic gloss in the learner's language (1–6 words). NEVER translate word-by-word (bad: "on record" → "eng yozuv"; good: "qayd etilgan" / "tarixdagi").
-- "contextualMeaning" is REQUIRED: the natural meaning of this word/phrase as used HERE, in the learner's language (6–20 words). Example: "hottest summer on record" → "tarixda qayd etilgan eng issiq yoz".
-- Do NOT paste or translate the whole context sentence. Do NOT add grammar lectures.`;
-
-function sanitizeContextualMeaning(raw: unknown, fallbackGloss: string): string | null {
-  if (typeof raw !== 'string') return null;
-  let t = raw.replace(/\s+/g, ' ').trim();
-  if (!t) return null;
-  if (t.length > LOOKUP_CONTEXTUAL_MAX_CHARS) {
-    t = t.slice(0, LOOKUP_CONTEXTUAL_MAX_CHARS).trim();
-  }
-  if (sameLooseText(t, fallbackGloss)) return null;
-  return t;
-}
-
-function compactLookupText(raw: string) {
-  return raw
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function sanitizePhrase(raw: unknown, sentence: string, surface: string): string | null {
-  if (typeof raw !== 'string') return null;
-  let t = raw.replace(/\s+/g, ' ').trim();
-  t = t.replace(/^[\s"'«»„“”‘’]+|[\s"'«»„“”‘’.,!?;:]+$/g, '').trim();
-  if (!t) return null;
-  const words = t.split(/\s+/).filter(Boolean);
-  if (words.length < 2 || words.length > LOOKUP_PHRASE_MAX_WORDS || t.length > LOOKUP_PHRASE_MAX_CHARS) {
-    return null;
-  }
-  const needle = compactLookupText(t);
-  const hay = compactLookupText(sentence);
-  if (!needle) return null;
-  if (hay && needle === hay) return null;
-  if (hay.includes(needle) || compactLookupText(surface) === needle) return t;
-  return null;
-}
-
-function packLookupNote(contextual: string | null, phrase: string | null): string | null {
-  if (!phrase) return contextual;
-  return JSON.stringify({ v: 1, contextualMeaning: contextual, phrase });
-}
-
-function unpackLookupNote(raw: string | null | undefined): {
-  contextualMeaning: string | null;
-  phrase: string | null;
-} {
-  if (!raw?.trim()) return { contextualMeaning: null, phrase: null };
-  if (raw.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(raw) as { v?: number; contextualMeaning?: string | null; phrase?: string | null };
-      if (parsed?.v === 1) {
-        return {
-          contextualMeaning: typeof parsed.contextualMeaning === 'string' ? parsed.contextualMeaning : null,
-          phrase: typeof parsed.phrase === 'string' ? parsed.phrase : null,
-        };
-      }
-    } catch {
-      // Fall through to plain-text note.
-    }
-  }
-  return { contextualMeaning: raw, phrase: null };
-}
-
-function sameLooseText(a: string, b: string) {
-  return a.trim().replace(/\s+/g, ' ').toLowerCase() === b.trim().replace(/\s+/g, ' ').toLowerCase();
-}
-
-function clampContext(text: string): string {
-  const trimmed = (text ?? '').trim();
-  if (trimmed.length <= LOOKUP_CONTEXT_MAX) return trimmed;
-  return trimmed.slice(0, LOOKUP_CONTEXT_MAX).trim();
-}
-
-/** Lowercase/trim and strip edge punctuation for stable cache keys. */
-function normalizeLemmaKey(raw: string): string {
-  return (raw ?? '')
-    .toLowerCase()
-    .trim()
-    .replace(/^[\s"'«»„“”‘’(\[{<]+|[\s"'«»„“”‘’).,!?;:…\]}>]+$/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-/** Collapse whitespace + lowercase for sentence hashing (privacy-safe shared key). */
-function normalizeSentenceForHash(raw: string): string {
-  return clampContext(raw)
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .replace(/^[\s"'«»„“”‘’]+|[\s"'«»„“”‘’]+$/g, '')
-    .trim();
-}
-
-/** Keep TRANSLATION as a short gloss; reject passage-length dumps. */
-function sanitizeGloss(raw: unknown, fallback: string): string {
-  if (typeof raw !== 'string') return fallback;
-  let t = raw.replace(/\s+/g, ' ').trim();
-  if (!t) return fallback;
-
-  const wordCount = t.split(/\s+/).filter(Boolean).length;
-  const sentenceEnds = (t.match(/[.!?。！？]/g) ?? []).length;
-  const looksLikePassage = t.length > LOOKUP_GLOSS_MAX_CHARS || wordCount > LOOKUP_GLOSS_MAX_WORDS || sentenceEnds > 1;
-
-  if (looksLikePassage) {
-    // Prefer the first short comma/semicolon/dash chunk if it is gloss-sized.
-    const chunk = t.split(/[,;–—:：]/)[0]?.trim() ?? t;
-    if (chunk.split(/\s+/).length <= LOOKUP_GLOSS_MAX_WORDS && chunk.length <= LOOKUP_GLOSS_MAX_CHARS) {
-      t = chunk;
-    } else {
-      t = t.split(/\s+/).slice(0, 6).join(' ');
-    }
-  }
-
-  if (t.length > LOOKUP_GLOSS_MAX_CHARS) {
-    t = t.slice(0, LOOKUP_GLOSS_MAX_CHARS).trim();
-  }
-  return t || fallback;
-}
 
 /** Soft timeout for import cleanup calls (production imports must not hang forever). */
 const IMPORT_CLEANUP_TIMEOUT_MS = 55_000;
@@ -379,11 +260,12 @@ export class AiService {
   async lookup(userId: string, dto: LookupDto) {
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
+    const kind = classifyLookup(surface, context);
     const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context);
 
     const fromMemory = this.memoryGet(hash);
     if (fromMemory) {
-      return this.presentLookup(fromMemory, surface, true);
+      return this.presentLookup(fromMemory, surface, context, true);
     }
 
     if (!this.useMemory()) {
@@ -400,16 +282,17 @@ export class AiService {
 
       if (cached) {
         const unpacked = unpackLookupNote(cached.grammarNote);
+        const limits = glossLimitsFor(kind);
         const payload: MemoryLookup = {
           lemma: cached.lemma || cacheKeyLemma,
-          translation: sanitizeGloss(cached.translation, surface),
-          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation),
-          phrase: sanitizePhrase(unpacked.phrase, context, surface),
+          translation: sanitizeGloss(cached.translation, surface, limits, kind),
+          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation, kind),
+          phrase: sanitizePhrase(unpacked.phrase, context, surface, kind),
           grammarNote: null,
           partOfSpeech: cached.partOfSpeech ?? null,
         };
         this.memorySet(hash, payload);
-        return this.presentLookup(payload, surface, true);
+        return this.presentLookup(payload, surface, context, true);
       }
     }
 
@@ -419,10 +302,12 @@ export class AiService {
     const { today, memoryKey } = await this.checkQuota(userId, settings.defaultUserQuota);
 
     const client = this.getClient();
+    const limits = glossLimitsFor(kind);
+    const surfaceWords = lookupWordCount(surface);
     let lemma = cacheKeyLemma;
     let translation = surface;
     let contextualMeaning: string | null = null;
-    let phrase: string | null = compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null;
+    let phrase: string | null = kind === 'phrase' ? surface.trim() : null;
     const grammarNote: string | null = null;
     const partOfSpeech: string | null = null;
     const model = settings.lookupModel;
@@ -430,22 +315,28 @@ export class AiService {
 
     if (client) {
       try {
+        const modeHint =
+          kind === 'sentence'
+            ? 'MODE=SENTENCE. Translate TARGET completely into GLOSS LANGUAGE. phraseIfAny = null. contextualMeaning = null. Do not summarize.'
+            : kind === 'phrase'
+              ? 'MODE=PHRASE. Gloss the selected phrase. translation = short dictionary gloss. contextualMeaning = in-sentence meaning. Do not translate the rest of SENTENCE.'
+              : 'MODE=WORD. translation = dictionary/base gloss of TARGET (1–3 words, sense that fits SENTENCE). contextualMeaning = natural in-context meaning. If TARGET is inside an idiom, phraseIfAny MUST be that exact span copied from SENTENCE.';
         const response = await client.chat.completions.create({
           model,
-          temperature: 0.1,
-          max_tokens: 180,
+          temperature: 0,
+          max_tokens: lookupMaxTokens(kind, surface),
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
             {
               role: 'user',
               content: [
-                `Target word (surface): "${surface}"`,
-                dto.lemma ? `Lemma hint: "${dto.lemma}"` : null,
-                `Sentence: "${context}"`,
-                `Gloss language: ${dto.targetLang}`,
-                `Source language of the text: ${dto.sourceLang}`,
-                                'Return a short idiom gloss AND a required contextualMeaning (natural meaning in this sentence). Never translate the whole sentence word-by-word.',
+                `TARGET: "${surface}"`,
+                dto.lemma && surfaceWords <= 2 ? `Lemma hint: "${dto.lemma}"` : null,
+                `SENTENCE: "${context}"`,
+                `GLOSS LANGUAGE: ${dto.targetLang}`,
+                `SOURCE LANGUAGE: ${dto.sourceLang}`,
+                modeHint,
               ]
                 .filter(Boolean)
                 .join('\n'),
@@ -461,13 +352,26 @@ export class AiService {
             contextualMeaning?: string;
             phraseIfAny?: string | null;
           };
-          phrase = sanitizePhrase(parsed.phraseIfAny, context, surface)
-            ?? (compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null);
+          phrase = sanitizePhrase(parsed.phraseIfAny, context, surface, kind)
+            ?? (kind === 'phrase' ? surface.trim() : null);
           lemma = normalizeLemmaKey(parsed.lemma || phrase || cacheKeyLemma) || cacheKeyLemma;
-          translation = sanitizeGloss(parsed.translation, surface);
-          contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation);
+          if (kind === 'sentence') {
+            lemma = displaySentenceHead(surface);
+            phrase = null;
+          }
+          translation = sanitizeGloss(parsed.translation, surface, limits, kind);
+          contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation, kind);
         } catch {
-          translation = sanitizeGloss(response.choices[0]?.message?.content, surface);
+          translation = sanitizeGloss(response.choices[0]?.message?.content, surface, limits, kind);
+        }
+
+        try {
+          if (kind === 'word' && looksLikeDefinitionGloss(translation)) {
+            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang);
+            if (strict) translation = sanitizeGloss(strict, translation, limits, kind);
+          }
+        } catch {
+          // Keep the first-pass gloss — never fail a successful lookup on the optional dictionary pass.
         }
       } catch (err) {
         // Do not cache errors / billing failures.
@@ -481,9 +385,14 @@ export class AiService {
       translation = surface;
     }
 
-    translation = sanitizeGloss(translation, surface);
-    phrase = sanitizePhrase(phrase, context, surface)
-      ?? (compactLookupText(surface).split(' ').length >= 2 ? surface.trim() : null);
+    translation = sanitizeGloss(translation, surface, limits, kind);
+    phrase = sanitizePhrase(phrase, context, surface, kind)
+      ?? (kind === 'phrase' ? surface.trim() : null);
+    if (kind === 'sentence') {
+      lemma = displaySentenceHead(surface);
+      phrase = null;
+      contextualMeaning = null;
+    }
     const payload: MemoryLookup = {
       lemma,
       translation,
@@ -532,18 +441,54 @@ export class AiService {
       await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
     }
 
-    return this.presentLookup(payload, surface, false);
+    return this.presentLookup(payload, surface, context, false);
   }
 
-  private presentLookup(row: MemoryLookup, surface: string, cached: boolean) {
-    const translation = sanitizeGloss(row.translation, surface);
+  /** Donish-style second pass: if the base gloss looks like a definition, ask for a short dictionary word. Fail-soft. */
+  private async strictBaseGloss(
+    client: OpenAI,
+    model: string,
+    word: string,
+    glossLang: string,
+  ): Promise<string | null> {
+    try {
+      const response = await client.chat.completions.create({
+        model,
+        temperature: 0,
+        max_tokens: 60,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content:
+              'You are a bilingual dictionary. Return ONLY JSON: {"translation":""}. translation is the short base/dictionary gloss of ONE word in the requested language. No context phrases, no alternatives, no punctuation.',
+          },
+          {
+            role: 'user',
+            content: `Word: ${word}\nGLOSS LANGUAGE: ${glossLang}`,
+          },
+        ],
+      });
+      const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as { translation?: string };
+      const next = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
+      return next || null;
+    } catch {
+      return null;
+    }
+  }
+
+  private presentLookup(row: MemoryLookup, surface: string, context: string, cached: boolean) {
+    const kind = classifyLookup(surface, context);
+    const translation = sanitizeGloss(row.translation, surface, glossLimitsFor(kind), kind);
+    const phrase = sanitizePhrase(row.phrase, context, surface, kind);
     return {
-      lemma: row.lemma,
+      lemma: kind === 'sentence' ? displaySentenceHead(surface) : row.lemma,
       translation,
-      contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation),
-      phrase: row.phrase,
+      contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation, kind),
+      phrase,
       grammarNote: row.grammarNote,
       partOfSpeech: row.partOfSpeech,
+      kind,
       cached,
     };
   }
@@ -564,7 +509,7 @@ export class AiService {
     }
 
     const hash = this.contentHash(
-      ['tr-v1', dto.sourceLang, dto.targetLang, this.sentenceHash(text)].join('|'),
+      ['tr-v2', dto.sourceLang, dto.targetLang, this.sentenceHash(text)].join('|'),
     );
     const cached = this.memoryGet(hash);
     if (cached?.translation) {
@@ -592,7 +537,7 @@ export class AiService {
             {
               role: 'system',
               content:
-                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Keep meaning and tone. Do not add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
+                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Translate the ENTIRE message into the target language. Keep every clause, meaning, and tone. Do not summarize, omit, add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
             },
             {
               role: 'user',

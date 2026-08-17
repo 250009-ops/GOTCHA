@@ -116,6 +116,7 @@ export interface ContentItem {
   isFree?: boolean;
   priceUzs?: number;
   accessGranted?: boolean;
+  trialSegmentCount?: number;
 }
 
 export interface ContentOutlineSegment {
@@ -150,6 +151,12 @@ export interface ContentSegment {
 export interface LookupResult {
   lemma: string;
   translation: string;
+  /** How this inflected form is used in the tapped sentence (learner language). */
+  contextualMeaning?: string | null;
+  /** Surface span of an idiom / phrasal verb in the sentence, when the tap was one word of it. */
+  phrase?: string | null;
+  /** word = dictionary tap, phrase = short idiom, sentence = full translation of the selection. */
+  kind?: 'word' | 'phrase' | 'sentence';
   phonetic?: string | null;
   partOfSpeech?: string | null;
   grammarNote?: string | null;

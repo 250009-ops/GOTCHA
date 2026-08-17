@@ -31,6 +31,8 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -52,7 +54,6 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
-import androidx.compose.foundation.text.ClickableText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -66,9 +67,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
@@ -801,6 +804,8 @@ fun MessagingChatScreen(
     var selectedNativeLine by remember(conversationId) { mutableStateOf("") }
     var selectedLineLang by remember(conversationId) { mutableStateOf("EN") }
     var lookup by remember(conversationId) { mutableStateOf<LookupResponse?>(null) }
+    val highlightWord = if (lookup?.kind == "sentence") selectedWord
+        else lookup?.phrase?.takeIf { it.isNotBlank() } ?: selectedWord
     var lookupLoading by remember(conversationId) { mutableStateOf(false) }
     var lookupError by remember(conversationId) { mutableStateOf<String?>(null) }
     var savedMsg by remember(conversationId) { mutableStateOf<String?>(null) }
@@ -844,11 +849,11 @@ fun MessagingChatScreen(
         val dst = ChatLangs.normalize(destLang)
         if (src == dst) return text
         container.chatLangStore.cachedTranslation(text, src, dst)
-            ?.takeIf { it.isNotBlank() && !ChatLangs.sameText(it, text) && looksLikeLang(it, dst) }
+            ?.takeIf { it.isNotBlank() && !ChatLangs.sameText(it, text) }
             ?.let { return it }
         val out = container.contentRepository.translate(text, src, dst)
         if (out.isBlank() || ChatLangs.sameText(out, text)) error("Translation unchanged")
-        if (!looksLikeLang(out, dst)) error("Translation not in $dst")
+        if (src == "RU" && looksLikeLang(out, src)) error("Translation still in $src")
         container.chatLangStore.rememberTranslation(text, src, dst, out)
         return out
     }
@@ -960,22 +965,22 @@ fun MessagingChatScreen(
         if (editingMsg != null) {
             editing = null
             scope.launch {
-                val detected = ChatLangs.detect(text) ?: nativeLang
                 val to = ChatLangs.normalize(toLang)
                 val native = ChatLangs.normalize(nativeLang)
-                var toText: String? = if (detected == to) text else null
-                var nativeText: String? = if (detected == native) text else null
+                val source = ChatLangs.inferComposerSource(text, native, to)
+                var toText: String? = if (source == to) text else null
+                var nativeText: String? = if (source == native) text else null
                 repeat(3) { attempt ->
-                    if (toText == null) toText = tryTranslate(text, detected, to)
+                    if (toText == null) toText = tryTranslate(text, source, to)
                     if (nativeText == null) {
-                        nativeText = tryTranslate(text, detected, native)
+                        nativeText = tryTranslate(text, source, native)
                             ?: toText?.let { tryTranslate(it, to, native) }
                     }
                     if (toText != null && nativeText != null) return@repeat
                     if (attempt < 2) delay(400L * (attempt + 1))
                 }
                 val sendBody = toText ?: text
-                val sendLang = if (toText != null) to else detected
+                val sendLang = if (toText != null) to else source
                 val sendNative = nativeText?.takeIf { it.isNotBlank() && !ChatLangs.sameText(it, sendBody) }
                 try {
                     val updated = container.messagingRepository.edit(
@@ -998,14 +1003,14 @@ fun MessagingChatScreen(
         val replyTarget = replyTo
         replyTo = null
         val localId = "local-${UUID.randomUUID()}"
-        val detected = ChatLangs.detect(text) ?: nativeLang
         val to = ChatLangs.normalize(toLang)
         val native = ChatLangs.normalize(nativeLang)
+        val source = ChatLangs.inferComposerSource(text, native, to)
         val nowIso = Instant.now().toString()
-        val nativeSeed = if (detected == native) text else ""
+        val nativeSeed = if (source == native) text else ""
         pending = pending + ChatMessageDto(
             id = localId,
-            body = if (detected == to) text else "",
+            body = if (source == to) text else "",
             translation = nativeSeed.takeIf { it.isNotBlank() },
             bodyLang = to.lowercase(Locale.US),
             mine = true,
@@ -1020,14 +1025,14 @@ fun MessagingChatScreen(
                 )
             },
         )
-        rememberPair(localId, if (detected == to) text else null, nativeSeed.takeIf { it.isNotBlank() })
+        rememberPair(localId, if (source == to) text else null, nativeSeed.takeIf { it.isNotBlank() })
         scope.launch {
-            var toText: String? = if (detected == to) text else null
-            var nativeText: String? = if (detected == native) text else null
+            var toText: String? = if (source == to) text else null
+            var nativeText: String? = if (source == native) text else null
             repeat(3) { attempt ->
-                if (toText == null) toText = tryTranslate(text, detected, to)
+                if (toText == null) toText = tryTranslate(text, source, to)
                 if (nativeText == null) {
-                    nativeText = tryTranslate(text, detected, native)
+                    nativeText = tryTranslate(text, source, native)
                         ?: toText?.let { tryTranslate(it, to, native) }
                 }
                 rememberPair(localId, toText, nativeText)
@@ -1046,7 +1051,7 @@ fun MessagingChatScreen(
                 translateHint = "Couldn’t translate to ${langName(to)} yet. Your original is below — retrying."
             }
             val sendBody = toText ?: text
-            val sendLang = if (toText != null) to else detected
+            val sendLang = if (toText != null) to else source
             val sendNative = nativeText?.takeIf { it.isNotBlank() && !ChatLangs.sameText(it, sendBody) }
             try {
                 val sent = container.messagingRepository.send(
@@ -1201,7 +1206,7 @@ fun MessagingChatScreen(
                     LookupRequest(
                         token = word,
                         lemma = word.lowercase(Locale.US),
-                        sentence = selectedSentence.take(500).ifBlank { word },
+                        sentence = selectedSentence.take(4000).ifBlank { word },
                         sourceLang = source,
                         targetLang = target,
                     ),
@@ -1229,22 +1234,32 @@ fun MessagingChatScreen(
                     .padding(bottom = messagingDirBottomPad()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                val nativeGloss = lookup?.translation?.takeIf { it.isNotBlank() }
+                val sentenceLike = lookup?.kind == "sentence"
                 val sourceLemma = (lookup?.lemma ?: selectedWord).orEmpty()
                 Text(
-                    nativeGloss ?: sourceLemma,
+                    if (sentenceLike) selectedWord.orEmpty() else lookup?.phrase?.takeIf { it.isNotBlank() } ?: sourceLemma,
                     fontFamily = Manrope,
                     fontWeight = FontWeight.ExtraBold,
-                    fontSize = 28.sp,
+                    fontSize = if (sentenceLike) 18.sp else 28.sp,
                     color = GotchaColors.BrandPurple,
                 )
-                if (nativeGloss != null && sourceLemma.isNotBlank() && !ChatLangs.sameText(sourceLemma, nativeGloss)) {
-                    Text(
-                        sourceLemma,
-                        fontFamily = Manrope,
-                        fontSize = 15.sp,
-                        color = GotchaColors.TextSubtle,
-                    )
+                if (!sentenceLike) {
+                    lookup?.phrase?.takeIf { it.isNotBlank() && !it.equals(sourceLemma, ignoreCase = true) }?.let { phrase ->
+                        Text(
+                            phrase,
+                            fontFamily = Manrope,
+                            fontSize = 14.sp,
+                            color = GotchaColors.TextSubtle,
+                        )
+                    }
+                    if (sourceLemma.isNotBlank() && lookup?.phrase?.equals(sourceLemma, ignoreCase = true) != true) {
+                        Text(
+                            sourceLemma,
+                            fontFamily = Manrope,
+                            fontSize = 15.sp,
+                            color = GotchaColors.TextSubtle,
+                        )
+                    }
                 }
                 when {
                     lookupLoading -> Text(
@@ -1269,19 +1284,31 @@ fun MessagingChatScreen(
                                 color = GotchaColors.TextSubtle,
                             )
                         }
-                        lookup?.translation?.takeIf { it.isNotBlank() }?.let { tr ->
+                        lookup?.contextualMeaning?.takeIf { it.isNotBlank() && lookup?.kind != "sentence" }?.let { meaning ->
+                            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(
+                                    "NATURAL MEANING",
+                                    fontFamily = Manrope,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 11.sp,
+                                    color = GotchaColors.BrandPurple,
+                                )
+                                Text(meaning, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            }
+                        }
+                        lookup?.translation?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { tr ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     "TRANSLATION",
                                     fontFamily = Manrope,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
-                                    color = GotchaColors.TextSubtle,
+                                    color = GotchaColors.BrandPurple,
                                 )
-                                Text(tr, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
+                                Text(tr, fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.Ink)
                             }
                         }
-                        lookup?.grammarNote?.takeIf { it.isNotBlank() }?.let { note ->
+                        lookup?.grammarNote?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { note ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     "GRAMMAR NOTE",
@@ -1473,7 +1500,7 @@ fun MessagingChatScreen(
                             MessageBubble(
                                 msg = msg,
                                 presented = presented,
-                                selectedWord = selectedWord,
+                                selectedWord = highlightWord,
                                 peerName = detail?.peer?.displayName ?: "Learner",
                                 onWordTap = { word, sentence, lineLang ->
                                     selectedSentence = sentence
@@ -1683,12 +1710,8 @@ private fun overlayKey(messageId: String, lang: String): String =
 private fun looksLikeLang(text: String, lang: String): Boolean {
     val trimmed = text.trim()
     if (trimmed.isBlank()) return false
-    val want = ChatLangs.normalize(lang)
-    val got = ChatLangs.detect(trimmed)
-    return when (want) {
-        "RU" -> got == "RU"
-        else -> got != "RU"
-    }
+    val got = ChatLangs.detect(trimmed) ?: return false
+    return got == ChatLangs.normalize(lang)
 }
 
 private fun presentBubble(
@@ -1701,26 +1724,30 @@ private fun presentBubble(
 ): PresentedBubble {
     val native = ChatLangs.normalize(nativeLang)
     val to = ChatLangs.normalize(toLang)
+    val body = msg.body.trim()
+    val stored = msg.translation?.trim().orEmpty()
+    val forcedTo = forced?.first?.trim().orEmpty()
+    val forcedNative = forced?.second?.trim().orEmpty()
+    val overlayT = overlayTo?.trim().orEmpty()
+    val overlayN = overlayNative?.trim().orEmpty()
+    val bodyLang = msg.bodyLang?.uppercase(Locale.US)?.take(2)
 
-    fun pickTo(vararg candidates: String?): String =
-        candidates.firstOrNull { candidate ->
-            val t = candidate?.trim().orEmpty()
-            t.isNotBlank() && looksLikeLang(t, to)
-        }?.trim().orEmpty()
+    fun clearlyNative(text: String) = looksLikeLang(text, native) && !looksLikeLang(text, to)
 
-    val toLine = pickTo(
-        forced?.first,
-        overlayTo,
-        msg.body,
-        msg.translation,
-    )
-    val nativeLine = listOfNotNull(
-        forced?.second?.trim()?.takeIf { it.isNotBlank() },
-        overlayNative?.trim()?.takeIf { it.isNotBlank() },
-        msg.body.takeIf { looksLikeLang(it, native) },
-        msg.translation?.takeIf { looksLikeLang(it, native) },
-        msg.translation?.takeIf { looksLikeLang(msg.body, to) },
-    ).firstOrNull().orEmpty()
+    val toLine = listOf(forcedTo, overlayT, body, stored).firstOrNull { t ->
+        t.isNotBlank() && !clearlyNative(t) && (
+            looksLikeLang(t, to) ||
+                t == forcedTo ||
+                t == overlayT ||
+                (t == body && bodyLang == to)
+            )
+    }.orEmpty()
+
+    val nativeLine = listOf(forcedNative, overlayN, stored, body).firstOrNull { t ->
+        t.isNotBlank() &&
+            !ChatLangs.sameText(t, toLine) &&
+            (t == forcedNative || t == overlayN || t == stored || looksLikeLang(t, native))
+    }.orEmpty()
 
     return PresentedBubble(
         primary = toLine,
@@ -1849,6 +1876,7 @@ private fun MessageBubble(
                             color = bodyColor,
                             fontSize = 15.sp,
                             selectedWord = selectedWord,
+                            onSender = msg.mine,
                             onWordTap = { word -> onWordTap(word, presented.primary, presented.primaryLang) },
                         )
                     }
@@ -1859,6 +1887,7 @@ private fun MessageBubble(
                             fontSize = 13.sp,
                             italic = true,
                             selectedWord = selectedWord,
+                            onSender = msg.mine,
                             onWordTap = { word -> onWordTap(word, presented.secondary, presented.secondaryLang) },
                         )
                     }
@@ -1981,19 +2010,43 @@ private fun TappableMessageText(
     fontSize: androidx.compose.ui.unit.TextUnit = 15.sp,
     italic: Boolean = false,
     selectedWord: String? = null,
+    onSender: Boolean = false,
     onWordTap: (String) -> Unit,
 ) {
-    val annotated = remember(text, color, fontSize, italic, selectedWord) {
+    val annotated = remember(text, color, fontSize, italic, selectedWord, onSender) {
+        val matches = Regex("[\\p{L}\\p{N}'-]+").findAll(text).toList()
+        val parts = selectedWord?.trim()?.split(Regex("\\s+"))?.map { it.lowercase() }?.filter { it.isNotEmpty() }.orEmpty()
+        val selectedIndexes = hashSetOf<Int>()
+        if (parts.size <= 1) {
+            matches.forEachIndexed { index, match ->
+                if (selectedWord != null && match.value.equals(selectedWord, ignoreCase = true)) selectedIndexes.add(index)
+            }
+        } else {
+            val lowers = matches.map { it.value.lowercase() }
+            for (i in 0..lowers.size - parts.size) {
+                if (lowers.subList(i, i + parts.size) == parts) {
+                    repeat(parts.size) { k -> selectedIndexes.add(i + k) }
+                }
+            }
+        }
         buildAnnotatedString {
-            val matcher = Regex("[\\p{L}\\p{N}'-]+").findAll(text)
             var last = 0
-            matcher.forEach { match ->
+            matches.forEachIndexed { index, match ->
                 if (match.range.first > last) append(text.substring(last, match.range.first))
                 pushStringAnnotation("word", match.value)
-                val selected = selectedWord != null && match.value.equals(selectedWord, ignoreCase = true)
+                val selected = selectedIndexes.contains(index)
                 withStyle(
                     SpanStyle(
-                        color = if (selected) GotchaColors.BrandPurple else color,
+                        color = when {
+                            selected && onSender -> Color(0xFF4D179A)
+                            selected -> GotchaColors.BrandPurple
+                            else -> color
+                        },
+                        background = when {
+                            selected && onSender -> Color.White
+                            selected -> GotchaColors.BrandPurpleSoft
+                            else -> Color.Unspecified
+                        },
                         fontFamily = Manrope,
                         fontSize = fontSize,
                         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
@@ -2009,7 +2062,8 @@ private fun TappableMessageText(
             if (last < text.length) append(text.substring(last))
         }
     }
-    ClickableText(
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+    Text(
         text = annotated,
         style = TextStyle(
             fontFamily = Manrope,
@@ -2018,12 +2072,41 @@ private fun TappableMessageText(
             color = color,
             lineHeight = if (italic) 18.sp else 20.sp,
         ),
-        onClick = { offset ->
-            annotated.getStringAnnotations("word", offset, offset)
-                .firstOrNull()
-                ?.item
-                ?.let(onWordTap)
-        },
+        onTextLayout = { layoutResult = it },
+        modifier = Modifier
+            .pointerInput(annotated) {
+                detectTapGestures(
+                    onTap = { pos ->
+                        val layout = layoutResult ?: return@detectTapGestures
+                        val off = layout.getOffsetForPosition(pos)
+                        annotated.getStringAnnotations("word", off, off).firstOrNull()?.item?.let(onWordTap)
+                    },
+                )
+            }
+            .pointerInput(annotated) {
+                var startOff = 0
+                var endOff = 0
+                detectDragGesturesAfterLongPress(
+                    onDragStart = { pos ->
+                        startOff = layoutResult?.getOffsetForPosition(pos) ?: 0
+                        endOff = startOff
+                    },
+                    onDrag = { change, _ ->
+                        change.consume()
+                        endOff = layoutResult?.getOffsetForPosition(change.position) ?: endOff
+                    },
+                    onDragEnd = {
+                        val lo = minOf(startOff, endOff)
+                        val hi = maxOf(startOff, endOff)
+                        val phrase = annotated.getStringAnnotations("word", lo, hi)
+                            .distinctBy { it.start }
+                            .sortedBy { it.start }
+                            .take(400)
+                            .joinToString(" ") { it.item }
+                        if (phrase.isNotBlank()) onWordTap(phrase)
+                    },
+                )
+            },
     )
 }
 

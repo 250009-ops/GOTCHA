@@ -252,6 +252,9 @@ data class LookupRequest(
 data class LookupResponse(
     val lemma: String? = null,
     val translation: String? = null,
+    val contextualMeaning: String? = null,
+    val phrase: String? = null,
+    val kind: String? = null,
     val grammarNote: String? = null,
     val partOfSpeech: String? = null,
     val cached: Boolean = false,

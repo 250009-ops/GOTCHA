@@ -24,7 +24,9 @@ import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { formatUzs } from '../lib/importBilling';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
+import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
@@ -94,40 +96,8 @@ const STATUS_STYLES: Record<WordStatus, string> = {
   ignored: 'text-gray-400 cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
 };
 
-/** Sentence (or short window) containing the tapped token — never the full chapter. */
-function extractSentenceAround(text: string, start: number, end: number): string {
-  if (!text) return '';
-  const len = text.length;
-  const a = Math.max(0, Math.min(start, len));
-  const b = Math.max(a, Math.min(end, len));
-
-  let s = a;
-  while (s > 0) {
-    const ch = text[s - 1];
-    if (ch === '.' || ch === '!' || ch === '?' || ch === '\n' || ch === '…') break;
-    s--;
-  }
-  while (s < a && /\s/.test(text[s]!)) s++;
-
-  let e = b;
-  while (e < len) {
-    const ch = text[e]!;
-    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') {
-      e++;
-      break;
-    }
-    if (ch === '\n') break;
-    e++;
-  }
-
-  let sentence = text.slice(s, e).trim();
-  if (sentence.length > 400) {
-    const ws = Math.max(0, a - 80);
-    const we = Math.min(len, b + 80);
-    sentence = text.slice(ws, we).trim();
-  }
-  return sentence.slice(0, 500);
-}
+const LONG_PRESS_MS = 380;
+const DRAG_CANCEL_PX = 10;
 
 function DictionaryPanel({
   result,
@@ -169,8 +139,24 @@ function DictionaryPanel({
           <>
             <div>
               <div className="flex items-start justify-between gap-2">
-                <div className="flex items-baseline gap-2 flex-wrap">
-                  <span className="text-2xl font-bold text-[#101828]">{result.lemma}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline gap-2 flex-wrap">
+                    <span className="text-2xl font-bold text-[#101828] break-words">
+                      {result.kind === 'sentence' ? result.lemma : (result.phrase?.trim() || result.lemma)}
+                    </span>
+                    {result.kind !== 'sentence' && result.phrase?.trim() ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                        Phrase
+                      </span>
+                    ) : result.kind === 'sentence' ? (
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                        Sentence
+                      </span>
+                    ) : null}
+                  </div>
+                  {result.kind !== 'sentence' && result.phrase?.trim() && result.lemma.trim() && result.phrase.trim().toLowerCase() !== result.lemma.trim().toLowerCase() ? (
+                    <div className="text-sm text-[#6b7382] mt-1">{result.lemma}</div>
+                  ) : null}
                 </div>
                 <button
                   type="button"
@@ -189,9 +175,15 @@ function DictionaryPanel({
                 </button>
               </div>
             </div>
-            <div className="bg-[#f5f3ff] rounded-xl p-3">
+            {result.kind !== 'sentence' && result.contextualMeaning?.trim() ? (
+              <div className="bg-[#f5f3ff] rounded-xl p-3">
+                <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Natural meaning</div>
+                <div className="text-[#1e2939] leading-relaxed">{result.contextualMeaning}</div>
+              </div>
+            ) : null}
+            <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-[#f5f3ff] rounded-xl p-3'}>
               <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Translation</div>
-              <div className="text-[#1e2939] leading-relaxed">{result.translation}</div>
+              <div className="text-[#1e2939] leading-relaxed whitespace-pre-wrap break-words">{result.translation}</div>
             </div>
             <div className="flex items-center gap-2 text-xs">
               <div className={cn('px-2 py-1 rounded-md font-medium', {
@@ -247,7 +239,7 @@ function DictionaryPanel({
         {!loading && !result && (
           <div className="text-center py-10 text-[#99a1af]">
             <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Click any word to look it up</div>
+            <div className="text-sm">Tap a word to catch its phrase, or drag any span — even the whole page</div>
           </div>
         )}
       </div>
@@ -265,6 +257,8 @@ export default function ReaderPage() {
   const [pageCache, setPageCache] = useState<Record<number, ContentSegment>>({});
   const [segmentIndex, setSegmentIndex] = useState(0);
   const [activeWord, setActiveWord] = useState<string | null>(null);
+  const [lockedSpan, setLockedSpan] = useState<TokenSpan | null>(null);
+  const [liveSpan, setLiveSpan] = useState<TokenSpan | null>(null);
   const [activeLookup, setActiveLookup] = useState<LookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
   const [dictOpen, setDictOpen] = useState(false);
@@ -275,9 +269,24 @@ export default function ReaderPage() {
   const [loading, setLoading] = useState(true);
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
+  const [paywallOpen, setPaywallOpen] = useState(false);
   const readingPaneRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    pointerType: string;
+    originX: number;
+    originY: number;
+    anchorI: number;
+    endI: number;
+    armed: boolean;
+    timer: number | null;
+    host: HTMLElement;
+  } | null>(null);
 
   const pageCount = outline.length;
+  const trialLimit =
+    content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
+  const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
   const literary = content?.contentType === 'book' || content?.contentType === 'story';
   const chapterGroups = useMemo(() => {
@@ -371,15 +380,21 @@ export default function ReaderPage() {
       api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
     ]).then(async ([item, known]) => {
       setContent(item);
-      if (item.accessGranted === false) {
+      const trialCount = item.trialSegmentCount ?? 0;
+      const canTrial = item.accessGranted === false && trialCount > 0;
+      if (item.accessGranted === false && !canTrial) {
         setOutline([]);
         setPageCache({});
+        setPaywallOpen(true);
         return;
       }
+      setPaywallOpen(false);
       let pages = item.outline ?? [];
       const cache: Record<number, ContentSegment> = {};
       if (!pages.length) {
-        const first = await api<{ segments: ContentSegment[] }>(`/content/${id}/segments?from=0&limit=200`);
+        const first = await api<{ segments: ContentSegment[] }>(
+          `/content/${id}/segments?from=0&limit=${canTrial ? Math.max(trialCount, 1) : 200}`,
+        );
         const segs = first.segments ?? [];
         pages = segs.map((s) => ({
           id: s.id,
@@ -395,7 +410,8 @@ export default function ReaderPage() {
         });
       }
       setOutline(pages);
-      const start = resolveResumeIndex(pages, item.currentSegmentId, readResume(id));
+      let start = resolveResumeIndex(pages, item.currentSegmentId, readResume(id));
+      if (canTrial) start = Math.min(start, Math.max(trialCount - 1, 0));
       setSegmentIndex(start);
       writeResume(id, { segmentId: pages[start]?.id, segmentIndex: start });
       if (!cache[start] && pages[start]) {
@@ -440,7 +456,9 @@ export default function ReaderPage() {
   };
 
   const handleWordClick = useCallback(
-    async (lemma: string, surface: string, sentence: string) => {
+    async (lemma: string, surface: string, sentence: string, span: TokenSpan, wordTokens: Array<{ i: number; surface: string; lemma: string | null }>) => {
+      setLockedSpan(span);
+      setLiveSpan(null);
       setActiveWord(lemma);
       setDictOpen(true);
       setLookupLoading(true);
@@ -449,24 +467,40 @@ export default function ReaderPage() {
         const res = await api<LookupResult>('/ai/lookup', {
           method: 'POST',
           body: JSON.stringify({
-            token: surface,
-            lemma,
+            token: surface.slice(0, 4000),
+            lemma: lemma.slice(0, 4000),
             sentence,
             sourceLang,
             targetLang,
           }),
         });
+        const sentenceLike = res.kind === 'sentence' || isSentenceLikeSelection(surface, sentence);
+        const phrase = sentenceLike
+          ? null
+          : (res.phrase?.trim() || (surface.trim().split(/\s+/).length >= 2 && surface.trim().split(/\s+/).length <= 8 ? surface.trim() : null));
+        if (phrase) {
+          const found = findPhraseTokenRange(wordTokens, phrase, span.startI);
+          if (found) setLockedSpan(found);
+        } else {
+          setLockedSpan(span);
+        }
+        const head = sentenceLike ? surface : (phrase || res.lemma || lemma);
         setActiveLookup({
-          lemma: res.lemma ?? lemma,
-          translation: res.translation,
+          ...res,
+          lemma: sentenceLike ? (res.lemma || lookupHeadline(surface)) : (res.lemma ?? lemma),
+          phrase: phrase ?? res.phrase ?? null,
+          kind: res.kind ?? (sentenceLike ? 'sentence' : phrase ? 'phrase' : 'word'),
         });
+        if (head) setActiveWord(head);
       } catch (e) {
         const raw = e instanceof Error ? e.message : 'Lookup failed';
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
-        } else if (/quota exceeded|daily limit reached/i.test(raw)) {
-          message = 'Daily AI lookup limit reached. Try again tomorrow or upgrade your plan.';
+        } else if (/platform ai daily limit/i.test(raw)) {
+          message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
+        } else if (/quota exceeded|daily limit reached|lookup limit reached/i.test(raw)) {
+          message = 'Daily AI lookup limit reached. Try again tomorrow.';
         } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
           message = 'AI lookup is unavailable right now. Please try again later.';
         } else if (/AI lookup failed/i.test(raw)) {
@@ -541,8 +575,18 @@ export default function ReaderPage() {
 
   const goToSegment = useCallback((index: number) => {
     if (index < 0 || index >= outlineRef.current.length) return;
+    const limit =
+      content?.accessGranted === false
+        ? Math.max(0, content.trialSegmentCount ?? 0)
+        : outlineRef.current.length;
+    if (content?.accessGranted === false && index >= limit) {
+      setPaywallOpen(true);
+      return;
+    }
     setSegmentIndex(index);
     setActiveWord(null);
+    setLockedSpan(null);
+    setLiveSpan(null);
     setActiveLookup(null);
     readingPaneRef.current?.scrollTo({ top: 0 });
     if (id) {
@@ -557,7 +601,7 @@ export default function ReaderPage() {
       void loadPage(index + 1);
       void saveProgress(index);
     })();
-  }, [id, loadPage, saveProgress]);
+  }, [id, loadPage, saveProgress, content?.accessGranted, content?.trialSegmentCount]);
 
   const goNext = () => {
     if (segmentIndex < pageCount - 1) goToSegment(segmentIndex + 1);
@@ -606,6 +650,8 @@ export default function ReaderPage() {
   const closeDict = () => {
     setDictOpen(false);
     setActiveWord(null);
+    setLockedSpan(null);
+    setLiveSpan(null);
     setActiveLookup(null);
   };
 
@@ -631,7 +677,7 @@ export default function ReaderPage() {
     );
   }
 
-  if (content.accessGranted === false) {
+  if (content.accessGranted === false && !isTrial) {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
@@ -878,6 +924,11 @@ export default function ReaderPage() {
             className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6"
             style={{ fontSize: `${fontScale}rem` }}
           >
+            {isTrial ? (
+              <div className="mb-6 rounded-xl border border-violet-200 bg-[#f5f3ff] px-4 py-3 text-sm text-[#4d179a]">
+                Free sample of this book. Unlock the rest for {formatUzs(content.priceUzs ?? 0)}.
+              </div>
+            ) : null}
             <div className="mb-8">
               <div className="text-xs font-semibold text-[#8e51ff] uppercase tracking-[1.2px] mb-1">
                 {chapterGroups
@@ -889,7 +940,99 @@ export default function ReaderPage() {
               </h1>
             </div>
 
-            <div className="text-[#1e2939] leading-[1.9] font-serif">
+            <div
+              className="text-[#1e2939] leading-[1.9] font-serif select-none touch-pan-y"
+              onPointerDown={(e) => {
+                if (e.button !== 0 || !segment) return;
+                const el = (e.target as HTMLElement | null)?.closest?.('[data-token-i]');
+                if (!el) return;
+                const i = Number(el.getAttribute('data-token-i'));
+                if (!Number.isFinite(i)) return;
+                if (dragRef.current?.timer) window.clearTimeout(dragRef.current.timer);
+                const isTouch = e.pointerType === 'touch';
+                const timer = isTouch
+                  ? window.setTimeout(() => {
+                      const drag = dragRef.current;
+                      if (!drag || drag.pointerId !== e.pointerId) return;
+                      drag.armed = true;
+                      try {
+                        drag.host.setPointerCapture(drag.pointerId);
+                      } catch {
+                        // Capture can fail if the pointer already ended.
+                      }
+                      setLiveSpan({ startI: drag.anchorI, endI: drag.endI });
+                    }, LONG_PRESS_MS)
+                  : null;
+                dragRef.current = {
+                  pointerId: e.pointerId,
+                  pointerType: e.pointerType,
+                  originX: e.clientX,
+                  originY: e.clientY,
+                  anchorI: i,
+                  endI: i,
+                  armed: !isTouch,
+                  timer,
+                  host: e.currentTarget,
+                };
+                if (!isTouch) {
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                  setLiveSpan({ startI: i, endI: i });
+                }
+              }}
+              onPointerMove={(e) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== e.pointerId || !segment) return;
+                const dist = Math.hypot(e.clientX - drag.originX, e.clientY - drag.originY);
+                if (!drag.armed) {
+                  if (dist > DRAG_CANCEL_PX && drag.timer != null) {
+                    window.clearTimeout(drag.timer);
+                    drag.timer = null;
+                    dragRef.current = null;
+                  }
+                  return;
+                }
+                e.preventDefault();
+                const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-token-i]');
+                if (!hit) return;
+                const i = Number(hit.getAttribute('data-token-i'));
+                if (!Number.isFinite(i) || i === drag.endI) return;
+                drag.endI = i;
+                const words = segment.tokenMap.filter((token) => token.isWord);
+                const span = clampPhraseSpan(words, drag.anchorI, i);
+                if (span) setLiveSpan(span);
+              }}
+              onPointerUp={(e) => {
+                const drag = dragRef.current;
+                if (!drag || drag.pointerId !== e.pointerId || !segment) return;
+                if (drag.timer != null) window.clearTimeout(drag.timer);
+                dragRef.current = null;
+                setLiveSpan(null);
+                const words = segment.tokenMap.filter((token) => token.isWord);
+                const span = clampPhraseSpan(words, drag.anchorI, drag.endI);
+                if (!span) return;
+                if (!drag.armed && drag.pointerType === 'touch') {
+                  // Short tap: still look up the word under the finger.
+                }
+                const inRange = words.filter((token) => token.i >= span.startI && token.i <= span.endI);
+                if (!inRange.length) return;
+                const first = inRange[0]!;
+                const last = inRange[inRange.length - 1]!;
+                const surface = segment.plainText.slice(first.start, last.end).trim();
+                const lemma = inRange.map((token) => (token.lemma ?? token.surface).toLowerCase()).join(' ');
+                void handleWordClick(
+                  lemma,
+                  surface,
+                  extractSentenceAround(segment.plainText, first.start, last.end),
+                  span,
+                  words,
+                );
+              }}
+              onPointerCancel={() => {
+                if (dragRef.current?.timer != null) window.clearTimeout(dragRef.current.timer);
+                dragRef.current = null;
+                setLiveSpan(null);
+              }}
+            >
               {!segment ? (
                 <div className="flex items-center justify-center py-16">
                   <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
@@ -909,33 +1052,32 @@ export default function ReaderPage() {
                     : status === 'ignored'
                       ? 'ignored'
                       : null;
+                const selected = tokenInSpan(token.i, liveSpan ?? lockedSpan);
 
                 return (
                   <span
                     key={token.i}
+                    data-token-i={token.i}
                     role="button"
                     tabIndex={0}
-                    onClick={() =>
-                      handleWordClick(
-                        key,
-                        token.surface,
-                        extractSentenceAround(segment.plainText, token.start, token.end),
-                      )
-                    }
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault();
+                        const words = segment.tokenMap.filter((item) => item.isWord);
+                        const span = { startI: token.i, endI: token.i };
                         void handleWordClick(
                           key,
                           token.surface,
                           extractSentenceAround(segment.plainText, token.start, token.end),
+                          span,
+                          words,
                         );
                       }
                     }}
                     className={cn(
                       'px-px py-0.5',
                       highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
-                      activeWord === key && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
+                      selected && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
                     )}
                   >
                     {token.surface}
@@ -971,7 +1113,11 @@ export default function ReaderPage() {
                 />
                 <span className="tabular-nums">/ {pageInChapter.total}</span>
               </form>
-              {segmentIndex < pageCount - 1 ? (
+              {isTrial && segmentIndex >= trialLimit - 1 ? (
+                <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
+                  Unlock full book
+                </Button>
+              ) : segmentIndex < pageCount - 1 ? (
                 <Button onClick={goNext} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
                   <span className="hidden sm:inline">Next</span>
                   <ChevronRight className="w-4 h-4" />
@@ -1042,6 +1188,31 @@ export default function ReaderPage() {
           />
         </div>
       )}
+
+      {isTrial && paywallOpen ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/70 p-4">
+          <div className="relative w-full max-w-md">
+            <button
+              type="button"
+              className="absolute top-3 right-3 z-10 size-8 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] grid place-items-center text-gray-500"
+              onClick={() => setPaywallOpen(false)}
+              aria-label="Keep reading the sample"
+            >
+              <X className="w-4 h-4" />
+            </button>
+            <CatalogPaywall
+              contentId={content.id}
+              title={content.title}
+              priceUzs={content.priceUzs ?? 0}
+              onUnlocked={() => {
+                setPaywallOpen(false);
+                setLoading(true);
+                setAccessNonce((n) => n + 1);
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -423,8 +423,8 @@ class ContentRepository(
     }
 
     companion object {
-        private const val LOOKUP_TOKEN_MAX = 80
-        private const val LOOKUP_SENTENCE_MAX = 500
+        private const val LOOKUP_TOKEN_MAX = 4000
+        private const val LOOKUP_SENTENCE_MAX = 4000
     }
 
     suspend fun knownWords(): List<app.gotcha.android.data.model.KnownWord> = api.knownWords()

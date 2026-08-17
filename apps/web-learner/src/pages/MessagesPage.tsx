@@ -3,14 +3,17 @@ import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languag
 import { toast } from 'sonner';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
 import { UserAvatar } from '../components/UserAvatar';
-import { api } from '../lib/api';
+import { api, getAccessToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   apiChatLang,
   chatLangFlag,
   chatLangName,
+  chatToLabel,
+  chatTranslatingLabel,
   coerceToLang,
-  detectChatLang,
+  inferComposerSource,
+  composeChatPair,
   learningTarget,
   loadToLang,
   looksLikeLang,
@@ -23,6 +26,7 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
+import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
   id: string;
@@ -197,30 +201,131 @@ function TappableMessageText({
   selectedWord,
   onWordTap,
   className,
+  mine = false,
 }: {
   text: string;
   selectedWord: string | null;
   onWordTap: (word: string) => void;
   className?: string;
+  mine?: boolean;
 }) {
   const parts = useMemo(() => tokenizeChatText(text), [text]);
+  const wordParts = useMemo(
+    () => parts.flatMap((part, i) => (part.type === 'word' ? [{ i, surface: part.value }] : [])),
+    [parts],
+  );
+  const selectedRange = useMemo(
+    () => (selectedWord ? findChatWordPartRange(parts, selectedWord) : null),
+    [parts, selectedWord],
+  );
+  const [liveSpan, setLiveSpan] = useState<TokenSpan | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    pointerType: string;
+    originX: number;
+    originY: number;
+    anchorI: number;
+    endI: number;
+    armed: boolean;
+    timer: number | null;
+    host: HTMLElement;
+  } | null>(null);
+
+  const commitSpan = (span: TokenSpan) => {
+    const inRange = wordParts.filter((token) => token.i >= span.startI && token.i <= span.endI);
+    if (!inRange.length) return;
+    onWordTap(inRange.map((token) => token.surface).join(' '));
+  };
+
   return (
-    <p className={cx(className, 'select-none break-words whitespace-pre-wrap')}>
+    <p
+      className={cx(className, 'select-none break-words whitespace-pre-wrap touch-pan-y')}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const el = (e.target as HTMLElement | null)?.closest?.('[data-chat-token-i]');
+        if (!el) return;
+        const i = Number(el.getAttribute('data-chat-token-i'));
+        if (!Number.isFinite(i)) return;
+        if (dragRef.current?.timer) window.clearTimeout(dragRef.current.timer);
+        const isTouch = e.pointerType === 'touch';
+        const timer = isTouch
+          ? window.setTimeout(() => {
+              const drag = dragRef.current;
+              if (!drag || drag.pointerId !== e.pointerId) return;
+              drag.armed = true;
+              try {
+                drag.host.setPointerCapture(drag.pointerId);
+              } catch {
+                // Pointer may have already ended.
+              }
+              setLiveSpan({ startI: drag.anchorI, endI: drag.endI });
+            }, 380)
+          : null;
+        dragRef.current = {
+          pointerId: e.pointerId,
+          pointerType: e.pointerType,
+          originX: e.clientX,
+          originY: e.clientY,
+          anchorI: i,
+          endI: i,
+          armed: !isTouch,
+          timer,
+          host: e.currentTarget,
+        };
+        if (!isTouch) {
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setLiveSpan({ startI: i, endI: i });
+        }
+      }}
+      onPointerMove={(e) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        const dist = Math.hypot(e.clientX - drag.originX, e.clientY - drag.originY);
+        if (!drag.armed) {
+          if (dist > 10 && drag.timer != null) {
+            window.clearTimeout(drag.timer);
+            drag.timer = null;
+            dragRef.current = null;
+          }
+          return;
+        }
+        e.preventDefault();
+        const hit = document.elementFromPoint(e.clientX, e.clientY)?.closest('[data-chat-token-i]');
+        if (!hit || !e.currentTarget.contains(hit)) return;
+        const i = Number(hit.getAttribute('data-chat-token-i'));
+        if (!Number.isFinite(i) || i === drag.endI) return;
+        drag.endI = i;
+        const span = clampPhraseSpan(wordParts, drag.anchorI, i);
+        if (span) setLiveSpan(span);
+      }}
+      onPointerUp={(e) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== e.pointerId) return;
+        if (drag.timer != null) window.clearTimeout(drag.timer);
+        dragRef.current = null;
+        setLiveSpan(null);
+        const span = clampPhraseSpan(wordParts, drag.anchorI, drag.endI);
+        if (span) commitSpan(span);
+      }}
+      onPointerCancel={() => {
+        if (dragRef.current?.timer != null) window.clearTimeout(dragRef.current.timer);
+        dragRef.current = null;
+        setLiveSpan(null);
+      }}
+    >
       {parts.map((part, i) => {
         if (part.type !== 'word') {
           return <span key={`${i}-${part.value}`}>{part.value}</span>;
         }
-        const selected = !!selectedWord && part.value.toLowerCase() === selectedWord.toLowerCase();
+        const selected = tokenInSpan(i, liveSpan ?? selectedRange);
         return (
           <span
             key={`${i}-${part.value}`}
+            data-chat-token-i={i}
             role="button"
             tabIndex={0}
-            title="Tap to look up"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              onWordTap(part.value);
-            }}
+            title="Tap a word, or hold and drag a phrase"
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -228,8 +333,13 @@ function TappableMessageText({
               }
             }}
             className={cx(
-              'cursor-pointer underline decoration-[#c4b4ff] underline-offset-[3px] hover:decoration-[#7f22fe]',
-              selected && 'font-semibold decoration-solid decoration-2',
+              'cursor-pointer underline underline-offset-[3px] rounded-[4px] px-0.5 -mx-px transition-colors',
+              mine
+                ? 'decoration-white/80 hover:bg-white/20 hover:decoration-white'
+                : 'decoration-[#c4b4ff] hover:bg-[#f5f3ff] hover:decoration-[#7f22fe]',
+              selected && (mine
+                ? 'font-semibold bg-white text-[#4d179a] decoration-[#4d179a] decoration-2 shadow-sm'
+                : 'font-semibold bg-[#ede9fe] text-[#4d179a] decoration-[#7f22fe] decoration-2'),
             )}
           >
             {part.value}
@@ -243,10 +353,12 @@ function TappableMessageText({
 function ToLangPicker({
   selected,
   options,
+  uiLang,
   onSelect,
 }: {
   selected: string;
   options: string[];
+  uiLang?: string | null;
   onSelect: (code: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -270,8 +382,8 @@ function ToLangPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
       >
-        <span className="text-[11px] font-semibold text-[#99a1af]">To</span>
-        {chatLangName(selected)}
+        <span className="text-[11px] font-semibold text-[#99a1af]">{chatToLabel(uiLang)}</span>
+        {chatLangName(selected, uiLang)}
         <Languages className="w-3.5 h-3.5 text-[#7008e7]" />
         <ChevronDown className="w-3.5 h-3.5 text-[#99a1af]" />
       </button>
@@ -296,7 +408,7 @@ function ToLangPicker({
               )}
             >
               <span>{chatLangFlag(code)}</span>
-              {chatLangName(code)}
+              {chatLangName(code, uiLang)}
             </button>
           ))}
         </div>
@@ -311,8 +423,6 @@ function WordMeaningPanel({
   loading,
   error,
   savedMsg,
-  context,
-  contextTranslation,
   onBack,
   onSave,
   onKnown,
@@ -323,8 +433,6 @@ function WordMeaningPanel({
   loading: boolean;
   error: string | null;
   savedMsg: string | null;
-  context: string;
-  contextTranslation: string;
   onBack: () => void;
   onSave: () => void;
   onKnown: () => void;
@@ -333,6 +441,11 @@ function WordMeaningPanel({
   const lemma = lookup?.lemma || word;
   const phonetic = lookup?.phonetic?.trim();
   const canAct = !loading && !!lookup?.translation;
+  const naturalMeaning = lookup?.contextualMeaning?.trim() || '';
+  const sentenceLike = lookup?.kind === 'sentence' || isSentenceLikeSelection(word);
+  const headline = sentenceLike
+    ? lookupHeadline(word, null, lemma)
+    : (lookup?.phrase?.trim() || lemma);
   return (
     <div className="h-full w-full bg-white flex flex-col min-h-0">
       <div className="flex items-center gap-3 px-5 pt-5 pb-4 shrink-0">
@@ -349,7 +462,12 @@ function WordMeaningPanel({
       <div className="h-px bg-[#e5e8eb] shrink-0" />
       <div className="flex-1 overflow-y-auto min-h-0 px-5 py-5 space-y-5">
         <div className="space-y-1.5">
-          <p className="text-[22px] font-extrabold text-[#0f1729] leading-tight break-words">{lemma}</p>
+          <p className="text-[22px] font-extrabold text-[#0f1729] leading-tight break-words">
+            {headline}
+          </p>
+          {!sentenceLike && lookup?.phrase?.trim() && lemma.trim() && lookup.phrase.trim().toLowerCase() !== lemma.trim().toLowerCase() ? (
+            <p className="text-sm text-[#6b7382]">{lemma}</p>
+          ) : null}
           {phonetic ? (
             <p className="text-sm text-[#6b7382]">[{phonetic}]</p>
           ) : loading ? (
@@ -367,27 +485,26 @@ function WordMeaningPanel({
         {error ? <p className="text-sm text-red-600">{error}</p> : null}
         {savedMsg ? <p className="text-sm text-[#047857]">{savedMsg}</p> : null}
 
-        <section>
-          <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Translation</h3>
-          <p className="text-sm text-[#0f1729] leading-6">
-            {loading ? '…' : (lookup?.translation || 'No translation yet.')}
-          </p>
-        </section>
-
-        {lookup?.grammarNote ? (
-          <section>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Grammar note</h3>
-            <p className="text-sm text-[#4a5565] leading-6 whitespace-pre-wrap">{lookup.grammarNote}</p>
+        {!sentenceLike && (naturalMeaning || loading) ? (
+          <section className="rounded-xl bg-[#f5f3ff] p-3">
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Natural meaning</h3>
+            <p className="text-sm text-[#0f1729] leading-6">
+              {loading ? '…' : (naturalMeaning || lookup?.translation || 'No meaning yet.')}
+            </p>
           </section>
         ) : null}
 
-        {context.trim() ? (
+        {lookup?.translation && (sentenceLike || lookup.translation.trim() !== naturalMeaning) ? (
+          <section className={sentenceLike ? 'rounded-xl bg-[#f5f3ff] p-3' : undefined}>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Translation</h3>
+            <p className="text-sm text-[#0f1729] leading-6 whitespace-pre-wrap break-words">{lookup.translation}</p>
+          </section>
+        ) : null}
+
+        {lookup?.grammarNote && lookup.grammarNote.trim() !== naturalMeaning && lookup.grammarNote.trim() !== lookup.translation?.trim() ? (
           <section>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Context example</h3>
-            <p className="text-sm text-[#0f1729] leading-6">{context}</p>
-            {contextTranslation.trim() && !sameChatText(contextTranslation, context) ? (
-              <p className="text-sm italic text-[#6b7382] leading-6 mt-1">{contextTranslation}</p>
-            ) : null}
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Grammar note</h3>
+            <p className="text-sm text-[#4a5565] leading-6 whitespace-pre-wrap">{lookup.grammarNote}</p>
           </section>
         ) : null}
       </div>
@@ -451,12 +568,13 @@ export default function MessagesPage() {
   const [editing, setEditing] = useState<ChatMessage | null>(null);
   const [menuId, setMenuId] = useState<string | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
-  const backfillKeyRef = useRef('');
+  const backfillFailRef = useRef<Map<string, number>>(new Map());
   const typingSentAt = useRef(0);
   const isDesktop = useMinWidth(1024);
   const isXl = useMinWidth(1280);
 
   const nativeLang = normalizeChatLang(user?.nativeLanguage);
+  const uiLang = user?.uiLanguage ?? nativeLang;
   const toOptions = useMemo(() => otherChatLangs(nativeLang), [nativeLang]);
   const toLang = useMemo(
     () =>
@@ -562,16 +680,18 @@ export default function MessagesPage() {
   }, [selectedId, detail?.id, toLangOverride]);
 
   useEffect(() => {
+    if (!user || !getAccessToken()) return;
     const tick = () => {
+      if (!getAccessToken()) return;
       void api('/messaging/presence', { method: 'POST' }).catch(() => undefined);
     };
     tick();
     const id = window.setInterval(tick, 25_000);
     return () => window.clearInterval(id);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (!selectedId || !getAccessToken()) return;
     let cancelled = false;
     const poll = async () => {
       try {
@@ -658,27 +778,27 @@ export default function MessagesPage() {
     await startWith(peer.id, peer.currentlyReading?.id ?? peer.reading?.id);
   };
 
-  const composePayload = async (text: string) => {
-    const detected = detectChatLang(text) ?? nativeLang;
-    const to = normalizeChatLang(toLang);
-    const native = normalizeChatLang(nativeLang);
-    let toText: string | null = detected === to ? text : null;
-    let nativeText: string | null = detected === native ? text : null;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (!toText) toText = await tryTranslateChat(text, detected, to);
-      if (!nativeText) {
-        nativeText = await tryTranslateChat(text, detected, native)
-          ?? (toText ? await tryTranslateChat(toText, to, native) : null);
+  const composePayload = async (text: string, editingMsg?: ChatMessage | null) => {
+    const pair = await composeChatPair(text, nativeLang, toLang);
+    if (!pair.toText && editingMsg?.body?.trim()) {
+      const prev = editingMsg.body.trim();
+      const prevLang = editingMsg.bodyLang ? normalizeChatLang(editingMsg.bodyLang) : null;
+      if (prevLang === normalizeChatLang(toLang) || looksLikeLang(prev, toLang)) {
+        toast.message(`Couldn’t translate to ${chatLangName(toLang, uiLang)} yet. Keeping the previous ${chatLangName(toLang, uiLang)} line.`);
+        const sendNative = pair.nativeText && !sameChatText(pair.nativeText, prev) ? pair.nativeText : undefined;
+        return {
+          ...pair,
+          toText: prev,
+          sendBody: prev,
+          sendLang: normalizeChatLang(toLang),
+          sendNative,
+        };
       }
-      if (toText && nativeText) break;
     }
-    if (!toText) {
-      toast.message(`Couldn’t translate to ${chatLangName(to)} yet. Sending your original.`);
+    if (!pair.toText) {
+      toast.message(`Couldn’t translate to ${chatLangName(toLang, uiLang)} yet. Your original is below.`);
     }
-    const sendBody = toText ?? text;
-    const sendLang = toText ? to : detected;
-    const sendNative = nativeText && !sameChatText(nativeText, sendBody) ? nativeText : undefined;
-    return { sendBody, sendLang, sendNative, toText, nativeText };
+    return pair;
   };
 
   const patchInboxLast = (msg: ChatMessage) => {
@@ -788,10 +908,15 @@ export default function MessagesPage() {
     setSending(true);
     setError(null);
     const localId = `local-${Date.now()}`;
+    const to = normalizeChatLang(toLang);
+    const native = normalizeChatLang(nativeLang);
+    const source = inferComposerSource(text, native, to);
     if (!editingMsg) {
       const pending: ChatMessage = {
         id: localId,
-        body: text,
+        body: source === to ? text : '',
+        translation: source === native && source !== to ? text : undefined,
+        bodyLang: apiChatLang(to),
         senderId: user?.id ?? '',
         mine: true,
         createdAt: new Date().toISOString(),
@@ -807,12 +932,39 @@ export default function MessagesPage() {
             }
           : null,
       };
+      rememberPair(localId, source === to ? text : '', source === native ? text : '');
       setDetail((prev) =>
         prev ? { ...prev, messages: [...prev.messages, pending] } : prev,
       );
+    } else {
+      rememberPair(
+        editingMsg.id,
+        source === to ? text : (linesById[editingMsg.id]?.to ?? ''),
+        source === native ? text : (linesById[editingMsg.id]?.native ?? ''),
+      );
     }
     try {
-      const { sendBody, sendLang, sendNative, toText, nativeText } = await composePayload(text);
+      const { sendBody, sendLang, sendNative, toText, nativeText } = await composePayload(text, editingMsg);
+      rememberPair(editingMsg?.id ?? localId, toText, nativeText);
+      if (!editingMsg) {
+        setDetail((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.map((item) =>
+                  item.id === localId
+                    ? {
+                        ...item,
+                        body: toText ?? '',
+                        translation: nativeText && !sameChatText(nativeText, toText) ? nativeText : sendNative,
+                        bodyLang: apiChatLang(sendLang),
+                      }
+                    : item,
+                ),
+              }
+            : prev,
+        );
+      }
       if (editingMsg) {
         const msg = await api<ChatMessage>(
           `/messaging/conversations/${selectedId}/messages/${editingMsg.id}`,
@@ -825,8 +977,13 @@ export default function MessagesPage() {
             }),
           },
         );
-        rememberPair(msg.id, toText ?? msg.body, nativeText ?? msg.translation);
-        replaceMessage(msg);
+        rememberPair(msg.id, toText, nativeText ?? msg.translation);
+        replaceMessage({
+          ...msg,
+          body: toText ?? sendBody,
+          translation: sendNative ?? nativeText ?? msg.translation,
+          bodyLang: apiChatLang(sendLang),
+        });
         return;
       }
       const msg = await api<ChatMessage>(`/messaging/conversations/${selectedId}/messages`, {
@@ -838,16 +995,31 @@ export default function MessagesPage() {
           replyToId: replyTarget?.id,
         }),
       });
-      rememberPair(msg.id, toText ?? msg.body, nativeText ?? msg.translation);
+      rememberPair(msg.id, toText, nativeText ?? msg.translation);
       setDetail((prev) =>
         prev
           ? {
               ...prev,
-              messages: prev.messages.map((item) => (item.id === localId ? { ...msg, status: msg.status ?? 'sent' } : item)),
+              messages: prev.messages.map((item) =>
+                item.id === localId
+                  ? {
+                      ...msg,
+                      body: sendBody,
+                      translation: sendNative ?? msg.translation,
+                      bodyLang: apiChatLang(sendLang),
+                      status: msg.status ?? 'sent',
+                    }
+                  : item,
+              ),
             }
           : prev,
       );
-      patchInboxLast({ ...msg, status: msg.status ?? 'sent' });
+      patchInboxLast({
+        ...msg,
+        body: sendBody,
+        translation: sendNative ?? msg.translation,
+        status: msg.status ?? 'sent',
+      });
     } catch (e) {
       if (!editingMsg) {
         setDetail((prev) =>
@@ -873,9 +1045,6 @@ export default function MessagesPage() {
   useEffect(() => {
     const messages = detail?.messages ?? [];
     if (!detail || messages.length === 0) return;
-    const key = `${detail.id}|${toLang}|${nativeLang}|${messages.map((m) => m.id).join(',')}`;
-    if (backfillKeyRef.current === key) return;
-    backfillKeyRef.current = key;
     let cancelled = false;
 
     (async () => {
@@ -885,39 +1054,49 @@ export default function MessagesPage() {
         if (cancelled) return;
         if (msg.deleted || msg.id.startsWith('local-')) continue;
         const existing = linesById[msg.id];
-        const topOk = !!existing?.to && looksLikeLang(existing.to, to);
-        const botOk = !!existing?.native
+        const topOk = !!existing?.to?.trim();
+        const botOk = !!existing?.native?.trim()
           && (!sameChatText(existing.native, existing.to) || to === native);
-        if (topOk && botOk) continue;
+        if (topOk && botOk) {
+          backfillFailRef.current.delete(msg.id);
+          continue;
+        }
+        const fails = backfillFailRef.current.get(msg.id) ?? 0;
+        if (fails >= 5) continue;
 
-        const bodyLang = msg.bodyLang
-          ? normalizeChatLang(msg.bodyLang)
-          : (detectChatLang(msg.body) ?? native);
         const storedTr = msg.translation?.trim() || null;
-        const storedTrLang = storedTr ? detectChatLang(storedTr) : null;
+        const bodyLooksNative = looksLikeLang(msg.body, native) && !looksLikeLang(msg.body, to);
+        const bodyLooksTo = looksLikeLang(msg.body, to) && !looksLikeLang(msg.body, native);
+        const bodyLang = msg.bodyLang ? normalizeChatLang(msg.bodyLang) : null;
 
         let toText = [
-          existing?.to && looksLikeLang(existing.to, to) ? existing.to : null,
-          looksLikeLang(msg.body, to) ? msg.body : null,
-          storedTr && (storedTrLang === to || looksLikeLang(storedTr, to)) ? storedTr : null,
-        ].find(Boolean) ?? null;
+          existing?.to?.trim() || null,
+          bodyLooksTo || (bodyLang === to && !bodyLooksNative) ? msg.body : null,
+          storedTr && looksLikeLang(storedTr, to) && !looksLikeLang(storedTr, native) ? storedTr : null,
+        ].find((item) => item?.trim()) ?? null;
 
         let nativeText = [
-          existing?.native,
-          looksLikeLang(msg.body, native) ? msg.body : null,
-          storedTr && (storedTrLang === native || looksLikeLang(storedTr, native)) ? storedTr : null,
-          storedTr && looksLikeLang(msg.body, to) ? storedTr : null,
+          existing?.native?.trim() || null,
+          storedTr && !sameChatText(storedTr, toText ?? msg.body) ? storedTr : null,
+          bodyLooksNative ? msg.body : null,
         ].find((item) => item?.trim()) ?? null;
 
         const seed = storedTr && !sameChatText(storedTr, msg.body) ? storedTr : msg.body;
-        const seedLang = storedTrLang ?? bodyLang;
+        const seedLang = bodyLooksNative ? native : (bodyLooksTo || bodyLang === to ? to : (bodyLang ?? native));
         if (!toText) toText = await tryTranslateChat(seed, seedLang, to);
         if (!nativeText) {
           nativeText = await tryTranslateChat(toText ?? seed, toText ? to : seedLang, native)
             ?? await tryTranslateChat(seed, seedLang, native)
-            ?? (looksLikeLang(msg.body, native) ? msg.body : null);
+            ?? (bodyLooksNative ? msg.body : null);
         }
-        if (!cancelled) rememberPair(msg.id, toText, nativeText);
+        if (!cancelled) {
+          if (toText && nativeText && !sameChatText(toText, nativeText)) {
+            backfillFailRef.current.delete(msg.id);
+          } else {
+            backfillFailRef.current.set(msg.id, fails + 1);
+          }
+          rememberPair(msg.id, toText, nativeText);
+        }
       }
     })();
 
@@ -951,19 +1130,28 @@ export default function MessagesPage() {
           body: JSON.stringify({
             token: selectedWord,
             lemma: selectedWord.toLowerCase(),
-            sentence: selectedSentence.slice(0, 500) || selectedWord,
+            sentence: selectedSentence.slice(0, 4000) || selectedWord,
             sourceLang: apiChatLang(selectedLineLang),
             targetLang: apiChatLang(nativeLang),
           }),
         });
-        if (!cancelled) setLookup(res);
+        if (!cancelled) {
+          const sentenceLike = res.kind === 'sentence' || isSentenceLikeSelection(selectedWord, selectedSentence);
+          setLookup({
+            ...res,
+            phrase: sentenceLike ? null : res.phrase,
+            kind: res.kind ?? (sentenceLike ? 'sentence' : res.phrase ? 'phrase' : 'word'),
+          });
+        }
       } catch (e) {
         const raw = e instanceof Error ? e.message : 'Lookup failed';
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
-        } else if (/quota exceeded|daily limit reached/i.test(raw)) {
-          message = 'Daily AI lookup limit reached. Try again tomorrow or upgrade your plan.';
+        } else if (/platform ai daily limit/i.test(raw)) {
+          message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
+        } else if (/quota exceeded|daily limit reached|lookup limit reached/i.test(raw)) {
+          message = 'Daily AI lookup limit reached. Try again tomorrow.';
         } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
           message = 'AI lookup is unavailable right now. Please try again later.';
         } else if (/AI lookup failed/i.test(raw)) {
@@ -1028,8 +1216,6 @@ export default function MessagesPage() {
       loading={lookupLoading}
       error={lookupError}
       savedMsg={savedMsg}
-      context={selectedSentence}
-      contextTranslation={selectedNativeLine}
       onBack={closeLookup}
       onSave={() => void saveWord(false)}
       onKnown={() => void saveWord(true)}
@@ -1217,7 +1403,7 @@ export default function MessagesPage() {
                   </div>
                 </button>
               </div>
-              <ToLangPicker selected={toLang} options={toOptions} onSelect={persistTo} />
+              <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
             </header>
 
             {!tipDismissed && (
@@ -1252,7 +1438,7 @@ export default function MessagesPage() {
                     forcedTo: forced?.to,
                     forcedNative: forced?.native,
                   });
-                  const primary = presented.primary || m.body;
+                  const primary = presented.primary;
                   const secondary = presented.secondary;
                   const replyForced = m.replyTo ? linesById[m.replyTo.id] : undefined;
                   const replyPresented = m.replyTo && !m.replyTo.deleted
@@ -1318,25 +1504,33 @@ export default function MessagesPage() {
                             <span className="text-[14px]">This message was deleted</span>
                           ) : (
                             <>
-                              <TappableMessageText
-                                text={primary}
-                                selectedWord={selectedWord}
-                                onWordTap={(word) => {
-                                  setSelectedWord(word);
-                                  setSelectedSentence(primary);
-                                  setSelectedNativeLine(secondary);
-                                  setSelectedLineLang(presented.primaryLang);
-                                }}
-                                className="text-[15px] leading-5"
-                              />
+                              {primary ? (
+                                <TappableMessageText
+                                  text={primary}
+                                  selectedWord={lookup?.phrase?.trim() || selectedWord}
+                                  mine={mine}
+                                  onWordTap={(word) => {
+                                    setSelectedWord(word);
+                                    setSelectedSentence(sentenceAroundPhrase(primary, word));
+                                    setSelectedNativeLine(secondary ? sentenceAroundPhrase(secondary, word) : '');
+                                    setSelectedLineLang(presented.primaryLang);
+                                  }}
+                                  className="text-[15px] leading-5"
+                                />
+                              ) : (
+                                <p className={cx('italic text-[13px]', mine ? 'text-white/80' : 'text-[#6a7282]')}>
+                                  {chatTranslatingLabel(uiLang)}
+                                </p>
+                              )}
                               {secondary ? (
                                 <TappableMessageText
                                   text={secondary}
-                                  selectedWord={selectedWord}
+                                  selectedWord={lookup?.phrase?.trim() || selectedWord}
+                                  mine={mine}
                                   onWordTap={(word) => {
                                     setSelectedWord(word);
-                                    setSelectedSentence(secondary);
-                                    setSelectedNativeLine(secondary);
+                                    setSelectedSentence(sentenceAroundPhrase(secondary, word));
+                                    setSelectedNativeLine(sentenceAroundPhrase(secondary, word));
                                     setSelectedLineLang(presented.secondaryLang);
                                   }}
                                   className={cx(
