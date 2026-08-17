@@ -26,7 +26,7 @@ function enrichPlan(plan: SubscriptionPlan) {
         ]
       : [
           `${plan.aiDailyQuota} AI lookups/day`,
-          `${plan.importLimit} imports/month`,
+          `${plan.importLimit} free imports/day`,
           'Access to public library',
         ],
   };

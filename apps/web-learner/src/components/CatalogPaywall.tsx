@@ -189,7 +189,7 @@ export function CatalogPaywall({
 
   if (step === 'celebrate') {
     return (
-      <div className="relative w-full max-w-md mx-auto min-h-[22rem] flex flex-col items-center justify-center gap-4 px-4 overflow-hidden">
+      <div className="relative w-full max-w-md mx-auto rounded-2xl bg-white border border-[#e5e7eb] shadow-xl min-h-[22rem] flex flex-col items-center justify-center gap-4 px-6 py-8 overflow-hidden">
         <ConfettiBurst />
         <div className="relative z-10 w-16 h-16 rounded-2xl bg-violet-50 grid place-items-center">
           <PartyPopper className="w-8 h-8 text-[#7008e7]" />
@@ -211,7 +211,7 @@ export function CatalogPaywall({
   }
 
   return (
-    <div className="w-full max-w-md mx-auto flex flex-col items-center gap-5 px-4">
+    <div className="w-full max-w-md mx-auto rounded-2xl bg-white border border-[#e5e7eb] shadow-xl flex flex-col items-center gap-5 px-6 py-7">
       {step === 'price' && (
         <>
           <div className="w-16 h-16 rounded-2xl bg-violet-50 grid place-items-center">
@@ -221,7 +221,7 @@ export function CatalogPaywall({
             <h2 className="text-[#101828] text-xl font-bold leading-tight">{title}</h2>
             <p className="text-[#6a7282] text-sm">Pay once to unlock this book in your library.</p>
           </div>
-          <div className="w-full border border-[#e4e7ec] rounded-xl p-4 bg-white">
+          <div className="w-full border border-[#e4e7ec] rounded-xl p-4 bg-[#f9fafb]">
             <div className="flex justify-between items-center">
               <span className="text-[#101828] text-sm font-semibold">Total</span>
               <span className="text-[#7008e7] text-lg font-bold">{formatUzs(priceUzs)}</span>

@@ -1,7 +1,8 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
+import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AuthGuard } from '@nestjs/passport';
 import { IS_PUBLIC_KEY, ROLES_KEY } from './decorators';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -19,23 +20,31 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
   }
 }
 
-/**
- * NOTE: authorizes purely from `user.adminRole`, which is baked into the JWT at login
- * (see auth.service.ts's `issueTokens`) and never re-checked against the live `AdminUser`
- * row. Admin role changes require the affected admin to re-login before they take effect.
- */
 @Injectable()
 export class RolesGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
+  constructor(
+    private reflector: Reflector,
+    private prisma: PrismaService,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const roles = this.reflector.getAllAndOverride<string[]>(ROLES_KEY, [
       context.getHandler(),
       context.getClass(),
     ]);
     if (!roles?.length) return true;
 
-    const { user } = context.switchToHttp().getRequest();
-    return roles.includes(user?.adminRole);
+    const request = context.switchToHttp().getRequest();
+    const userId = request.user?.sub as string | undefined;
+    if (!userId) return false;
+
+    const admin = await this.prisma.adminUser.findUnique({
+      where: { userId },
+      select: { role: true },
+    });
+    if (!admin) {
+      throw new UnauthorizedException('Admin access required.');
+    }
+    return roles.includes(admin.role);
   }
 }

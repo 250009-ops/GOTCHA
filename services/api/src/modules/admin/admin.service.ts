@@ -55,7 +55,7 @@ import {
   ensureLanguageCatalog,
   isAppLanguageCode,
 } from '../../common/language-catalog';
-import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
+import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, languageFlag, languageLabel } from '@gotcha/shared';
 
 @Injectable()
 export class AdminService {
@@ -2738,26 +2738,15 @@ export class AdminService {
   }
 
   private langLabel(code: AppLanguage | string) {
-    const map: Record<string, string> = {
-      en: 'English', ru: 'Russian', uz: 'Uzbek', fr: 'French', es: 'Spanish',
-      ja: 'Japanese', de: 'German', ko: 'Korean', pt: 'Portuguese',
-    };
-    return map[code] ?? String(code);
+    return languageLabel(code);
   }
 
   private langNative(code: AppLanguage | string) {
-    const map: Record<string, string> = {
-      en: 'English', ru: 'Русский', uz: "Oʻzbekcha", fr: 'Français', es: 'Español',
-      ja: '日本語', de: 'Deutsch', ko: '한국어', pt: 'Português',
-    };
-    return map[code] ?? String(code);
+    const meta = LANGUAGE_META[code as keyof typeof LANGUAGE_META];
+    return meta?.nativeName ?? String(code);
   }
 
   private langFlag(code: AppLanguage | string) {
-    const map: Record<string, string> = {
-      en: '🇬🇧', ru: '🇷🇺', uz: '🇺🇿', fr: '🇫🇷', es: '🇪🇸',
-      ja: '🇯🇵', de: '🇩🇪', ko: '🇰🇷', pt: '🇵🇹',
-    };
-    return map[code] ?? '🌐';
+    return languageFlag(code);
   }
 }

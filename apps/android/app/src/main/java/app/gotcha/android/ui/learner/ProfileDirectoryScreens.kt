@@ -70,6 +70,7 @@ import androidx.compose.ui.window.Dialog
 import app.gotcha.android.BuildConfig
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.R
+import app.gotcha.android.data.ChatLangs
 import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
 import app.gotcha.android.data.model.LearnerNotification
@@ -324,7 +325,10 @@ private fun rememberCatalogLanguageOptions(): List<app.gotcha.android.data.model
         runCatching { container.contentRepository.catalogLanguages() }
             .onSuccess { rows ->
                 val mapped = rows.filter { it.isEnabled }.map { it.toAppLanguageOption() }
-                if (mapped.isNotEmpty()) options = mapped
+                if (mapped.isNotEmpty()) {
+                    options = mapped
+                    ChatLangs.setEnabled(mapped.map { it.code })
+                }
             }
     }
     return options

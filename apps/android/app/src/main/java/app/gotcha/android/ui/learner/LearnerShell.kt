@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import app.gotcha.android.LocalAppContainer
+import app.gotcha.android.data.ChatLangs
 import app.gotcha.android.data.model.VocabItem
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -162,6 +163,13 @@ fun LearnerShell(
     val current = backStack?.destination?.route
     val showBottomBar = current in chromeRoutes
     val container = LocalAppContainer.current
+    LaunchedEffect(Unit) {
+        runCatching { container.contentRepository.catalogLanguages() }
+            .onSuccess { rows ->
+                val enabled = rows.filter { it.isEnabled }.map { it.code }
+                if (enabled.isNotEmpty()) ChatLangs.setEnabled(enabled)
+            }
+    }
     var uiLanguage by remember { mutableStateOf("en") }
     var notifUnread by remember { mutableIntStateOf(0) }
     LaunchedEffect(current) {

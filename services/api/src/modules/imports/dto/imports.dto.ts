@@ -1,13 +1,15 @@
-import { IsEnum, IsOptional, IsString, IsUrl, IsUUID, MinLength } from 'class-validator';
+import { IsEnum, IsOptional, IsString, IsUrl, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class ImportPasteDto {
   @IsString()
   @MinLength(1)
+  @MaxLength(300)
   title!: string;
 
   @IsString()
   @MinLength(1)
+  @MaxLength(20_000_000)
   text!: string;
 
   @IsOptional()

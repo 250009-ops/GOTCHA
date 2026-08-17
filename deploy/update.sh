@@ -84,6 +84,7 @@ sync_runtime_env_key SMTP_REPLY_TO "${SMTP_REPLY_TO}"
 if [[ -z "$(get_env API_CORS_ORIGINS)" ]]; then
   sync_runtime_env_key API_CORS_ORIGINS "https://${DOMAIN},https://www.${DOMAIN}"
 fi
+sync_runtime_env_key ENABLE_SWAGGER "false"
 if [[ -z "$(get_env DEV_AUTH_ANY_CREDENTIAL)" ]]; then
   sync_runtime_env_key DEV_AUTH_ANY_CREDENTIAL "false"
 fi

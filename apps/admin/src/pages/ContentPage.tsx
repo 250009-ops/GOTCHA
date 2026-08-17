@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Eye, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { LibraryPreviewModal, type LibraryPreviewItem } from '../components/LibraryPreviewModal';
+import { AdminReaderPreview } from '../components/AdminReaderPreview';
 import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
-import { APP_LANGUAGES, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
+import { APP_LANGUAGES, LANGUAGE_META, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
 
 type Tab = 'all' | 'book' | 'article' | 'news' | 'user_imports';
 
@@ -132,7 +132,7 @@ export default function ContentPage() {
   // 403 for them. Track that separately so the moderation queue still renders instead of
   // the whole page getting stuck on a permissions error.
   const [catalogForbidden, setCatalogForbidden] = useState(false);
-  const [previewItem, setPreviewItem] = useState<LibraryPreviewItem | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   const loadCurriculum = useCallback(async () => {
     setError(null);
@@ -287,7 +287,7 @@ export default function ContentPage() {
               <Select value={langFilter} onChange={(e) => setLang(e.target.value)} className="w-36">
                 <option value="all">Language: All</option>
                 {APP_LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
+                  <option key={l} value={l}>{LANGUAGE_META[l].flag} {LANGUAGE_META[l].label}</option>
                 ))}
               </Select>
               <Select value={levelFilter} onChange={(e) => setLevel(e.target.value)} className="w-36">
@@ -458,9 +458,9 @@ export default function ContentPage() {
                     <button
                       type="button"
                       className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
-                      aria-label="Preview in learner library"
-                      title="Preview in learner library"
-                      onClick={() => setPreviewItem(item)}
+                      aria-label="Preview reading screen"
+                      title="Preview reading screen"
+                      onClick={() => setPreviewId(item.id)}
                     >
                       <Eye className="size-3.5" />
                     </button>
@@ -519,8 +519,8 @@ export default function ContentPage() {
         </div>
       )}
 
-      {previewItem ? (
-        <LibraryPreviewModal item={previewItem} onClose={() => setPreviewItem(null)} />
+      {previewId ? (
+        <AdminReaderPreview contentId={previewId} onClose={() => setPreviewId(null)} />
       ) : null}
     </div>
   );

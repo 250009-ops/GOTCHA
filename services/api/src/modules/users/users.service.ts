@@ -13,6 +13,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { effectiveStreakCount } from '../../services/streak.service';
 
 import { assertEnabledLanguage } from '../../common/language-catalog';
+import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -274,6 +275,7 @@ export class UsersService {
     };
     const ext = extByMime[file.mimetype];
     if (!ext) throw new BadRequestException('Use a JPG, PNG, or WebP image.');
+    assertJpegPngOrWebp(file, 'Image');
     if (file.size > 2 * 1024 * 1024) {
       throw new BadRequestException('Image must be 2 MB or smaller.');
     }

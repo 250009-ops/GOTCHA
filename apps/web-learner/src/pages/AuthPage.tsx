@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, ArrowLeft, Check } from 'lucide-react';
+import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
@@ -8,9 +8,9 @@ import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
-import { LANGUAGE_META, type AppLanguage } from '../lib/types';
+import { type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
-import { cn } from '../components/ui/utils';
+import { LanguageSearchInput } from '../components/LanguageSearchInput';
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -38,7 +38,7 @@ export default function AuthPage() {
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>('en');
   const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>([]);
-  const { langs: catalogLangs, codes: catalogCodes } = useCatalogLanguages();
+  const { langs: catalogLangs } = useCatalogLanguages();
 
   useEffect(() => {
     // Clear leftover tokens when opening auth screens (once on mount).
@@ -49,12 +49,6 @@ export default function AuthPage() {
   useEffect(() => {
     setTargetLanguages((prev) => prev.filter((l) => l !== nativeLanguage));
   }, [nativeLanguage]);
-
-  const toggleTargetLanguage = (lang: AppLanguage) => {
-    setTargetLanguages((prev) =>
-      prev.includes(lang) ? prev.filter((l) => l !== lang) : [...prev, lang],
-    );
-  };
 
   const goToLanguageStep = (e: React.FormEvent) => {
     e.preventDefault();
@@ -179,7 +173,7 @@ export default function AuthPage() {
               {isLogin
                 ? 'Sign in to continue your reading journey.'
                 : showLanguageStep
-                  ? 'Pick your native language and at least one language to learn — you can add more later in Settings.'
+                  ? 'Search and add the language you want to learn. You can add more later in Settings.'
                   : plan === 'pay-per-import'
                     ? 'Create your free account — pay only if you need more than your free imports.'
                     : 'Sign up to start your reading journey.'}
@@ -202,47 +196,29 @@ export default function AuthPage() {
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-[#4a5565]">Your native language</label>
-                <select
-                  value={nativeLanguage}
-                  onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
-                >
-                  {catalogLangs.map((lang) => (
-                    <option key={lang.code} value={lang.code}>
-                      {lang.flagEmoji} {lang.name}
-                    </option>
-                  ))}
-                </select>
+                <LanguageSearchInput
+                  options={catalogLangs}
+                  value={[nativeLanguage]}
+                  onChange={(codes) => {
+                    const next = (codes[0] ?? catalogLangs[0]?.code ?? 'en') as AppLanguage;
+                    setNativeLanguage(next);
+                  }}
+                  multiple={false}
+                  placeholder="Search your native language..."
+                />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-xs font-semibold text-[#4a5565]">
-                  Languages you want to learn <span className="text-[#9ca3af] font-normal">(pick at least one)</span>
+                  Languages you want to learn{' '}
+                  <span className="text-[#9ca3af] font-normal">(search and add at least one)</span>
                 </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {catalogCodes.filter((code) => code !== nativeLanguage).map((code) => {
-                    const selected = targetLanguages.includes(code);
-                    const meta = catalogLangs.find((l) => l.code === code);
-                    return (
-                      <button
-                        key={code}
-                        type="button"
-                        onClick={() => toggleTargetLanguage(code)}
-                        className={cn(
-                          'relative flex flex-col items-center gap-1 py-2.5 rounded-[14px] border text-xs font-semibold transition-all',
-                          selected
-                            ? 'border-[#7f22fe] bg-[#f5f3ff] text-[#7008e7]'
-                            : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
-                        )}
-                      >
-                        {selected && (
-                          <Check className="w-3 h-3 absolute top-1.5 right-1.5 text-[#7f22fe]" />
-                        )}
-                        <span className="text-lg leading-none">{meta?.flagEmoji ?? LANGUAGE_META[code]?.flag}</span>
-                        <span>{meta?.name ?? LANGUAGE_META[code]?.label ?? code}</span>
-                      </button>
-                    );
-                  })}
-                </div>
+                <LanguageSearchInput
+                  options={catalogLangs}
+                  value={targetLanguages}
+                  onChange={(codes) => setTargetLanguages(codes as AppLanguage[])}
+                  exclude={[nativeLanguage]}
+                  placeholder="Search a language to add..."
+                />
               </div>
               <div className="flex gap-3">
                 <Button

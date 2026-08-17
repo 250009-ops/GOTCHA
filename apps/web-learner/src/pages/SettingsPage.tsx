@@ -20,12 +20,17 @@ import {
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { UserAvatar } from '../components/UserAvatar';
+import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   CEFR_LEVELS,
   LANGUAGE_META,
+  LIVE_LANGUAGES,
+  UI_LANGUAGES,
+  languageFlag,
+  languageLabel,
   type AppLanguage,
   type CatalogLanguage,
   type CefrLevel,
@@ -256,21 +261,16 @@ function TargetLanguageModal({
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-[#4a5565]">Language</label>
           {mode === 'add' ? (
-            <select
-              value={targetLanguage}
-              onChange={(e) => setTargetLanguage(e.target.value)}
-              className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
-            >
-              {available.map((l) => (
-                <option key={l.code} value={l.code}>
-                  {l.flagEmoji} {l.name}
-                </option>
-              ))}
-            </select>
+            <LanguageSearchInput
+              options={available}
+              value={targetLanguage ? [targetLanguage] : []}
+              onChange={(codes) => setTargetLanguage(codes[0] ?? '')}
+              multiple={false}
+              placeholder="Search a language to add..."
+            />
           ) : (
             <div className="h-9 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
-              {LANGUAGE_META[existing?.targetLanguage as AppLanguage]?.flag}{' '}
-              {LANGUAGE_META[existing?.targetLanguage as AppLanguage]?.label}
+              {languageFlag(existing?.targetLanguage)} {languageLabel(existing?.targetLanguage)}
             </div>
           )}
         </div>
@@ -438,7 +438,7 @@ export default function SettingsPage() {
     catalogLangs.length > 0
       ? catalogLangs.filter((l) => l.isEnabled !== false)
       : Object.entries(LANGUAGE_META)
-          .filter(([code]) => ['en', 'ru', 'uz'].includes(code))
+          .filter(([code]) => (LIVE_LANGUAGES as readonly string[]).includes(code))
           .map(([code, meta]) => ({
             code,
             name: meta.label,
@@ -606,7 +606,7 @@ export default function SettingsPage() {
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
             className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           >
-            {(['en', 'ru', 'uz'] as const).map((code) => (
+            {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
                 {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
               </option>
@@ -636,12 +636,11 @@ export default function SettingsPage() {
         ) : (
           targetLanguages.map((tl) => {
             const catalog = languageOptions.find((l) => l.code === tl.targetLanguage);
-            const meta = LANGUAGE_META[tl.targetLanguage as AppLanguage];
             return (
               <div key={tl.targetLanguage} className="flex items-center gap-3 px-5 py-3.5">
-                <span className="text-xl leading-none">{catalog?.flagEmoji ?? meta?.flag ?? '🌐'}</span>
+                <span className="text-xl leading-none">{catalog?.flagEmoji ?? languageFlag(tl.targetLanguage)}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? meta?.label ?? tl.targetLanguage}</div>
+                  <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? languageLabel(tl.targetLanguage)}</div>
                   <div className="text-xs text-[#99a1af] mt-0.5">
                     Level: {tl.cefrLevel.toUpperCase()}
                     {tl.placementScore != null ? ` · Score: ${tl.placementScore}/100` : ''}

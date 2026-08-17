@@ -184,11 +184,11 @@ assert.ok(pg65238Txt.some((u) => u.includes('pg65238.txt')));
 assert.ok(gutenbergPlainTextUrls('2701')[0].includes('2701-0.txt'));
 assert.equal(gutenbergAlephPath('2701'), '2/7/0/2701');
 const htmlUrls = gutenbergHtmlBookUrls('65238');
-const compactIdx = htmlUrls.findIndex((u) => /pg65238\.html$/i.test(u));
-const imagesIdx = htmlUrls.findIndex((u) => u.includes('pg65238-images.html'));
-assert.ok(compactIdx >= 0, 'compact pg{id}.html should be in the HTML fallback list');
-assert.ok(imagesIdx >= 0, 'illustrated HTML remains a last-resort fallback');
-assert.ok(compactIdx < imagesIdx, 'compact HTML must be tried before *-images.html');
+assert.ok(htmlUrls.some((u) => /pg65238\.html$/i.test(u)), 'compact pg{id}.html should be in the HTML fallback list');
+assert.ok(
+  htmlUrls.every((u) => !/images\.html|html\.images/i.test(u)),
+  'illustrated HTML must never be fetched (OOM / 502)',
+);
 assert.equal(
   isGutenbergIllustratedHtmlUrl('https://www.gutenberg.org/cache/epub/65238/pg65238-images.html'),
   true,

@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
 import { BillingService } from './billing.service';
 import { ImportCommerceService } from './import-commerce.service';
@@ -34,10 +35,6 @@ export class BillingController {
       paymentGatewayEnabled: this.importCommerce.gatewayEnabled(),
       atmosConfigured: this.atmos.configured(),
       currency: 'UZS',
-      ikpu: process.env.ATMOS_IKPU || '10899001001000000',
-      storeId: process.env.ATMOS_STORE_ID || null,
-      apiBase: (process.env.ATMOS_API_BASE || 'https://apigw.atmos.uz').replace(/\/$/, ''),
-      flow: 'merchant-api',
     };
   }
 
@@ -132,7 +129,6 @@ export class BillingController {
     return {
       status: 1,
       message: 'Atmos webhook endpoint ready. Callbacks must use POST.',
-      storeId: process.env.ATMOS_STORE_ID || null,
     };
   }
 
@@ -142,6 +138,7 @@ export class BillingController {
    * https://gotchaa.uz/api/v1/billing/atmos/webhook
    */
   @Public()
+  @SkipThrottle()
   @Post('atmos/webhook')
   @HttpCode(200)
   atmosWebhook(@Body() body: Record<string, unknown>) {

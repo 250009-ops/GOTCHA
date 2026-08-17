@@ -18,6 +18,38 @@ import { assertEnabledLanguage } from '../../common/language-catalog';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
+const LOGIN_MAX_FAILURES = 8;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+const TIMING_SAFE_HASH = bcrypt.hashSync('gotcha-timing-guard', 10);
+
+type LoginGate = { failures: number; lockedUntil: number };
+const loginGates = new Map<string, LoginGate>();
+
+function loginGateKey(email: string) {
+  return email.trim().toLowerCase();
+}
+
+function assertNotLocked(email: string) {
+  const gate = loginGates.get(loginGateKey(email));
+  if (gate && gate.lockedUntil > Date.now()) {
+    throw new UnauthorizedException('Too many failed sign-in attempts. Try again in a few minutes.');
+  }
+}
+
+function recordLoginFailure(email: string) {
+  const key = loginGateKey(email);
+  const gate = loginGates.get(key) ?? { failures: 0, lockedUntil: 0 };
+  gate.failures += 1;
+  if (gate.failures >= LOGIN_MAX_FAILURES) {
+    gate.lockedUntil = Date.now() + LOGIN_LOCK_MS;
+    gate.failures = 0;
+  }
+  loginGates.set(key, gate);
+}
+
+function clearLoginFailures(email: string) {
+  loginGates.delete(loginGateKey(email));
+}
 
 @Injectable()
 export class AuthService {
@@ -70,12 +102,9 @@ export class AuthService {
   }
 
   /**
-   * NOTE: `adminRole` is stamped into the JWT here and never re-checked against the
-   * `AdminUser` table per-request (see common/guards.ts's RolesGuard, which authorizes
-   * purely from the token payload). Promoting/demoting/revoking an admin's role in the DB
-   * therefore has no effect on that admin's access until they log out and back in
-   * (or their refresh token is used to re-issue a fresh access token). This is a deliberate
-   * perf/simplicity tradeoff, not a bug — flagged here per docs/E2E_AUDIT_REPORT.md low-severity #13.
+   * JWT still carries `isAdmin` / `adminRole` for the client. Admin API routes
+   * re-check `AdminUser` in RolesGuard on every request, so a revoked admin
+   * loses access immediately even if their token has not expired.
    */
   private async issueTokens(userId: string, email: string, deviceName?: string) {
     const admin = await this.prisma.adminUser.findUnique({ where: { userId } });
@@ -123,7 +152,6 @@ export class AuthService {
           message:
             'Account already exists but is not verified. We sent a new verification email — check your inbox or open Resend.',
           code: 'EMAIL_EXISTS_UNVERIFIED',
-          email: existing.email,
         });
       }
       throw new ConflictException({
@@ -131,7 +159,6 @@ export class AuthService {
         error: 'Conflict',
         message: 'Account already exists. Sign in, or resend verification if you never confirmed your email.',
         code: 'EMAIL_ALREADY_REGISTERED',
-        email: existing.email,
       });
     }
 
@@ -188,14 +215,18 @@ export class AuthService {
     }
 
     const email = dto.email.trim().toLowerCase();
+    assertNotLocked(email);
+
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: { targetLanguages: true },
     });
 
-    if (!user?.passwordHash) throw new UnauthorizedException('Invalid credentials');
-    const valid = await bcrypt.compare(dto.password, user.passwordHash);
-    if (!valid) throw new UnauthorizedException('Invalid credentials');
+    const valid = await bcrypt.compare(dto.password, user?.passwordHash ?? TIMING_SAFE_HASH);
+    if (!user?.passwordHash || !valid) {
+      recordLoginFailure(email);
+      throw new UnauthorizedException('Invalid credentials');
+    }
 
     if (user.deletedAt) {
       throw new UnauthorizedException('This account has been deleted or suspended.');
@@ -207,10 +238,10 @@ export class AuthService {
         error: 'Unauthorized',
         message: 'Please verify your email before signing in.',
         code: 'EMAIL_NOT_VERIFIED',
-        email: user.email,
       });
     }
 
+    clearLoginFailures(email);
     const tokens = await this.issueTokens(user.id, user.email, dto.deviceName);
     return { user: this.sanitizeUser(user), ...tokens };
   }
@@ -287,12 +318,15 @@ export class AuthService {
     if (!user || user.emailVerifiedAt) {
       return {
         sent: true,
-        message: user ? 'Email already verified.' : 'If the email exists, we sent a new link.',
+        message: 'If the email exists and still needs verification, we sent a new link.',
       };
     }
 
     await this.sendVerification(user);
-    return { sent: true, message: 'Verification email sent.' };
+    return {
+      sent: true,
+      message: 'If the email exists and still needs verification, we sent a new link.',
+    };
   }
 
   private async createPasswordResetToken(userId: string) {

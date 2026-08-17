@@ -1,4 +1,4 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
 import { AppLanguage, CefrLevel } from '@prisma/client';
 
 export class UpdateProfileDto {
@@ -51,10 +51,12 @@ export class UpdatePreferencesDto {
 
 export class ChangePasswordDto {
   @IsString()
+  @MaxLength(128)
   currentPassword!: string;
 
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   newPassword!: string;
 }
 
@@ -83,5 +85,6 @@ export class UpdateTargetLanguageDto {
 
 export class DeleteAccountDto {
   @IsString()
+  @MaxLength(128)
   currentPassword!: string;
 }

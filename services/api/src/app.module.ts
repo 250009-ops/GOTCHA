@@ -4,6 +4,7 @@ import { join } from 'path';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { DevAuthModule } from './common/dev-auth/dev-auth.module';
+import { clientIp } from './common/runtime-security';
 import { MailModule } from './common/mail/mail.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './modules/auth/auth.module';
@@ -29,7 +30,10 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
         join(process.cwd(), '../../.env'),
       ],
     }),
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 120 }]),
+    ThrottlerModule.forRoot({
+      throttlers: [{ name: 'default', ttl: 60_000, limit: 100 }],
+      getTracker: (req) => clientIp(req),
+    }),
     DevAuthModule,
     MailModule,
     PrismaModule,

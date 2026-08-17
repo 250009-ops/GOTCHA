@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { BookOpen, Grid3X3, List, X } from 'lucide-react';
 import { resolveMediaUrl } from '../lib/media';
-import { cn } from '../lib/utils';
+import { cn, languageFlag } from '../lib/utils';
 
 export type LibraryPreviewItem = {
   id: string;
@@ -36,8 +36,7 @@ const cefrStyle: Record<string, string> = {
   c2: 'bg-pink-100 text-pink-700',
 };
 
-const langFlag: Record<string, string> = { en: '🇬🇧', ru: '🇷🇺', uz: '🇺🇿' };
-const filterTabs = ['All', 'EN', 'RU', 'UZ', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
+const filterTabs = ['All', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
 
 function gradientForId(id: string) {
   let hash = 0;
@@ -110,7 +109,7 @@ function LearnerCard({
               <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold tracking-wide', cefrStyle[item.cefrLevel] ?? 'bg-gray-100 text-gray-600')}>
                 {item.cefrLevel.toUpperCase()}
               </span>
-              <span className="text-sm">{langFlag[item.language] ?? '🌐'}</span>
+              <span className="text-sm">{languageFlag(item.language)}</span>
             </div>
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
@@ -145,7 +144,7 @@ function LearnerCard({
               {formatUzs(price)}
             </span>
           ) : null}
-          <span className="text-lg leading-none drop-shadow">{langFlag[item.language] ?? '🌐'}</span>
+          <span className="text-lg leading-none drop-shadow">{languageFlag(item.language)}</span>
         </div>
       </div>
       <div className="p-3 flex-1 flex flex-col min-h-0">

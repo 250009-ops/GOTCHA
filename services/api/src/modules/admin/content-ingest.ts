@@ -1,4 +1,5 @@
 import { tokenizeText, paginateText, uniqueWordCount } from '../../utils/tokenizer';
+import { safeFetch } from '../../common/safe-fetch';
 import {
   extractTextFromPdf,
   extractTextFromUrl,
@@ -154,7 +155,7 @@ export async function extractSourceDocument(opts: {
   const url = opts.sourceUrl?.trim();
   if (url) {
     if (/\.pdf(\?|#|$)/i.test(url)) {
-      const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(180_000) });
+      const res = await safeFetch(url, { signal: AbortSignal.timeout(180_000) });
       if (!res.ok) throw new Error(`Could not download PDF (${res.status})`);
       const buf = Buffer.from(await res.arrayBuffer());
       const doc = await extractTextFromPdf(buf);

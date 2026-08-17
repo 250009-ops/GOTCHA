@@ -85,22 +85,52 @@ data class OkMessageResponse(
 )
 
 /**
- * Canonical set of learning languages, matching `@gotcha/shared`'s compiled `APP_LANGUAGES`
- * (en/ru/uz) — the same 3 languages web-learner offers. Do NOT hardcode a divergent list
- * elsewhere; reuse this everywhere a language picker is needed (sign-up, settings, etc.).
+ * Canonical set of learning languages, matching `@gotcha/shared` `APP_LANGUAGES`.
+ * Prefer `/content/languages` at runtime; this list is the offline fallback + flag lookup.
  */
 data class AppLanguageOption(val code: String, val nativeLabel: String, val englishLabel: String, val flag: String)
 
 val APP_LANGUAGE_OPTIONS = listOf(
-    AppLanguageOption("en", "English", "English", "\uD83C\uDDEC\uD83C\uDDE7"),
-    AppLanguageOption("ru", "Русский", "Russian", "\uD83C\uDDF7\uD83C\uDDFA"),
-    AppLanguageOption("uz", "O'zbek", "Uzbek", "\uD83C\uDDFA\uD83C\uDDFF"),
-    AppLanguageOption("fr", "Français", "French", "\uD83C\uDDEB\uD83C\uDDF7"),
-    AppLanguageOption("es", "Español", "Spanish", "\uD83C\uDDEA\uD83C\uDDF8"),
-    AppLanguageOption("ja", "日本語", "Japanese", "\uD83C\uDDEF\uD83C\uDDF5"),
-    AppLanguageOption("de", "Deutsch", "German", "\uD83C\uDDE9\uD83C\uDDEA"),
-    AppLanguageOption("ko", "한국어", "Korean", "\uD83C\uDDF0\uD83C\uDDF7"),
-    AppLanguageOption("pt", "Português", "Portuguese", "\uD83C\uDDF5\uD83C\uDDF9"),
+    AppLanguageOption("en", "English", "English", "🇬🇧"),
+    AppLanguageOption("ru", "Русский", "Russian", "🇷🇺"),
+    AppLanguageOption("uz", "O'zbek", "Uzbek", "🇺🇿"),
+    AppLanguageOption("fr", "Français", "French", "🇫🇷"),
+    AppLanguageOption("es", "Español", "Spanish", "🇪🇸"),
+    AppLanguageOption("ja", "日本語", "Japanese", "🇯🇵"),
+    AppLanguageOption("de", "Deutsch", "German", "🇩🇪"),
+    AppLanguageOption("ko", "한국어", "Korean", "🇰🇷"),
+    AppLanguageOption("pt", "Português", "Portuguese", "🇵🇹"),
+    AppLanguageOption("ar", "العربية", "Arabic", "🇸🇦"),
+    AppLanguageOption("bn", "বাংলা", "Bengali", "🇧🇩"),
+    AppLanguageOption("bg", "Български", "Bulgarian", "🇧🇬"),
+    AppLanguageOption("ca", "Català", "Catalan", "🇦🇩"),
+    AppLanguageOption("zh", "中文", "Chinese", "🇨🇳"),
+    AppLanguageOption("hr", "Hrvatski", "Croatian", "🇭🇷"),
+    AppLanguageOption("cs", "Čeština", "Czech", "🇨🇿"),
+    AppLanguageOption("da", "Dansk", "Danish", "🇩🇰"),
+    AppLanguageOption("nl", "Nederlands", "Dutch", "🇳🇱"),
+    AppLanguageOption("fi", "Suomi", "Finnish", "🇫🇮"),
+    AppLanguageOption("el", "Ελληνικά", "Greek", "🇬🇷"),
+    AppLanguageOption("he", "עברית", "Hebrew", "🇮🇱"),
+    AppLanguageOption("hi", "हिन्दी", "Hindi", "🇮🇳"),
+    AppLanguageOption("hu", "Magyar", "Hungarian", "🇭🇺"),
+    AppLanguageOption("id", "Bahasa Indonesia", "Indonesian", "🇮🇩"),
+    AppLanguageOption("it", "Italiano", "Italian", "🇮🇹"),
+    AppLanguageOption("ms", "Bahasa Melayu", "Malay", "🇲🇾"),
+    AppLanguageOption("no", "Norsk", "Norwegian", "🇳🇴"),
+    AppLanguageOption("fa", "فارسی", "Persian", "🇮🇷"),
+    AppLanguageOption("pl", "Polski", "Polish", "🇵🇱"),
+    AppLanguageOption("ro", "Română", "Romanian", "🇷🇴"),
+    AppLanguageOption("sr", "Српски", "Serbian", "🇷🇸"),
+    AppLanguageOption("sk", "Slovenčina", "Slovak", "🇸🇰"),
+    AppLanguageOption("sw", "Kiswahili", "Swahili", "🇰🇪"),
+    AppLanguageOption("sv", "Svenska", "Swedish", "🇸🇪"),
+    AppLanguageOption("tl", "Tagalog", "Tagalog", "🇵🇭"),
+    AppLanguageOption("th", "ไทย", "Thai", "🇹🇭"),
+    AppLanguageOption("tr", "Türkçe", "Turkish", "🇹🇷"),
+    AppLanguageOption("uk", "Українська", "Ukrainian", "🇺🇦"),
+    AppLanguageOption("ur", "اردو", "Urdu", "🇵🇰"),
+    AppLanguageOption("vi", "Tiếng Việt", "Vietnamese", "🇻🇳"),
 )
 
 @Serializable

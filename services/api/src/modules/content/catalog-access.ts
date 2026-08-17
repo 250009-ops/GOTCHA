@@ -62,3 +62,20 @@ export function catalogAccessGranted(opts: {
   if (opts.userId && opts.item.createdById === opts.userId) return true;
   return opts.purchasedIds.has(opts.item.id);
 }
+
+/** First chapter, capped so learners can trial-read paid catalog books. */
+export const CATALOG_TRIAL_MAX_SEGMENTS = 3;
+
+export function catalogTrialSegmentCount(
+  outline: Array<{ chapterIndex?: number | null }>,
+): number {
+  if (!outline.length) return 0;
+  const firstChapter = outline[0]?.chapterIndex ?? 0;
+  let count = 0;
+  for (const row of outline) {
+    if ((row.chapterIndex ?? 0) !== firstChapter) break;
+    count += 1;
+    if (count >= CATALOG_TRIAL_MAX_SEGMENTS) break;
+  }
+  return count;
+}

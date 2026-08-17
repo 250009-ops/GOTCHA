@@ -1,4 +1,5 @@
 import { api } from './api';
+import { languageFlag, languageLabel } from './types';
 import type { LookupResult } from './types';
 
 export const CHAT_LANG_PAIR = ['EN', 'RU', 'UZ'] as const;
@@ -75,6 +76,12 @@ const ES_HINTS = new Set(['el', 'los', 'las', 'hola', 'gracias', 'que', 'una', '
 const DE_HINTS = new Set(['der', 'die', 'das', 'und', 'nicht', 'ich', 'sie', 'ein', 'eine', 'hallo', 'danke']);
 const PT_HINTS = new Set(['nao', 'não', 'voce', 'você', 'obrigado', 'ola', 'olá', 'uma', 'para', 'com']);
 
+const IT_HINTS = new Set(['il', 'lo', 'gli', 'una', 'ciao', 'grazie', 'perche', 'perché', 'sono', 'questa']);
+const NL_HINTS = new Set(['het', 'een', 'niet', 'voor', 'met', 'hallo', 'dank', 'zijn', 'deze']);
+const TR_HINTS = new Set(['bir', 'degil', 'değil', 'icin', 'için', 'merhaba', 'tesekkur', 'teşekkür', 'ben', 'bu']);
+const PL_HINTS = new Set(['nie', 'jest', 'dziekuje', 'dziękuję', 'czesc', 'cześć', 'tego', 'jestem']);
+const SV_HINTS = new Set(['och', 'inte', 'det', 'hej', 'tack', 'jag', 'har', 'denna']);
+
 export function detectChatLang(text: string): string | null {
   const letters = [...text].filter((ch) => /\p{L}/u.test(ch));
   if (letters.length === 0) return null;
@@ -83,8 +90,21 @@ export function detectChatLang(text: string): string | null {
 
   if (letters.some((ch) => ch >= '\u3040' && ch <= '\u30FF')) return pick('JA') ?? pick('EN');
   if (letters.some((ch) => ch >= '\uAC00' && ch <= '\uD7AF')) return pick('KO') ?? pick('EN');
+  if (letters.some((ch) => ch >= '\u4E00' && ch <= '\u9FFF')) return pick('ZH') ?? pick('JA') ?? pick('EN');
+  if (letters.some((ch) => ch >= '\u0600' && ch <= '\u06FF')) {
+    if (letters.some((ch) => 'پچژگ'.includes(ch))) return pick('FA') ?? pick('UR') ?? pick('AR');
+    if (letters.some((ch) => 'ٹڈڑںےہھ'.includes(ch))) return pick('UR') ?? pick('AR');
+    return pick('AR') ?? pick('FA') ?? pick('UR');
+  }
+  if (letters.some((ch) => ch >= '\u0590' && ch <= '\u05FF')) return pick('HE');
+  if (letters.some((ch) => ch >= '\u0E00' && ch <= '\u0E7F')) return pick('TH');
+  if (letters.some((ch) => ch >= '\u0900' && ch <= '\u097F')) return pick('HI') ?? pick('BN');
+  if (letters.some((ch) => ch >= '\u0980' && ch <= '\u09FF')) return pick('BN');
   const cyr = letters.filter((ch) => ch >= '\u0400' && ch <= '\u04FF').length;
-  if (cyr * 4 >= letters.length) return pick('RU') ?? pick('UZ') ?? pick('EN');
+  if (cyr * 4 >= letters.length) {
+    if (letters.some((ch) => 'іїєґІЇЄҐ'.includes(ch))) return pick('UK') ?? pick('RU');
+    return pick('RU') ?? pick('UK') ?? pick('BG') ?? pick('SR') ?? pick('UZ') ?? pick('EN');
+  }
   const lower = text.toLowerCase();
   if (/o['ʻʼ‘’]|g['ʻʼ‘’]|[ʻʼ]|oʻ|gʻ/.test(lower)) return pick('UZ') ?? pick('EN');
   const tokens = [...lower.matchAll(/[\p{L}']+/gu)].map((m) => m[0]);
@@ -95,6 +115,11 @@ export function detectChatLang(text: string): string | null {
     ['ES', score(ES_HINTS)],
     ['DE', score(DE_HINTS)],
     ['PT', score(PT_HINTS)],
+    ['IT', score(IT_HINTS)],
+    ['NL', score(NL_HINTS)],
+    ['TR', score(TR_HINTS)],
+    ['PL', score(PL_HINTS)],
+    ['SV', score(SV_HINTS)],
     ['EN', score(EN_HINTS)],
   ];
   ranked.sort((a, b) => b[1] - a[1]);
@@ -127,18 +152,6 @@ export function looksLikeLang(text: string, lang: string): boolean {
   return Boolean(got && got === want);
 }
 
-const CHAT_META: Record<string, { name: string; flag: string }> = {
-  EN: { name: 'English', flag: '🇬🇧' },
-  RU: { name: 'Russian', flag: '🇷🇺' },
-  UZ: { name: 'Uzbek', flag: '🇺🇿' },
-  FR: { name: 'French', flag: '🇫🇷' },
-  ES: { name: 'Spanish', flag: '🇪🇸' },
-  JA: { name: 'Japanese', flag: '🇯🇵' },
-  DE: { name: 'German', flag: '🇩🇪' },
-  KO: { name: 'Korean', flag: '🇰🇷' },
-  PT: { name: 'Portuguese', flag: '🇵🇹' },
-};
-
 export function chatLangName(code: string, uiLang?: string | null): string {
   const key = normalizeChatLang(code);
   const ui = normalizeChatLang(uiLang);
@@ -146,14 +159,8 @@ export function chatLangName(code: string, uiLang?: string | null): string {
     EN: { EN: 'English', RU: 'Английский', UZ: 'Inglizcha' },
     RU: { EN: 'Russian', RU: 'Русский', UZ: 'Ruscha' },
     UZ: { EN: 'Uzbek', RU: 'Узбекский', UZ: 'Oʻzbekcha' },
-    FR: { EN: 'French', RU: 'Французский', UZ: 'Fransuzcha' },
-    ES: { EN: 'Spanish', RU: 'Испанский', UZ: 'Ispancha' },
-    JA: { EN: 'Japanese', RU: 'Японский', UZ: 'Yaponcha' },
-    DE: { EN: 'German', RU: 'Немецкий', UZ: 'Nemischa' },
-    KO: { EN: 'Korean', RU: 'Корейский', UZ: 'Koreyscha' },
-    PT: { EN: 'Portuguese', RU: 'Португальский', UZ: 'Portugalcha' },
   };
-  return localized[key]?.[ui] ?? CHAT_META[key]?.name ?? key;
+  return localized[key]?.[ui] ?? languageLabel(key.toLowerCase());
 }
 
 /** Preposition in the To-language picker, in the learner’s UI language. */
@@ -180,8 +187,7 @@ export function chatTranslatingLabel(uiLang?: string | null): string {
 }
 
 export function chatLangFlag(code: string): string {
-  const key = normalizeChatLang(code);
-  return CHAT_META[key]?.flag ?? '🌐';
+  return languageFlag(normalizeChatLang(code).toLowerCase());
 }
 
 function toPrefKey(conversationId: string): string {

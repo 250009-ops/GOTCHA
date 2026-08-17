@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength, IsArray, ArrayMinSize } from 'class-validator';
+import { IsEmail, IsEnum, IsOptional, IsString, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class RegisterDto {
@@ -7,6 +7,7 @@ export class RegisterDto {
 
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   password!: string;
 
   @IsOptional()
@@ -27,6 +28,8 @@ export class LoginDto {
   email!: string;
 
   @IsString()
+  @MinLength(1)
+  @MaxLength(128)
   password!: string;
 
   @IsOptional()
@@ -36,6 +39,8 @@ export class LoginDto {
 
 export class RefreshDto {
   @IsString()
+  @MinLength(16)
+  @MaxLength(512)
   refreshToken!: string;
 }
 
@@ -62,5 +67,6 @@ export class ResetPasswordDto {
 
   @IsString()
   @MinLength(8)
+  @MaxLength(128)
   password!: string;
 }

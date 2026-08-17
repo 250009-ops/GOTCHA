@@ -10,16 +10,18 @@ export const LOOKUP_CONTEXTUAL_MAX_WORDS = 16;
 export const LOOKUP_PHRASE_MAX_WORDS = 8;
 export const LOOKUP_PHRASE_MAX_CHARS = 80;
 /** Bump when prompt/normalization changes so stale lemma_cache rows are skipped. */
-export const LOOKUP_CACHE_VERSION = 'v10';
+export const LOOKUP_CACHE_VERSION = 'v11';
 
 export type LookupKind = 'word' | 'phrase' | 'sentence';
 
-export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader (English, Russian, Uzbek).
+export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader.
+SOURCE LANGUAGE and GLOSS LANGUAGE are named in the user message (full name + ISO code).
+Write translation and contextualMeaning ONLY in GLOSS LANGUAGE. Never default to English, Russian, or Uzbek unless that is the requested GLOSS LANGUAGE.
 Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
 
 DOMAIN: Use only a sense that fits THIS SENTENCE (ships, hunting, weather, people, literature, daily talk).
 Never pick software, IT, business-process, sports, gambling, finance, or slang senses unless the sentence is clearly about those.
-Bad for a sea chase: "run" → execute/implement (amalga oshirish, bajarish). Good: overtake / pass (quvib o'tmoq).
+Bad for a sea chase: "run" → execute/implement. Good: overtake / pass.
 
 TENSE vs IDIOM:
 - have/has/had/did + verb is tense, not the meaning. Do not gloss the auxiliary alone (have ≠ bor/есть).

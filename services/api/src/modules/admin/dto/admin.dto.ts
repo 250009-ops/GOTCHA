@@ -1,8 +1,10 @@
 import { Type } from 'class-transformer';
+import { AppLanguage } from '@prisma/client';
 import {
   Allow,
   IsBoolean,
   IsEmail,
+  IsEnum,
   IsIn,
   IsInt,
   IsNumber,
@@ -46,7 +48,7 @@ export class CreateContentDto {
   plainText?: string;
 
   @IsOptional()
-  @IsIn(['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'])
+  @IsEnum(AppLanguage)
   language?: string;
 
   @IsOptional()
@@ -105,7 +107,7 @@ export class UpdateContentDto {
   genre?: string;
 
   @IsOptional()
-  @IsIn(['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'])
+  @IsEnum(AppLanguage)
   language?: string;
 
   @IsOptional()

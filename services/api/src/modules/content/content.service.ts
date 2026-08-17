@@ -14,22 +14,18 @@ import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 import {
   catalogAccessGranted,
   catalogPriceUzs,
+  catalogTrialSegmentCount,
   paidCatalogIds,
   requiresCatalogPayment,
   type CatalogPricedItem,
 } from './catalog-access';
 
-const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = {
-  en: { name: 'English', nativeName: 'English', flagEmoji: '🇬🇧' },
-  ru: { name: 'Russian', nativeName: 'Русский', flagEmoji: '🇷🇺' },
-  uz: { name: 'Uzbek', nativeName: "Oʻzbekcha", flagEmoji: '🇺🇿' },
-  fr: { name: 'French', nativeName: 'Français', flagEmoji: '🇫🇷' },
-  es: { name: 'Spanish', nativeName: 'Español', flagEmoji: '🇪🇸' },
-  ja: { name: 'Japanese', nativeName: '日本語', flagEmoji: '🇯🇵' },
-  de: { name: 'German', nativeName: 'Deutsch', flagEmoji: '🇩🇪' },
-  ko: { name: 'Korean', nativeName: '한국어', flagEmoji: '🇰🇷' },
-  pt: { name: 'Portuguese', nativeName: 'Português', flagEmoji: '🇵🇹' },
-};
+const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = Object.fromEntries(
+  Object.entries(LANGUAGE_META).map(([code, meta]) => [
+    code,
+    { name: meta.label, nativeName: meta.nativeName, flagEmoji: meta.flag },
+  ]),
+);
 
 /** Map Prisma content fields → learner app DTO (cover + author + catalog commerce). */
 function serializeContent(item: object, access?: { granted: boolean }) {
@@ -368,10 +364,14 @@ export class ContentService {
 
     const { segments, ...rest } = item;
     const [decorated] = await this.decorateLearnerItems([rest], userId, isAdmin);
+    const granted = decorated.accessGranted !== false;
+    const trialSegmentCount =
+      granted || !requiresCatalogPayment(item) ? 0 : catalogTrialSegmentCount(segments);
     return {
       ...decorated,
       segmentCount: segments.length,
       outline: segments,
+      trialSegmentCount,
       progressPct: progress?.progressPct ?? 0,
       lastReadAt: progress?.lastReadAt ?? null,
       currentSegmentId: progress?.segmentId ?? null,
@@ -388,16 +388,51 @@ export class ContentService {
       };
     }
 
-    await this.assertLearnerCanRead(contentId, userId, isAdmin);
+    const item = await this.prisma.contentItem.findFirst({
+      where: this.readableByLearnerWhere(contentId, userId),
+      select: {
+        id: true,
+        isFree: true,
+        priceUsd: true,
+        contentSource: true,
+        contentType: true,
+        createdById: true,
+      },
+    });
+    if (!item) throw new NotFoundException('Content not found');
+
+    const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
+    const granted = catalogAccessGranted({ item, userId, isAdmin, purchasedIds });
 
     const take = Math.min(Math.max(Number.isFinite(limit) ? limit : 1, 1), 200);
+    let maxIndex: number | undefined;
+    if (!granted) {
+      const outline = await this.prisma.contentSegment.findMany({
+        where: { contentId },
+        select: { segmentIndex: true, chapterIndex: true },
+        orderBy: { segmentIndex: 'asc' },
+      });
+      const trialCount = catalogTrialSegmentCount(outline);
+      const trialLast = trialCount > 0 ? outline[trialCount - 1]?.segmentIndex : undefined;
+      if (trialLast == null || from > trialLast) {
+        throw new ForbiddenException('Payment required to continue reading this book');
+      }
+      maxIndex = trialLast;
+    }
+
     const segments = await this.prisma.contentSegment.findMany({
-      where: { contentId, segmentIndex: { gte: from } },
+      where: {
+        contentId,
+        segmentIndex: {
+          gte: from,
+          ...(maxIndex != null ? { lte: maxIndex } : {}),
+        },
+      },
       orderBy: { segmentIndex: 'asc' },
       take,
     });
 
-    return { contentId, segments };
+    return { contentId, segments, trial: !granted };
   }
 
   async updateProgress(userId: string, contentId: string, dto: UpdateProgressDto, isAdmin?: boolean) {

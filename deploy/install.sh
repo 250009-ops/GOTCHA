@@ -68,6 +68,10 @@ ATMOS_MERCHANT_TIN="$(get_env ATMOS_MERCHANT_TIN)"
 [[ -n "$DB_PASSWORD" ]] || { echo "DB_PASSWORD required in deploy/.env"; exit 1; }
 [[ -n "$S3_SECRET_KEY" ]] || { echo "S3_SECRET_KEY required in deploy/.env"; exit 1; }
 [[ -n "$JWT_SECRET" ]] || { echo "JWT_SECRET required in deploy/.env"; exit 1; }
+if [[ ${#JWT_SECRET} -lt 32 || "$JWT_SECRET" == "dev-secret-change-me" ]]; then
+  echo "JWT_SECRET must be a strong 32+ character value"
+  exit 1
+fi
 
 echo "==> System packages"
 export DEBIAN_FRONTEND=noninteractive
@@ -133,6 +137,7 @@ IMPORT_AI_CLEANUP_ENABLED=${IMPORT_AI_CLEANUP_ENABLED:-true}
 API_PORT=3200
 API_CORS_ORIGINS=https://${DOMAIN},https://www.${DOMAIN}
 LEARNER_APP_URL=${LEARNER_APP_URL:-https://${DOMAIN}/learn}
+ENABLE_SWAGGER=false
 DEV_AUTH_ANY_CREDENTIAL=false
 DEV_UNLIMITED_IMPORTS=false
 IMPORTS_UNLIMITED=${IMPORTS_UNLIMITED:-false}
@@ -221,5 +226,4 @@ echo " Marketing: https://${DOMAIN}/"
 echo " Learner:   https://${DOMAIN}/learn/"
 echo " Admin:     https://${DOMAIN}/admin/"
 echo " API:       https://${DOMAIN}/api/v1"
-echo " Docs:      https://${DOMAIN}/api/docs"
 echo "=============================================="

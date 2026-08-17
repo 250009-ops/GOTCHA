@@ -4,6 +4,20 @@
   "private": true,
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./safe-url": {
+      "types": "./dist/safe-url.d.ts",
+      "default": "./dist/safe-url.js"
+    },
+    "./dist/safe-url": {
+      "types": "./dist/safe-url.d.ts",
+      "default": "./dist/safe-url.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch"

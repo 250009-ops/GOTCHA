@@ -15,7 +15,7 @@ import {
   Settings,
   Upload,
 } from 'lucide-react';
-import { api } from '../lib/api';
+import { api, getAccessToken } from '../lib/api';
 import { GlobalSearch } from '../components/GlobalSearch';
 import { Popover, PopoverContent, PopoverTrigger } from '../components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
@@ -85,8 +85,9 @@ export default function LearnerShell() {
   }, []);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !getAccessToken()) return;
     const beat = () => {
+      if (!getAccessToken()) return;
       void api('/messaging/presence', { method: 'POST' }).catch(() => undefined);
     };
     beat();
@@ -95,8 +96,9 @@ export default function LearnerShell() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !getAccessToken()) return;
     const load = () => {
+      if (!getAccessToken()) return;
       void api<{ unreadCount: number }>('/notifications/unread-count')
         .then((res) => setUnreadNotifs(res.unreadCount ?? 0))
         .catch(() => undefined);

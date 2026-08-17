@@ -1,8 +1,10 @@
 ﻿package app.gotcha.android.ui.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.FlowRow
@@ -19,8 +21,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MailOutline
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -34,18 +38,24 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.LocalAppContainer
+import app.gotcha.android.R
 import app.gotcha.android.data.api.apiErrorCode
 import app.gotcha.android.data.api.apiErrorEmail
 import app.gotcha.android.data.api.apiErrorMessage
+import app.gotcha.android.data.ChatLangs
 import app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
+import app.gotcha.android.data.model.AppLanguageOption
 import app.gotcha.android.data.model.toAppLanguageOption
 import app.gotcha.android.ui.components.BrandMark
 import app.gotcha.android.ui.components.BrandWordmark
@@ -193,7 +203,10 @@ fun SignUpScreen(
         runCatching { container.contentRepository.catalogLanguages() }
             .onSuccess { rows ->
                 val mapped = rows.filter { it.isEnabled }.map { it.toAppLanguageOption() }
-                if (mapped.isNotEmpty()) languageOptions = mapped
+                if (mapped.isNotEmpty()) {
+                    languageOptions = mapped
+                    ChatLangs.setEnabled(mapped.map { it.code })
+                }
             }
     }
     var pendingVerificationEmail by remember { mutableStateOf<String?>(null) }
@@ -210,7 +223,7 @@ fun SignUpScreen(
     if (step == "languages") {
         AuthScaffold(
             title = "What do you want to learn?",
-            subtitle = "Pick your native language and at least one language to learn — you can add more later in Settings.",
+            subtitle = "Search and add the language you want to learn. You can add more later in Settings.",
             footer = {},
         ) {
             Text(
@@ -221,44 +234,35 @@ fun SignUpScreen(
                 color = GotchaColors.InkSecondary,
             )
             Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                languageOptions.forEach { opt ->
-                    val selected = nativeLanguage == opt.code
-                    LanguagePickChip(
-                        flag = opt.flag,
-                        label = opt.englishLabel,
-                        selected = selected,
-                        modifier = Modifier,
-                        onClick = {
-                            nativeLanguage = opt.code
-                            targetLanguages = targetLanguages - opt.code
-                        },
-                    )
-                }
-            }
+            AuthLanguageSearchField(
+                options = languageOptions,
+                selectedCodes = listOf(nativeLanguage),
+                onAdd = { code ->
+                    nativeLanguage = code
+                    targetLanguages = targetLanguages - code
+                },
+                onRemove = {},
+                multiple = false,
+                placeholder = "Search your native language...",
+            )
             Spacer(Modifier.height(20.dp))
             Text(
-                "Languages you want to learn (pick at least one)",
+                "Languages you want to learn (search and add at least one)",
                 fontFamily = Manrope,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
                 color = GotchaColors.InkSecondary,
             )
             Spacer(Modifier.height(8.dp))
-            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                languageOptions.filter { it.code != nativeLanguage }.forEach { opt ->
-                    val selected = targetLanguages.contains(opt.code)
-                    LanguagePickChip(
-                        flag = opt.flag,
-                        label = opt.englishLabel,
-                        selected = selected,
-                        modifier = Modifier,
-                        onClick = {
-                            targetLanguages = if (selected) targetLanguages - opt.code else targetLanguages + opt.code
-                        },
-                    )
-                }
-            }
+            AuthLanguageSearchField(
+                options = languageOptions,
+                selectedCodes = targetLanguages.toList(),
+                exclude = setOf(nativeLanguage),
+                onAdd = { targetLanguages = targetLanguages + it },
+                onRemove = { targetLanguages = targetLanguages - it },
+                multiple = true,
+                placeholder = "Search a language to add...",
+            )
             if (error != null) {
                 Spacer(Modifier.height(12.dp))
                 Text(error!!, color = Color(0xFFDC2626), fontFamily = Manrope, fontSize = 13.sp)
@@ -841,31 +845,167 @@ private fun EmailPendingIcon() {
     }
 }
 
+private fun AppLanguageOption.matchesQuery(query: String): Boolean {
+    val q = query.trim().lowercase()
+    if (q.isEmpty()) return true
+    return code.contains(q, ignoreCase = true) ||
+        englishLabel.contains(q, ignoreCase = true) ||
+        nativeLabel.contains(q, ignoreCase = true)
+}
+
 @Composable
-private fun LanguagePickChip(
-    flag: String,
-    label: String,
-    selected: Boolean,
-    modifier: Modifier = Modifier,
-    onClick: () -> Unit,
+private fun AuthLanguageSearchField(
+    options: List<AppLanguageOption>,
+    selectedCodes: List<String>,
+    onAdd: (String) -> Unit,
+    onRemove: (String) -> Unit,
+    multiple: Boolean,
+    placeholder: String,
+    exclude: Set<String> = emptySet(),
 ) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (selected) GotchaColors.BrandPurpleSoft else Color(0xFFF9FAFB))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        Text(flag, fontSize = 20.sp)
-        Text(
-            label,
-            fontFamily = Manrope,
-            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-            fontSize = 12.sp,
-            color = if (selected) GotchaColors.BrandPurpleDeep else GotchaColors.TextMuted,
-        )
+    var query by remember { mutableStateOf("") }
+    var open by remember { mutableStateOf(false) }
+    val selected = selectedCodes.mapNotNull { code -> options.firstOrNull { it.code == code } }
+    val suggestions = remember(query, options, selectedCodes, exclude) {
+        options.filter { it.code !in selectedCodes && it.code !in exclude && it.matchesQuery(query) }.take(8)
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFFF9FAFB))
+                .border(1.dp, GotchaColors.BorderInput, RoundedCornerShape(14.dp))
+                .padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            if (selected.isNotEmpty()) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    selected.forEach { opt ->
+                        Row(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(GotchaColors.BrandPurpleSoft)
+                                .padding(start = 8.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        ) {
+                            Text(opt.flag, fontSize = 14.sp)
+                            Text(
+                                opt.englishLabel,
+                                fontFamily = Manrope,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 12.sp,
+                                color = GotchaColors.BrandPurpleDeep,
+                            )
+                            if (multiple || selected.size > 1) {
+                                Icon(
+                                    Icons.Outlined.Close,
+                                    contentDescription = "Remove ${opt.englishLabel}",
+                                    tint = GotchaColors.BrandPurpleDeep,
+                                    modifier = Modifier
+                                        .size(16.dp)
+                                        .clickable { onRemove(opt.code) },
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.ic_search),
+                    contentDescription = null,
+                    tint = GotchaColors.TextSubtle,
+                    modifier = Modifier.size(16.dp),
+                )
+                BasicTextField(
+                    value = query,
+                    onValueChange = {
+                        query = it
+                        open = true
+                    },
+                    singleLine = true,
+                    textStyle = TextStyle(
+                        fontFamily = Manrope,
+                        fontSize = 15.sp,
+                        color = GotchaColors.InkSecondary,
+                    ),
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(24.dp)
+                        .onFocusChanged { open = it.isFocused || query.isNotBlank() },
+                    decorationBox = { inner ->
+                        Box {
+                            if (query.isEmpty()) {
+                                Text(
+                                    if (selected.isEmpty()) placeholder else if (multiple) "Add another…" else placeholder,
+                                    fontFamily = Manrope,
+                                    fontSize = 15.sp,
+                                    color = GotchaColors.TextPlaceholder,
+                                )
+                            }
+                            inner()
+                        }
+                    },
+                )
+            }
+        }
+        if (open && suggestions.isNotEmpty()) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(Color.White)
+                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp)),
+            ) {
+                suggestions.forEach { opt ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onAdd(opt.code)
+                                query = ""
+                                open = multiple
+                            }
+                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        Text(opt.flag, fontSize = 18.sp)
+                        Column {
+                            Text(
+                                opt.englishLabel,
+                                fontFamily = Manrope,
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 14.sp,
+                                color = GotchaColors.InkSecondary,
+                            )
+                            if (opt.nativeLabel != opt.englishLabel) {
+                                Text(
+                                    opt.nativeLabel,
+                                    fontFamily = Manrope,
+                                    fontSize = 12.sp,
+                                    color = GotchaColors.TextMuted,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        } else if (open && query.isNotBlank() && suggestions.isEmpty()) {
+            Text(
+                "No matching language",
+                fontFamily = Manrope,
+                fontSize = 13.sp,
+                color = GotchaColors.TextMuted,
+                modifier = Modifier.padding(horizontal = 4.dp),
+            )
+        }
     }
 }
 

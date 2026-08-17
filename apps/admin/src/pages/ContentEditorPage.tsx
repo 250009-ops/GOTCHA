@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { LibraryPreviewModal } from '../components/LibraryPreviewModal';
 import { Button, Card, ErrorBlock, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { api, apiUpload } from '../lib/api';
-import { APP_LANGUAGES } from '../lib/utils';
+import { APP_LANGUAGES, LANGUAGE_META } from '../lib/utils';
 
 type ChapterPreview = {
   title: string;
@@ -234,7 +234,7 @@ export default function ContentEditorPage() {
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
                 {APP_LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
+                  <option key={l} value={l}>{LANGUAGE_META[l].flag} {LANGUAGE_META[l].label}</option>
                 ))}
               </Select>
               <Select value={cefrLevel} onChange={(e) => setCefrLevel(e.target.value)}>

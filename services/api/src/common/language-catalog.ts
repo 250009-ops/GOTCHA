@@ -3,6 +3,8 @@ import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
 import { PrismaService } from '../prisma/prisma.service';
 
 const ALIGN_KEY = 'languageCatalogLiveAligned';
+/** One-shot: enable the full world catalog so signup search/AI/content work after deploy. */
+const WORLD_KEY = 'languageCatalogWorldV1';
 
 let catalogReady = false;
 
@@ -15,13 +17,13 @@ export async function ensureLanguageCatalog(prisma: PrismaService) {
 
   for (const code of APP_LANGUAGES) {
     const meta = LANGUAGE_META[code];
-    const live = (LIVE_LANGUAGES as readonly string[]).includes(code);
     await prisma.languageCatalog.upsert({
       where: { code },
       update: {
         name: meta.label,
         nativeName: meta.nativeName,
         flagEmoji: meta.flag,
+        regionLabel: code.toUpperCase(),
       },
       create: {
         code,
@@ -29,8 +31,8 @@ export async function ensureLanguageCatalog(prisma: PrismaService) {
         nativeName: meta.nativeName,
         flagEmoji: meta.flag,
         regionLabel: code.toUpperCase(),
-        status: live ? 'Active' : 'Draft',
-        isEnabled: live,
+        status: 'Active',
+        isEnabled: true,
         sortOrder: APP_LANGUAGES.indexOf(code) + 1,
       },
     });
@@ -50,6 +52,19 @@ export async function ensureLanguageCatalog(prisma: PrismaService) {
       where: { key: ALIGN_KEY },
       update: { value: { at: new Date().toISOString() } as never },
       create: { key: ALIGN_KEY, value: { at: new Date().toISOString() } as never },
+    });
+  }
+
+  const world = await prisma.platformSetting.findUnique({ where: { key: WORLD_KEY } });
+  if (!world) {
+    await prisma.languageCatalog.updateMany({
+      where: { code: { in: [...APP_LANGUAGES] } },
+      data: { isEnabled: true, status: 'Active' },
+    });
+    await prisma.platformSetting.upsert({
+      where: { key: WORLD_KEY },
+      update: { value: { at: new Date().toISOString() } as never },
+      create: { key: WORLD_KEY, value: { at: new Date().toISOString() } as never },
     });
   }
 

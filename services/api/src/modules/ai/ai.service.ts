@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import OpenAI from 'openai';
+import { languagePromptLabel } from '@gotcha/shared';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -335,8 +336,8 @@ export class AiService {
                 `TARGET: "${surface}"`,
                 dto.lemma && surfaceWords <= 2 ? `Lemma hint: "${dto.lemma}"` : null,
                 `SENTENCE: "${context}"`,
-                `GLOSS LANGUAGE: ${dto.targetLang}`,
-                `SOURCE LANGUAGE: ${dto.sourceLang}`,
+                `GLOSS LANGUAGE: ${languagePromptLabel(dto.targetLang)}`,
+                `SOURCE LANGUAGE: ${languagePromptLabel(dto.sourceLang)}`,
                 modeHint,
               ]
                 .filter(Boolean)
@@ -499,7 +500,7 @@ export class AiService {
           },
           {
             role: 'user',
-            content: `Word: ${word}\nGLOSS LANGUAGE: ${glossLang}`,
+            content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}`,
           },
         ],
       });
@@ -541,8 +542,8 @@ export class AiService {
             content: [
               `TARGET: "${opts.surface}"`,
               `SENTENCE: "${opts.context}"`,
-              `GLOSS LANGUAGE: ${opts.targetLang}`,
-              `SOURCE LANGUAGE: ${opts.sourceLang}`,
+              `GLOSS LANGUAGE: ${languagePromptLabel(opts.targetLang)}`,
+              `SOURCE LANGUAGE: ${languagePromptLabel(opts.sourceLang)}`,
               'The previous gloss was off-domain or glossed only a tense auxiliary.',
               'Redo for THIS sentence. No software/execute/implement sense unless the sentence is about computers.',
               'If have/has/had + verb, gloss the verb + particle as used here (run him by = overtake/pass), not "have".',
@@ -628,7 +629,7 @@ export class AiService {
             },
             {
               role: 'user',
-              content: `Source language: ${dto.sourceLang}\nTarget language: ${dto.targetLang}\nMessage:\n${text}`,
+              content: `Source language: ${languagePromptLabel(dto.sourceLang)}\nTarget language: ${languagePromptLabel(dto.targetLang)}\nMessage:\n${text}`,
             },
           ],
         });

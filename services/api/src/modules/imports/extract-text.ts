@@ -3,6 +3,7 @@ import JSZip from 'jszip';
 import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
+import { safeFetch } from '../../common/safe-fetch';
 import {
   cleanImportPlainText,
   cleanPdfPageText,
@@ -18,7 +19,6 @@ import {
 import {
   gutenbergHtmlBookUrls,
   gutenbergPlainTextUrls,
-  isGutenbergIllustratedHtmlUrl,
   looksLikeGutenbergLandingPage,
   parseGutenbergId,
 } from './gutenberg';
@@ -44,7 +44,6 @@ const GUTENBERG_FETCH_TIMEOUT_MS = 15_000;
 const HTML_PARSE_MAX_CHARS = 2_500_000;
 const GUTENBERG_TXT_MAX_BYTES = 8 * 1024 * 1024;
 const GUTENBERG_HTML_MAX_BYTES = 6 * 1024 * 1024;
-const GUTENBERG_ILLUSTRATED_HTML_MAX_BYTES = 2 * 1024 * 1024;
 /** Generic web pages — do not buffer tens of MB into cheerio. */
 const GENERIC_HTML_MAX_BYTES = 8 * 1024 * 1024;
 /** OCR pages in batches to bound peak memory (screenshots + tesseract). */
@@ -409,9 +408,8 @@ async function extractWikipediaViaApi(
 
   let response: Response;
   try {
-    response = await fetch(apiUrl, {
+    response = await safeFetch(apiUrl, {
       headers: fetchHeaders('application/json'),
-      redirect: 'follow',
       signal: AbortSignal.timeout(URL_FETCH_TIMEOUT_MS),
     });
   } catch {
@@ -535,9 +533,8 @@ async function readUrlBody(
   const maxBytes = options.maxBytes ?? URL_MAX_BYTES;
   let response: Response;
   try {
-    response = await fetch(url, {
+    response = await safeFetch(url, {
       headers: fetchHeaders(accept),
-      redirect: 'follow',
       signal: AbortSignal.timeout(timeoutMs),
     });
   } catch (err) {
@@ -557,36 +554,43 @@ async function readUrlBody(
 }
 
 async function extractGutenbergPlainText(id: string): Promise<ExtractedDocument | null> {
-  for (const txtUrl of gutenbergPlainTextUrls(id)) {
-    try {
-      const { body } = await readUrlBody(txtUrl, 'text/plain,*/*;q=0.8', {
-        timeoutMs: GUTENBERG_FETCH_TIMEOUT_MS,
-        maxBytes: GUTENBERG_TXT_MAX_BYTES,
-      });
-      const text = clampText(cleanImportPlainText(body));
-      if (countWords(text) < MIN_IMPORT_WORDS) continue;
-      const chapters = splitAccurateChapters(text, titleFromUrl(txtUrl));
-      return chaptersToDocument(chapters, titleFromUrl(txtUrl));
-    } catch {
-      // Try the next Gutenberg text mirror.
+  const tryOne = async (txtUrl: string) => {
+    const { body } = await readUrlBody(txtUrl, 'text/plain,*/*;q=0.8', {
+      timeoutMs: GUTENBERG_FETCH_TIMEOUT_MS,
+      maxBytes: GUTENBERG_TXT_MAX_BYTES,
+    });
+    const text = clampText(cleanImportPlainText(body));
+    if (countWords(text) < MIN_IMPORT_WORDS) throw new Error('too short');
+    const chapters = splitAccurateChapters(text, titleFromUrl(txtUrl));
+    return chaptersToDocument(chapters, titleFromUrl(txtUrl));
+  };
+
+  const urls = gutenbergPlainTextUrls(id);
+  try {
+    return await Promise.any(urls.slice(0, 3).map((txtUrl) => tryOne(txtUrl)));
+  } catch {
+    for (const txtUrl of urls.slice(3)) {
+      try {
+        return await tryOne(txtUrl);
+      } catch {
+        // Try the next Gutenberg text mirror.
+      }
     }
+    return null;
   }
-  return null;
 }
 
 async function extractGutenbergHtmlBook(id: string): Promise<ExtractedDocument | null> {
   for (const htmlUrl of gutenbergHtmlBookUrls(id)) {
-    const illustrated = isGutenbergIllustratedHtmlUrl(htmlUrl);
     try {
       const { body, finalUrl } = await readUrlBody(
         htmlUrl,
         'text/html,application/xhtml+xml,*/*;q=0.8',
         {
           timeoutMs: GUTENBERG_FETCH_TIMEOUT_MS,
-          maxBytes: illustrated ? GUTENBERG_ILLUSTRATED_HTML_MAX_BYTES : GUTENBERG_HTML_MAX_BYTES,
+          maxBytes: GUTENBERG_HTML_MAX_BYTES,
         },
       );
-      if (illustrated && body.length > HTML_PARSE_MAX_CHARS) continue;
       if (looksLikeGutenbergLandingPage(body, countWords(htmlToCleanText(boundHtmlForParse(body))))) {
         continue;
       }
@@ -596,7 +600,7 @@ async function extractGutenbergHtmlBook(id: string): Promise<ExtractedDocument |
       const chapters = splitAccurateChapters(cleaned, title || titleFromUrl(htmlUrl));
       return chaptersToDocument(chapters, title || titleFromUrl(htmlUrl));
     } catch {
-      // Try the next HTML book mirror (compact before illustrated).
+      // Try the next compact HTML book mirror.
     }
   }
   return null;

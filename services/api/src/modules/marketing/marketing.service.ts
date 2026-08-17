@@ -190,7 +190,7 @@ export class MarketingService {
       features: [
         'Access to public library',
         `${aiDailyQuota} AI lookups / day`,
-        `${importLimit} free imports / month`,
+        `${importLimit} free imports / day`,
         'Basic SRS review',
         '7-day reading history',
       ],

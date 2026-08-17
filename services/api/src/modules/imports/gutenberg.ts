@@ -45,15 +45,13 @@ export function gutenbergPlainTextUrls(id: string): string[] {
   ];
 }
 
-/** Compact HTML first — illustrated `*-images.html` is huge and can OOM the API. */
+/** Compact HTML only — illustrated `*-images.html` is huge and OOMs the API (502s). */
 export function gutenbergHtmlBookUrls(id: string): string[] {
   return [
     `https://www.gutenberg.org/cache/epub/${id}/pg${id}.html`,
     `https://www.gutenberg.org/ebooks/${id}.html.noimages`,
     `https://www.gutenberg.org/files/${id}/${id}-h/${id}-h.htm`,
     `https://www.gutenberg.org/files/${id}/${id}-h/${id}-h.html`,
-    `https://www.gutenberg.org/ebooks/${id}.html.images`,
-    `https://www.gutenberg.org/cache/epub/${id}/pg${id}-images.html`,
   ];
 }
 

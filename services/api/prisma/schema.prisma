@@ -17,6 +17,37 @@ enum AppLanguage {
   de
   ko
   pt
+  ar
+  bn
+  bg
+  ca
+  zh
+  hr
+  cs
+  da
+  nl
+  fi
+  el
+  he
+  hi
+  hu
+  id
+  it
+  ms
+  no
+  fa
+  pl
+  ro
+  sr
+  sk
+  sw
+  sv
+  tl
+  th
+  tr
+  uk
+  ur
+  vi
 }
 
 enum CefrLevel {

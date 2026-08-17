@@ -11,7 +11,16 @@ import java.util.concurrent.ConcurrentHashMap
 private val Context.chatLangDataStore by preferencesDataStore("gotcha_chat_lang")
 
 object ChatLangs {
-    val PAIR = listOf("EN", "RU", "UZ")
+    @Volatile
+    private var enabled: List<String> = listOf("EN", "RU", "UZ")
+
+    val PAIR: List<String>
+        get() = enabled
+
+    fun setEnabled(codes: Collection<String>) {
+        val next = codes.map { normalize(it) }.filter { it.isNotBlank() }.distinct()
+        if (next.isNotEmpty()) enabled = next
+    }
 
     fun normalize(code: String?): String =
         (code ?: "en").uppercase(Locale.US).take(2).ifBlank { "EN" }
@@ -49,15 +58,38 @@ object ChatLangs {
     fun detect(text: String): String? {
         val letters = text.filter { it.isLetter() }
         if (letters.isEmpty()) return null
+        val allowed = PAIR.toSet()
+        fun pick(code: String) = code.takeIf { it in allowed }
+        if (letters.any { it in '\u3040'..'\u30FF' }) return pick("JA") ?: pick("EN")
+        if (letters.any { it in '\uAC00'..'\uD7AF' }) return pick("KO") ?: pick("EN")
+        if (letters.any { it in '\u4E00'..'\u9FFF' }) return pick("ZH") ?: pick("JA") ?: pick("EN")
+        if (letters.any { it in '\u0600'..'\u06FF' }) return pick("AR") ?: pick("FA") ?: pick("UR")
+        if (letters.any { it in '\u0590'..'\u05FF' }) return pick("HE")
+        if (letters.any { it in '\u0E00'..'\u0E7F' }) return pick("TH")
+        if (letters.any { it in '\u0900'..'\u097F' }) return pick("HI")
         val cyr = letters.count { it in '\u0400'..'\u04FF' }
-        if (cyr * 4 >= letters.length) return "RU"
+        if (cyr * 4 >= letters.length) {
+            if (letters.any { it in "іїєґІЇЄҐ" }) return pick("UK") ?: pick("RU")
+            return pick("RU") ?: pick("UK") ?: pick("UZ") ?: pick("EN")
+        }
         val lower = text.lowercase(Locale.getDefault())
-        if (Regex("[ʻʼ‘’ʻ]|o'|g'|oʻ|gʻ").containsMatchIn(lower)) return "UZ"
+        if (Regex("o['ʻʼ‘’]|g['ʻʼ‘’]|[ʻʼ]|oʻ|gʻ").containsMatchIn(lower)) return pick("UZ") ?: pick("EN")
         val tokens = Regex("[\\p{L}']+").findAll(lower).map { it.value }.toList()
         val uzHits = tokens.count { it in UZ_HINTS }
         val enHits = tokens.count { it in EN_HINTS }
-        if (uzHits > 0 && uzHits >= enHits) return "UZ"
-        return "EN"
+        if (uzHits > 0 && uzHits >= enHits) return pick("UZ")
+        if (enHits > 0) return pick("EN")
+        return null
+    }
+
+    /** Composer chip is native. Treat typed text as native unless it is clearly the To language. */
+    fun inferComposerSource(text: String, nativeLang: String, toLang: String): String {
+        val native = normalize(nativeLang)
+        val to = normalize(toLang)
+        val detected = detect(text)
+        if (detected == to && to != native) return to
+        if (detected == native) return native
+        return native
     }
 
     fun sameText(a: String?, b: String?): Boolean {
@@ -67,13 +99,14 @@ object ChatLangs {
     }
 
     private val UZ_HINTS = hashSetOf(
-        "salom", "rahmat", "yaxshi", "qanday", "nima", "qayerda", "bugun", "kecha",
+        "salom", "rahmat", "yaxshi", "qanday", "nima", "nega", "qayerda", "qaysi", "qachon",
+        "bugun", "kecha", "vaqt", "soat", "tuman", "tumani", "viloyat", "viloyati",
         "kitob", "dost", "do'st", "ha", "yoq", "yo'q", "men", "sen", "biz", "ular",
         "kerak", "mumkin", "iltimos", "kechirasiz",
     )
     private val EN_HINTS = hashSetOf(
         "the", "is", "are", "you", "hello", "hi", "hey", "thanks", "and", "this", "that", "have",
-        "what", "how", "with", "from", "your", "just",
+        "what", "which", "when", "where", "how", "with", "from", "your", "just", "today",
     )
 }
 

@@ -3,17 +3,17 @@ import { AppLanguage } from '@prisma/client';
 
 export class LookupDto {
   @IsString()
-  @MaxLength(80)
+  @MaxLength(4000)
   token!: string;
 
-  /** Narrow context only (sentence / short window) — never a full chapter. */
+  /** Sentence, or the selected span when the learner highlights a long passage. */
   @IsString()
-  @MaxLength(500)
+  @MaxLength(4000)
   sentence!: string;
 
   @IsOptional()
   @IsString()
-  @MaxLength(80)
+  @MaxLength(4000)
   lemma?: string;
 
   @IsEnum(AppLanguage)

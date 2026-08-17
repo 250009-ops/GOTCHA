@@ -16,6 +16,7 @@ import { ImportCommerceService } from '../billing/import-commerce.service';
 import { AiService } from '../ai/ai.service';
 import { tokenizeText, slugify, paginateText } from '../../utils/tokenizer';
 import { ImportFileDto, ImportPasteDto, ImportUrlDto } from './dto/imports.dto';
+import { assertPdfOrEpubMagic } from '../../common/upload-magic';
 import {
   assertMaxChars,
   assertMinWords,
@@ -47,7 +48,7 @@ const STALE_URL_IMPORT_MS = 6 * 60 * 1000;
 const STALE_FILE_IMPORT_MS = 20 * 60 * 1000;
 const STALE_WATCH_MS = 60_000;
 const STALE_URL_MESSAGE =
-  'Import timed out. Try again — Gutenberg books are imported from the plain-text file, not the illustrated HTML page.';
+  'Import timed out. Gutenberg illustrated HTML pages are skipped — we fetch the plain-text book instead. Try again.';
 const STALE_FILE_MESSAGE = 'Import timed out while processing the file. Try again, or use a smaller PDF.';
 
 @Injectable()
@@ -332,6 +333,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     if (!isPdf && !isEpub) {
       throw new BadRequestException('Only PDF and EPUB files are supported');
     }
+    assertPdfOrEpubMagic(file);
 
     const importType = isPdf ? ImportType.pdf : ImportType.epub;
     const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);

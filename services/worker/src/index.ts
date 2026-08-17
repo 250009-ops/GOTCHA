@@ -7,6 +7,7 @@ import { PrismaClient } from '@prisma/client';
 import { PDFParse } from 'pdf-parse';
 import JSZip from 'jszip';
 import { tokenizeText, slugify, paginateText } from './utils/tokenizer';
+import { safeFetch } from './safe-fetch';
 
 function loadRootEnv() {
   const candidates = [
@@ -166,11 +167,11 @@ async function bootstrap() {
       data: { ingestionStatus: 'processing' },
     });
 
-    const response = await fetch(payload.url);
+    const response = await safeFetch(payload.url, { signal: AbortSignal.timeout(30_000) });
     if (!response.ok) {
       throw new Error(`Could not fetch URL (HTTP ${response.status})`);
     }
-    const html = await response.text();
+    const html = (await response.text()).slice(0, 8 * 1024 * 1024);
     const text = stripHtml(html).slice(0, 100000);
 
     const content = await createContentFromText({

@@ -2,7 +2,10 @@
 import {
   APP_LANGUAGES,
   LIVE_LANGUAGES,
+  UI_LANGUAGES,
   LANGUAGE_META,
+  languageFlag,
+  languageLabel,
   CEFR_LEVELS,
   CONTENT_TYPES,
   type AppLanguage,
@@ -14,7 +17,10 @@ import {
 export {
   APP_LANGUAGES,
   LIVE_LANGUAGES,
+  UI_LANGUAGES,
   LANGUAGE_META,
+  languageFlag,
+  languageLabel,
   CEFR_LEVELS,
   CONTENT_TYPES,
   type AppLanguage,

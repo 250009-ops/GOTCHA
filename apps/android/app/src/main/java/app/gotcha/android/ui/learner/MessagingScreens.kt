@@ -827,7 +827,7 @@ fun MessagingChatScreen(
         val ids = serverMessages.map { it.id }.toSet()
         serverMessages + pending.filter { it.id !in ids }
     }
-    val toOptions = remember(nativeLang) { ChatLangs.others(nativeLang) }
+    val toOptions = ChatLangs.others(nativeLang)
     val toLang = remember(nativeLang, toLangOverride, detail) {
         ChatLangs.coerceTo(
             nativeLang,
@@ -2144,6 +2144,9 @@ fun FindLearnersScreen(
     val scope = rememberCoroutineScope()
     var query by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("same") }
+    var langChips by remember {
+        mutableStateOf(listOf("same" to "Same readings") + APP_LANGUAGE_OPTIONS.take(3).map { it.code to it.englishLabel })
+    }
     var peers by remember { mutableStateOf<List<MessagingPeer>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -2152,10 +2155,7 @@ fun FindLearnersScreen(
     fun reload() {
         scope.launch {
             val q = query.trim().ifBlank { null }
-            val lang = when (filter) {
-                "en", "ru", "uz" -> filter
-                else -> null
-            }
+            val lang = filter.takeUnless { it == "same" }
             val sameReadings = filter == "same"
             error = null
             val peeked = container.messagingRepository.learnersPeek(q, lang, sameReadings)
@@ -2178,6 +2178,17 @@ fun FindLearnersScreen(
         }
     }
 
+    LaunchedEffect(Unit) {
+        runCatching { container.contentRepository.catalogLanguages() }
+            .onSuccess { rows ->
+                val enabled = rows.filter { it.isEnabled }
+                if (enabled.isNotEmpty()) {
+                    ChatLangs.setEnabled(enabled.map { it.code })
+                    langChips = listOf("same" to "Same readings") +
+                        enabled.map { it.code.lowercase() to (it.name ?: it.code.uppercase()) }
+                }
+            }
+    }
     LaunchedEffect(query, filter) {
         kotlinx.coroutines.delay(250)
         reload()
@@ -2226,7 +2237,7 @@ fun FindLearnersScreen(
                 .padding(start = 24.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            listOf("same" to "Same readings", "en" to "English", "ru" to "Russian", "uz" to "Uzbek").forEach { (key, label) ->
+            langChips.forEach { (key, label) ->
                 val selected = filter == key
                 Text(
                     label,

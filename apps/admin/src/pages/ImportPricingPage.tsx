@@ -47,6 +47,7 @@ interface ImportPricingData {
     priorRevenueFromImports?: number;
   };
   tiers: PageTier[];
+  pageTierGaps?: string[];
   freeLimits: FreeLimits;
 }
 
@@ -57,10 +58,11 @@ const SECTIONS: Array<{ id: Section; label: string; path: string }> = [
 ];
 
 const FORMAT_OPTIONS = [
-  { id: 'article', label: 'Articles' },
+  { id: 'article', label: 'Articles (paste & URL)' },
   { id: 'news', label: 'News' },
-  { id: 'ebook', label: 'Books' },
+  { id: 'ebook', label: 'Books (PDF, EPUB, Gutenberg)' },
   { id: 'research', label: 'Research Papers' },
+  { id: 'custom', label: 'Custom uploads' },
 ];
 
 function resolveSection(directory?: string): Section {
@@ -77,8 +79,12 @@ export default function ImportPricingPage() {
   const [range, setRange] = useState('12m');
   const [limits, setLimits] = useState<FreeLimits | null>(null);
   const [editingTier, setEditingTier] = useState<PageTier | null>(null);
+  const [tierLabel, setTierLabel] = useState('');
+  const [tierMinPages, setTierMinPages] = useState('');
+  const [tierMaxPages, setTierMaxPages] = useState('');
   const [tierPrice, setTierPrice] = useState('');
   const [saving, setSaving] = useState(false);
+  const [limitsSaved, setLimitsSaved] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
 
   const atmosMinSom = data?.atmosMinAmountSom ?? 500;
@@ -112,21 +118,47 @@ export default function ImportPricingPage() {
   async function saveLimits() {
     if (!limits) return;
     setSaving(true);
+    setLimitsSaved(false);
+    setPricingError(null);
     try {
       const next = await api<FreeLimits>('/admin/import-pricing/limits', {
         method: 'PATCH',
         body: JSON.stringify(limits),
       });
       setLimits(next);
+      setLimitsSaved(true);
+      await load();
+    } catch (e) {
+      setPricingError(e instanceof Error ? e.message : 'Could not save free import limits');
     } finally {
       setSaving(false);
     }
   }
 
+  function beginEditTier(tier: PageTier) {
+    setPricingError(null);
+    setEditingTier(tier);
+    setTierLabel(tier.label);
+    setTierMinPages(String(tier.minPages));
+    setTierMaxPages(tier.maxPages == null ? '' : String(tier.maxPages));
+    setTierPrice(String(tier.priceUzs));
+  }
+
   async function saveTier() {
     if (!editingTier) return;
     const price = Number(tierPrice);
-    const err = validateAtmosMin(price, `Page tier "${editingTier.label}"`);
+    const minPages = Math.floor(Number(tierMinPages));
+    const maxRaw = tierMaxPages.trim();
+    const maxPages = maxRaw === '' ? null : Math.floor(Number(maxRaw));
+    if (!Number.isFinite(minPages) || minPages < 1) {
+      setPricingError('Each tier needs a minimum of at least 1 page.');
+      return;
+    }
+    if (maxPages != null && (!Number.isFinite(maxPages) || maxPages < minPages)) {
+      setPricingError('Max pages must be empty (unlimited) or ≥ min pages.');
+      return;
+    }
+    const err = validateAtmosMin(price, `Page tier "${tierLabel.trim() || editingTier.label}"`);
     if (err) {
       setPricingError(err);
       return;
@@ -136,12 +168,17 @@ export default function ImportPricingPage() {
     try {
       await api(`/admin/import-pricing/tiers/${editingTier.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ priceUzs: price }),
+        body: JSON.stringify({
+          label: tierLabel.trim() || editingTier.label,
+          minPages,
+          maxPages,
+          priceUzs: price,
+        }),
       });
       setEditingTier(null);
       await load();
     } catch (e) {
-      setPricingError(e instanceof Error ? e.message : 'Could not save tier price');
+      setPricingError(e instanceof Error ? e.message : 'Could not save page tier');
     } finally {
       setSaving(false);
     }
@@ -201,6 +238,20 @@ export default function ImportPricingPage() {
         </div>
       )}
 
+      {(data.pageTierGaps?.length ?? 0) > 0 && (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div className="font-semibold mb-1">Page-tier gaps</div>
+          <p className="mb-2">
+            These page counts have no matching price (or tiers overlap). Edit min/max on Page Tiers so every length is covered.
+          </p>
+          <ul className="list-disc pl-5 space-y-1">
+            {data.pageTierGaps!.map((gap) => (
+              <li key={gap}>{gap}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
           label="Total Imports Today"
@@ -245,6 +296,7 @@ export default function ImportPricingPage() {
             <div className="font-semibold">Free Usage Limits</div>
             <div className="text-sm text-slate-500">
               Applied at quote time: daily free imports, page cap, and allowed formats. Unused credits do not roll over.
+              Check every format learners actually import — unchecked formats always require payment, which looks like a coverage gap.
             </div>
           </div>
           <div className="space-y-4">
@@ -303,56 +355,95 @@ export default function ImportPricingPage() {
                 <option value="yearly">Yearly</option>
               </Select>
             </label>
-            <Button onClick={saveLimits} disabled={saving}>{saving ? 'Saving…' : 'Save limits'}</Button>
+            <div className="flex items-center gap-3">
+              <Button onClick={saveLimits} disabled={saving}>{saving ? 'Saving…' : 'Save limits'}</Button>
+              {limitsSaved && <span className="text-sm text-emerald-700">Free import limits saved.</span>}
+            </div>
           </div>
         </Card>
 
         <Card id="section-tiers" className="p-5">
           <div className="mb-4">
             <div className="font-semibold">Page-Based Pricing Tiers (UZS)</div>
-            <div className="text-sm text-slate-500">Atmos charges these amounts by estimated page count (soʻm).</div>
+            <div className="text-sm text-slate-500">
+              Atmos charges these amounts by estimated page count (soʻm). Edit min/max so ranges sit flush (1–10, then 11–50, …) with no holes.
+            </div>
           </div>
           <div className="space-y-2">
             {data.tiers.map((tier, idx) => (
-              <div key={tier.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-100 px-3 py-3">
-                <div className="flex items-center gap-3">
-                  <div className="size-6 rounded-full bg-violet-50 text-[#6c1d95] text-xs font-bold grid place-items-center">
-                    {idx + 1}
-                  </div>
-                  <div className="text-sm font-medium">{tier.label}</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {editingTier?.id === tier.id ? (
-                    <>
+              <div key={tier.id} className="rounded-xl border border-slate-100 px-3 py-3">
+                {editingTier?.id === tier.id ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <label className="text-xs text-slate-500 sm:col-span-2">
+                      Label
+                      <Input
+                        className="mt-1"
+                        value={tierLabel}
+                        onChange={(e) => setTierLabel(e.target.value)}
+                      />
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Min pages
+                      <Input
+                        type="number"
+                        min="1"
+                        className="mt-1"
+                        value={tierMinPages}
+                        onChange={(e) => setTierMinPages(e.target.value)}
+                      />
+                    </label>
+                    <label className="text-xs text-slate-500">
+                      Max pages (blank = {tier.minPages}+)
+                      <Input
+                        type="number"
+                        min="1"
+                        className="mt-1"
+                        value={tierMaxPages}
+                        onChange={(e) => setTierMaxPages(e.target.value)}
+                      />
+                    </label>
+                    <label className="text-xs text-slate-500 sm:col-span-2">
+                      Price (UZS)
                       <Input
                         type="number"
                         step="100"
                         min="0"
-                        className="w-28"
+                        className="mt-1"
                         value={tierPrice}
                         onChange={(e) => setTierPrice(e.target.value)}
                       />
+                    </label>
+                    <div className="flex items-center gap-2 sm:col-span-2">
                       <Button onClick={saveTier} disabled={saving}>Save</Button>
                       <Button variant="secondary" onClick={() => setEditingTier(null)}>Cancel</Button>
-                    </>
-                  ) : (
-                    <>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="size-6 rounded-full bg-violet-50 text-[#6c1d95] text-xs font-bold grid place-items-center shrink-0">
+                        {idx + 1}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium">{tier.label}</div>
+                        <div className="text-xs text-slate-500">
+                          Pages {tier.minPages}–{tier.maxPages ?? '∞'}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
                       <span className="text-sm font-semibold">{formatMoney(tier.priceUzs)}</span>
                       <button
                         type="button"
                         className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
                         aria-label={`Edit ${tier.label}`}
-                        onClick={() => {
-                          setPricingError(null);
-                          setEditingTier(tier);
-                          setTierPrice(String(tier.priceUzs));
-                        }}
+                        onClick={() => beginEditTier(tier)}
                       >
                         <Pencil className="size-3.5" />
                       </button>
-                    </>
-                  )}
-                </div>
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>

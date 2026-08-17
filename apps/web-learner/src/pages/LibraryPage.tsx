@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/EmptyState';
 import { LibrarySkeleton } from '../components/LibrarySkeleton';
 import { cn } from '../components/ui/utils';
-import { api } from '../lib/api';
+import { api, getAccessToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { resolveMediaUrl } from '../lib/media';
 import { formatUzs } from '../lib/importBilling';
@@ -163,13 +163,15 @@ function ContentCard({
             <BookOpen className="w-3 h-3 shrink-0" />
             {formatWordCount(item.wordCount)}
           </span>
-          {isProg ? (
-            <span className="font-semibold text-[#7f22fe] shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
-          ) : item.knownWordRatio != null && item.knownWordRatio > 0 ? (
-            <span className="text-gray-400 shrink-0">{Math.round(item.knownWordRatio * 100)}% known</span>
-          ) : (
-            <span className="text-violet-500/70 shrink-0 font-medium">New</span>
-          )}
+            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+              <span className="text-violet-500/70 shrink-0 font-medium">Try sample</span>
+            ) : isProg ? (
+              <span className="font-semibold text-[#7f22fe] shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
+            ) : item.knownWordRatio != null && item.knownWordRatio > 0 ? (
+              <span className="text-gray-400 shrink-0">{Math.round(item.knownWordRatio * 100)}% known</span>
+            ) : (
+              <span className="text-violet-500/70 shrink-0 font-medium">New</span>
+            )}
         </div>
         {isProg && (
           <div className="mt-1.5 h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -346,11 +348,20 @@ export default function LibraryPage() {
   }, [isBrowse, navigate, searchParams]);
 
   useEffect(() => {
+    if (!user || !getAccessToken()) return;
+    let cancelled = false;
     api<FeedResponse>('/content/feed')
-      .then(setFeed)
+      .then((data) => {
+        if (!cancelled) setFeed(data);
+      })
       .catch(console.error)
-      .finally(() => setLoading(false));
-  }, []);
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   const collectionSlug = searchParams.get('collection');
   const activeCollection = useMemo(

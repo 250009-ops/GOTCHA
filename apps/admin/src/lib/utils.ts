@@ -2,7 +2,12 @@ import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 /** Keep aligned with Prisma `AppLanguage` / `@gotcha/shared`. */
-export const APP_LANGUAGES = ['en', 'ru', 'uz', 'fr', 'es', 'ja', 'de', 'ko', 'pt'] as const;
+export {
+  APP_LANGUAGES,
+  LANGUAGE_META,
+  languageFlag,
+  languageLabel,
+} from '@gotcha/shared';
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

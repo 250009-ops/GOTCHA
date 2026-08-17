@@ -1,4 +1,4 @@
-import { createHash } from 'crypto';
+import { createHash, timingSafeEqual } from 'crypto';
 import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 
 type TokenCache = { accessToken: string; expiresAt: number };
@@ -662,13 +662,17 @@ export class AtmosClient {
   validateCallbackSignature(data: Record<string, unknown>): boolean {
     const apiKey = process.env.ATMOS_API_KEY?.trim();
     if (!apiKey) {
-      this.logger.warn('ATMOS_API_KEY not set — verifying store_id only');
-      return String(data.store_id) === String(this.storeId());
+      this.logger.error('ATMOS_API_KEY is not set — rejecting payment callbacks');
+      return false;
     }
     const required = ['store_id', 'transaction_id', 'invoice', 'amount', 'sign'];
     if (!required.every((k) => data[k] != null && data[k] !== '')) return false;
+    if (String(data.store_id) !== String(this.storeId())) return false;
     const signString = `${data.store_id}${data.transaction_id}${data.invoice}${data.amount}${apiKey}`;
-    const expected = createHash('md5').update(signString).digest('hex');
-    return expected === String(data.sign);
+    const expected = createHash('md5').update(signString).digest();
+    const providedHex = String(data.sign).trim().toLowerCase();
+    if (!/^[0-9a-f]{32}$/.test(providedHex)) return false;
+    const provided = Buffer.from(providedHex, 'hex');
+    return provided.length === expected.length && timingSafeEqual(provided, expected);
   }
 }
