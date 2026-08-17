@@ -26,6 +26,18 @@ export function lookupHeadline(surface: string, phrase?: string | null, lemma?: 
   return (phrase?.trim() || lemma?.trim() || surface).trim();
 }
 
+/** Vocab Save/Known/Ignore is for a single tapped word, not a dragged phrase/sentence/page. */
+export function isVocabMarkableSelection(
+  surface: string,
+  tokenCount?: number,
+  kind?: string | null,
+): boolean {
+  if (kind === 'sentence') return false;
+  if (isSentenceLikeSelection(surface)) return false;
+  if (typeof tokenCount === 'number' && tokenCount > 1) return false;
+  return (surface ?? '').trim().split(/\s+/).filter(Boolean).length <= 1;
+}
+
 export function normalizeLookupSurface(raw: string): string {
   return (raw ?? '')
     .toLowerCase()

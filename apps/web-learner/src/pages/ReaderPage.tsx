@@ -26,7 +26,7 @@ import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatUzs } from '../lib/importBilling';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
-import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
+import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
@@ -109,6 +109,7 @@ function DictionaryPanel({
   onPronounce,
   loading,
   ttsEnabled,
+  showVocabActions = true,
 }: {
   result: LookupResult | null;
   status: WordStatus;
@@ -119,6 +120,7 @@ function DictionaryPanel({
   onPronounce: () => void;
   loading: boolean;
   ttsEnabled: boolean;
+  showVocabActions?: boolean;
 }) {
   return (
     <div className="flex flex-col h-full bg-white">
@@ -185,6 +187,8 @@ function DictionaryPanel({
               <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Translation</div>
               <div className="text-[#1e2939] leading-relaxed whitespace-pre-wrap break-words">{result.translation}</div>
             </div>
+            {showVocabActions ? (
+              <>
             <div className="flex items-center gap-2 text-xs">
               <div className={cn('px-2 py-1 rounded-md font-medium', {
                 'bg-[#fffbeb] text-[#bb4d00]': status === 'unknown',
@@ -234,6 +238,8 @@ function DictionaryPanel({
                 <span>Ignore</span>
               </button>
             </div>
+              </>
+            ) : null}
           </>
         )}
         {!loading && !result && (
@@ -261,6 +267,7 @@ export default function ReaderPage() {
   const [liveSpan, setLiveSpan] = useState<TokenSpan | null>(null);
   const [activeLookup, setActiveLookup] = useState<LookupResult | null>(null);
   const [lookupLoading, setLookupLoading] = useState(false);
+  const [vocabMarkable, setVocabMarkable] = useState(true);
   const [dictOpen, setDictOpen] = useState(false);
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
   const [showUnknownOnly, setShowUnknownOnly] = useState(false);
@@ -463,6 +470,8 @@ export default function ReaderPage() {
       setDictOpen(true);
       setLookupLoading(true);
       setActiveLookup(null);
+      const tokenCount = span.endI - span.startI + 1;
+      setVocabMarkable(isVocabMarkableSelection(surface, tokenCount));
       try {
         const res = await api<LookupResult>('/ai/lookup', {
           method: 'POST',
@@ -491,6 +500,7 @@ export default function ReaderPage() {
           phrase: phrase ?? res.phrase ?? null,
           kind: res.kind ?? (sentenceLike ? 'sentence' : phrase ? 'phrase' : 'word'),
         });
+        setVocabMarkable(isVocabMarkableSelection(surface, tokenCount, res.kind ?? (sentenceLike ? 'sentence' : undefined)));
         if (head) setActiveWord(head);
       } catch (e) {
         const raw = e instanceof Error ? e.message : 'Lookup failed';
@@ -1157,6 +1167,7 @@ export default function ReaderPage() {
               onPronounce={pronounceWord}
               loading={lookupLoading}
               ttsEnabled={ttsEnabled}
+              showVocabActions={vocabMarkable}
             />
           ) : (
             <button
@@ -1185,6 +1196,7 @@ export default function ReaderPage() {
             onPronounce={pronounceWord}
             loading={lookupLoading}
             ttsEnabled={ttsEnabled}
+            showVocabActions={vocabMarkable}
           />
         </div>
       )}

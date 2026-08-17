@@ -1323,6 +1323,9 @@ fun MessagingChatScreen(
                         savedMsg?.let { note ->
                             Text(note, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.SuccessText)
                         }
+                        val markable = lookup?.kind != "sentence"
+                            && (selectedWord?.trim()?.split(Regex("\\s+"))?.count { it.isNotBlank() } ?: 0) <= 1
+                        if (markable) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1369,6 +1372,7 @@ fun MessagingChatScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                             )
+                        }
                         }
                     }
                 }

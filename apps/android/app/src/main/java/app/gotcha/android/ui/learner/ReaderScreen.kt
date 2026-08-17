@@ -111,6 +111,7 @@ fun ReaderScreen(
     var lookingUp by remember(contentId) { mutableStateOf(false) }
     var lookupError by remember(contentId) { mutableStateOf<String?>(null) }
     var savedMsg by remember(contentId) { mutableStateOf<String?>(null) }
+    var vocabMarkable by remember(contentId) { mutableStateOf(true) }
     var loadProgress by remember(contentId) { mutableIntStateOf(if (seededContent != null) 30 else 0) }
     var isFetching by remember(contentId) { mutableStateOf(false) }
     var preparingText by remember(contentId) { mutableStateOf(false) }
@@ -713,6 +714,7 @@ fun ReaderScreen(
                                 offline.guardClick {
                                     selected = word
                                     selectedSentence = sentence
+                                    vocabMarkable = phraseParts(word).size <= 1
                                     lookingUp = true
                                     lookup = null
                                     lookupError = null
@@ -730,6 +732,7 @@ fun ReaderScreen(
                                                 ),
                                             )
                                             lookup = result
+                                            if (result.kind == "sentence") vocabMarkable = false
                                             selected = if (result.kind == "sentence") word
                                             else result.phrase?.takeIf { it.isNotBlank() } ?: word
                                         } catch (e: Exception) {
@@ -815,6 +818,7 @@ fun ReaderScreen(
                                 }
                             },
                             onDismiss = { selected = null; lookup = null; lookupError = null; selectedSentence = null },
+                            showVocabActions = vocabMarkable,
                             onSave = offline.guardClick {
                                 val l = lookup ?: return@guardClick
                                 scope.launch {
@@ -992,6 +996,7 @@ private fun LookupCard(
     ttsEnabled: Boolean = false,
     onSpeak: () -> Unit = {},
     onDismiss: () -> Unit,
+    showVocabActions: Boolean = true,
     onSave: () -> Unit,
 ) {
     Column(
@@ -1116,6 +1121,7 @@ private fun LookupCard(
                 Text(savedMsg, color = GotchaColors.SuccessText, fontFamily = Manrope, fontSize = 13.sp)
             }
         }
+        if (showVocabActions) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1129,6 +1135,7 @@ private fun LookupCard(
             Icon(Icons.Outlined.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
             Spacer(Modifier.size(8.dp))
             Text("Add to vocabulary", color = Color.White, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+        }
         }
     }
 }

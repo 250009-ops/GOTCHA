@@ -26,7 +26,7 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
-import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
+import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
   id: string;
@@ -443,6 +443,7 @@ function WordMeaningPanel({
   const canAct = !loading && !!lookup?.translation;
   const naturalMeaning = lookup?.contextualMeaning?.trim() || '';
   const sentenceLike = lookup?.kind === 'sentence' || isSentenceLikeSelection(word);
+  const showVocabActions = isVocabMarkableSelection(word, undefined, lookup?.kind);
   const headline = sentenceLike
     ? lookupHeadline(word, null, lemma)
     : (lookup?.phrase?.trim() || lemma);
@@ -509,6 +510,7 @@ function WordMeaningPanel({
         ) : null}
       </div>
 
+      {showVocabActions ? (
       <div className="shrink-0 border-t border-[#e4e7ec] p-4 grid grid-cols-3 gap-2">
         <button
           type="button"
@@ -536,6 +538,7 @@ function WordMeaningPanel({
           Ignore
         </button>
       </div>
+      ) : null}
     </div>
   );
 }
