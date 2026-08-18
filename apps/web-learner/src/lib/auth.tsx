@@ -9,16 +9,8 @@ import {
 } from 'react';
 import { useLocation } from 'react-router-dom';
 import { api, clearTokens, setTokens } from './api';
+import { isPublicAuthPath } from './authRoutes';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
-
-/** Routes where we must not call /users/me, /users/me/stats, or /auth/refresh. */
-const PUBLIC_AUTH_ROUTES = new Set([
-  '/login',
-  '/register',
-  '/verify-email',
-  '/forgot-password',
-  '/reset-password',
-]);
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -65,7 +57,7 @@ const defaultPreferences: UserPreferences = {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
-  const isPublicAuthRoute = PUBLIC_AUTH_ROUTES.has(pathname);
+  const isPublicAuthRoute = isPublicAuthPath(pathname);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
@@ -248,6 +240,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify(patch),
     });
     setPreferences(updated);
+    if (typeof updated.dailyGoalMinutes === 'number') {
+      setStats((prev) =>
+        prev ? { ...prev, dailyGoalMinutes: updated.dailyGoalMinutes } : prev,
+      );
+    }
   }, []);
 
   const updateProfile = useCallback(

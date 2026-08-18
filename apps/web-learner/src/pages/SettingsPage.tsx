@@ -23,6 +23,7 @@ import { UserAvatar } from '../components/UserAvatar';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
+import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
 import {
   CEFR_LEVELS,
@@ -141,7 +142,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       onClose();
       // Backend revokes all refresh tokens on password change — force a fresh login.
       clearTokens();
-      window.location.assign('/login');
+      window.location.assign(withAppBase('/login'));
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Could not change password');
     } finally {
@@ -517,7 +518,7 @@ export default function SettingsPage() {
   const handleAccountDeleted = () => {
     setDeleteModalOpen(false);
     clearTokens();
-    window.location.assign('/login');
+    window.location.assign(withAppBase('/login'));
   };
 
   return (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -7,6 +7,7 @@ import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
+import { authSwitchSearch } from '../lib/authRoutes';
 import { AuthIcon, authAssets as a } from '../assets/auth';
 import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
@@ -44,24 +45,28 @@ function LegalConsent() {
   );
 }
 
-export default function AuthPage() {
+export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const { login, register } = useAuth();
-  const isLogin = pathname === '/login';
+  const isLogin = mode === 'login';
   const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  const seededEmail = (location.state as { email?: string } | null)?.email?.trim() || '';
+  const seededName = (location.state as { name?: string } | null)?.name?.trim() || '';
 
   // Prefill is dev-only: helps local demos handed off from the admin console without
   // exposing the seeded admin's plaintext credentials in a normal-looking learner login
   // form in real deployments (see docs/E2E_AUDIT_REPORT.md's admin-credential-prefill finding).
   const devPrefillEnabled = import.meta.env.DEV;
-  const [email, setEmail] = useState(adminReturnUrl && devPrefillEnabled ? 'admin@gotcha.app' : '');
+  const [email, setEmail] = useState(
+    seededEmail || (adminReturnUrl && devPrefillEnabled ? 'admin@gotcha.app' : ''),
+  );
   const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? 'GotchaAdmin2026!' : '');
-  const [name, setName] = useState('');
+  const [name, setName] = useState(seededName);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -82,6 +87,10 @@ export default function AuthPage() {
     // Do not clear inside submit — that raced with login and wiped the new session.
     clearTokens();
   }, []);
+
+  useEffect(() => {
+    setStep('credentials');
+  }, [mode]);
 
   useEffect(() => {
     setTargetLanguages((prev) => prev.filter((l) => l !== nativeLanguage));
@@ -176,7 +185,12 @@ export default function AuthPage() {
         e.status === 409 ||
         /already (registered|exists)/i.test(e.message || '')
       ) {
-        toast.error('Account already exists — Sign in or resend verification');
+        toast.error('Account already exists — sign in instead');
+        const q = authSwitchSearch(searchParams, 'login');
+        navigate(
+          { pathname: '/login', search: q ? `?${q}` : '' },
+          { replace: true, state: { email } },
+        );
         return;
       }
       toast.error(err instanceof Error ? err.message : 'Authentication failed');
@@ -189,11 +203,11 @@ export default function AuthPage() {
     window.location.assign(MARKETING_URL);
   };
 
-  const switchMode = () => {
-    const next = isLogin ? '/register' : '/login';
-    const q = searchParams.toString();
-    setStep('credentials');
-    navigate(q ? `${next}?${q}` : next);
+  const goingTo = isLogin ? 'register' : 'login';
+  const switchSearch = authSwitchSearch(searchParams, goingTo);
+  const switchTo = {
+    pathname: isLogin ? '/register' : '/login',
+    search: switchSearch ? `?${switchSearch}` : '',
   };
 
   const showLanguageStep = !isLogin && step === 'languages';
@@ -287,9 +301,12 @@ export default function AuthPage() {
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
               {!isLogin && (
                 <div className="flex flex-col gap-2">
-                  <label className="text-xs font-semibold text-[#4a5565]">Full name</label>
+                  <label htmlFor="auth-name" className="text-xs font-semibold text-[#4a5565]">Full name</label>
                   <input
+                    id="auth-name"
+                    name="name"
                     type="text"
+                    autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex Chen"
@@ -298,9 +315,15 @@ export default function AuthPage() {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">Email</label>
+                <label htmlFor="auth-email" className="text-xs font-semibold text-[#4a5565]">Email</label>
                 <input
+                  id="auth-email"
+                  name="email"
                   type="email"
+                  autoComplete="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
@@ -308,10 +331,13 @@ export default function AuthPage() {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">Password</label>
+                <label htmlFor="auth-password" className="text-xs font-semibold text-[#4a5565]">Password</label>
                 <div className="relative">
                   <input
+                    id="auth-password"
+                    name="password"
                     type={showPass ? 'text' : 'password'}
+                    autoComplete={isLogin ? 'current-password' : 'new-password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
@@ -329,13 +355,12 @@ export default function AuthPage() {
               </div>
               {isLogin && (
                 <div className="flex items-center justify-end">
-                  <button
-                    type="button"
-                    onClick={() => navigate('/forgot-password')}
+                  <Link
+                    to="/forgot-password"
                     className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
                   >
                     Forgot password?
-                  </button>
+                  </Link>
                 </div>
               )}
               <Button
@@ -344,15 +369,15 @@ export default function AuthPage() {
                 className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
               >
                 {loading ? (
-                  <span className="flex items-center gap-2">
-                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    Signing in…
-                  </span>
-                ) : isLogin ? (
-                  'Sign in'
-                ) : (
-                  'Continue'
-                )}
+                    <span className="flex items-center gap-2">
+                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      {isLogin ? 'Signing in…' : 'Continuing…'}
+                    </span>
+                  ) : isLogin ? (
+                    'Sign in'
+                  ) : (
+                    'Continue'
+                  )}
               </Button>
               {!isLogin && <LegalConsent />}
             </form>
@@ -364,17 +389,18 @@ export default function AuthPage() {
             <div className="flex-1 h-px bg-[#e5e7eb]" />
           </div>
 
-          <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
+          <div className="flex items-center justify-between gap-3 text-[13px] whitespace-nowrap">
             <span className="text-[#6b7280]">
-              {isLogin ? "Don't have an account? " : 'Already have an account? '}
+              {isLogin ? "Don't have an account?" : 'Already have an account?'}
             </span>
-            <button
-              type="button"
-              onClick={switchMode}
+            <Link
+              replace
+              to={switchTo}
+              state={{ email, name }}
               className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]"
             >
               {isLogin ? 'Sign up free' : 'Sign in'}
-            </button>
+            </Link>
           </div>
         </div>
 

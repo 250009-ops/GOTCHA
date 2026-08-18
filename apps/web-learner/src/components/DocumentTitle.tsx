@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
+import { learnerRoutePath } from '../lib/authRoutes';
 
 const TITLES: Array<[RegExp, string]> = [
   [/^\/login\/?$/, 'Sign in — GOTCHA'],
@@ -20,11 +21,12 @@ const TITLES: Array<[RegExp, string]> = [
 
 export function DocumentTitle() {
   const { pathname } = useLocation();
+  const routePath = learnerRoutePath(pathname);
 
   useEffect(() => {
-    const match = TITLES.find(([pattern]) => pattern.test(pathname));
+    const match = TITLES.find(([pattern]) => pattern.test(routePath));
     document.title = match?.[1] ?? 'GOTCHA — Learn by reading';
-  }, [pathname]);
+  }, [routePath]);
 
   return null;
 }
