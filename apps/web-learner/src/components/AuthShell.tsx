@@ -1,9 +1,11 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+
+const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
 export const AUTH_FEATURES = [
   {
     title: 'Read real content',
-    desc: 'Books, articles, news in English, Russian & Uzbek',
+    desc: 'Books, articles, and news in the languages you want to learn',
   },
   {
     title: 'Build vocabulary',
@@ -18,6 +20,61 @@ export const AUTH_FEATURES = [
     desc: 'Words stick when you learn them from real sentences',
   },
 ] as const;
+
+type AuthMarketing = {
+  learnerCount: number;
+  languageNames: string[];
+  readerInitials: string[];
+};
+
+function formatLanguageList(names: string[]): string | null {
+  const unique = names.map((n) => n.trim()).filter(Boolean);
+  if (unique.length === 0) return null;
+  if (unique.length === 1) return unique[0];
+  if (unique.length === 2) return `${unique[0]} & ${unique[1]}`;
+  return `${unique.slice(0, -1).join(', ')} & ${unique[unique.length - 1]}`;
+}
+
+function useAuthMarketing(): AuthMarketing {
+  const [data, setData] = useState<AuthMarketing>({
+    learnerCount: 0,
+    languageNames: [],
+    readerInitials: [],
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`${API_BASE}/marketing/landing`)
+      .then((res) => {
+        if (!res.ok) throw new Error(`landing ${res.status}`);
+        return res.json() as Promise<{
+          stats?: { learnerCount?: number };
+          languages?: Array<{ name?: string }>;
+          topReaders?: Array<{ initials?: string }>;
+        }>;
+      })
+      .then((payload) => {
+        if (cancelled) return;
+        const initials = (payload.topReaders ?? [])
+          .map((r) => r.initials?.trim())
+          .filter((v): v is string => Boolean(v))
+          .slice(0, 4);
+        setData({
+          learnerCount: Number(payload.stats?.learnerCount) || 0,
+          languageNames: (payload.languages ?? []).map((l) => l.name ?? '').filter(Boolean),
+          readerInitials: initials,
+        });
+      })
+      .catch(() => {
+        /* Keep the panel honest: never fall back to Figma sample counts or names. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return data;
+}
 
 export function AuthBrandMark({ light }: { light?: boolean }) {
   return (
@@ -44,6 +101,9 @@ export function AuthBrandMark({ light }: { light?: boolean }) {
 }
 
 function MarketingPanel() {
+  const { learnerCount, languageNames, readerInitials } = useAuthMarketing();
+  const languageLine = formatLanguageList(languageNames);
+
   return (
     <div className="hidden lg:flex flex-col w-[480px] shrink-0 relative overflow-hidden gap-6 px-10 pt-10 pb-8 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
       <div
@@ -80,7 +140,11 @@ function MarketingPanel() {
               <span className="block shrink-0 size-2.5 rounded-full bg-[#ff8904]" />
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm leading-5">{f.title}</div>
-                <div className="text-[#c4b4ff] text-[13px] leading-[18px]">{f.desc}</div>
+                <div className="text-[#c4b4ff] text-[13px] leading-[18px]">
+                  {f.title === 'Read real content' && languageLine
+                    ? `Books, articles, news in ${languageLine}`
+                    : f.desc}
+                </div>
               </div>
             </div>
           ))}
@@ -88,24 +152,30 @@ function MarketingPanel() {
 
         <div className="flex-1" />
 
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-between whitespace-nowrap">
-            <p className="text-white text-[13px] font-semibold">12,840 learners</p>
-            <p className="text-[#c4b4ff] text-xs">actively reading this week</p>
-          </div>
-          <div className="flex items-center">
-            {['AC', 'JD', 'MR', 'SK'].map((i, idx) => (
-              <div
-                key={i}
-                className={`flex items-center justify-center size-8 rounded-2xl border-2 border-white bg-gradient-to-r from-[#a684ff] to-[#4f39f6] text-white text-[10px] font-extrabold ${
-                  idx > 0 ? '-ml-2' : ''
-                }`}
-              >
-                {i}
+        {learnerCount > 0 && (
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between whitespace-nowrap gap-3">
+              <p className="text-white text-[13px] font-semibold">
+                {learnerCount.toLocaleString('en-US')} learners
+              </p>
+              <p className="text-[#c4b4ff] text-xs">already reading on GOTCHA</p>
+            </div>
+            {readerInitials.length > 0 && (
+              <div className="flex items-center">
+                {readerInitials.map((initials, idx) => (
+                  <div
+                    key={`${initials}-${idx}`}
+                    className={`flex items-center justify-center size-8 rounded-2xl border-2 border-white bg-gradient-to-r from-[#a684ff] to-[#4f39f6] text-white text-[10px] font-extrabold ${
+                      idx > 0 ? '-ml-2' : ''
+                    }`}
+                  >
+                    {initials}
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

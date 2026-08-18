@@ -8,9 +8,41 @@ import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { AuthIcon, authAssets as a } from '../assets/auth';
-import { type AppLanguage } from '../lib/types';
+import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
+
+function isAppLanguage(code: string | null): code is AppLanguage {
+  return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
+}
+
+function LegalConsent() {
+  const termsHref = `${MARKETING_URL}/terms`;
+  const privacyHref = `${MARKETING_URL}/privacy`;
+  return (
+    <p className="text-center text-[12px] leading-[18px] text-[#9ca3af]">
+      By continuing, you agree to GOTCHA's{' '}
+      <a
+        href={termsHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
+      >
+        Terms of Use
+      </a>{' '}
+      and{' '}
+      <a
+        href={privacyHref}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
+      >
+        Privacy Policy
+      </a>
+      .
+    </p>
+  );
+}
 
 export default function AuthPage() {
   const navigate = useNavigate();
@@ -19,7 +51,8 @@ export default function AuthPage() {
   const { login, register } = useAuth();
   const isLogin = pathname === '/login';
   const plan = searchParams.get('plan');
-  const fromLanding = searchParams.get('from') === 'landing';
+  const langParam = searchParams.get('lang');
+  const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
 
   // Prefill is dev-only: helps local demos handed off from the admin console without
@@ -33,11 +66,15 @@ export default function AuthPage() {
   const [loading, setLoading] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
-  // Start with no target selected — pre-selecting RU made every fresh account look like a
-  // Russian learner on Progress even when they only read English.
+  // Prefill target from the landing `lang` query — never hardcode a sample language.
+  // If they chose English on the homepage, default native to Uzbek so the two don't collide.
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
-  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>('en');
-  const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>([]);
+  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(
+    landingLang === 'en' ? 'uz' : 'en',
+  );
+  const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(
+    landingLang ? [landingLang] : [],
+  );
   const { langs: catalogLangs } = useCatalogLanguages();
 
   useEffect(() => {
@@ -184,7 +221,7 @@ export default function AuthPage() {
                 No subscription — pay per import via Atmos
               </div>
             )}
-            {!isLogin && !showLanguageStep && fromLanding && plan !== 'pay-per-import' && (
+            {!isLogin && !showLanguageStep && plan === 'free' && (
               <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 self-start">
                 <AuthIcon src={a.check} size={16} />
                 Free forever plan
@@ -244,6 +281,7 @@ export default function AuthPage() {
                   )}
                 </Button>
               </div>
+              <LegalConsent />
             </form>
           ) : (
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
@@ -316,6 +354,7 @@ export default function AuthPage() {
                   'Continue'
                 )}
               </Button>
+              {!isLogin && <LegalConsent />}
             </form>
           )}
 
