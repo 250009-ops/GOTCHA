@@ -1,5 +1,6 @@
 import { PDFParse, PasswordException } from 'pdf-parse';
 import JSZip from 'jszip';
+import { countPdfPagesFromBytes, MAX_BILLABLE_PAGES } from './pdf-page-count';
 import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
 import { Readability } from '@mozilla/readability';
@@ -12,6 +13,7 @@ import {
   stripRepeatedPdfHeadersFooters,
 } from './import-text-cleaner';
 import {
+  chapterSequenceInversions,
   chaptersHaveRealTitles,
   splitAccurateChapters,
   splitByOutlineTitles,
@@ -22,6 +24,7 @@ import {
   looksLikeGutenbergLandingPage,
   parseGutenbergId,
 } from './gutenberg';
+import { ocrPdfPageNumbers } from './ocr-pdf';
 
 export const MIN_IMPORT_WORDS = 50;
 /** Paste / extracted text hard cap — long novels and multi-volume books. */
@@ -46,10 +49,6 @@ const GUTENBERG_TXT_MAX_BYTES = 8 * 1024 * 1024;
 const GUTENBERG_HTML_MAX_BYTES = 6 * 1024 * 1024;
 /** Generic web pages — do not buffer tens of MB into cheerio. */
 const GENERIC_HTML_MAX_BYTES = 8 * 1024 * 1024;
-/** OCR pages in batches to bound peak memory (screenshots + tesseract). */
-export const OCR_BATCH_SIZE = 15;
-/** Render scale for OCR (~144 DPI at 2.0 × 72). Higher = better Latin accuracy, more RAM. */
-export const OCR_RENDER_SCALE = 2;
 /** Per-page: OCR when the text layer has fewer than this many words. */
 export const OCR_PAGE_MIN_WORDS = 15;
 /** Document-level: also consider OCR when average words/page is below this. */
@@ -65,6 +64,8 @@ export interface ExtractedChapter {
 export interface ImportProgress {
   pagesDone: number;
   pagesTotal: number;
+  /** Set when extract switches to a slower path (OCR / AI cleanup). */
+  phase?: 'extract' | 'ocr' | 'ai';
 }
 
 export interface ExtractPdfOptions {
@@ -684,103 +685,18 @@ function isPasswordError(err: unknown): boolean {
   return name === 'PasswordException' || /password/i.test(message);
 }
 
-/** Map app language to a tesseract traineddata code. Uzbek has no solid pack — use eng. */
-function tesseractLangFor(language?: string | null): { lang: string; note?: string } {
-  const code = (language || 'en').toLowerCase();
-  if (code === 'ru' || code === 'rus') {
-    return {
-      lang: 'rus+eng',
-      note: 'Russian OCR uses rus+eng; accuracy is lower than English text PDFs.',
-    };
-  }
-  if (code === 'uz' || code === 'uzb') {
-    return {
-      lang: 'eng',
-      note: 'Uzbek OCR is not well supported; English OCR is used and accuracy may be poor for Cyrillic/Latin UZ text.',
-    };
-  }
-  const tess: Record<string, string> = {
-    fr: 'fra+eng',
-    es: 'spa+eng',
-    de: 'deu+eng',
-    pt: 'por+eng',
-    ja: 'jpn+eng',
-    ko: 'kor+eng',
-  };
-  if (tess[code]) return { lang: tess[code] };
-  return { lang: 'eng' };
-}
-
 async function reportProgress(
   onProgress: ExtractPdfOptions['onProgress'],
   pagesDone: number,
   pagesTotal: number,
+  phase?: ImportProgress['phase'],
 ): Promise<void> {
   if (!onProgress) return;
   try {
-    await onProgress({ pagesDone, pagesTotal });
+    await onProgress({ pagesDone, pagesTotal, phase });
   } catch {
     // Progress updates must never fail the import.
   }
-}
-
-/**
- * OCR specific 1-based page numbers in batches. Prefer calling only for pages
- * whose text layer is thin/empty. Keeps peak memory bounded via OCR_BATCH_SIZE.
- */
-async function ocrPdfPageNumbers(
-  buffer: Buffer,
-  pageNumbers: number[],
-  options?: {
-    language?: string | null;
-    onBatchDone?: (completedInBatch: number) => void | Promise<void>;
-  },
-): Promise<Map<number, string>> {
-  const out = new Map<number, string>();
-  if (pageNumbers.length === 0) return out;
-
-  const { lang } = tesseractLangFor(options?.language);
-  const { createWorker } = await import('tesseract.js');
-  // OEM 1 = LSTM only — better accuracy for modern Latin print than legacy engine.
-  const worker = await createWorker(lang, 1);
-  try {
-    await worker.setParameters({
-      tessedit_pageseg_mode: '3' as never, // fully automatic page segmentation
-      user_defined_dpi: '144',
-    });
-
-    for (let i = 0; i < pageNumbers.length; i += OCR_BATCH_SIZE) {
-      const batch = pageNumbers.slice(i, i + OCR_BATCH_SIZE);
-      const parser = new PDFParse({ data: buffer });
-      try {
-        const shots = await parser.getScreenshot({
-          partial: batch,
-          scale: OCR_RENDER_SCALE,
-          imageBuffer: true,
-          imageDataUrl: false,
-        });
-
-        for (const page of shots.pages) {
-          const data = page.data;
-          const pageNum = page.pageNumber;
-          if (!data?.length || !pageNum) continue;
-          const result = await worker.recognize(Buffer.from(data));
-          const text = cleanPdfPageText(result.data.text || '');
-          if (text) out.set(pageNum, text);
-        }
-      } finally {
-        await parser.destroy().catch(() => undefined);
-      }
-
-      if (options?.onBatchDone) {
-        await options.onBatchDone(batch.length);
-      }
-    }
-  } finally {
-    await worker.terminate().catch(() => undefined);
-  }
-
-  return out;
 }
 
 function flattenPdfOutline(nodes: unknown, depth = 0): string[] {
@@ -818,15 +734,22 @@ function chaptersFromPdfPages(
   const headed = splitAccurateChapters(joined, fallbackTitle);
   const fromOutline =
     outlineTitles.length >= 2 ? splitByOutlineTitles(joined, outlineTitles, fallbackTitle) : null;
+  const headedOk =
+    headed.length > 1 &&
+    (chaptersHaveRealTitles(headed) || headed.some((c) => countWords(c.text) >= 40));
+  const outlineOk = Boolean(fromOutline && fromOutline.length > 1 && chaptersHaveRealTitles(fromOutline));
 
-  if (fromOutline && chaptersHaveRealTitles(fromOutline)) {
-    if (!chaptersHaveRealTitles(headed) || fromOutline.length > headed.length) {
-      return fromOutline;
-    }
-  }
-  if (headed.length > 1 && (chaptersHaveRealTitles(headed) || headed.some((c) => countWords(c.text) >= 40))) {
+  // PDF bookmarks are often last-chapter-first or match the contents listing.
+  // Never pick a longer outline over an ordered heading split (Thursday XV-first).
+  if (headedOk && chapterSequenceInversions(headed) === 0) {
     return headed;
   }
+  if (outlineOk && chapterSequenceInversions(fromOutline!) === 0) {
+    if (!headedOk || chapterSequenceInversions(headed) > 0 || fromOutline!.length >= headed.length) {
+      return fromOutline!;
+    }
+  }
+  if (headedOk) return headed;
   if (fromOutline && fromOutline.length > 1) return fromOutline;
 
   if (nonEmpty.length === 1) {
@@ -926,18 +849,19 @@ export async function extractTextFromPdf(
     let ocrDone = 0;
     // Count text-layer-only pages as already "done" for progress UX.
     const textOnlyDone = pageCount - ocrTargets.length;
-    await reportProgress(options.onProgress, Math.max(0, textOnlyDone), pagesTotal);
+    await reportProgress(options.onProgress, Math.max(0, textOnlyDone), pagesTotal, 'ocr');
 
     try {
+      let progressChain = Promise.resolve();
       const ocrMap = await ocrPdfPageNumbers(buffer, ocrTargets, {
         language: options.language,
-        onBatchDone: async (n) => {
+        onPageDone: (n) => {
           ocrDone += n;
-          await reportProgress(
-            options.onProgress,
-            Math.min(pagesTotal, textOnlyDone + ocrDone),
-            pagesTotal,
+          const done = Math.min(pagesTotal, textOnlyDone + ocrDone);
+          progressChain = progressChain.then(() =>
+            reportProgress(options.onProgress, done, pagesTotal, 'ocr'),
           );
+          return progressChain;
         },
       });
       usedOcr = ocrMap.size > 0;
@@ -1067,4 +991,49 @@ export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocu
 
 export function formatFileSizeLimit(): string {
   return `${Math.round(MAX_FILE_BYTES / (1024 * 1024))} MB`;
+}
+
+/** ~500 words / page ≈ 3000 chars — same basis as import quotes. */
+const CHARS_PER_BILLABLE_PAGE = 3000;
+
+/**
+ * Billable page count for paywall / free-allowance checks.
+ * PDF uses the catalog page count; EPUB uses extracted text length.
+ */
+export async function countImportDocumentPages(
+  buffer: Buffer,
+  kind: 'pdf' | 'epub',
+): Promise<number> {
+  if (kind === 'pdf') {
+    const fromCatalog = countPdfPagesFromBytes(buffer);
+    if (fromCatalog && fromCatalog > 0) return fromCatalog;
+    const parser = new PDFParse({ data: buffer });
+    try {
+      const info = await parser.getInfo();
+      const total = Number(info.total) || 0;
+      if (total > 0) return Math.min(MAX_BILLABLE_PAGES, total);
+    } catch (err) {
+      if (isPasswordError(err)) {
+        throw new Error('This PDF is password-protected. Remove the password and try again.');
+      }
+      throw err;
+    } finally {
+      await parser.destroy().catch(() => undefined);
+    }
+    return 1;
+  }
+
+  const zip = await JSZip.loadAsync(buffer);
+  let chars = 0;
+  const htmlNames = Object.keys(zip.files).filter(
+    (n) => /\.(xhtml|html|htm)$/i.test(n) && zip.files[n] && !zip.files[n].dir,
+  );
+  for (const name of htmlNames) {
+    const file = zip.files[name];
+    if (!file) continue;
+    const html = await file.async('string');
+    chars += htmlToCleanText(html).length;
+    if (chars > MAX_EXTRACTED_CHARS) break;
+  }
+  return Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.ceil(Math.max(chars, 1) / CHARS_PER_BILLABLE_PAGE)));
 }

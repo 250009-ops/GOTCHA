@@ -191,13 +191,14 @@ function headingFromLine(
   const numbered = raw.match(NUMBERED_CHAPTER);
   if (numbered) {
     const rest = collapseWs(numbered[2] || '');
-    // Cetology-style asides: "CHAPTER I. (_Folio_), CHAPTER II. (_Right Whale_)."
-    if (rest && /^[(_]/.test(rest)) return null;
-    if (rest && isEnglishSentence(rest) && rest.length > 60) return null;
-    const title = rest
-      ? prettyChapterTitle(`Chapter ${numbered[1]}. ${rest}`)
-      : prettyChapterTitle(`Chapter ${numbered[1]}`);
-    return { title, consumeNext: false, kind: 'explicit' };
+    if (rest) {
+      // Cetology-style asides: "CHAPTER I. (_Folio_), CHAPTER II. (_Right Whale_)."
+      if (/^[(_]/.test(rest)) return null;
+      if (isEnglishSentence(rest) && rest.length > 60) return null;
+      const title = prettyChapterTitle(`Chapter ${numbered[1]}. ${rest}`);
+      return { title, consumeNext: false, kind: 'explicit' };
+    }
+    // "CHAPTER XV." with the name on the next line — handled below as ONLY.
   }
 
   const only = raw.match(NUMBERED_CHAPTER_ONLY);
@@ -356,8 +357,29 @@ function collectHeadings(lines: string[]): FoundHeading[] {
 }
 
 function arabicChapterNum(title: string): number | null {
-  const m = title.match(/^Chapter\s+(\d+)\b/i);
-  return m ? Number(m[1]) : null;
+  return parseChapterOrdinal(title);
+}
+
+function romanToInt(raw: string): number | null {
+  const s = raw.toUpperCase();
+  if (!/^[IVXLCDM]{1,8}$/.test(s)) return null;
+  const val: Record<string, number> = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    const a = val[s[i]];
+    const b = val[s[i + 1]] ?? 0;
+    n += a < b ? -a : a;
+  }
+  return n > 0 ? n : null;
+}
+
+/** "Chapter XV. The Accuser" / "I. Loomings" / "Chapter 12" → 15 / 1 / 12. */
+function parseChapterOrdinal(title: string): number | null {
+  const t = stripTocPageRef(title).replace(/^#+\s+/, '');
+  const m = t.match(/^(?:(?:chapter|глава|part|book|adventure)\s+)?(?:(\d{1,4})|([IVXLCDM]{1,8}))\b/i);
+  if (!m) return null;
+  if (m[1]) return Number(m[1]);
+  return romanToInt(m[2]);
 }
 
 /** When a book has Chapter 1..N, ignore nested "CHAPTER I. (_Folio_)" asides. */
@@ -402,6 +424,15 @@ function dropTableOfContents(headings: FoundHeading[]): FoundHeading[] {
 
 function isTocOrContentsTitle(title: string): boolean {
   return /^(contents|table of contents)$/i.test(title.trim());
+}
+
+function looksLikeProse(text: string): boolean {
+  const t = collapseWs(text);
+  if (!t) return false;
+  const words = wordCount(t);
+  if (words >= 40 && /[a-z]/.test(t)) return true;
+  if (words >= 12 && /[a-z]/.test(t) && /[,.]/.test(t) && !/^[A-Z0-9 ,.'’:\-]+$/.test(t)) return true;
+  return false;
 }
 
 function isMostlyTocListing(text: string): boolean {
@@ -489,6 +520,18 @@ export function stripContentsListing(text: string): string {
       i = j;
       continue;
     }
+    // Last TOC line is often followed by a slogan / title page, not chapter prose.
+    let k = j;
+    while (k < lines.length) {
+      const line = lines[k].trim();
+      if (line && (headingAt(lines, k) || parseTocEntry(line))) break;
+      k += 1;
+    }
+    const span = lines.slice(j, k).join('\n');
+    if (!looksLikeProse(span)) {
+      i = k > j ? k : j + 1;
+      continue;
+    }
     break;
   }
 
@@ -507,7 +550,7 @@ export function ensureChapterLineBreaks(text: string): string {
   );
   // "solemnly. 2 A Lady in Distress" glued after a sentence (PDF / HTML).
   out = out.replace(
-    /([.!?…]["”'\)]{0,3})\s+(\d{1,3}|[IVXLCDM]{2,8})\s+([A-Z][\p{L}'’\-]*(?:\s+(?:[A-Z][\p{L}'’\-]+|in|on|of|the|a|an|and|at|to|for|or)){0,10})(?=\s+[“"‘']|\s+[A-Z]|\s*$)/gu,
+    /(?<!\b(?:No|Vol|Mr|Dr|Ms|Mrs|vs|ch|pp|Pg|pg|no|vol))([.!?…]["”'\)]{0,3})\s+(\d{1,3}|[IVXLCDM]{2,8})\s+([A-Z][\p{L}'’\-]*(?:\s+(?:[A-Z][\p{L}'’\-]+|in|on|of|the|a|an|and|at|to|for|or)){0,10})(?=\s+[“"‘']|\s+[A-Z]|\s*$)/gu,
     (full, punct: string, num: string, title: string) => {
       if (!looksLikeChapterTitle(title)) return full;
       return `${punct}\n\n${num}\n\n${title}\n\n`;
@@ -546,7 +589,19 @@ function scoreSplit(chapters: SplitChapter[]): number {
   if (chapters.length < 2 || !chaptersHaveRealTitles(chapters)) return 0;
   const titled = chapters.filter((c) => !/^(page|pages)\s+\d/i.test(c.title.trim())).length;
   const readable = chapters.filter((c) => /[a-z]/.test(c.title) && /Chapter\s+/i.test(c.title)).length;
-  return titled * 10 + Math.min(chapters.length, 80) + readable;
+  return titled * 10 + Math.min(chapters.length, 80) + readable - chapterSequenceInversions(chapters) * 40;
+}
+
+/** Count drops like XV then I — TOC leftovers / reverse PDF bookmarks. */
+export function chapterSequenceInversions(chapters: Array<{ title: string }>): number {
+  const nums = chapters
+    .map((c) => parseChapterOrdinal(c.title))
+    .filter((n): n is number => n != null);
+  let inversions = 0;
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i]! < nums[i - 1]!) inversions += 1;
+  }
+  return inversions;
 }
 
 /**
@@ -578,9 +633,60 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
   const candidates = [fromToc, fromHeadings].filter((c): c is SplitChapter[] => Boolean(c && c.length));
   candidates.sort((a, b) => scoreSplit(b) - scoreSplit(a));
   const best = candidates.find((c) => c.length >= 2 && chaptersHaveRealTitles(c)) ?? candidates[0];
-  if (best?.length) return best;
+  if (best?.length) return orderAndDedupChapters(best);
 
   return [{ title: fallbackTitle.slice(0, 160), text: stripped }];
+}
+
+/** Keep the longest body for each chapter number and restore I…XV order if a TOC leftover landed first. */
+function orderAndDedupChapters(chapters: SplitChapter[]): SplitChapter[] {
+  if (chapters.length < 2) return chapters;
+  const items = chapters.map((c, i) => ({
+    c,
+    i,
+    n: parseChapterOrdinal(c.title),
+    words: wordCount(c.text),
+  }));
+  const bestByNum = new Map<number, (typeof items)[0]>();
+  for (const item of items) {
+    if (item.n == null) continue;
+    const prev = bestByNum.get(item.n);
+    if (!prev || item.words > prev.words || (item.words === prev.words && item.i > prev.i)) {
+      bestByNum.set(item.n, item);
+    }
+  }
+  const numberedOrig = items.filter((x) => x.n != null);
+  const coreCap = coreOrdinalCap(numberedOrig.map((x) => x.n!));
+  if (coreCap != null) {
+    for (const n of [...bestByNum.keys()]) {
+      if (n > coreCap + 1) bestByNum.delete(n);
+    }
+  }
+  const disordered =
+    numberedOrig.length >= 2 && numberedOrig.some((x, idx) => idx > 0 && x.n! < numberedOrig[idx - 1].n!);
+  const hadDupes = numberedOrig.length !== bestByNum.size;
+  if (!disordered && !hadDupes) return chapters;
+
+  const numbered = [...bestByNum.values()].sort((a, b) => a.n! - b.n! || a.i - b.i);
+  const taken = new Set(numbered.map((x) => x.i));
+  const rest = items.filter((x) => x.n == null && !taken.has(x.i));
+  const firstNumIdx = numbered[0]?.i ?? 0;
+  const preface = rest.filter((x) => x.i < firstNumIdx);
+  const after = rest.filter((x) => x.i >= firstNumIdx);
+  return [...preface, ...numbered, ...after].map((x) => x.c);
+}
+
+function coreOrdinalCap(nums: number[]): number | null {
+  const sorted = [...new Set(nums)].sort((a, b) => a - b);
+  if (!sorted.length || sorted[0] > 2) return null;
+  let cap = sorted[0];
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] > cap + 2) break;
+    cap = sorted[i];
+    run += 1;
+  }
+  return run >= 4 ? cap : null;
 }
 
 function namedSectionKey(title: string): string | null {
@@ -626,17 +732,19 @@ export function splitByOutlineTitles(
     .filter((t) => t.length >= 2 && t.length <= 120 && !isTocOrContentsTitle(t));
   if (cleaned.length < 2) return null;
 
-  const haystack = text.replace(/\r\n/g, '\n');
+  const raw = text.replace(/\r\n/g, '\n');
+  const haystack = stripContentsListing(raw).trim() || raw;
   const positions: Array<{ index: number; title: string }> = [];
-  let cursor = 0;
 
   for (const title of cleaned) {
     const keys = titleKeys(title);
-    const idx = findTitleIndex(haystack, title, keys, cursor);
+    const idx = findTitleIndex(haystack, title, keys, 0, true);
     if (idx < 0) continue;
+    if (positions.some((p) => p.index === idx)) continue;
     positions.push({ index: idx, title: prettyChapterTitle(title) });
-    cursor = idx + Math.max(title.length, 1);
   }
+
+  positions.sort((a, b) => a.index - b.index);
 
   if (positions.length < 2 || positions.length < cleaned.length * 0.45) return null;
 
@@ -665,33 +773,57 @@ export function splitByOutlineTitles(
       chapters.unshift({ title: fallbackTitle.slice(0, 160), text: preface });
     }
   }
-  return chapters;
+  return orderAndDedupChapters(chapters);
 }
 
-function findTitleIndex(text: string, title: string, keys: string[], from: number): number {
+function findTitleIndex(
+  text: string,
+  title: string,
+  keys: string[],
+  from: number,
+  preferLast = false,
+): number {
   const titleNorm = normalizeTitleKey(stripTocPageRef(title));
   const allowSubstring = titleNorm.length >= 12 || titleNorm.split(' ').length >= 3;
   const lines = text.split('\n');
   let offset = 0;
+  let last = -1;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const lineStart = offset;
     offset += line.length + 1;
     if (lineStart + line.length < from) continue;
 
     const stripped = stripTocPageRef(line);
     const collapsed = normalizeTitleKey(stripped);
+    const nextCollapsed = normalizeTitleKey(stripTocPageRef(lines[i + 1] ?? ''));
+    const combined = collapseWs(`${collapsed} ${nextCollapsed}`);
     if (!collapsed) continue;
-    if (collapsed === titleNorm || keys.includes(collapsed)) {
-      return lineStart;
-    }
     const numbered = collapsed.match(/^(?:\d+|[ivxlcdm]+)\s+(.+)$/);
-    if (numbered && (numbered[1] === titleNorm || keys.includes(numbered[1]))) {
-      return lineStart;
-    }
+    const hit =
+      collapsed === titleNorm ||
+      keys.includes(collapsed) ||
+      combined === titleNorm ||
+      keys.includes(combined) ||
+      Boolean(numbered && (numbered[1] === titleNorm || keys.includes(numbered[1])));
+    if (!hit) continue;
+    last = lineStart;
+    if (!preferLast) return last;
   }
 
+  if (last >= 0) return last;
   if (!allowSubstring) return -1;
+  if (preferLast) {
+    const needle = title.toLowerCase();
+    let idx = text.toLowerCase().indexOf(needle, from);
+    let found = -1;
+    while (idx >= 0) {
+      found = idx;
+      idx = text.toLowerCase().indexOf(needle, idx + Math.max(needle.length, 1));
+    }
+    return found;
+  }
   const direct = text.toLowerCase().indexOf(title.toLowerCase(), from);
   return direct >= 0 ? direct : -1;
 }

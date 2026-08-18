@@ -14,7 +14,9 @@
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
     "db:studio": "prisma studio",
     "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts",
-    "test:lookup": "ts-node --transpile-only src/modules/ai/lookup-normalize.test.ts"
+    "test:lookup": "ts-node --transpile-only src/modules/ai/lookup-normalize.test.ts",
+    "test:pdf-pages": "ts-node --transpile-only src/modules/imports/pdf-page-count.test.ts",
+    "test:ocr": "ts-node --transpile-only src/modules/imports/ocr-pdf.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

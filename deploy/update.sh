@@ -111,6 +111,20 @@ find "$APP_DIR/deploy" -type f \( -name '*.sh' -o -name '*.cjs' -o -name '*.yml'
 ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/api/.env"
 ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/worker/.env"
 
+# Native tesseract is ~5–10× faster than WASM for scanned PDFs.
+echo "==> Ensuring tesseract-ocr"
+export DEBIAN_FRONTEND=noninteractive
+tess_need=0
+for tess_pkg in tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus \
+  tesseract-ocr-fra tesseract-ocr-deu tesseract-ocr-spa tesseract-ocr-por; do
+  dpkg -s "$tess_pkg" >/dev/null 2>&1 || tess_need=1
+done
+if [[ "$tess_need" -eq 1 ]]; then
+  apt-get update -qq
+  apt-get install -y -qq tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus \
+    tesseract-ocr-fra tesseract-ocr-deu tesseract-ocr-spa tesseract-ocr-por
+fi
+
 docker compose -f deploy/docker-compose.prod.yml up -d
 
 npm ci

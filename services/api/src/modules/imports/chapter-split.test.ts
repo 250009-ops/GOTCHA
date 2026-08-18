@@ -287,4 +287,86 @@ const gluedBare = splitAccurateChapters(
 );
 assert.equal(gluedBare.some((c) => /Lady in Distress/i.test(c.title)), true);
 
+const thursday = splitAccurateChapters(
+  `
+*** START OF THE PROJECT GUTENBERG EBOOK THE MAN WHO WAS THURSDAY ***
+
+Contents
+
+CHAPTER I. THE TWO POETS OF SAFFRON PARK
+CHAPTER II. THE SECRET OF GABRIEL SYME
+CHAPTER III. THE MAN WHO WAS THURSDAY
+CHAPTER XV. THE ACCUSER
+
+A WILD, MAD, HILARIOUS AND PROFOUNDLY MOVING TALE
+THE MAN WHO WAS THURSDAY
+
+CHAPTER I.
+THE TWO POETS OF SAFFRON PARK
+
+The suburb of Saffron Park lay on the sunset side of London, as red and
+ragged as a cloud of sunset. It was built of a bright brick throughout
+and the stranger who looked for the first time at the quaint red houses
+could only think how odd the people must be who lived there.
+
+CHAPTER II.
+THE SECRET OF GABRIEL SYME
+
+The next morning Syme walked across the park with a lighter step than
+usual and enough extra words here to keep this chapter body from being
+dropped by the splitter as empty or front matter.
+
+CHAPTER III.
+THE MAN WHO WAS THURSDAY
+
+They sat down at a little table and talked of anarchy and poetry until
+the waiter brought coffee and the chapter had enough words to survive.
+
+CHAPTER XV.
+THE ACCUSER
+
+Sunday and the sea. Syme looked at the enormous face and knew the last
+secret, and this closing chapter also needs enough words to be kept.
+
+*** END OF THE PROJECT GUTENBERG EBOOK THE MAN WHO WAS THURSDAY ***
+`,
+  'The Man Who Was Thursday',
+);
+assert.equal(thursday.length >= 4, true, thursday.map((c) => c.title).join(' | '));
+assert.match(thursday[0].title, /Chapter I\b/i);
+assert.doesNotMatch(thursday[0].title, /Chapter XV/i);
+assert.match(thursday[thursday.length - 1].title, /Chapter XV\b/i);
+assert.match(thursday[thursday.length - 1].title, /Accuser/i);
+
+const reverseOutline = splitByOutlineTitles(
+  `CHAPTER I.\nTHE TWO POETS OF SAFFRON PARK\nThe suburb of Saffron Park lay on the sunset side of London with enough words to keep chapter one intact for the splitter.\n\nCHAPTER XV.\nTHE ACCUSER\nSunday and the sea with enough words to keep the last chapter intact for the splitter.`,
+  ['Chapter XV. THE ACCUSER', 'Chapter I. THE TWO POETS OF SAFFRON PARK'],
+);
+assert.ok(reverseOutline);
+assert.match(reverseOutline![0].title, /Two Poets|Chapter I/i);
+assert.match(reverseOutline![reverseOutline!.length - 1].title, /Accuser|Chapter XV/i);
+
+const thursdayOutlineWithToc = splitByOutlineTitles(
+  `
+Contents
+ CHAPTER I. THE TWO POETS OF SAFFRON PARK
+ CHAPTER XV. THE ACCUSER
+
+A WILD, MAD, HILARIOUS AND PROFOUNDLY MOVING TALE
+
+CHAPTER I.
+THE TWO POETS OF SAFFRON PARK
+The suburb of Saffron Park lay on the sunset side of London with enough words to keep chapter one intact for the splitter.
+
+CHAPTER XV.
+THE ACCUSER
+Sunday and the sea with enough words to keep the last chapter intact for the splitter.
+`,
+  ['Chapter XV. THE ACCUSER', 'Chapter I. THE TWO POETS OF SAFFRON PARK'],
+);
+assert.ok(thursdayOutlineWithToc);
+assert.doesNotMatch(thursdayOutlineWithToc![0].title, /Chapter XV/i);
+assert.match(thursdayOutlineWithToc![0].title, /Two Poets|Chapter I/i);
+assert.match(thursdayOutlineWithToc![thursdayOutlineWithToc!.length - 1].title, /Accuser|Chapter XV/i);
+
 console.log('chapter-split tests passed');

@@ -13,7 +13,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
       },
-      max_memory_restart: '512M',
+      // PDF screenshot + OCR needs headroom; 512M was restarting mid-scan and leaving imports stuck at 0/N.
+      max_memory_restart: '1024M',
     },
     {
       name: 'gotcha-worker',

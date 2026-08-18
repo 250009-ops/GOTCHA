@@ -76,7 +76,9 @@ fi
 echo "==> System packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq git curl nginx certbot python3-certbot-nginx ca-certificates
+apt-get install -y -qq git curl nginx certbot python3-certbot-nginx ca-certificates \
+  tesseract-ocr tesseract-ocr-eng tesseract-ocr-rus \
+  tesseract-ocr-fra tesseract-ocr-deu tesseract-ocr-spa tesseract-ocr-por
 
 # Node 22+: jsdom@30 nested undici needs newer runtime (fails on Node 20)
 if ! command -v node &>/dev/null || [[ "$(node -v | cut -d. -f1 | tr -d v)" -lt 22 ]]; then
