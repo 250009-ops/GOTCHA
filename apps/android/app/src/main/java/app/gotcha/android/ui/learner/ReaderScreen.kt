@@ -80,6 +80,9 @@ import app.gotcha.android.ui.components.rememberOfflineInteraction
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
 import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.util.CloudPronouncer
+import app.gotcha.android.util.ttsLanguageReady
+import app.gotcha.android.util.ttsLocale
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -135,10 +138,10 @@ fun ReaderScreen(
     var showKnownWords by remember(contentId) { mutableStateOf(false) }
     var fontScale by remember(contentId) { mutableStateOf(1.0) }
     var readerTheme by remember(contentId) { mutableStateOf("light") }
-    var ttsEnabled by remember(contentId) { mutableStateOf(false) }
     var knownLemmas by remember(contentId) { mutableStateOf<Set<String>>(emptySet()) }
     val context = LocalContext.current
     val ttsEngine = remember { arrayOfNulls<TextToSpeech>(1) }
+    val cloudPronouncer = remember { CloudPronouncer() }
     DisposableEffect(Unit) {
         var engine: TextToSpeech? = null
         engine = TextToSpeech(context) { status ->
@@ -148,6 +151,7 @@ fun ReaderScreen(
             ttsEngine[0]?.stop()
             ttsEngine[0]?.shutdown()
             ttsEngine[0] = null
+            cloudPronouncer.stop()
         }
     }
 
@@ -192,7 +196,6 @@ fun ReaderScreen(
             showKnownWords = me.preferences?.showKnownWords == true
             fontScale = me.preferences?.readerFontScale ?: 1.0
             readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-            ttsEnabled = me.preferences?.ttsEnabled == true
         }
         runCatching {
             val me = container.userRepository.me()
@@ -200,7 +203,6 @@ fun ReaderScreen(
             showKnownWords = me.preferences?.showKnownWords == true
             fontScale = me.preferences?.readerFontScale ?: 1.0
             readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-            ttsEnabled = me.preferences?.ttsEnabled == true
         }
         runCatching {
             knownLemmas = container.contentRepository.knownWords()
@@ -808,14 +810,27 @@ fun ReaderScreen(
                             savedMsg = savedMsg,
                             contextSentence = selectedSentence,
                             error = lookupError,
-                            ttsEnabled = ttsEnabled,
+                            ttsEnabled = true,
                             onSpeak = {
-                                val spoken = lookup?.lemma ?: selected
+                                val spoken = lookup?.phrase?.takeIf { it.isNotBlank() }
+                                    ?: lookup?.lemma
+                                    ?: selected
                                 if (!spoken.isNullOrBlank()) {
-                                    ttsEngine[0]?.language = java.util.Locale.forLanguageTag(
-                                        (content?.language ?: "en").replace('_', '-'),
-                                    )
-                                    ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
+                                    val lang = content?.language ?: "en"
+                                    scope.launch {
+                                        try {
+                                            if (ttsLanguageReady(ttsEngine[0], lang)) {
+                                                ttsEngine[0]?.language = ttsLocale(lang)
+                                                ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
+                                            } else {
+                                                val bytes = container.contentRepository.speech(spoken, lang)
+                                                cloudPronouncer.playMp3(context, bytes)
+                                            }
+                                        } catch (_: Exception) {
+                                            ttsEngine[0]?.language = ttsLocale(lang)
+                                            ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
+                                        }
+                                    }
                                 }
                             },
                             onDismiss = { selected = null; lookup = null; lookupError = null; selectedSentence = null },

@@ -26,6 +26,7 @@ import app.gotcha.android.data.model.FeedResponse
 import app.gotcha.android.data.model.ForgotPasswordRequest
 import app.gotcha.android.data.model.ImportApplyRequest
 import app.gotcha.android.data.model.ImportCheckoutRequest
+import app.gotcha.android.data.model.ImportInspectResponse
 import app.gotcha.android.data.model.ImportPasteRequest
 import app.gotcha.android.data.model.ImportPreApplyRequest
 import app.gotcha.android.data.model.ImportPricingResponse
@@ -46,6 +47,7 @@ import app.gotcha.android.data.model.ImportsListResponse
 import app.gotcha.android.data.model.LoginRequest
 import app.gotcha.android.data.model.LookupRequest
 import app.gotcha.android.data.model.LookupResponse
+import app.gotcha.android.data.model.SpeechRequest
 import app.gotcha.android.data.model.TranslateRequest
 import app.gotcha.android.data.model.MeResponse
 import app.gotcha.android.data.model.NotificationReadResponse
@@ -336,6 +338,12 @@ class ContentRepository(
     }
     suspend fun lookup(req: LookupRequest): LookupResponse = api.lookup(req)
 
+    suspend fun speech(text: String, lang: String): ByteArray {
+        val spoken = text.trim()
+        require(spoken.isNotEmpty()) { "Nothing to pronounce" }
+        return api.speech(SpeechRequest(text = spoken, lang = ChatLangs.apiCode(lang))).use { it.bytes() }
+    }
+
     /**
      * Sentence translation for chat To-line.
      * Production has no POST /ai/translate (404). Web uses POST /ai/lookup
@@ -520,6 +528,15 @@ class ImportRepository(private val api: GotchaApi) {
             language = language?.takeIf { it.isNotBlank() }?.toRequestBody("text/plain".toMediaTypeOrNull()),
             paymentId = paymentId?.toRequestBody("text/plain".toMediaTypeOrNull()),
         )
+    }
+    suspend fun inspect(
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+    ): ImportInspectResponse {
+        val body = bytes.toRequestBody((mimeType.ifBlank { "application/octet-stream" }).toMediaTypeOrNull())
+        val part = MultipartBody.Part.createFormData("file", fileName, body)
+        return api.inspectImport(part)
     }
     suspend fun quote(
         importType: String,
@@ -1054,6 +1071,8 @@ class AdminRepository(private val api: GotchaApi) {
     suspend fun importPricing(): ImportPricingResponse = api.importPricing()
     suspend fun updateImportPricingRules(body: UpdateImportPricingRulesRequest) = api.updateImportPricingRules(body)
     suspend fun updateImportPageTier(id: String, body: UpdateImportPageTierRequest) = api.updateImportPageTier(id, body)
+    suspend fun createImportPageTier(body: UpdateImportPageTierRequest) = api.createImportPageTier(body)
+    suspend fun deleteImportPageTier(id: String) = api.deleteImportPageTier(id)
     suspend fun updateImportFreeLimits(body: UpdateImportFreeLimitsRequest) = api.updateImportFreeLimits(body)
     suspend fun analytics(range: String = "7d") = api.adminAnalytics(range)
     suspend fun support() = api.adminSupport()

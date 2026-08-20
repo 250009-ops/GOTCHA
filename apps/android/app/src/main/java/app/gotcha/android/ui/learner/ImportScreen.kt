@@ -46,6 +46,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.LocalAppContainer
+import app.gotcha.android.data.model.ImportQuoteFreeLimits
 import app.gotcha.android.data.model.UserImport
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
@@ -61,9 +62,12 @@ fun ImportScreen(
     GotchaSystemBars(darkIcons = true)
     val container = LocalAppContainer.current
     var recent by remember { mutableStateOf<List<UserImport>>(emptyList()) }
+    var allowance by remember { mutableStateOf<ImportQuoteFreeLimits?>(null) }
 
     LaunchedEffect(Unit) {
-        recent = runCatching { container.importRepository.list().items }.getOrDefault(emptyList())
+        val listed = runCatching { container.importRepository.list() }.getOrNull()
+        recent = listed?.items.orEmpty()
+        allowance = listed?.freeAllowance
     }
 
     Column(
@@ -106,6 +110,7 @@ fun ImportScreen(
         // ImportFileScreen.kt) — this sheet is just the entry point, so there's no local "mode" state
         // (and no risk of a second, payment-unaware import path drifting out of sync with them).
         Column(modifier = Modifier.padding(horizontal = 24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            allowance?.let { FreeAllowanceBanner(it) }
             ImportOption(
                 Icons.Outlined.Explore,
                 "Browse Catalog",
@@ -130,6 +135,30 @@ fun ImportScreen(
                 RecentImportRow(item, Modifier.padding(horizontal = 24.dp, vertical = 4.dp))
             }
         }
+    }
+}
+
+@Composable
+private fun FreeAllowanceBanner(allowance: ImportQuoteFreeLimits) {
+    val pagesWindow = when (allowance.resetCycle?.lowercase()) {
+        "daily" -> "today"
+        "yearly" -> "this year"
+        else -> "this month"
+    }
+    val text = if (!allowance.gatewayEnabled) {
+        "Imports are currently free (payments paused). Configured pool: ${allowance.dailyFreeImportsPerUser} imports/day · ${allowance.monthlyFreePageLimit} pages $pagesWindow."
+    } else {
+        "${allowance.dailyFreeRemaining} of ${allowance.dailyFreeImportsPerUser} free imports left today · ${allowance.monthlyPagesRemaining} of ${allowance.monthlyFreePageLimit} free pages left $pagesWindow."
+    }
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color(0xFFF5F3FF))
+            .border(1.dp, Color(0xFFDDD6FF), RoundedCornerShape(16.dp))
+            .padding(14.dp),
+    ) {
+        Text(text, color = Color(0xFF5B21B6), fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
 

@@ -549,27 +549,29 @@ fun AdminAddProductScreen(
 
     LaunchedEffect(contentId) {
         val id = contentId ?: return@LaunchedEffect
-        runCatching { container.adminRepository.contentDetail(id) }.getOrNull()?.let { item ->
-            title = item.title.orEmpty()
-            author = item.author.orEmpty()
-            description = item.description.orEmpty()
-            genre = item.genre.orEmpty()
-            language = item.language ?: "en"
-            level = item.cefrLevel ?: "b1"
-            contentType = item.contentType ?: "book"
-            price = if (item.isFree) "0" else (item.priceUsd ?: 0.0).toString()
-            sourceUrl = item.sourceUrl.orEmpty()
-            coverPreview = item.coverImageKey?.let { resolveMediaUrl(it) }
-            if (item.chapters.isNotEmpty()) {
-                preview = AdminIngestPreview(
-                    wordCount = item.chapters.sumOf { it.wordCount },
-                    chapterCount = item.chapters.size,
-                    pageCount = item.chapters.sumOf { it.pages.size },
-                    chapters = item.chapters,
-                )
-                openChapters = item.chapters.map { it.chapterIndex }.toSet()
+        runCatching { container.adminRepository.contentDetail(id) }
+            .onSuccess { item ->
+                title = item.title.orEmpty()
+                author = item.author?.trim().orEmpty().ifBlank { item.subtitle.orEmpty() }
+                description = item.description.orEmpty()
+                genre = item.genre.orEmpty()
+                language = item.language ?: "en"
+                level = item.cefrLevel ?: "b1"
+                contentType = item.contentType ?: "book"
+                price = if (item.isFree) "0" else (item.priceUsd ?: 0.0).toString()
+                sourceUrl = item.sourceUrl.orEmpty()
+                coverPreview = item.coverImageKey?.let { resolveMediaUrl(it) }
+                if (item.chapters.isNotEmpty()) {
+                    preview = AdminIngestPreview(
+                        wordCount = item.chapters.sumOf { it.wordCount },
+                        chapterCount = item.chapters.size,
+                        pageCount = item.chapters.sumOf { it.pages.size },
+                        chapters = item.chapters,
+                    )
+                    openChapters = item.chapters.map { it.chapterIndex }.toSet()
+                }
             }
-        }
+            .onFailure { onImportError(it.message ?: "Failed to load material") }
     }
 
     fun requestBody(plainOverride: String? = bodyText.ifBlank { null }) = AdminCreateContentRequest(
@@ -3960,6 +3962,8 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
     val scope = rememberCoroutineScope()
     var daily by remember { mutableStateOf("") }
     var monthly by remember { mutableStateOf("") }
+    var lookupQuota by remember { mutableStateOf("") }
+    var platformAiLimit by remember { mutableStateOf("") }
     var allowedFormats by remember { mutableStateOf(setOf("article", "news")) }
     var resetCycle by remember { mutableStateOf("monthly") }
     var loading by remember { mutableStateOf(true) }
@@ -3975,9 +3979,13 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
 
     LaunchedEffect(Unit) {
         try {
-            val limits = container.adminRepository.importPricing().freeLimits
+            val pricing = container.adminRepository.importPricing()
+            val settings = runCatching { container.adminRepository.settings() }.getOrNull()
+            val limits = pricing.freeLimits
             daily = (limits?.dailyFreeImportsPerUser ?: 0).toString()
             monthly = (limits?.monthlyFreePageLimit ?: 0).toString()
+            lookupQuota = (settings?.aiDefaultUserQuota ?: 50).toString()
+            platformAiLimit = (settings?.aiDailyLimit ?: 0).toString()
             if (!limits?.allowedFormats.isNullOrEmpty()) {
                 allowedFormats = limits!!.allowedFormats.map {
                     when (it.lowercase()) {
@@ -4033,6 +4041,8 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                 }
                 AdminLabeledField("Daily Free Imports", daily, { daily = it }, placeholder = "3")
                 AdminLabeledField("Monthly Page Limit", monthly, { monthly = it }, placeholder = "50")
+                AdminLabeledField("Lookups per learner / day", lookupQuota, { lookupQuota = it }, placeholder = "50")
+                AdminLabeledField("Platform daily AI limit", platformAiLimit, { platformAiLimit = it }, placeholder = "0")
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         "Allowed Formats",
@@ -4150,6 +4160,12 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                                     resetCycle = resetCycle,
                                 ),
                             )
+                            container.adminRepository.updateSettings(
+                                app.gotcha.android.data.model.AdminUpdateSettingsRequest(
+                                    aiDefaultUserQuota = lookupQuota.toIntOrNull(),
+                                    aiDailyLimit = platformAiLimit.toIntOrNull(),
+                                ),
+                            )
                             onBack()
                         } catch (e: Exception) {
                             error = e.message ?: "Save failed"
@@ -4164,7 +4180,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit) {
+fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, onAddTier: () -> Unit) {
     // Figma 208:101 — admin-page-tiers
     val container = LocalAppContainer.current
     var tiers by remember { mutableStateOf<List<ImportPageTier>>(emptyList()) }
@@ -4291,38 +4307,80 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit) {
                     }
                 }
             }
+            item {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White)
+                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
+                        .clickable(onClick = onAddTier)
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(GotchaColors.BrandPurple.copy(alpha = 0.12f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Add,
+                            contentDescription = null,
+                            tint = GotchaColors.BrandPurple,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                    Text(
+                        "Add range",
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp,
+                        color = GotchaColors.Ink,
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
 fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
-    // Figma 208:158 — admin-edit-tier
+    val isNew = tierId == "new"
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var label by remember { mutableStateOf("") }
-    var rangeLabel by remember { mutableStateOf("") }
+    var minPages by remember { mutableStateOf("1") }
+    var maxPages by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var saving by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(tierId) {
         try {
             val pricing = container.adminRepository.importPricing()
-            val tier = pricing.tiers.find { it.id == tierId }
-            if (tier == null) {
-                error = "Tier not found"
+            if (isNew) {
+                val high = pricing.tiers.maxOfOrNull { it.maxPages ?: it.minPages } ?: 0
+                minPages = (high + 1).coerceAtLeast(1).toString()
+                maxPages = ""
+                label = ""
+                price = ""
             } else {
-                val idx = pricing.tiers.indexOfFirst { it.id == tierId }.coerceAtLeast(0) + 1
-                val range = when {
-                    tier.maxPages == null -> "${tier.minPages}+ pages"
-                    else -> "${tier.minPages}–${tier.maxPages} pages"
+                val tier = pricing.tiers.find { it.id == tierId }
+                if (tier == null) {
+                    error = "Tier not found"
+                } else {
+                    label = tier.label.orEmpty()
+                    minPages = tier.minPages.toString()
+                    maxPages = tier.maxPages?.toString().orEmpty()
+                    val p = if (tier.priceUsd > 0) tier.priceUsd else tier.priceUzs
+                    price = if (p % 1.0 == 0.0) p.toInt().toString() else p.toString()
                 }
-                label = tier.label ?: "Tier $idx"
-                rangeLabel = "Tier $idx · $range"
-                val p = if (tier.priceUsd > 0) tier.priceUsd else tier.priceUzs
-                price = if (p % 1.0 == 0.0) p.toInt().toString() else p.toString()
             }
         } catch (e: Exception) {
             error = e.message ?: "Failed to load tier"
@@ -4331,9 +4389,46 @@ fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
         }
     }
 
+    fun persist() {
+        scope.launch {
+            saving = true
+            error = null
+            try {
+                val min = minPages.toIntOrNull()
+                val max = maxPages.trim().toIntOrNull()
+                val n = price.toDoubleOrNull()
+                if (min == null || min < 1) {
+                    error = "Each tier needs a minimum of at least 1 page."
+                    return@launch
+                }
+                if (maxPages.isNotBlank() && (max == null || max < min)) {
+                    error = "Max pages must be empty (unlimited) or ≥ min pages."
+                    return@launch
+                }
+                val body = UpdateImportPageTierRequest(
+                    label = label.trim().ifBlank { null },
+                    minPages = min,
+                    maxPages = max,
+                    priceUsd = n,
+                    priceUzs = n,
+                )
+                if (isNew) {
+                    container.adminRepository.createImportPageTier(body)
+                } else {
+                    container.adminRepository.updateImportPageTier(tierId, body)
+                }
+                onBack()
+            } catch (e: Exception) {
+                error = e.message ?: "Save failed"
+            } finally {
+                saving = false
+            }
+        }
+    }
+
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
-        error != null && label.isEmpty() -> Column {
+        error != null && !isNew && label.isEmpty() && minPages == "1" -> Column {
             AdminBackHeader("Edit Tier", onBack)
             ErrorBox(error!!)
         }
@@ -4342,7 +4437,7 @@ fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
                 .fillMaxSize()
                 .background(GotchaColors.Surface),
         ) {
-            AdminBackHeader("Edit Tier", onBack)
+            AdminBackHeader(if (isNew) "New range" else "Edit Tier", onBack)
             Column(
                 modifier = Modifier
                     .weight(1f)
@@ -4350,56 +4445,48 @@ fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
                     .padding(horizontal = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(20.dp),
             ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
-                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    Text(
-                        "SELECTED TIER",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = GotchaColors.TextSubtle,
-                    )
-                    Text(
-                        rangeLabel.ifBlank { label },
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 18.sp,
-                        color = GotchaColors.Ink,
-                    )
-                }
-                AdminLabeledField("Price (UZS)", price, { price = it }, placeholder = "24900")
+                AdminLabeledField("Label", label, { label = it }, placeholder = "1 - 10 pages")
+                AdminLabeledField("Min pages", minPages, { minPages = it.filter(Char::isDigit) }, placeholder = "1")
+                AdminLabeledField("Max pages (blank = unlimited)", maxPages, { maxPages = it.filter(Char::isDigit) }, placeholder = "10")
+                AdminLabeledField("Price (UZS)", price, { price = it }, placeholder = "12000")
                 if (error != null) {
                     Text(error!!, color = GotchaColors.Danger, fontSize = 13.sp)
                 }
+                if (!isNew) {
+                    Text(
+                        if (confirmDelete) "Tap again to delete this range" else "Delete range",
+                        color = GotchaColors.Danger,
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 14.sp,
+                        modifier = Modifier
+                            .clickable(enabled = !saving) {
+                                if (!confirmDelete) {
+                                    confirmDelete = true
+                                } else {
+                                    scope.launch {
+                                        saving = true
+                                        error = null
+                                        try {
+                                            container.adminRepository.deleteImportPageTier(tierId)
+                                            onBack()
+                                        } catch (e: Exception) {
+                                            error = e.message ?: "Delete failed"
+                                            confirmDelete = false
+                                        } finally {
+                                            saving = false
+                                        }
+                                    }
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                    )
+                }
             }
             AdminSaveFooter(
-                text = if (saving) "Saving…" else "Save Changes",
+                text = if (saving) "Saving…" else if (isNew) "Add range" else "Save Changes",
                 enabled = !saving,
-                onClick = {
-                    scope.launch {
-                        saving = true
-                        error = null
-                        try {
-                            val n = price.toDoubleOrNull()
-                            container.adminRepository.updateImportPageTier(
-                                tierId,
-                                UpdateImportPageTierRequest(priceUsd = n, priceUzs = n),
-                            )
-                            onBack()
-                        } catch (e: Exception) {
-                            error = e.message ?: "Save failed"
-                        } finally {
-                            saving = false
-                        }
-                    }
-                },
+                onClick = { persist() },
             )
         }
     }

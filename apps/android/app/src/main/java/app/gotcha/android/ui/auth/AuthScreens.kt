@@ -192,10 +192,10 @@ fun SignUpScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     // Registration is a 2-step wizard, matching web-learner's AuthPage: credentials first, then
-    // native + target language(s). Do not pre-select a target (historically RU) — the learner
-    // must pick at least one, or Progress invents a leftover language they never chose.
+    // native + target language(s). Native starts empty — do not default to English. Target is
+    // also unselected so Progress does not invent a leftover language they never chose.
     var step by remember { mutableStateOf("credentials") }
-    var nativeLanguage by remember { mutableStateOf("en") }
+    var nativeLanguage by remember { mutableStateOf<String?>(null) }
     var targetLanguages by remember { mutableStateOf(emptySet<String>()) }
     var languageOptions by remember { mutableStateOf(APP_LANGUAGE_OPTIONS.take(3)) }
 
@@ -206,6 +206,12 @@ fun SignUpScreen(
                 if (mapped.isNotEmpty()) {
                     languageOptions = mapped
                     ChatLangs.setEnabled(mapped.map { it.code })
+                    if (nativeLanguage != null && mapped.none { it.code == nativeLanguage }) {
+                        nativeLanguage = null
+                    }
+                    targetLanguages = targetLanguages
+                        .filter { code -> mapped.any { it.code == code } && code != nativeLanguage }
+                        .toSet()
                 }
             }
     }
@@ -236,12 +242,12 @@ fun SignUpScreen(
             Spacer(Modifier.height(8.dp))
             AuthLanguageSearchField(
                 options = languageOptions,
-                selectedCodes = listOf(nativeLanguage),
+                selectedCodes = listOfNotNull(nativeLanguage),
                 onAdd = { code ->
                     nativeLanguage = code
                     targetLanguages = targetLanguages - code
                 },
-                onRemove = {},
+                onRemove = { nativeLanguage = null },
                 multiple = false,
                 placeholder = "Search your native language...",
             )
@@ -257,7 +263,7 @@ fun SignUpScreen(
             AuthLanguageSearchField(
                 options = languageOptions,
                 selectedCodes = targetLanguages.toList(),
-                exclude = setOf(nativeLanguage),
+                exclude = setOfNotNull(nativeLanguage),
                 onAdd = { targetLanguages = targetLanguages + it },
                 onRemove = { targetLanguages = targetLanguages - it },
                 multiple = true,
@@ -294,11 +300,16 @@ fun SignUpScreen(
                 GotchaPrimaryButton(
                     text = "Create Account",
                     loading = loading,
-                    enabled = targetLanguages.isNotEmpty(),
+                    enabled = nativeLanguage != null && targetLanguages.isNotEmpty(),
                     containerColor = GotchaColors.BrandPurpleDeep,
                     shapeRadius = 14,
                     modifier = Modifier.weight(1f),
                     onClick = {
+                        val native = nativeLanguage
+                        if (native.isNullOrBlank()) {
+                            error = "Pick your native language"
+                            return@GotchaPrimaryButton
+                        }
                         if (targetLanguages.isEmpty()) {
                             error = "Pick at least one language to learn"
                             return@GotchaPrimaryButton
@@ -312,7 +323,7 @@ fun SignUpScreen(
                                     email = email.trim(),
                                     password = password,
                                     displayName = name.trim().ifBlank { null },
-                                    nativeLanguage = nativeLanguage,
+                                    nativeLanguage = native,
                                     targetLanguages = targetLanguages.toList(),
                                 )
                                 if (res.requiresEmailVerification) {
@@ -899,16 +910,14 @@ private fun AuthLanguageSearchField(
                                 fontSize = 12.sp,
                                 color = GotchaColors.BrandPurpleDeep,
                             )
-                            if (multiple || selected.size > 1) {
-                                Icon(
-                                    Icons.Outlined.Close,
-                                    contentDescription = "Remove ${opt.englishLabel}",
-                                    tint = GotchaColors.BrandPurpleDeep,
-                                    modifier = Modifier
-                                        .size(16.dp)
-                                        .clickable { onRemove(opt.code) },
-                                )
-                            }
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "Remove ${opt.englishLabel}",
+                                tint = GotchaColors.BrandPurpleDeep,
+                                modifier = Modifier
+                                    .size(16.dp)
+                                    .clickable { onRemove(opt.code) },
+                            )
                         }
                     }
                 }

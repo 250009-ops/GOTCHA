@@ -309,6 +309,12 @@ data class TranslateResponse(
 )
 
 @Serializable
+data class SpeechRequest(
+    val text: String,
+    val lang: String,
+)
+
+@Serializable
 data class KnownWord(
     val lemma: String,
     val status: String? = null,
@@ -405,6 +411,12 @@ data class ImportQuoteRequest(
 )
 
 @Serializable
+data class ImportInspectResponse(
+    val importType: String,
+    val pageCount: Int = 1,
+)
+
+@Serializable
 data class ImportCheckoutRequest(
     val importType: String,
     val contentFormat: String? = null,
@@ -424,6 +436,19 @@ data class ImportQuoteTier(
 )
 
 @Serializable
+data class ImportQuoteFreeLimits(
+    val gatewayEnabled: Boolean = false,
+    val resetCycle: String? = null,
+    val allowedFormats: List<String> = emptyList(),
+    val dailyFreeImportsPerUser: Int = 0,
+    val dailyFreeUsed: Int = 0,
+    val dailyFreeRemaining: Int = 0,
+    val monthlyFreePageLimit: Int = 0,
+    val monthlyPagesUsed: Int = 0,
+    val monthlyPagesRemaining: Int = 0,
+)
+
+@Serializable
 data class ImportQuoteResponse(
     val gatewayEnabled: Boolean = false,
     val estimatedPages: Int = 1,
@@ -434,6 +459,7 @@ data class ImportQuoteResponse(
     val freeReason: String? = null,
     val minAmountUzs: Double? = null,
     val belowMinimum: Boolean = false,
+    val freeLimits: ImportQuoteFreeLimits? = null,
 )
 
 @Serializable
@@ -526,6 +552,7 @@ data class ImportsListResponse(
     val total: Int = 0,
     val importRemaining: Int? = null,
     val importsUnlimited: Boolean? = null,
+    val freeAllowance: ImportQuoteFreeLimits? = null,
 )
 
 @Serializable
@@ -841,6 +868,12 @@ data class UpdateImportPageTierRequest(
 )
 
 @Serializable
+data class ImportPageTierDeleted(
+    val deleted: Boolean = true,
+    val id: String? = null,
+)
+
+@Serializable
 data class UpdateImportFreeLimitsRequest(
     val dailyFreeImportsPerUser: Int? = null,
     val monthlyFreePageLimit: Int? = null,
@@ -925,6 +958,7 @@ data class AdminContentDetail(
     val priceUsd: Double? = null,
     val sourceUrl: String? = null,
     val coverImageKey: String? = null,
+    val subtitle: String? = null,
     val chapters: List<AdminContentChapter> = emptyList(),
 )
 

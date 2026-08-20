@@ -293,7 +293,6 @@ fun LearnerShell(
                         onOpenReader = onOpenReader,
                         onSeeAll = { navigateLearnerTab(nav, "library") },
                         onOpenStreak = { nav.navigate("streak") },
-                        onOpenDailyGoal = { nav.navigate("daily_goal") },
                         onOpenProfile = { navigateLearnerTab(nav, "profile") },
                         highlightContentId = highlightContentId,
                     )
@@ -326,7 +325,6 @@ fun LearnerShell(
                         onOpenCefr = { nav.navigate("cefr") },
                         onOpenLanguage = { code -> nav.navigate("language/$code") },
                         onOpenStreak = { nav.navigate("streak") },
-                        onOpenDailyGoal = { nav.navigate("daily_goal") },
                     )
                 }
                 learnerTabComposable("profile") {

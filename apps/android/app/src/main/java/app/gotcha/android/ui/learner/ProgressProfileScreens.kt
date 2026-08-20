@@ -91,7 +91,6 @@ fun ProgressScreen(
     onOpenCefr: () -> Unit = {},
     onOpenLanguage: (String) -> Unit = {},
     onOpenStreak: () -> Unit = {},
-    onOpenDailyGoal: () -> Unit = {},
 ) {
     val container = LocalAppContainer.current
     val bottomInset = LocalLearnerBottomInset.current
@@ -153,10 +152,6 @@ fun ProgressScreen(
             val articles = s?.contentCompleted ?: 0
             val totalMinutes = s?.totalReadMinutes ?: 0
             val hoursLabel = formatReadTime(totalMinutes)
-            val dailyGoal = me?.preferences?.dailyGoalMinutes
-                ?: app.gotcha.android.ui.i18n.DEFAULT_DAILY_GOAL_MINUTES
-            val dailyDone = (s?.todayReadMinutes ?: 0).coerceAtMost(dailyGoal.coerceAtLeast(1))
-            val dailyPct = (dailyDone / dailyGoal.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
             val languages = remember(me, vocab) {
                 buildLanguageProgress(me, vocab)
             }
@@ -437,38 +432,6 @@ fun ProgressScreen(
                         }
                     }
                 }
-
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        "Reading Goals",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = GotchaColors.Ink,
-                    )
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
-                            .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
-                            .clickable(onClick = offline.guardClick(onOpenDailyGoal))
-                            .padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(16.dp),
-                    ) {
-                        GoalRow(
-                            label = "Daily: $dailyDone / $dailyGoal minutes",
-                            pct = dailyPct,
-                            badge = "${(dailyPct * 100).toInt()}% done",
-                            badgeBg = GotchaColors.BrandPurpleSoft,
-                            badgeFg = GotchaColors.BrandPurple,
-                            barColor = GotchaColors.BrandPurple,
-                        )
-                    }
-                }
             }
         }
     }
@@ -482,7 +445,6 @@ fun ProfileScreen(
     onOpenSettings: (String) -> Unit = {},
 ) {
     val container = LocalAppContainer.current
-    val scope = rememberCoroutineScope()
     val bottomInset = LocalLearnerBottomInset.current
     val topInset = LocalLearnerTopInset.current
     // bottomInset = pill + gap + navBars; +48 fade/frost +24 breathing (Delete Word / progressDir).
@@ -493,7 +455,6 @@ fun ProfileScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
-    var showDeleteAccount by remember { mutableStateOf(false) }
     val offline = rememberOfflineInteraction(container.connectivityObserver)
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
@@ -598,8 +559,6 @@ fun ProfileScreen(
                         )
                     }
             }
-            val dailyGoal = me?.preferences?.dailyGoalMinutes
-                ?: app.gotcha.android.ui.i18n.DEFAULT_DAILY_GOAL_MINUTES
             val memberSince = remember(me?.createdAt) { formatMemberSince(me?.createdAt) }
 
             Column(
@@ -715,7 +674,6 @@ fun ProfileScreen(
             }
 
             ProfileSettingsSection(
-                dailyGoal = dailyGoal,
                 nativeLanguage = me?.nativeLanguage,
                 uiLanguage = me?.uiLanguage,
                 isAdmin = isAdmin,
@@ -723,13 +681,11 @@ fun ProfileScreen(
                 onOpenSettings = onOpenSettings,
                 onOpenAdmin = onOpenAdmin,
                 onLogout = onLogout,
-                onDeleteAccount = { showDeleteAccount = true },
             )
         }
 
         if (profileLoading) {
             ProfileSettingsSection(
-                dailyGoal = app.gotcha.android.ui.i18n.DEFAULT_DAILY_GOAL_MINUTES,
                 nativeLanguage = null,
                 uiLanguage = null,
                 isAdmin = false,
@@ -737,29 +693,13 @@ fun ProfileScreen(
                 onOpenSettings = onOpenSettings,
                 onOpenAdmin = onOpenAdmin,
                 onLogout = onLogout,
-                onDeleteAccount = { showDeleteAccount = true },
             )
         }
-    }
-
-    if (showDeleteAccount) {
-        DeleteAccountDialog(
-            onDismiss = { showDeleteAccount = false },
-            onDeleted = {
-                showDeleteAccount = false
-                scope.launch {
-                    container.messagingRealtime.stop()
-                    container.authRepository.logout()
-                    onLogout()
-                }
-            },
-        )
     }
 }
 
 @Composable
 private fun ProfileSettingsSection(
-    dailyGoal: Int,
     nativeLanguage: String?,
     uiLanguage: String?,
     isAdmin: Boolean,
@@ -767,7 +707,6 @@ private fun ProfileSettingsSection(
     onOpenSettings: (String) -> Unit,
     onOpenAdmin: () -> Unit,
     onLogout: () -> Unit,
-    onDeleteAccount: () -> Unit,
 ) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
@@ -813,12 +752,6 @@ private fun ProfileSettingsSection(
                 showDivider = true,
             ) { offline.guardClick { onOpenSettings("reading_preferences") }() }
             ProfileSettingsRow(
-                iconRes = R.drawable.ic_target,
-                title = copy.dailyGoal,
-                subtitle = "$dailyGoal ${copy.minutesPerDay}",
-                showDivider = true,
-            ) { offline.guardClick { onOpenSettings("daily_goal") }() }
-            ProfileSettingsRow(
                 iconRes = R.drawable.ic_settings_gear,
                 title = copy.password,
                 subtitle = copy.passwordSub,
@@ -834,15 +767,8 @@ private fun ProfileSettingsSection(
                 iconRes = R.drawable.ic_globe,
                 title = copy.appLanguage,
                 subtitle = uiLanguageLabel(uiLanguage),
-                showDivider = true,
-            ) { offline.guardClick { onOpenSettings("app_language") }() }
-            ProfileSettingsRow(
-                iconRes = R.drawable.ic_x_circle,
-                title = copy.deleteAccount,
-                subtitle = copy.deleteAccountSub,
                 showDivider = false,
-                titleColor = GotchaColors.Danger,
-            ) { offline.guardClick(onDeleteAccount)() }
+            ) { offline.guardClick { onOpenSettings("app_language") }() }
         }
     }
 
@@ -1010,24 +936,6 @@ private fun AchievementCard(
         }
         Spacer(Modifier.height(8.dp))
         Text(label, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GotchaColors.Ink, textAlign = TextAlign.Center)
-    }
-}
-
-@Composable
-private fun GoalRow(label: String, pct: Float, badge: String, badgeBg: Color, badgeFg: Color, barColor: Color) {
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(label, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(badgeBg)
-                    .padding(horizontal = 10.dp, vertical = 4.dp),
-            ) {
-                Text(badge, color = badgeFg, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            }
-        }
-        FigmaProgressBar(pct, barColor)
     }
 }
 

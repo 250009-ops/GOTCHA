@@ -1,6 +1,5 @@
 ﻿package app.gotcha.android.ui.learner
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -39,8 +38,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -73,7 +70,6 @@ fun HomeScreen(
     onOpenReader: (String) -> Unit,
     onSeeAll: () -> Unit,
     onOpenStreak: () -> Unit = {},
-    onOpenDailyGoal: () -> Unit = {},
     onOpenProfile: () -> Unit = {},
     highlightContentId: String? = null,
 ) {
@@ -82,7 +78,6 @@ fun HomeScreen(
     var feed by remember { mutableStateOf<FeedResponse?>(null) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var streakCount by remember { mutableIntStateOf(0) }
-    var dailyGoal by remember { mutableIntStateOf(app.gotcha.android.ui.i18n.DEFAULT_DAILY_GOAL_MINUTES) }
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var reloadKey by remember { mutableIntStateOf(0) }
@@ -119,8 +114,6 @@ fun HomeScreen(
             stats = statsResult?.data ?: stats
             val meResult = runCatching { container.userRepository.meFetch() }.getOrNull()
             val me = meResult?.data
-            dailyGoal = me?.preferences?.dailyGoalMinutes
-                ?: app.gotcha.android.ui.i18n.DEFAULT_DAILY_GOAL_MINUTES
             // Same source as Streak detail: live stats.streakCount (not stale session).
             streakCount = stats?.streakCount
                 ?: me?.streakCount
@@ -159,9 +152,7 @@ fun HomeScreen(
     val topInset = LocalLearnerTopInset.current
     val feedLoading = loading && feed == null
     val statsLoading = loading && stats == null
-    val goal = dailyGoal.coerceAtLeast(1)
-    val minutes = (stats?.todayReadMinutes ?: 0).coerceAtMost(goal)
-    val pct = (minutes / goal.toFloat()).coerceIn(0f, 1f)
+    val todayMinutes = stats?.todayReadMinutes ?: 0
     val todayWords = stats?.todayWordsSaved ?: 0
     val continueItems = feed?.continueReading.orEmpty()
     val recommendedItems = remember(feed, highlightContentId) {
@@ -279,79 +270,6 @@ fun HomeScreen(
                     }
                 }
 
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
-                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
-                        .clickable(onClick = offline.guardClick(onOpenDailyGoal))
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(16.dp),
-                ) {
-                    Box(modifier = Modifier.size(72.dp), contentAlignment = Alignment.Center) {
-                        Canvas(modifier = Modifier.size(72.dp)) {
-                            drawCircle(
-                                color = GotchaColors.Border,
-                                style = Stroke(width = 8.dp.toPx()),
-                            )
-                            drawArc(
-                                color = GotchaColors.BrandPurple,
-                                startAngle = -90f,
-                                sweepAngle = 360f * pct,
-                                useCenter = false,
-                                style = Stroke(width = 8.dp.toPx(), cap = StrokeCap.Round),
-                            )
-                        }
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text(
-                                "Today",
-                                fontFamily = Manrope,
-                                fontSize = 11.sp,
-                                color = GotchaColors.TextMuted,
-                                fontWeight = FontWeight.Bold,
-                            )
-                            Text(
-                                "$minutes / $goal",
-                                fontFamily = Manrope,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                color = GotchaColors.Ink,
-                            )
-                        }
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "Daily Goal",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
-                            color = GotchaColors.Ink,
-                        )
-                        Text(
-                            "$minutes / $goal min read today",
-                            fontFamily = Manrope,
-                            color = GotchaColors.TextMuted,
-                            fontSize = 13.sp,
-                        )
-                        Box(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(GotchaColors.BrandPurpleSoft)
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text(
-                                "${(pct * 100).toInt()}% done",
-                                color = GotchaColors.BrandPurple,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                            )
-                        }
-                    }
-                }
-
                 if (statsLoading) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         StatCardSkeleton(Modifier.weight(1f))
@@ -367,7 +285,7 @@ fun HomeScreen(
                         )
                         StatCard(
                             "Reading time",
-                            "$minutes min",
+                            "$todayMinutes min",
                             modifier = Modifier.weight(1f),
                         )
                     }

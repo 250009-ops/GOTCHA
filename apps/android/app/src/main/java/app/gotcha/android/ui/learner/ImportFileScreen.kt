@@ -37,6 +37,7 @@ import app.gotcha.android.ui.components.GotchaPrimaryButton
 import app.gotcha.android.ui.components.GotchaTextField
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.util.PdfPageCount
 import kotlinx.coroutines.launch
 
 /** Mirrors web-learner's FileForm (apps/web-learner/src/pages/ImportPage.tsx): PDF/EPUB only, 100 MB max. */
@@ -170,9 +171,25 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
                                 try {
                                     val isEpub = (fileName ?: "").lowercase().endsWith(".epub")
                                     val importType = if (isEpub) "epub" else "pdf"
-                                    // Matches web-learner's handleFileImport heuristic: no PDF/EPUB
-                                    // parsing on-device, just a size-based page estimate for pricing.
-                                    val pageCount = (fileSizeBytes / 50_000).toInt().coerceIn(1, 500)
+                                    val uri = fileUri ?: return@launch
+                                    val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                                        ?: throw IllegalStateException("Could not read the selected file")
+                                    val mime = context.contentResolver.getType(uri)
+                                        ?: if (isEpub) "application/epub+zip" else "application/pdf"
+                                    val pageCount = if (!isEpub) {
+                                        PdfPageCount.count(bytes)
+                                            ?: container.importRepository.inspect(
+                                                bytes = bytes,
+                                                fileName = fileName ?: "import.pdf",
+                                                mimeType = mime,
+                                            ).pageCount
+                                    } else {
+                                        container.importRepository.inspect(
+                                            bytes = bytes,
+                                            fileName = fileName ?: "import.epub",
+                                            mimeType = mime,
+                                        ).pageCount
+                                    }
                                     val quote = container.importRepository.quote(
                                         importType = importType,
                                         contentFormat = "ebook",

@@ -75,6 +75,7 @@ import app.gotcha.android.data.model.UpdateImportPageTierRequest
 import app.gotcha.android.data.model.UpdateImportPricingRulesRequest
 import app.gotcha.android.data.model.ImportQuoteRequest
 import app.gotcha.android.data.model.ImportQuoteResponse
+import app.gotcha.android.data.model.ImportInspectResponse
 import app.gotcha.android.data.model.ImportUrlRequest
 import app.gotcha.android.data.model.ImportsListResponse
 import app.gotcha.android.data.model.LoginRequest
@@ -83,6 +84,7 @@ import app.gotcha.android.data.model.LookupRequest
 import app.gotcha.android.data.model.LookupResponse
 import app.gotcha.android.data.model.TranslateRequest
 import app.gotcha.android.data.model.TranslateResponse
+import app.gotcha.android.data.model.SpeechRequest
 import app.gotcha.android.data.model.MarkKnownWordRequest
 import app.gotcha.android.data.model.UpdateVocabularyRequest
 import app.gotcha.android.data.model.MeResponse
@@ -102,6 +104,7 @@ import app.gotcha.android.data.model.UserStats
 import app.gotcha.android.data.model.VocabItem
 import okhttp3.MultipartBody
 import okhttp3.RequestBody
+import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
@@ -112,6 +115,7 @@ import retrofit2.http.PUT
 import retrofit2.http.Part
 import retrofit2.http.Path
 import retrofit2.http.Query
+import retrofit2.http.Streaming
 
 interface GotchaApi {
     @POST("auth/login")
@@ -173,6 +177,10 @@ interface GotchaApi {
     @POST("ai/translate")
     suspend fun translate(@Body body: TranslateRequest): TranslateResponse
 
+    @Streaming
+    @POST("ai/speech")
+    suspend fun speech(@Body body: SpeechRequest): ResponseBody
+
     @GET("reading/known-words")
     suspend fun knownWords(): List<KnownWord>
 
@@ -214,6 +222,12 @@ interface GotchaApi {
 
     @POST("imports/url")
     suspend fun importUrl(@Body body: ImportUrlRequest): UserImport
+
+    @Multipart
+    @POST("imports/inspect")
+    suspend fun inspectImport(
+        @Part file: MultipartBody.Part,
+    ): ImportInspectResponse
 
     @DELETE("imports/{id}")
     suspend fun deleteImport(@Path("id") id: String)
@@ -445,11 +459,17 @@ interface GotchaApi {
     @PATCH("admin/import-pricing/rules")
     suspend fun updateImportPricingRules(@Body body: UpdateImportPricingRulesRequest): ImportPricingResponse
 
+    @POST("admin/import-pricing/tiers")
+    suspend fun createImportPageTier(@Body body: UpdateImportPageTierRequest): ImportPageTier
+
     @PATCH("admin/import-pricing/tiers/{id}")
     suspend fun updateImportPageTier(
         @Path("id") id: String,
         @Body body: UpdateImportPageTierRequest,
     ): ImportPageTier
+
+    @DELETE("admin/import-pricing/tiers/{id}")
+    suspend fun deleteImportPageTier(@Path("id") id: String): app.gotcha.android.data.model.ImportPageTierDeleted
 
     @PATCH("admin/import-pricing/limits")
     suspend fun updateImportFreeLimits(@Body body: UpdateImportFreeLimitsRequest): ImportFreeLimits

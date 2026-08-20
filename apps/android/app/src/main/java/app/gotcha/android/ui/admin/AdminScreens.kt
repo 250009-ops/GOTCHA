@@ -293,6 +293,7 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
                     AdminPricingTiersScreen(
                         onBack = { nav.popBackStack() },
                         onOpenTier = { id -> nav.navigate("pricing/tiers/$id") },
+                        onAddTier = { nav.navigate("pricing/tiers/new") },
                     )
                 }
                 composable(
