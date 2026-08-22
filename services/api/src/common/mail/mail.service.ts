@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import * as nodemailer from 'nodemailer';
 import type { Transporter } from 'nodemailer';
-import { emailVerificationEmail, passwordResetEmail } from './mail.templates';
+import { emailVerificationEmail, passwordResetEmail, newMessageEmail } from './mail.templates';
 
 export type SendMailOptions = {
   to: string;
@@ -90,6 +90,22 @@ export class MailService {
     }
 
     this.logger.log(`Password reset email sent to ${to}`);
+  }
+
+  async sendNewMessageEmail(
+    to: string,
+    recipientName: string,
+    senderName: string,
+    preview: string,
+    messagesUrl: string,
+  ): Promise<void> {
+    const { subject, text, html } = newMessageEmail(recipientName, senderName, preview, messagesUrl);
+    const sent = await this.send({ to, subject, text, html });
+    if (!sent) {
+      this.logger.warn(`SMTP not configured — skipped message email for ${to}`);
+      return;
+    }
+    this.logger.log(`Message notification email sent to ${to}`);
   }
 
   /** Production SMTP health check — does not send mail. */

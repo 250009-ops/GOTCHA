@@ -169,6 +169,21 @@ export class DevAuthService {
   ) {
     const user = this.usersById.get(userId);
     if (!user) throw new UnauthorizedException('Dev user not found');
+    if (patch.nativeLanguage && patch.nativeLanguage !== user.nativeLanguage) {
+      const previous = user.nativeLanguage;
+      user.targetLanguages = (user.targetLanguages ?? []).filter(
+        (row) => row.targetLanguage !== patch.nativeLanguage,
+      );
+      if (previous && previous !== patch.nativeLanguage) {
+        if (!user.targetLanguages.some((row) => row.targetLanguage === previous)) {
+          user.targetLanguages.push({
+            userId,
+            targetLanguage: previous,
+            isPrimary: user.targetLanguages.length === 0,
+          });
+        }
+      }
+    }
     Object.assign(user, patch);
     return user;
   }

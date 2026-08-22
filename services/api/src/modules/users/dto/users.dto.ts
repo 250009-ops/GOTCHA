@@ -42,6 +42,8 @@ export class UpdatePreferencesDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(5)
+  @Max(120)
   dailyGoalMinutes?: number;
 
   @IsOptional()

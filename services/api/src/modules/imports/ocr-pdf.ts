@@ -5,7 +5,7 @@ import { join } from 'path';
 import { promisify } from 'util';
 import { Logger } from '@nestjs/common';
 import { PDFParse } from 'pdf-parse';
-import { cleanPdfPageText } from './import-text-cleaner';
+import { cleanPdfPageText, hasUsableLearnerText } from './import-text-cleaner';
 
 const execFileAsync = promisify(execFile);
 const logger = new Logger('OcrPdf');
@@ -250,7 +250,7 @@ export async function ocrPdfPageNumbers(
               `OCR timed out on page ${pageNum}`,
             );
             const text = cleanPdfPageText(raw);
-            if (text) out.set(pageNum, text);
+            if (hasUsableLearnerText(text)) out.set(pageNum, text);
           } catch (err) {
             logger.warn(
               `OCR failed on page ${pageNum}: ${err instanceof Error ? err.message : err}`,

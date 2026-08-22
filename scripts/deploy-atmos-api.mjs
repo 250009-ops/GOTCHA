@@ -157,7 +157,7 @@ try {
       'grep -q gateway-status services/api/dist/modules/billing/billing.controller.js && echo OK_ROUTE_gateway-status',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',
-      'sleep 2',
+      'sleep 12',
       'curl -sS http://127.0.0.1:3200/api/v1/billing/gateway-status; echo',
     ].join(' && '),
     900_000,

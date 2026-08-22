@@ -207,3 +207,89 @@ export function DataTable({
     </div>
   );
 }
+
+export function TablePagination({
+  page,
+  pageSize,
+  total,
+  onPageChange,
+}: {
+  page: number;
+  pageSize: number;
+  total: number;
+  onPageChange: (page: number) => void;
+}) {
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const safePage = Math.min(Math.max(1, page), totalPages);
+  const start = total === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const end = Math.min(safePage * pageSize, total);
+
+  const pages: Array<number | 'gap'> = [];
+  if (totalPages <= 7) {
+    for (let i = 1; i <= totalPages; i += 1) pages.push(i);
+  } else {
+    pages.push(1);
+    if (safePage > 3) pages.push('gap');
+    for (let i = Math.max(2, safePage - 1); i <= Math.min(totalPages - 1, safePage + 1); i += 1) {
+      pages.push(i);
+    }
+    if (safePage < totalPages - 2) pages.push('gap');
+    pages.push(totalPages);
+  }
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-sm text-slate-500">
+        {total === 0 ? (
+          'No items'
+        ) : (
+          <>
+            Showing <span className="font-semibold text-slate-700">{start}–{end}</span> of{' '}
+            <span className="font-semibold text-slate-700">{total}</span>
+          </>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1">
+        <Button
+          type="button"
+          variant="secondary"
+          className="px-2.5 py-1.5 text-xs"
+          disabled={safePage <= 1}
+          onClick={() => onPageChange(safePage - 1)}
+        >
+          Previous
+        </Button>
+        {pages.map((p, idx) =>
+          p === 'gap' ? (
+            <span key={`gap-${idx}`} className="px-1 text-slate-400">
+              …
+            </span>
+          ) : (
+            <button
+              key={p}
+              type="button"
+              onClick={() => onPageChange(p)}
+              className={cn(
+                'min-w-8 rounded-lg px-2 py-1.5 text-xs font-semibold transition',
+                p === safePage
+                  ? 'bg-[#6c1d95] text-white'
+                  : 'text-slate-600 hover:bg-slate-100',
+              )}
+            >
+              {p}
+            </button>
+          ),
+        )}
+        <Button
+          type="button"
+          variant="secondary"
+          className="px-2.5 py-1.5 text-xs"
+          disabled={safePage >= totalPages}
+          onClick={() => onPageChange(safePage + 1)}
+        >
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}

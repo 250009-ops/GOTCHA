@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Pencil } from 'lucide-react';
+import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
 import { Badge, Button, Card, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { cn, formatMoney, formatNumber } from '../lib/utils';
 
-type Section = 'overview' | 'limits' | 'tiers';
+type Section = 'overview' | 'limits' | 'tiers' | 'lookups';
 
 interface PageTier {
   id: string;
@@ -54,6 +56,7 @@ interface ImportPricingData {
 const SECTIONS: Array<{ id: Section; label: string; path: string }> = [
   { id: 'overview', label: 'Overview', path: '/import-pricing' },
   { id: 'limits', label: 'Free Limits', path: '/import-pricing/limits' },
+  { id: 'lookups', label: 'Lookups', path: '/import-pricing/lookups' },
   { id: 'tiers', label: 'Page Tiers', path: '/import-pricing/tiers' },
 ];
 
@@ -67,18 +70,31 @@ const FORMAT_OPTIONS = [
 
 function resolveSection(directory?: string): Section {
   if (directory === 'limits' || directory === 'free-limits') return 'limits';
+  if (directory === 'lookups' || directory === 'lookup-limits') return 'lookups';
   if (directory === 'tiers' || directory === 'page-tiers') return 'tiers';
   return 'overview';
+}
+
+function suggestNextRange(tiers: PageTier[]) {
+  if (!tiers.length) return { minPages: 1, maxPages: 10 as number | null };
+  const high = Math.max(0, ...tiers.map((t) => t.maxPages ?? t.minPages));
+  return { minPages: Math.max(1, high + 1), maxPages: null as number | null };
 }
 
 export default function ImportPricingPage() {
   const { directory } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const section = resolveSection(directory);
   const [data, setData] = useState<ImportPricingData | null>(null);
   const [range, setRange] = useState('12m');
   const [limits, setLimits] = useState<FreeLimits | null>(null);
+  const [lookupQuota, setLookupQuota] = useState(50);
+  const [lookupDailyLimit, setLookupDailyLimit] = useState(0);
+  const [lookupUsersAtQuota, setLookupUsersAtQuota] = useState(0);
+  const [lookupTodayUsed, setLookupTodayUsed] = useState(0);
   const [editingTier, setEditingTier] = useState<PageTier | null>(null);
+  const [addingTier, setAddingTier] = useState(false);
   const [tierLabel, setTierLabel] = useState('');
   const [tierMinPages, setTierMinPages] = useState('');
   const [tierMaxPages, setTierMaxPages] = useState('');
@@ -97,9 +113,21 @@ export default function ImportPricingPage() {
   }
 
   async function load(nextRange = range) {
-    const res = await api<ImportPricingData>(`/admin/import-pricing?range=${encodeURIComponent(nextRange)}`);
+    const [res, ai] = await Promise.all([
+      api<ImportPricingData>(`/admin/import-pricing?range=${encodeURIComponent(nextRange)}`),
+      api<{
+        settings?: { dailyLimit: number; defaultUserQuota: number };
+        today?: { lookups: number; usersAtQuota?: number; rateLimitedUsers?: number; todayPlatformUsed?: number };
+      }>('/admin/ai-usage?range=today').catch(() => null),
+    ]);
     setData(res);
     setLimits(res.freeLimits);
+    if (ai) {
+      setLookupQuota(ai.settings?.defaultUserQuota ?? 50);
+      setLookupDailyLimit(ai.settings?.dailyLimit ?? 0);
+      setLookupUsersAtQuota(ai.today?.usersAtQuota ?? ai.today?.rateLimitedUsers ?? 0);
+      setLookupTodayUsed(ai.today?.todayPlatformUsed ?? ai.today?.lookups ?? 0);
+    }
   }
 
   useEffect(() => {
@@ -110,8 +138,9 @@ export default function ImportPricingPage() {
   useEffect(() => {
     const id =
       section === 'limits' ? 'section-limits'
-        : section === 'tiers' ? 'section-tiers'
-          : null;
+        : section === 'lookups' ? 'section-lookups'
+          : section === 'tiers' ? 'section-tiers'
+            : null;
     if (id) document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }, [section, data]);
 
@@ -137,6 +166,7 @@ export default function ImportPricingPage() {
 
   function beginEditTier(tier: PageTier) {
     setPricingError(null);
+    setAddingTier(false);
     setEditingTier(tier);
     setTierLabel(tier.label);
     setTierMinPages(String(tier.minPages));
@@ -144,37 +174,65 @@ export default function ImportPricingPage() {
     setTierPrice(String(tier.priceUzs));
   }
 
-  async function saveTier() {
-    if (!editingTier) return;
+  function beginAddTier() {
+    if (!data) return;
+    const next = suggestNextRange(data.tiers);
+    setPricingError(null);
+    setEditingTier(null);
+    setAddingTier(true);
+    setTierLabel('');
+    setTierMinPages(String(next.minPages));
+    setTierMaxPages(next.maxPages == null ? '' : String(next.maxPages));
+    setTierPrice(String(atmosMinSom));
+  }
+
+  function cancelTierForm() {
+    setAddingTier(false);
+    setEditingTier(null);
+    setPricingError(null);
+  }
+
+  function readTierForm() {
     const price = Number(tierPrice);
     const minPages = Math.floor(Number(tierMinPages));
     const maxRaw = tierMaxPages.trim();
     const maxPages = maxRaw === '' ? null : Math.floor(Number(maxRaw));
     if (!Number.isFinite(minPages) || minPages < 1) {
       setPricingError('Each tier needs a minimum of at least 1 page.');
-      return;
+      return null;
     }
     if (maxPages != null && (!Number.isFinite(maxPages) || maxPages < minPages)) {
       setPricingError('Max pages must be empty (unlimited) or ≥ min pages.');
-      return;
+      return null;
     }
-    const err = validateAtmosMin(price, `Page tier "${tierLabel.trim() || editingTier.label}"`);
+    const label = tierLabel.trim() || (maxPages == null ? `${minPages}+ pages` : `${minPages} - ${maxPages} pages`);
+    const err = validateAtmosMin(price, `Page tier "${label}"`);
     if (err) {
       setPricingError(err);
-      return;
+      return null;
     }
+    return { label, minPages, maxPages, priceUzs: price };
+  }
+
+  async function saveTier() {
+    const payload = readTierForm();
+    if (!payload) return;
+    if (!addingTier && !editingTier) return;
     setPricingError(null);
     setSaving(true);
     try {
-      await api(`/admin/import-pricing/tiers/${editingTier.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          label: tierLabel.trim() || editingTier.label,
-          minPages,
-          maxPages,
-          priceUzs: price,
-        }),
-      });
+      if (addingTier) {
+        await api('/admin/import-pricing/tiers', {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      } else if (editingTier) {
+        await api(`/admin/import-pricing/tiers/${editingTier.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      }
+      setAddingTier(false);
       setEditingTier(null);
       await load();
     } catch (e) {
@@ -184,13 +242,85 @@ export default function ImportPricingPage() {
     }
   }
 
+  async function deleteTier(tier: PageTier) {
+    if (
+      !window.confirm(
+        `Delete “${tier.label}” (${tier.minPages}–${tier.maxPages ?? '∞'} pages)? Paid imports in this range cannot be priced until you add a replacement.`,
+      )
+    ) {
+      return;
+    }
+    setPricingError(null);
+    setSaving(true);
+    try {
+      await api(`/admin/import-pricing/tiers/${tier.id}`, { method: 'DELETE' });
+      if (editingTier?.id === tier.id) setEditingTier(null);
+      await load();
+    } catch (e) {
+      setPricingError(e instanceof Error ? e.message : 'Could not delete page tier');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function renderTierForm(maxHint: string) {
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+        <label className="text-xs text-slate-500 sm:col-span-2">
+          Label
+          <Input
+            className="mt-1"
+            value={tierLabel}
+            placeholder="e.g. 1 - 10 pages"
+            onChange={(e) => setTierLabel(e.target.value)}
+          />
+        </label>
+        <label className="text-xs text-slate-500">
+          Min pages
+          <Input
+            type="number"
+            min="1"
+            className="mt-1"
+            value={tierMinPages}
+            onChange={(e) => setTierMinPages(e.target.value)}
+          />
+        </label>
+        <label className="text-xs text-slate-500">
+          Max pages (blank = {maxHint}+)
+          <Input
+            type="number"
+            min="1"
+            className="mt-1"
+            value={tierMaxPages}
+            onChange={(e) => setTierMaxPages(e.target.value)}
+          />
+        </label>
+        <label className="text-xs text-slate-500 sm:col-span-2">
+          Price (UZS)
+          <Input
+            type="number"
+            step="100"
+            min="0"
+            className="mt-1"
+            value={tierPrice}
+            onChange={(e) => setTierPrice(e.target.value)}
+          />
+        </label>
+        <div className="flex items-center gap-2 sm:col-span-2">
+          <Button onClick={() => void saveTier()} disabled={saving}>{saving ? 'Saving…' : 'Save'}</Button>
+          <Button variant="secondary" onClick={cancelTierForm}>Cancel</Button>
+        </div>
+      </div>
+    );
+  }
+
   if (!data || !limits) return <LoadingBlock />;
 
   return (
     <div>
       <PageHeader
         title="Import & Pricing Controls"
-        subtitle="Atmos charges page-tier prices in UZS. Free limits apply per learner before payment."
+        subtitle="Atmos charges page-tier prices in UZS. Free import limits and lookup caps apply per learner immediately."
         actions={
           <Select value={range} onChange={(e) => setRange(e.target.value)} className="w-44">
             <option value="12m">Last 12 Months</option>
@@ -297,6 +427,7 @@ export default function ImportPricingPage() {
             <div className="text-sm text-slate-500">
               Applied at quote time: daily free imports, page cap, and allowed formats. Unused credits do not roll over.
               Check every format learners actually import — unchecked formats always require payment, which looks like a coverage gap.
+              0 daily imports or 0 pages means no free pool (unlike lookup caps, where 0 = unlimited).
             </div>
           </div>
           <div className="space-y-4">
@@ -363,61 +494,23 @@ export default function ImportPricingPage() {
         </Card>
 
         <Card id="section-tiers" className="p-5">
-          <div className="mb-4">
-            <div className="font-semibold">Page-Based Pricing Tiers (UZS)</div>
-            <div className="text-sm text-slate-500">
-              Atmos charges these amounts by estimated page count (soʻm). Edit min/max so ranges sit flush (1–10, then 11–50, …) with no holes.
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="font-semibold">Page-Based Pricing Tiers (UZS)</div>
+              <div className="text-sm text-slate-500">
+                Atmos charges these amounts by estimated page count (soʻm). Keep ranges flush (1–10, then 11–50, …) with no holes. Add or delete bands as you change pricing.
+              </div>
             </div>
+            <Button variant="secondary" className="shrink-0" onClick={beginAddTier} disabled={saving || addingTier}>
+              <Plus className="size-3.5 mr-1.5" />
+              Add range
+            </Button>
           </div>
           <div className="space-y-2">
             {data.tiers.map((tier, idx) => (
               <div key={tier.id} className="rounded-xl border border-slate-100 px-3 py-3">
                 {editingTier?.id === tier.id ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <label className="text-xs text-slate-500 sm:col-span-2">
-                      Label
-                      <Input
-                        className="mt-1"
-                        value={tierLabel}
-                        onChange={(e) => setTierLabel(e.target.value)}
-                      />
-                    </label>
-                    <label className="text-xs text-slate-500">
-                      Min pages
-                      <Input
-                        type="number"
-                        min="1"
-                        className="mt-1"
-                        value={tierMinPages}
-                        onChange={(e) => setTierMinPages(e.target.value)}
-                      />
-                    </label>
-                    <label className="text-xs text-slate-500">
-                      Max pages (blank = {tier.minPages}+)
-                      <Input
-                        type="number"
-                        min="1"
-                        className="mt-1"
-                        value={tierMaxPages}
-                        onChange={(e) => setTierMaxPages(e.target.value)}
-                      />
-                    </label>
-                    <label className="text-xs text-slate-500 sm:col-span-2">
-                      Price (UZS)
-                      <Input
-                        type="number"
-                        step="100"
-                        min="0"
-                        className="mt-1"
-                        value={tierPrice}
-                        onChange={(e) => setTierPrice(e.target.value)}
-                      />
-                    </label>
-                    <div className="flex items-center gap-2 sm:col-span-2">
-                      <Button onClick={saveTier} disabled={saving}>Save</Button>
-                      <Button variant="secondary" onClick={() => setEditingTier(null)}>Cancel</Button>
-                    </div>
-                  </div>
+                  renderTierForm(String(tier.minPages))
                 ) : (
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
@@ -431,8 +524,8 @@ export default function ImportPricingPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-semibold">{formatMoney(tier.priceUzs)}</span>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <span className="text-sm font-semibold mr-1">{formatMoney(tier.priceUzs)}</span>
                       <button
                         type="button"
                         className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
@@ -441,13 +534,45 @@ export default function ImportPricingPage() {
                       >
                         <Pencil className="size-3.5" />
                       </button>
+                      <button
+                        type="button"
+                        className="size-8 rounded-lg grid place-items-center text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        aria-label={`Delete ${tier.label}`}
+                        disabled={saving}
+                        onClick={() => void deleteTier(tier)}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
                     </div>
                   </div>
                 )}
               </div>
             ))}
+            {addingTier && (
+              <div className="rounded-xl border border-dashed border-[#6c1d95]/30 bg-violet-50/40 px-3 py-3">
+                <div className="text-xs font-semibold text-[#6c1d95] mb-2">New range</div>
+                {renderTierForm(tierMinPages || 'min')}
+              </div>
+            )}
+            {data.tiers.length === 0 && !addingTier && (
+              <p className="text-sm text-slate-500 py-4 text-center">
+                No page tiers yet. Add a range so paid imports can be priced.
+              </p>
+            )}
           </div>
         </Card>
+      </div>
+
+      <div id="section-lookups" className="mt-4">
+        <LookupLimitsCard
+          defaultUserQuota={lookupQuota}
+          dailyLimit={lookupDailyLimit}
+          usersAtQuota={lookupUsersAtQuota}
+          todayPlatformUsed={lookupTodayUsed}
+          canEdit={canEditAiLimits(user?.role)}
+          showImportPricingLink={false}
+          onSaved={() => void load()}
+        />
       </div>
     </div>
   );

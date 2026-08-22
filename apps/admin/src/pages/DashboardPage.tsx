@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, ArrowDownRight, ArrowUpRight, BookOpen, Cpu, CreditCard, TrendingUp, UserPlus, Users } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { AlertCircle, ArrowDownRight, ArrowUpRight, BookOpen, Cpu, CreditCard, TrendingUp, UserPlus, Users } from 'lucide-react';
 import { BarChart, LineChart } from '../components/charts';
-import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
 import { Badge, Card, DataTable, LoadingBlock, PageHeader, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -198,16 +197,6 @@ export default function DashboardPage() {
             accent="bg-fuchsia-50 text-fuchsia-700"
           />
         </Link>
-      </div>
-
-      <div className="mb-4">
-        <LookupLimitsCard
-          defaultUserQuota={data.aiDefaultUserQuota ?? 50}
-          dailyLimit={data.aiLimit}
-          todayPlatformUsed={data.aiLookupsToday}
-          canEdit={canEditAiLimits(user?.role)}
-          onSaved={load}
-        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 mb-4">

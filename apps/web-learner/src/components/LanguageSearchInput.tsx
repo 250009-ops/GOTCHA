@@ -130,19 +130,17 @@ export function LanguageSearchInput({
             >
               <span className="leading-none">{flag}</span>
               <span className="truncate">{name}</span>
-              {multiple || selected.length > 1 ? (
-                <button
-                  type="button"
-                  className="size-5 grid place-items-center rounded-md text-[#7f22fe] hover:bg-white/80"
-                  aria-label={`Remove ${name}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    remove(lang.code);
-                  }}
-                >
-                  <X className="size-3" />
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="size-5 grid place-items-center rounded-md text-[#7f22fe] hover:bg-white/80"
+                aria-label={`Remove ${name}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  remove(lang.code);
+                }}
+              >
+                <X className="size-3" />
+              </button>
             </span>
           );
         })}

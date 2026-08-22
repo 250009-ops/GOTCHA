@@ -100,7 +100,7 @@ import app.gotcha.android.ui.components.GotchaPrimaryButton
 import app.gotcha.android.ui.components.GotchaTextField
 import app.gotcha.android.ui.components.LoadingBox
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -152,7 +152,7 @@ fun AdminContentDetailScreen(contentId: String, onBack: () -> Unit, onEdit: (Str
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(GotchaColors.Surface)
+                    .background(GotchaColors.WebAdminCanvas)
                     .verticalScroll(rememberScrollState())
                     // Top clearance comes from AdminBackHeader (LocalAdminTopInset) — do not double-pad.
                     .padding(bottom = bottomInset + 24.dp),
@@ -697,10 +697,10 @@ fun AdminAddProductScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GotchaColors.Surface)
+                .background(GotchaColors.WebAdminCanvas)
                 .verticalScroll(rememberScrollState()),
         ) {
-            AdminBackHeader(if (editing) "Edit material" else "New material", onBack)
+            AdminBackHeader(if (editing) "Edit product" else "Add product", onBack)
             Column(
                 modifier = Modifier.padding(horizontal = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1028,7 +1028,7 @@ fun AdminImportLoadingOverlay(
                 }
                 Text(
                     "$pct%",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 28.sp,
                     color = ImportAccent,
@@ -1037,7 +1037,7 @@ fun AdminImportLoadingOverlay(
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     "Importing Content...",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = GotchaColors.Ink,
@@ -1147,7 +1147,7 @@ fun AdminImportSuccessScreen(
             Spacer(Modifier.height(24.dp))
             Text(
                 "Import Complete!",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 24.sp,
                 color = GotchaColors.Ink,
@@ -1166,7 +1166,7 @@ fun AdminImportSuccessScreen(
                     .padding(horizontal = 24.dp)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(GotchaColors.Surface)
+                    .background(GotchaColors.WebAdminCanvas)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1258,7 +1258,7 @@ fun AdminImportErrorScreen(
             Spacer(Modifier.height(24.dp))
             Text(
                 "Import Failed",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 24.sp,
                 color = GotchaColors.Ink,
@@ -1385,7 +1385,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(GotchaColors.Surface)
+                    .background(GotchaColors.WebAdminCanvas)
                     .verticalScroll(rememberScrollState()),
             ) {
                 // Figma 122:601 — User Profile
@@ -1420,7 +1420,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                         ) {
                             Text(
                                 u.displayName ?: "Learner",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
                                 color = GotchaColors.Ink,
@@ -1475,7 +1475,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Text(
                         "Recent Activity",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                         color = GotchaColors.Ink,
@@ -1524,7 +1524,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                 Column(modifier = Modifier.padding(horizontal = 24.dp)) {
                     Text(
                         "Admin Actions",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 14.sp,
                         color = GotchaColors.Ink,
@@ -1653,7 +1653,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                         ) {
                             Text(
                                 "Delete User Permanently?",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 18.sp,
                                 color = GotchaColors.Ink,
@@ -1661,7 +1661,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                             )
                             Text(
                                 "This action cannot be undone. All user data reading history vocabulary and subscription records will be permanently removed.",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextMuted,
                                 textAlign = TextAlign.Center,
@@ -1672,7 +1672,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(GotchaColors.Surface)
+                                .background(GotchaColors.WebAdminCanvas)
                                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                 .padding(12.dp),
                             verticalAlignment = Alignment.CenterVertically,
@@ -1694,7 +1694,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                             Column {
                                 Text(
                                     u.displayName ?: "Learner",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.ExtraBold,
                                     fontSize = 14.sp,
                                     color = GotchaColors.Ink,
@@ -1708,7 +1708,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                         ) {
                             Text(
                                 "TYPE DELETE TO CONFIRM",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextMuted,
@@ -1718,7 +1718,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                                 onValueChange = { deleteConfirmText = it },
                                 singleLine = true,
                                 textStyle = TextStyle(
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 14.sp,
                                     color = GotchaColors.Danger,
@@ -1760,7 +1760,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                                     }
                                     .padding(vertical = 12.dp),
                                 textAlign = TextAlign.Center,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextMuted,
@@ -1790,7 +1790,7 @@ fun AdminUserDetailScreen(userId: String, onBack: () -> Unit) {
                                     }
                                     .padding(vertical = 12.dp),
                                 textAlign = TextAlign.Center,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
                                 color = Color.White,
@@ -1849,7 +1849,7 @@ private fun UserStatTile(
         Text(label, color = GotchaColors.TextMuted, fontSize = 11.sp)
         Text(
             value,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 16.sp,
             color = valueColor,
@@ -1882,7 +1882,7 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
     when {
         loading && data == null -> LoadingBox(Modifier.fillMaxSize())
         error != null && data == null -> Column {
-            AdminBackHeader("Analytics", onBack)
+            AdminBackHeader("Analytics", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
@@ -1899,13 +1899,17 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
             }
             val features = d.featureUsage.take(4)
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 // Figma 122:679 — Analytics
                 item {
-                    AdminBackHeader("Analytics", onBack) {
+                    AdminBackHeader(
+                        title = "Analytics",
+                        onBack = onBack,
+                        showBack = false,
+                        trailing = {
                         Text(
                             when (range) {
                                 "30d" -> "Last 30 Days"
@@ -1928,7 +1932,8 @@ fun AdminAnalyticsScreen(onBack: () -> Unit) {
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
                         )
-                    }
+                        }
+                    )
                 }
                 item {
                     Row(
@@ -2207,18 +2212,22 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> Column {
-            AdminBackHeader("Notifications", onBack)
+            AdminBackHeader("Notifications", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
             val campaigns = data!!.campaigns
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 item {
-                    AdminBackHeader("Notifications", onBack) {
+                    AdminBackHeader(
+                        title = "Notifications",
+                        onBack = onBack,
+                        showBack = false,
+                        trailing = {
                         Box(
                             modifier = Modifier
                                 .clip(RoundedCornerShape(10.dp))
@@ -2228,7 +2237,8 @@ fun AdminNotificationsScreen(onBack: () -> Unit) {
                         ) {
                             Text("+ New", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
-                    }
+                        }
+                    )
                 }
                 if (campaigns.isEmpty()) {
                     item { EmptyState("No push notifications yet.") }
@@ -2276,7 +2286,7 @@ private fun AdminNotificationComposeScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GotchaColors.Surface),
+            .background(GotchaColors.WebAdminCanvas),
     ) {
         AdminBackHeader(if (isNew) "New Notification" else "Edit Notification", onBack)
         Column(
@@ -2293,7 +2303,7 @@ private fun AdminNotificationComposeScreen(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "TARGET AUDIENCE",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = GotchaColors.TextMuted,
@@ -2321,7 +2331,7 @@ private fun AdminNotificationComposeScreen(
                                     )
                                     .clickable { onAudience(key) }
                                     .padding(horizontal = 14.dp, vertical = 8.dp),
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp,
                                 color = if (on) GotchaColors.BrandPurple else GotchaColors.TextMuted,
@@ -2348,7 +2358,7 @@ private fun AdminNotificationComposeScreen(
                     .clickable(enabled = !saving, onClick = onSaveDraft)
                     .padding(vertical = 14.dp),
                 textAlign = TextAlign.Center,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
@@ -2362,7 +2372,7 @@ private fun AdminNotificationComposeScreen(
                     .clickable(enabled = !saving, onClick = onSendNow)
                     .padding(vertical = 14.dp),
                 textAlign = TextAlign.Center,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = Color.White,
@@ -2382,7 +2392,7 @@ private fun AdminComposeField(
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(
             label,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,
@@ -2392,7 +2402,7 @@ private fun AdminComposeField(
             onValueChange = onValueChange,
             singleLine = singleLine,
             textStyle = TextStyle(
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 14.sp,
                 color = GotchaColors.Ink,
                 lineHeight = if (singleLine) 18.sp else 20.sp,
@@ -2532,7 +2542,7 @@ fun AdminSupportScreen(onBack: () -> Unit, onOpenTicket: (String) -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> Column {
-            AdminBackHeader("Support Tickets", onBack)
+            AdminBackHeader("Support Tickets", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
@@ -2547,7 +2557,7 @@ fun AdminSupportScreen(onBack: () -> Unit, onOpenTicket: (String) -> Unit) {
                 }
             }
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -2555,6 +2565,7 @@ fun AdminSupportScreen(onBack: () -> Unit, onOpenTicket: (String) -> Unit) {
                     AdminBackHeader(
                         title = "Support Tickets",
                         onBack = onBack,
+                        showBack = false,
                         trailing = {
                             if (openCount > 0) {
                                 Text(
@@ -2731,7 +2742,7 @@ fun AdminTicketDetailScreen(ticketId: String, onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(GotchaColors.Surface)
+                    .background(GotchaColors.WebAdminCanvas)
                     .verticalScroll(rememberScrollState())
                     .padding(bottom = 24.dp),
             ) {
@@ -2775,18 +2786,18 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> Column {
-            AdminBackHeader("Gamification", onBack)
+            AdminBackHeader("Gamification", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
             val d = data!!
             val s = d.stats
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item { AdminBackHeader("Gamification", onBack) }
+                item { AdminBackHeader("Gamification", onBack, showBack = false) }
                 item {
                     Row(
                         modifier = Modifier.padding(horizontal = 24.dp),
@@ -2987,16 +2998,16 @@ fun AdminLanguagesScreen(onBack: () -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> Column {
-            AdminBackHeader("Languages", onBack)
+            AdminBackHeader("Languages", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> LazyColumn(
-            modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+            modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
             contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             // Figma 122:1507 — Languages
-            item { AdminBackHeader("Languages", onBack) }
+            item { AdminBackHeader("Languages", onBack, showBack = false) }
             if (data!!.languages.isEmpty()) {
                 item { EmptyState("No languages in catalog.") }
             } else {
@@ -3097,7 +3108,7 @@ fun AdminLevelTestsScreen(onBack: () -> Unit) {
             val s = d.stats
             // Figma 198:22 — Level Placements (live KPIs only; hide seed engine config / pass% / duration)
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
@@ -3294,7 +3305,7 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> Column {
-            AdminBackHeader("AI Usage", onBack)
+            AdminBackHeader("AI Usage", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
@@ -3308,11 +3319,11 @@ fun AdminAiUsageScreen(onBack: () -> Unit) {
                 else -> emptyList()
             }
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                item { AdminBackHeader("AI Usage", onBack) }
+                item { AdminBackHeader("AI Usage", onBack, showBack = false) }
                 item {
                     Row(
                         modifier = Modifier.padding(horizontal = 24.dp),
@@ -3511,7 +3522,7 @@ fun AdminSettingsScreen(onBack: () -> Unit) {
     when {
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null && settings == null -> Column {
-            AdminBackHeader("Settings", onBack)
+            AdminBackHeader("Settings", onBack, showBack = false)
             ErrorBox(error!!)
         }
         else -> {
@@ -3520,10 +3531,10 @@ fun AdminSettingsScreen(onBack: () -> Unit) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(GotchaColors.Surface)
+                    .background(GotchaColors.WebAdminCanvas)
                     .verticalScroll(rememberScrollState()),
             ) {
-                AdminBackHeader("Settings", onBack)
+                AdminBackHeader("Settings", onBack, showBack = false)
                 Column(
                     modifier = Modifier.padding(horizontal = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -3778,7 +3789,7 @@ private fun ActionChip(text: String) {
         text,
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
-            .background(GotchaColors.Surface)
+            .background(GotchaColors.WebAdminCanvas)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(10.dp))
             .padding(horizontal = 10.dp, vertical = 8.dp),
         fontWeight = FontWeight.SemiBold,
@@ -3853,7 +3864,7 @@ fun AdminPricingRuleEditScreen(ruleId: String, onBack: () -> Unit) {
         else -> Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GotchaColors.Surface),
+                .background(GotchaColors.WebAdminCanvas),
         ) {
             AdminBackHeader("Edit Pricing Rule", onBack)
             Column(
@@ -3874,14 +3885,14 @@ fun AdminPricingRuleEditScreen(ruleId: String, onBack: () -> Unit) {
                 ) {
                     Text(
                         "PRICING TYPE / CATEGORY",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                         color = GotchaColors.TextSubtle,
                     )
                     Text(
                         label,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 18.sp,
                         color = GotchaColors.Ink,
@@ -3901,7 +3912,7 @@ fun AdminPricingRuleEditScreen(ruleId: String, onBack: () -> Unit) {
                 ) {
                     Text(
                         "Active Status",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = GotchaColors.Ink,
@@ -4012,7 +4023,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
         else -> Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GotchaColors.Surface),
+                .background(GotchaColors.WebAdminCanvas),
         ) {
             AdminBackHeader("Free Usage Limits", onBack)
             Column(
@@ -4033,7 +4044,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                 ) {
                     Text(
                         "Set daily and monthly limits for free-tier users",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Medium,
                         fontSize = 13.sp,
                         color = GotchaColors.TextMuted,
@@ -4046,7 +4057,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(
                         "Allowed Formats",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         color = GotchaColors.TextMuted,
@@ -4090,14 +4101,14 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                             Text(
                                 label,
                                 modifier = Modifier.weight(1f),
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 14.sp,
                                 color = GotchaColors.Ink,
                             )
                             Text(
                                 if (on) "Enabled" else "Disabled",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.TextSubtle,
                             )
@@ -4107,7 +4118,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
                         "Reset Cycle",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         color = GotchaColors.TextMuted,
@@ -4127,7 +4138,7 @@ fun AdminPricingLimitsEditScreen(onBack: () -> Unit) {
                     ) {
                         Text(
                             if (resetCycle == "daily") "Daily" else "Monthly",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 15.sp,
                             color = GotchaColors.Ink,
@@ -4204,7 +4215,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
             ErrorBox(error!!)
         }
         else -> LazyColumn(
-            modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+            modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
             contentPadding = PaddingValues(bottom = LocalAdminBottomInset.current + 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -4221,7 +4232,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                 ) {
                     Text(
                         "Scale costs by document length",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         color = GotchaColors.TextMuted,
@@ -4232,7 +4243,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                 Text(
                     "ACTIVE TIERS",
                     modifier = Modifier.padding(horizontal = 24.dp),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 13.sp,
                     color = GotchaColors.TextSubtle,
@@ -4269,7 +4280,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                         ) {
                             Text(
                                 "T$idx",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
                                 color = Color.White,
@@ -4278,14 +4289,14 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                         Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                             Text(
                                 tier.label?.takeIf { it.isNotBlank() } ?: range,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 15.sp,
                                 color = GotchaColors.Ink,
                             )
                             Text(
                                 formatTierUzs(price),
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.TextMuted,
                             )
@@ -4295,7 +4306,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                         modifier = Modifier
                             .size(32.dp)
                             .clip(RoundedCornerShape(16.dp))
-                            .background(GotchaColors.Surface),
+                            .background(GotchaColors.WebAdminCanvas),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -4336,7 +4347,7 @@ fun AdminPricingTiersScreen(onBack: () -> Unit, onOpenTier: (String) -> Unit, on
                     }
                     Text(
                         "Add range",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = GotchaColors.Ink,
@@ -4435,7 +4446,7 @@ fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
         else -> Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GotchaColors.Surface),
+                .background(GotchaColors.WebAdminCanvas),
         ) {
             AdminBackHeader(if (isNew) "New range" else "Edit Tier", onBack)
             Column(
@@ -4456,7 +4467,7 @@ fun AdminPricingTierEditScreen(tierId: String, onBack: () -> Unit) {
                     Text(
                         if (confirmDelete) "Tap again to delete this range" else "Delete range",
                         color = GotchaColors.Danger,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         modifier = Modifier
@@ -4502,7 +4513,7 @@ private fun AdminLabeledField(
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
             label,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.SemiBold,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,
@@ -4512,7 +4523,7 @@ private fun AdminLabeledField(
             onValueChange = onValueChange,
             singleLine = true,
             textStyle = TextStyle(
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Medium,
                 fontSize = 15.sp,
                 color = GotchaColors.Ink,
@@ -4564,7 +4575,7 @@ private fun AdminSaveFooter(
                 .clickable(enabled = enabled, onClick = onClick)
                 .padding(vertical = 14.dp),
             textAlign = TextAlign.Center,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
             color = Color.White,

@@ -3,6 +3,7 @@ import { AdminAvatar } from '../components/AdminAvatar';
 import { Button, Card, Input, LoadingBlock, PageHeader, Select } from '../components/ui';
 import { api, clearToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { learnerForgotPasswordUrl } from '../lib/authLinks';
 
 interface Settings {
   platformName: string;
@@ -50,9 +51,11 @@ export default function SettingsPage() {
   const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [profileName, setProfileName] = useState('');
-  const [profileEmail, setProfileEmail] = useState('');
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [resetEmailSent, setResetEmailSent] = useState(false);
+  const [resetEmailBusy, setResetEmailBusy] = useState(false);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -69,27 +72,40 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setProfileName(user?.displayName ?? '');
-    setProfileEmail(user?.email ?? '');
   }, [user]);
 
   async function saveProfile(e: React.FormEvent) {
     e.preventDefault();
     setProfileSaving(true);
     setProfileSaved(false);
+    setProfileError(null);
     try {
       await api('/admin/me', {
         method: 'PATCH',
         body: JSON.stringify({
           displayName: profileName.trim() || undefined,
-          email: profileEmail.trim() || undefined,
         }),
       });
       await refresh();
       setProfileSaved(true);
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Could not update profile');
+      const msg = e instanceof Error ? e.message : 'Could not update profile';
+      setProfileError(msg);
     } finally {
       setProfileSaving(false);
+    }
+  }
+
+  async function sendPasswordResetEmail() {
+    setResetEmailBusy(true);
+    setResetEmailSent(false);
+    try {
+      await api('/admin/me/request-password-reset', { method: 'POST', body: '{}' });
+      setResetEmailSent(true);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Could not send reset email');
+    } finally {
+      setResetEmailBusy(false);
     }
   }
 
@@ -239,7 +255,7 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, aiDefaultUserQuota: Number(e.target.value) })}
                 />
                 <span className="text-xs text-slate-400 mt-1 block">
-                  Each learner’s word lookups per day in books and chat. Editable here and on Dashboard / AI Usage.
+                  Each learner’s word lookups per day in books and chat. Editable here and on Import & Pricing / AI Usage.
                   0 = unlimited. This is the warning they see after tapping too many words.
                 </span>
               </label>
@@ -336,7 +352,7 @@ export default function SettingsPage() {
                 <div className="flex items-center gap-3">
                   <AdminAvatar
                     name={profileName || user?.displayName}
-                    email={profileEmail || user?.email}
+                    email={user?.email}
                     url={user?.avatarUrl}
                     size={56}
                   />
@@ -365,18 +381,18 @@ export default function SettingsPage() {
                 <span className="text-slate-500 block mb-1">Name</span>
                 <Input value={profileName} onChange={(e) => setProfileName(e.target.value)} />
               </label>
-              <label>
-                <span className="text-slate-500 block mb-1">Email</span>
-                <Input
-                  type="email"
-                  value={profileEmail}
-                  onChange={(e) => setProfileEmail(e.target.value)}
-                />
-              </label>
+              <div>
+                <span className="text-slate-500 block mb-1">Login email</span>
+                <Input type="email" value={user?.email ?? ''} readOnly disabled className="bg-slate-50" />
+                <span className="text-xs text-slate-400 mt-1 block">
+                  Admin login email is fixed to prevent lockouts. Use forgot password below if needed.
+                </span>
+              </div>
               <div className="flex justify-between border-b border-slate-100 pb-2">
                 <span className="text-slate-500">Role</span>
                 <span className="font-medium capitalize">{user?.role?.replace('_', ' ')}</span>
               </div>
+              {profileError && <p className="text-sm text-red-600">{profileError}</p>}
               <div className="flex items-center gap-3">
                 <Button type="submit" disabled={profileSaving}>
                   {profileSaving ? 'Saving…' : 'Save profile'}
@@ -388,6 +404,29 @@ export default function SettingsPage() {
             <div className="h-px bg-slate-100 my-4" />
 
             <div className="font-semibold mb-3">Change password</div>
+            <p className="text-xs text-slate-500 mb-3">
+              Forgot your current password?{' '}
+              <a
+                href={learnerForgotPasswordUrl()}
+                className="text-violet-700 font-medium hover:underline"
+              >
+                Reset via email
+              </a>
+              {' '}or send a reset link to <strong>{user?.email}</strong>:
+            </p>
+            <div className="flex flex-wrap items-center gap-3 mb-3">
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={resetEmailBusy}
+                onClick={() => void sendPasswordResetEmail()}
+              >
+                {resetEmailBusy ? 'Sending…' : 'Email me a reset link'}
+              </Button>
+              {resetEmailSent && (
+                <span className="text-sm text-emerald-600">Reset link sent — check your inbox.</span>
+              )}
+            </div>
             <form className="grid gap-3 text-sm" onSubmit={changePassword}>
               <label>
                 <span className="text-slate-500 block mb-1">Current password</span>

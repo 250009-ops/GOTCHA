@@ -3,6 +3,7 @@
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,10 +16,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Book
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Psychology
+import androidx.compose.material.icons.outlined.Schedule
+import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -30,35 +38,30 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.LocalAppContainer
-import app.gotcha.android.R
 import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.data.model.UserStats
 import app.gotcha.android.data.model.VocabItem
 import app.gotcha.android.ui.components.InlineVocabularyListSkeleton
+import app.gotcha.android.ui.components.LangChip
 import app.gotcha.android.ui.components.OfflineBannerIfNeeded
 import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.components.rememberOfflineInteraction
-import app.gotcha.android.ui.components.LangChip
-import app.gotcha.android.ui.components.StatCard
-import app.gotcha.android.ui.components.StatCardSkeleton
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
-import java.text.NumberFormat
-import java.util.Locale
+import app.gotcha.android.ui.theme.Inter
+import app.gotcha.android.ui.theme.WebCenteredColumn
+import app.gotcha.android.ui.theme.WebMaxWidth
 
-/** Words tab — Figma vocabulary-screen 23:60. Full-bleed under glass nav. */
+private enum class VocabChipFilter { All, Due, Learning, Known }
+
+/** Vocabulary tab — matches web-learner VocabularyPage. */
 @Composable
 fun VocabularyScreen(
     filter: VocabFilterCriteria = VocabFilterCriteria(),
@@ -67,40 +70,33 @@ fun VocabularyScreen(
     onOpenFilter: () -> Unit = {},
 ) {
     val container = LocalAppContainer.current
-    val bottomInset = LocalLearnerBottomInset.current
-    val topInset = LocalLearnerTopInset.current
     var items by remember { mutableStateOf<List<VocabItem>>(emptyList()) }
     var queue by remember { mutableStateOf<List<VocabItem>>(emptyList()) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
-    var reveal by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
     var query by remember { mutableStateOf("") }
+    var chipFilter by remember { mutableStateOf(VocabChipFilter.All) }
+    var reviewOpen by remember { mutableStateOf(false) }
     val offline = rememberOfflineInteraction(container.connectivityObserver)
 
     LaunchedEffect(reloadKey, filter.sortApiParam()) {
         val sort = filter.sortApiParam()
         loading = items.isEmpty()
         error = null
-        if (items.isEmpty()) {
-            container.vocabRepository.listPeek(sort)?.let { peek ->
-                items = peek.data
-                loading = false
-            }
+        container.vocabRepository.listPeek(sort)?.let { peek ->
+            items = peek.data
+            loading = false
         }
         try {
-            val vocabResult = container.vocabRepository.listFetch(sort)
-            items = vocabResult.data
+            items = container.vocabRepository.listFetch(sort).data
             queue = runCatching { container.vocabRepository.reviewQueue() }.getOrDefault(emptyList())
-            val statsResult = runCatching { container.userRepository.statsFetch() }.getOrNull()
-            stats = statsResult?.data ?: stats
+            stats = runCatching { container.userRepository.statsFetch().data }.getOrNull() ?: stats
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (items.isEmpty()) {
-                error = e.apiErrorMessage("Failed to load vocabulary")
-            }
+            if (items.isEmpty()) error = e.apiErrorMessage("Failed to load vocabulary")
         } finally {
             loading = false
         }
@@ -109,291 +105,273 @@ fun VocabularyScreen(
     when {
         error != null && items.isEmpty() && !loading -> OfflineEmptyState(onRetry = { reloadKey += 1 })
         else -> {
-            val filtered = remember(items, filter, query) {
-                applyVocabFilter(items, filter, query)
+            val dueIds = remember(queue) { queue.map { it.id }.toSet() }
+            val filtered = remember(items, query, chipFilter, dueIds) {
+                val q = query.trim().lowercase()
+                items.filter { item ->
+                    if (q.isNotBlank()) {
+                        val hit = item.lemma.orEmpty().lowercase().contains(q) ||
+                            item.translation.orEmpty().lowercase().contains(q)
+                        if (!hit) return@filter false
+                    }
+                    when (chipFilter) {
+                        VocabChipFilter.Due -> dueIds.contains(item.id)
+                        VocabChipFilter.Learning -> !item.mastered
+                        VocabChipFilter.Known -> item.mastered
+                        VocabChipFilter.All -> true
+                    }
+                }
             }
+            val totalKnown = items.count { it.mastered }
+            val totalLearning = items.size - totalKnown
+            val dueCount = queue.size
+            val masteredPct = if (items.isNotEmpty()) totalKnown * 100 / items.size else 0
             val listLoading = loading && items.isEmpty()
-            val statsLoading = loading && stats == null
-            // Daily Review card only from real due queue — never invent a path from the full list.
-            val reviewWord = queue.firstOrNull()
-            val reviewTotal = queue.size
-            val langLabel = when (filter.language.lowercase(Locale.ROOT)) {
-                "all", "" -> "All Languages"
-                "ru" -> "Russian"
-                "en" -> "English"
-                "uz" -> "Uzbek"
-                else -> filter.language.uppercase(Locale.ROOT)
-            }
-            LazyColumn(
+
+            Box(Modifier.fillMaxSize()) {
+            WebCenteredColumn(
+                maxWidth = WebMaxWidth.W6xl,
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(GotchaColors.Surface),
-                contentPadding = PaddingValues(
-                    top = topInset,
-                    bottom = bottomInset + 24.dp,
-                ),
+                    .background(GotchaColors.WebCanvas),
             ) {
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .padding(top = 16.dp, bottom = 12.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            "Vocabulary",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 28.sp,
-                            color = GotchaColors.Ink,
-                        )
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(
+                        top = learnerScrollTopInset(),
+                        bottom = learnerScrollBottomInset(),
+                    ),
+                ) {
+                    item {
                         Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(10.dp))
-                                .background(Color.White)
-                                .clickable(onClick = offline.guardClick(onOpenFilter))
-                                .padding(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
                         ) {
-                            Text(
-                                langLabel,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                color = GotchaColors.TextMuted,
-                            )
-                            Icon(
-                                painter = painterResource(R.drawable.ic_chevron_down),
-                                contentDescription = null,
-                                tint = Color.Unspecified,
-                                modifier = Modifier.size(14.dp),
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    OfflineBannerIfNeeded(
-                        connectivity = container.connectivityObserver,
-                        hasCachedContent = items.isNotEmpty() || stats != null,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                    )
-                }
-
-                item {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 12.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        if (statsLoading) {
-                            StatCardSkeleton(Modifier.weight(1f))
-                            StatCardSkeleton(Modifier.weight(1f))
-                        } else {
-                            val learned = stats?.vocabularyTotal ?: items.size
-                            StatCard(
-                                "Words learned",
-                                NumberFormat.getNumberInstance(Locale.US).format(learned),
-                                GotchaColors.BrandPurple,
-                                Modifier.weight(1f),
-                            )
-                            StatCard(
-                                "Due for review",
-                                "${stats?.vocabularyDue ?: queue.size} words",
-                                GotchaColors.Amber,
-                                Modifier.weight(1f),
-                            )
-                        }
-                    }
-                }
-
-                item {
-                    BasicTextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        singleLine = true,
-                        textStyle = TextStyle(
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
-                            color = GotchaColors.Ink,
-                        ),
-                        cursorBrush = SolidColor(GotchaColors.BrandPurpleMid),
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 16.dp)
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White)
-                            .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                        decorationBox = { inner ->
-                            Box {
-                                if (query.isEmpty()) {
-                                    Text(
-                                        "Search words…",
-                                        fontFamily = Manrope,
-                                        fontWeight = FontWeight.Medium,
-                                        fontSize = 14.sp,
-                                        color = GotchaColors.TextSubtle,
-                                    )
-                                }
-                                inner()
-                            }
-                        },
-                    )
-                }
-
-                if (reviewWord != null) {
-                    item {
-                        Box(
-                            modifier = Modifier
-                                .padding(horizontal = 24.dp)
-                                .padding(bottom = 20.dp)
-                                .fillMaxWidth()
-                                .height(190.dp)
-                                .shadow(
-                                    elevation = 8.dp,
-                                    shape = RoundedCornerShape(20.dp),
-                                    spotColor = Color(0x30432DD7),
-                                    ambientColor = Color(0x30432DD7),
-                                )
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    Brush.linearGradient(
-                                        colors = listOf(Color(0xFF7F22FE), Color(0xFF432DD7)),
-                                        start = Offset(0f, 0f),
-                                        end = Offset(900f, 520f),
-                                    ),
-                                )
-                                .clickable(onClick = offline.guardClick {
-                                    if (reveal) onOpenReview() else reveal = true
-                                })
-                                .padding(24.dp),
-                        ) {
-                            Column(
-                                modifier = Modifier.fillMaxSize(),
-                                verticalArrangement = Arrangement.SpaceBetween,
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Vocabulary", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color(0xFF111827))
                                 Text(
-                                    "Daily Review • 1 of $reviewTotal".uppercase(Locale.US),
-                                    modifier = Modifier.fillMaxWidth(),
-                                    color = GotchaColors.BrandPurpleMuted,
-                                    fontFamily = Manrope,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 12.sp,
-                                    letterSpacing = 1.sp,
-                                    textAlign = TextAlign.Start,
+                                    "${items.size} words · $totalLearning learning · $totalKnown mastered",
+                                    fontFamily = Inter,
+                                    fontSize = 14.sp,
+                                    color = Color(0xFF99A1AF),
+                                    modifier = Modifier.padding(top = 2.dp),
                                 )
-                                Column(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                            }
+                            if (dueCount > 0) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(GotchaColors.WebAccent)
+                                        .clickable(onClick = offline.guardClick { reviewOpen = true })
+                                        .padding(horizontal = 14.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
                                 ) {
-                                    Text(
-                                        if (reveal) {
-                                            reviewWord.translation ?: reviewWord.lemma.orEmpty()
-                                        } else {
-                                            reviewWord.lemma.orEmpty()
-                                        },
-                                        color = Color.White,
-                                        fontFamily = Manrope,
-                                        fontWeight = FontWeight.ExtraBold,
-                                        fontSize = 32.sp,
-                                        textAlign = TextAlign.Center,
-                                    )
+                                    Icon(Icons.Outlined.Psychology, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+                                    Text("Review $dueCount due", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color.White)
                                 }
-                                Text(
-                                    if (reveal) "Tap to open review" else "Tap to reveal definition",
-                                    color = GotchaColors.BrandPurpleMuted,
-                                    fontFamily = Manrope,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    textAlign = TextAlign.Center,
-                                )
                             }
                         }
                     }
-                }
 
-                item {
-                    Text(
-                        if (query.isNotBlank() || !filter.isDefault()) "Words" else "Recently Added",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = GotchaColors.Ink,
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .padding(bottom = 12.dp),
-                    )
-                }
-
-                if (listLoading) {
                     item {
-                        InlineVocabularyListSkeleton(
-                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                        OfflineBannerIfNeeded(
+                            connectivity = container.connectivityObserver,
+                            hasCachedContent = items.isNotEmpty() || stats != null,
                         )
                     }
-                } else if (filtered.isEmpty()) {
+
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                VocabStatChip("Total", items.size, Icons.Outlined.Book, Color(0xFF364153), Color(0xFFF9FAFB), Color(0xFFE5E7EB), Modifier.weight(1f))
+                                VocabStatChip(
+                                    "Due",
+                                    dueCount,
+                                    Icons.Outlined.Schedule,
+                                    if (dueCount > 0) Color(0xFFBB4D00) else Color(0xFF364153),
+                                    if (dueCount > 0) Color(0xFFFFFBEB) else Color(0xFFF9FAFB),
+                                    if (dueCount > 0) Color(0xFFFEE685) else Color(0xFFE5E7EB),
+                                    Modifier.weight(1f),
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                VocabStatChip("Learning", totalLearning, Icons.Outlined.Psychology, Color(0xFF1447E6), Color(0xFFEFF6FF), Color(0xFFBEDBFF), Modifier.weight(1f))
+                                VocabStatChip("Mastered", totalKnown, Icons.Outlined.CheckCircle, Color(0xFF007A55), Color(0xFFECFDF5), Color(0xFFA4F4CF), Modifier.weight(1f))
+                            }
+                        }
+                    }
+
+                    item {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White)
+                                .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                        ) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text("Mastery", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF374151))
+                                Text("$masteredPct%", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.WebAccent)
+                            }
+                            LinearProgressIndicator(
+                                progress = { masteredPct / 100f },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp)
+                                    .height(6.dp)
+                                    .clip(RoundedCornerShape(50)),
+                                color = GotchaColors.WebAccent,
+                                trackColor = Color(0xFFF3F4F6),
+                            )
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(Color.White)
+                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(14.dp))
+                                    BasicTextField(
+                                        value = query,
+                                        onValueChange = { query = it },
+                                        singleLine = true,
+                                        textStyle = TextStyle(fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF111827)),
+                                        cursorBrush = SolidColor(GotchaColors.WebAccent),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        decorationBox = { inner ->
+                                            if (query.isEmpty()) {
+                                                Text("Search words…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+                                            }
+                                            inner()
+                                        },
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    item {
+                        Row(
+                            modifier = Modifier.horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            VocabChipFilter.entries.forEach { chip ->
+                                val on = chipFilter == chip
+                                Text(
+                                    chip.name.lowercase(),
+                                    fontFamily = Inter,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = if (on) Color.White else Color(0xFF4B5563),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(if (on) GotchaColors.WebAccent else Color.White)
+                                        .border(1.dp, if (on) GotchaColors.WebAccent else Color(0xFFE5E7EB), RoundedCornerShape(50))
+                                        .clickable { chipFilter = chip }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+                    }
+
+                    if (listLoading) {
+                        item { InlineVocabularyListSkeleton() }
+                    } else if (filtered.isEmpty()) {
+                        item {
+                            Text(
+                                if (items.isEmpty()) "No words saved yet — tap words while reading to add them." else "No words match this filter.",
+                                fontFamily = Inter,
+                                fontSize = 14.sp,
+                                color = Color(0xFF99A1AF),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 24.dp),
+                                textAlign = TextAlign.Center,
+                            )
+                        }
+                    } else {
+                        items(filtered, key = { it.id }) { item ->
+                            WebVocabRow(
+                                item = item,
+                                isDue = dueIds.contains(item.id),
+                                onClick = offline.guardClick { item.lemma?.let(onOpenWord) },
+                            )
+                        }
+                    }
+
                     item {
                         Text(
-                            if (items.isEmpty()) {
-                                "No words yet — save words while reading"
-                            } else {
-                                "No words match this filter"
-                            },
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 14.sp,
-                            color = GotchaColors.TextSubtle,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp)
-                                .padding(vertical = 24.dp),
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                } else {
-                    items(filtered, key = { it.id }) { item ->
-                        VocabRow(
-                            item,
-                            Modifier
-                                .padding(horizontal = 24.dp)
-                                .padding(bottom = 8.dp),
-                            onClick = offline.guardClick {
-                                item.lemma?.let(onOpenWord)
-                            },
+                            "Showing ${filtered.size} of ${items.size}",
+                            fontFamily = Inter,
+                            fontSize = 12.sp,
+                            color = Color(0xFF99A1AF),
+                            modifier = Modifier.padding(top = 4.dp, bottom = 16.dp),
                         )
                     }
                 }
+            }
+            if (reviewOpen) {
+                VocabularyReviewModal(
+                    onClose = { reviewOpen = false },
+                    onRefresh = { reloadKey += 1 },
+                    seedQueue = queue.takeIf { it.isNotEmpty() },
+                )
+            }
             }
         }
     }
 }
 
 @Composable
-private fun VocabRow(item: VocabItem, modifier: Modifier = Modifier, onClick: () -> Unit = {}) {
-    val filled = when {
-        item.mastered -> 5
-        (item.repetitions ?: 0) >= 4 -> 4
-        (item.repetitions ?: 0) >= 3 -> 3
-        (item.repetitions ?: 0) >= 1 -> 2
-        else -> 1
-    }
+private fun VocabStatChip(
+    label: String,
+    value: Int,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    textColor: Color,
+    bg: Color,
+    border: Color,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .background(bg)
+            .border(1.dp, border, RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = textColor, modifier = Modifier.size(16.dp))
+        Column {
+            Text("$value", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = textColor)
+            Text(label, fontFamily = Inter, fontSize = 11.sp, color = textColor.copy(alpha = 0.7f))
+        }
+    }
+}
+
+@Composable
+private fun WebVocabRow(item: VocabItem, isDue: Boolean, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
             .background(Color.White)
-            .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
+            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -406,33 +384,34 @@ private fun VocabRow(item: VocabItem, modifier: Modifier = Modifier, onClick: ()
         ) {
             LangChip(item.sourceLang ?: "?", vocabulary = true)
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    item.lemma ?: "",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp,
-                    color = GotchaColors.Ink,
-                )
-                Text(
-                    item.translation ?: "",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Normal,
-                    color = GotchaColors.TextMuted,
-                    fontSize = 13.sp,
-                )
+                Text(item.lemma.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF111827))
+                Text(item.translation.orEmpty(), fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF6B7280))
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            repeat(5) { index ->
-                Box(
-                    modifier = Modifier
-                        .size(6.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (index < filled) GotchaColors.BrandPurple else GotchaColors.Border,
-                        ),
+        Text(
+            when {
+                item.mastered -> "known"
+                isDue -> "due"
+                else -> "learning"
+            },
+            fontFamily = Inter,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 11.sp,
+            color = when {
+                item.mastered -> Color(0xFF047857)
+                isDue -> Color(0xFFBB4D00)
+                else -> Color(0xFF1D4ED8)
+            },
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .background(
+                    when {
+                        item.mastered -> Color(0xFFD1FAE5)
+                        isDue -> Color(0xFFFFFBEB)
+                        else -> Color(0xFFDBEAFE)
+                    },
                 )
-            }
-        }
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
     }
 }

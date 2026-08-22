@@ -26,6 +26,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -49,6 +53,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -63,7 +68,7 @@ import app.gotcha.android.ui.components.LoadingBox
 import app.gotcha.android.ui.components.OfflineBannerIfNeeded
 import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
@@ -219,7 +224,7 @@ private fun ReviewLangChip(code: String) {
     ) {
         Text(
             code.uppercase(),
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 11.sp,
             color = GotchaColors.BrandPurpleMid,
@@ -235,12 +240,359 @@ internal fun dueVocabFromCache(items: List<VocabItem>, limit: Int = 50): List<Vo
     }.take(limit)
 }
 
+/** SRS Review overlay — matches web-learner VocabularyPage ReviewModal. */
+@Composable
+fun VocabularyReviewModal(
+    onClose: () -> Unit,
+    onRefresh: () -> Unit,
+    seedQueue: List<VocabItem>? = null,
+) {
+    val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
+    var queue by remember(seedQueue) { mutableStateOf(seedQueue.orEmpty()) }
+    var loading by remember { mutableStateOf(queue.isEmpty()) }
+    var index by remember { mutableIntStateOf(0) }
+    var revealed by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(false) }
+    var reviewed by remember { mutableIntStateOf(0) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(seedQueue) {
+        if (seedQueue != null) {
+            queue = seedQueue
+            loading = false
+            return@LaunchedEffect
+        }
+        loading = queue.isEmpty()
+        error = null
+        try {
+            queue = container.vocabRepository.reviewQueue(limit = 200)
+            index = 0
+            revealed = false
+            reviewed = 0
+        } catch (e: Exception) {
+            if (queue.isEmpty()) error = e.message ?: "Failed to load review queue"
+        } finally {
+            loading = false
+        }
+    }
+
+    fun closeModal() {
+        onClose()
+        onRefresh()
+    }
+
+    fun rate(rating: String) {
+        val item = queue.getOrNull(index) ?: return
+        if (busy) return
+        busy = true
+        scope.launch {
+            try {
+                container.vocabRepository.review(item.id, rating)
+                reviewed += 1
+                revealed = false
+                index += 1
+                error = null
+            } catch (e: Exception) {
+                error = e.message ?: "Review failed"
+            } finally {
+                busy = false
+            }
+        }
+    }
+
+    if (queue.isEmpty() && !loading && error == null) return
+
+    val done = index >= queue.size
+    val item = queue.getOrNull(index)
+    val progress = if (queue.isEmpty()) 0f else (index.toFloat() / queue.size).coerceIn(0f, 1f)
+
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { closeModal() },
+        properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.6f))
+                .padding(16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White),
+            ) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Outlined.Psychology,
+                            contentDescription = null,
+                            tint = GotchaColors.WebAccent,
+                            modifier = Modifier.size(16.dp),
+                        )
+                        Text(
+                            "SRS Review",
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF374151),
+                        )
+                    }
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "${(index + 1).coerceAtMost(queue.size.coerceAtLeast(1))} / ${queue.size}",
+                            fontFamily = Inter,
+                            fontSize = 12.sp,
+                            color = Color(0xFF9CA3AF),
+                        )
+                        Box(
+                            Modifier
+                                .size(28.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { closeModal() },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Close,
+                                contentDescription = "Close",
+                                tint = Color(0xFF9CA3AF),
+                                modifier = Modifier.size(16.dp),
+                            )
+                        }
+                    }
+                }
+
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .background(Color(0xFFF3F4F6)),
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth(progress)
+                            .height(4.dp)
+                            .background(GotchaColors.WebAccent),
+                    )
+                }
+
+                when {
+                    loading && queue.isEmpty() -> {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(280.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            LoadingBox(Modifier.size(48.dp))
+                        }
+                    }
+                    error != null && queue.isEmpty() -> {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            Text(error!!, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Danger)
+                            ReviewFlatButton(text = "Close", onClick = { closeModal() }, filled = true)
+                        }
+                    }
+                    done -> {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(64.dp)
+                                    .clip(CircleShape)
+                                    .background(Color(0xFFD1FAE5)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Icon(
+                                    Icons.Outlined.CheckCircle,
+                                    contentDescription = null,
+                                    tint = Color(0xFF059669),
+                                    modifier = Modifier.size(32.dp),
+                                )
+                            }
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "Session complete!",
+                                fontFamily = Inter,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 20.sp,
+                                color = Color(0xFF111827),
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                "Reviewed $reviewed word${if (reviewed == 1) "" else "s"}. Great job!",
+                                fontFamily = Inter,
+                                fontSize = 14.sp,
+                                color = Color(0xFF6B7280),
+                            )
+                            Spacer(Modifier.height(24.dp))
+                            ReviewFlatButton(text = "Back to vocabulary", onClick = { closeModal() }, filled = true)
+                        }
+                    }
+                    item != null -> {
+                        Column(
+                            Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                item.lemma.orEmpty(),
+                                fontFamily = Inter,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 30.sp,
+                                color = Color(0xFF111827),
+                                textAlign = TextAlign.Center,
+                            )
+                            item.contextSentence?.takeIf { it.isNotBlank() }?.let { ctx ->
+                                Spacer(Modifier.height(8.dp))
+                                Text(
+                                    "\"$ctx\"",
+                                    fontFamily = Inter,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF9CA3AF),
+                                    fontStyle = FontStyle.Italic,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier.padding(horizontal = 8.dp),
+                                )
+                            }
+
+                            Spacer(Modifier.height(24.dp))
+
+                            if (!revealed) {
+                                Column(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFFF9FAFB))
+                                        .border(
+                                            2.dp,
+                                            Color(0xFFE5E7EB),
+                                            RoundedCornerShape(12.dp),
+                                        )
+                                        .clickable(enabled = !busy) { revealed = true }
+                                        .padding(vertical = 12.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                ) {
+                                    Text(
+                                        "Show translation",
+                                        fontFamily = Inter,
+                                        fontSize = 14.sp,
+                                        color = Color(0xFF9CA3AF),
+                                    )
+                                    Text(
+                                        "Tap to reveal",
+                                        fontFamily = Inter,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF9CA3AF).copy(alpha = 0.6f),
+                                        modifier = Modifier.padding(top = 4.dp),
+                                    )
+                                }
+                            } else {
+                                Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                    Box(
+                                        Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(12.dp))
+                                            .background(Color(0xFFF5F3FF))
+                                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            item.translation.orEmpty(),
+                                            fontFamily = Inter,
+                                            fontWeight = FontWeight.Medium,
+                                            fontSize = 16.sp,
+                                            color = Color(0xFF374151),
+                                            textAlign = TextAlign.Center,
+                                        )
+                                    }
+
+                                    Row(
+                                        Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    ) {
+                                        listOf(
+                                            Triple("Again", Color(0xFFDC2626), Color(0xFFFECACA)),
+                                            Triple("Hard", Color(0xFFD97706), Color(0xFFFDE68A)),
+                                            Triple("Good", Color(0xFF2563EB), Color(0xFFBFDBFE)),
+                                            Triple("Easy", Color(0xFF059669), Color(0xFFA7F3D0)),
+                                        ).forEach { (label, textColor, borderColor) ->
+                                            Column(
+                                                Modifier
+                                                    .weight(1f)
+                                                    .clip(RoundedCornerShape(12.dp))
+                                                    .background(Color.White)
+                                                    .border(1.dp, borderColor, RoundedCornerShape(12.dp))
+                                                    .clickable(enabled = !busy) { rate(label) }
+                                                    .padding(vertical = 10.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                verticalArrangement = Arrangement.spacedBy(4.dp),
+                                            ) {
+                                                Text(
+                                                    label,
+                                                    fontFamily = Inter,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    fontSize = 12.sp,
+                                                    color = textColor,
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            error?.let { msg ->
+                                Spacer(Modifier.height(12.dp))
+                                Text(
+                                    msg,
+                                    fontFamily = Inter,
+                                    fontSize = 12.sp,
+                                    color = GotchaColors.Danger,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 /** Daily Review — wired to GET /vocabulary/review-queue + POST /vocabulary/{id}/review. */
 @Composable
 fun VocabularyReviewScreen(
     onBack: () -> Unit,
     onComplete: (ReviewSessionResult) -> Unit,
     seedQueue: List<VocabItem>? = null,
+    modal: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
@@ -338,11 +690,19 @@ fun VocabularyReviewScreen(
 
             Column(
                 Modifier
-                    .fillMaxSize()
-                    .background(GotchaColors.Surface)
-                    .learnerDirectoryStatusPad()
-                    .navigationBarsPadding()
-                    .padding(bottom = 32.dp),
+                    .fillMaxWidth()
+                    .then(
+                        if (modal) {
+                            Modifier.padding(bottom = 8.dp)
+                        } else {
+                            Modifier
+                                .fillMaxSize()
+                                .background(GotchaColors.Surface)
+                                .statusBarsPadding()
+                                .navigationBarsPadding()
+                                .padding(bottom = 32.dp)
+                        },
+                    ),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 OfflineBannerIfNeeded(
@@ -380,15 +740,15 @@ fun VocabularyReviewScreen(
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
                         Text(
-                            "Daily Review",
-                            fontFamily = Manrope,
+                            if (modal) "SRS Review" else "Daily Review",
+                            fontFamily = Inter,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 16.sp,
                             color = GotchaColors.Ink,
                         )
                         Text(
                             if (total == 0) "0 cards" else "${(index + 1).coerceAtMost(total)} of $total cards",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
                             color = GotchaColors.TextSubtle,
@@ -407,7 +767,7 @@ fun VocabularyReviewScreen(
                     ) {
                         Text(
                             if (reviewed > 0) "Session complete!" else "You're caught up!",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 22.sp,
                             color = GotchaColors.Ink,
@@ -420,7 +780,7 @@ fun VocabularyReviewScreen(
                             } else {
                                 "No words due for review right now."
                             },
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
                             color = GotchaColors.TextMuted,
@@ -459,7 +819,7 @@ fun VocabularyReviewScreen(
                         ) {
                             Text(
                                 word.lemma.orEmpty(),
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 36.sp,
                                 color = GotchaColors.Ink,
@@ -468,7 +828,7 @@ fun VocabularyReviewScreen(
                             if (reveal) {
                                 Text(
                                     word.translation.orEmpty(),
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 18.sp,
                                     color = GotchaColors.BrandPurpleMid,
@@ -477,7 +837,7 @@ fun VocabularyReviewScreen(
                             } else {
                                 Text(
                                     "Tap to reveal",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 14.sp,
                                     color = GotchaColors.TextSubtle,
@@ -494,14 +854,14 @@ fun VocabularyReviewScreen(
                                 ) {
                                     Text(
                                         "EXAMPLE",
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 11.sp,
                                         color = GotchaColors.TextSubtle,
                                     )
                                     Text(
                                         ctx,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 16.sp,
                                         lineHeight = 24.sp,
@@ -527,7 +887,7 @@ fun VocabularyReviewScreen(
                                     )
                                     Text(
                                         found,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 12.sp,
                                         color = GotchaColors.TextMuted,
@@ -543,7 +903,7 @@ fun VocabularyReviewScreen(
                         Text(
                             error!!,
                             modifier = Modifier.padding(horizontal = 20.dp),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 12.sp,
                             color = GotchaColors.Danger,
@@ -561,7 +921,7 @@ fun VocabularyReviewScreen(
                             "HOW WELL DID YOU KNOW THIS?",
                             modifier = Modifier.fillMaxWidth(),
                             textAlign = TextAlign.Center,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = GotchaColors.TextSubtle,
@@ -588,7 +948,7 @@ fun VocabularyReviewScreen(
                                 ) {
                                     Text(
                                         label,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.ExtraBold,
                                         fontSize = 15.sp,
                                         color = if (reveal && !busy) color else GotchaColors.TextSubtle,
@@ -624,7 +984,7 @@ fun VocabularyReviewScreen(
                         Text(
                             "Skip Card",
                             modifier = Modifier.clickable(enabled = !busy) { advanceLocal() },
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = GotchaColors.TextMuted,
@@ -698,7 +1058,7 @@ fun ReviewCompleteScreen(
                 Text(
                     if (session.reviewed > 0) "Review Complete!" else "All caught up",
                     modifier = Modifier.fillMaxWidth(),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 26.sp,
                     color = GotchaColors.Ink,
@@ -711,7 +1071,7 @@ fun ReviewCompleteScreen(
                         "No cards were reviewed this session."
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Normal,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
@@ -772,7 +1132,7 @@ fun ReviewCompleteScreen(
                         }
                         Text(
                             "$accuracy%",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 16.sp,
                             color = GotchaColors.Ink,
@@ -780,7 +1140,7 @@ fun ReviewCompleteScreen(
                     }
                     Text(
                         "Accuracy",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 11.sp,
                         color = Color(0xFF667085),
@@ -810,7 +1170,7 @@ fun ReviewCompleteScreen(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
                     "WORDS TO REVISIT",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
@@ -854,7 +1214,7 @@ private fun ReviewFlatButton(text: String, onClick: () -> Unit, filled: Boolean)
     ) {
         Text(
             text,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
             color = if (filled) Color.White else GotchaColors.BrandPurpleMid,
@@ -866,7 +1226,7 @@ private fun ReviewFlatButton(text: String, onClick: () -> Unit, filled: Boolean)
 private fun ReviewLegendDot(dot: Color, label: String, labelColor: Color) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
-        Text(label, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = labelColor)
+        Text(label, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = labelColor)
     }
 }
 
@@ -887,11 +1247,11 @@ private fun RevisitRow(lemma: String, translation: String, tag: String) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(lemma, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+            Text(lemma, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
             if (translation.isNotBlank()) {
                 Text(
                     translation,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Normal,
                     fontSize = 13.sp,
                     color = GotchaColors.TextMuted,
@@ -904,7 +1264,7 @@ private fun RevisitRow(lemma: String, translation: String, tag: String) {
                 .clip(RoundedCornerShape(4.dp))
                 .background(bg)
                 .padding(horizontal = 6.dp, vertical = 2.dp),
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             color = fg,
@@ -996,7 +1356,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                         )
                         Text(
                             display,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 20.sp,
                             color = GotchaColors.Ink,
@@ -1032,7 +1392,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                         }
                         Text(
                             display,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.ExtraBold,
                             fontSize = 26.sp,
                             color = GotchaColors.Ink,
@@ -1044,7 +1404,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                             } else {
                                 Text(
                                     translation,
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = GotchaColors.Ink,
@@ -1093,7 +1453,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
                                         foundTitle ?: "Saved word",
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 14.sp,
                                         color = GotchaColors.Ink,
@@ -1101,7 +1461,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                                     if (addedLabel != null) {
                                         Text(
                                             addedLabel,
-                                            fontFamily = Manrope,
+                                            fontFamily = Inter,
                                             fontWeight = FontWeight.Normal,
                                             fontSize = 11.sp,
                                             color = GotchaColors.TextSubtle,
@@ -1141,7 +1501,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
                                 } else onBack()
                             },
                         textAlign = TextAlign.Center,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 14.sp,
                         color = GotchaColors.Danger,
@@ -1157,7 +1517,7 @@ fun WordDetailScreen(lemma: String, onBack: () -> Unit) {
 private fun SectionLabel(text: String) {
     Text(
         text,
-        fontFamily = Manrope,
+        fontFamily = Inter,
         fontWeight = FontWeight.Bold,
         fontSize = 14.sp,
         color = GotchaColors.TextMuted,
@@ -1180,7 +1540,7 @@ private fun DetailTranslationChip(code: String) {
     ) {
         Text(
             upper,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 10.sp,
             color = fg,
@@ -1197,7 +1557,7 @@ private fun TranslationLine(code: String, value: String) {
         DetailTranslationChip(code)
         Text(
             value,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 15.sp,
             color = GotchaColors.Ink,
@@ -1217,7 +1577,7 @@ private fun ExampleCard(src: String) {
     ) {
         Text(
             src,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.SemiBold,
             fontSize = 15.sp,
             color = GotchaColors.Ink,
@@ -1230,14 +1590,14 @@ private fun StatLine(label: String, value: String, valueColor: Color = GotchaCol
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Text(
             label,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Medium,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,
         )
         Text(
             value,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = valueColor,
@@ -1293,7 +1653,7 @@ fun VocabularyFilterScreen(
             ) {
                 Text(
                     "Filter Vocabulary",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 18.sp,
                     color = GotchaColors.Ink,
@@ -1306,7 +1666,7 @@ fun VocabularyFilterScreen(
                         sortBy = "Recently added"
                         source = "All sources"
                     },
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = GotchaColors.TextSubtle,
@@ -1408,7 +1768,7 @@ fun VocabularyFilterScreen(
                 )
                 Text(
                     "Show filtered words",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 12.sp,
                     color = GotchaColors.TextSubtle,
@@ -1425,7 +1785,7 @@ private fun FilterSection(title: String, content: @Composable () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text(
             title,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 12.sp,
             color = GotchaColors.TextMuted,
@@ -1446,7 +1806,7 @@ private fun FilterPill(text: String, selected: Boolean, onClick: () -> Unit) {
             )
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 8.dp),
-        fontFamily = Manrope,
+        fontFamily = Inter,
         fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
         fontSize = 13.sp,
         color = if (selected) Color.White else GotchaColors.TextMuted,
@@ -1463,7 +1823,7 @@ private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+        Text(label, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
         Box(
             Modifier
                 .size(18.dp)
@@ -1503,7 +1863,7 @@ private fun CheckboxRow(label: String, checked: Boolean, onClick: () -> Unit) {
         }
         Text(
             label,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
             color = GotchaColors.Ink,

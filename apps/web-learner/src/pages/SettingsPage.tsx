@@ -1,12 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
-  AlertTriangle,
   BookOpen,
   Check,
   ChevronRight,
-  Download,
   Eye,
   EyeOff,
   Loader2,
@@ -48,7 +46,7 @@ const READER_THEMES = [
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="bg-white rounded-2xl border border-[#f3f4f6] overflow-hidden">
-      <div className="px-5 py-4 border-b border-[#f9fafb]">
+      <div className="px-4 sm:px-5 py-4 border-b border-[#f9fafb]">
         <h2 className="font-bold text-gray-900 text-xl">{title}</h2>
       </div>
       <div className="divide-y divide-[#f9fafb]">{children}</div>
@@ -58,17 +56,19 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-4 px-5 py-4">
-      <div className="flex-1 min-w-0">
+    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
+      <div className="min-w-0 sm:flex-1">
         <div className="text-sm font-medium text-[#364153]">{label}</div>
-        {description && <div className="text-xs text-[#99a1af] mt-0.5">{description}</div>}
+        {description && <div className="text-xs text-[#99a1af] mt-0.5 leading-relaxed">{description}</div>}
       </div>
-      {children}
+      <div className="min-w-0 w-full sm:w-auto sm:shrink-0 flex sm:justify-end">
+        {children}
+      </div>
     </div>
   );
 }
 
-function RangeSlider({ value, min, max, step, onChange, width = 112 }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void; width?: number }) {
+function RangeSlider({ value, min, max, step, onChange }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
   const pct = ((value - min) / (max - min)) * 100;
   return (
     <input
@@ -78,8 +78,8 @@ function RangeSlider({ value, min, max, step, onChange, width = 112 }: { value: 
       step={step}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="range-slider"
-      style={{ width, '--range-progress': `${pct}%` } as React.CSSProperties}
+      className="range-slider w-full sm:w-28 max-w-full"
+      style={{ '--range-progress': `${pct}%` } as React.CSSProperties}
     />
   );
 }
@@ -232,6 +232,10 @@ function TargetLanguageModal({
   const [saving, setSaving] = useState(false);
 
   const submit = async () => {
+    if (mode === 'add' && targetLanguage === nativeLanguage) {
+      toast.error('Target language cannot be the same as your native language');
+      return;
+    }
     setSaving(true);
     try {
       if (mode === 'add') {
@@ -307,89 +311,19 @@ function TargetLanguageModal({
   );
 }
 
-function DeleteAccountModal({ onClose, onDeleted }: { onClose: () => void; onDeleted: () => void }) {
-  const [password, setPassword] = useState('');
-  const [confirmText, setConfirmText] = useState('');
-  const [deleting, setDeleting] = useState(false);
-
-  const submit = async () => {
-    if (!password) {
-      toast.error('Enter your password to confirm');
-      return;
-    }
-    if (confirmText.trim().toUpperCase() !== 'DELETE') {
-      toast.error('Type DELETE to confirm');
-      return;
-    }
-    setDeleting(true);
-    try {
-      await api('/users/me', { method: 'DELETE', body: JSON.stringify({ currentPassword: password }) });
-      toast.success('Account deleted.');
-      onDeleted();
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not delete account');
-    } finally {
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <ModalShell title="Delete account" onClose={onClose}>
-      <div className="flex flex-col gap-3">
-        <div className="flex items-start gap-2 rounded-[14px] bg-red-50 border border-red-100 px-3 py-2.5 text-xs text-red-700">
-          <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          This permanently anonymizes your account and signs you out everywhere. This cannot be undone.
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">Current password</label>
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-          />
-        </div>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">
-            Type <span className="font-mono font-bold">DELETE</span> to confirm
-          </label>
-          <input
-            type="text"
-            value={confirmText}
-            onChange={(e) => setConfirmText(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-red-200 focus:border-red-400"
-          />
-        </div>
-        <button
-          type="button"
-          onClick={() => void submit()}
-          disabled={deleting}
-          className="mt-1 h-9 rounded-[14px] bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
-        >
-          {deleting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Permanently delete my account
-        </button>
-      </div>
-    </ModalShell>
-  );
-}
-
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
 
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [langBusy, setLangBusy] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
   const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'en');
   const [avatarBusy, setAvatarBusy] = useState(false);
 
-  const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
   const [lineSpacing, setLineSpacing] = useState(preferences?.readerLineSpacing ?? 1.5);
   const [theme, setTheme] = useState(preferences?.readerTheme ?? 'light');
@@ -401,6 +335,10 @@ export default function SettingsPage() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [subLoading, setSubLoading] = useState(true);
   const [catalogLangs, setCatalogLangs] = useState<CatalogLanguage[]>([]);
+
+  useEffect(() => {
+    void refreshProfile();
+  }, [refreshProfile]);
 
   useEffect(() => {
     if (user) {
@@ -418,7 +356,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     if (preferences) {
-      setDailyGoal(preferences.dailyGoalMinutes);
       setFontScale(preferences.readerFontScale);
       setLineSpacing(preferences.readerLineSpacing);
       setTheme(preferences.readerTheme);
@@ -454,7 +391,6 @@ export default function SettingsPage() {
       await Promise.all([
         updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage, uiLanguage }),
         updatePreferences({
-          dailyGoalMinutes: dailyGoal,
           readerFontScale: fontScale,
           readerLineSpacing: lineSpacing,
           readerTheme: theme as 'light' | 'dark' | 'sepia',
@@ -463,6 +399,7 @@ export default function SettingsPage() {
           notificationsEnabled,
         }),
       ]);
+      await refreshProfile();
       toast.success('Settings saved');
     } catch (e) {
       toast.error(e instanceof Error ? e.message : 'Save failed');
@@ -474,32 +411,16 @@ export default function SettingsPage() {
   const plan = subscription?.subscription?.plan;
   const quota = subscription?.usage.quota ?? plan?.aiDailyQuota ?? 50;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
-  const usagePct = quota > 0 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
+  const usagePct = quota > 0 && quota < 1_000_000 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
+  const importAllowance = subscription?.usage.importAllowance;
   const targetLanguages = user?.targetLanguages ?? [];
-
-  const handleExportData = async () => {
-    setExporting(true);
-    try {
-      const data = await api('/users/me/export');
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `gotcha-data-export-${new Date().toISOString().slice(0, 10)}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast.success('Export downloaded');
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Export failed');
-    } finally {
-      setExporting(false);
-    }
-  };
+  const visibleTargetLanguages = useMemo(
+    () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),
+    [targetLanguages, nativeLanguage],
+  );
 
   const handleRemoveLanguage = async (lang: string) => {
-    if (targetLanguages.length <= 1) {
+    if (visibleTargetLanguages.length <= 1) {
       toast.error('You must keep at least one target language');
       return;
     }
@@ -515,31 +436,22 @@ export default function SettingsPage() {
     }
   };
 
-  const handleAccountDeleted = () => {
-    setDeleteModalOpen(false);
-    clearTokens();
-    window.location.assign(withAppBase('/login'));
-  };
-
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-5">
+    <div className="max-w-3xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-5 min-w-0">
       {pwModalOpen && <ChangePasswordModal onClose={() => setPwModalOpen(false)} />}
       {langModal && (
         <TargetLanguageModal
           mode={langModal.mode}
           existing={langModal.existing}
-          usedCodes={targetLanguages.map((tl) => tl.targetLanguage)}
+          usedCodes={visibleTargetLanguages.map((tl) => tl.targetLanguage)}
           nativeLanguage={nativeLanguage}
           languageOptions={languageOptions}
           onClose={() => setLangModal(null)}
           onSaved={refreshProfile}
         />
       )}
-      {deleteModalOpen && (
-        <DeleteAccountModal onClose={() => setDeleteModalOpen(false)} onDeleted={handleAccountDeleted} />
-      )}
-      <div className="flex items-center justify-between gap-4">
-        <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
           <p className="text-[#99a1af] text-sm mt-0.5">Manage your account and learning preferences.</p>
         </div>
@@ -547,7 +459,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => void saveAll()}
           disabled={saving}
-          className="h-9 px-4 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-medium flex items-center gap-2 shrink-0"
+          className="h-9 px-4 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           Save changes
@@ -556,9 +468,9 @@ export default function SettingsPage() {
 
       <Section title="Account">
         <Row label="Photo" description="Used on Home, Profile, and chat. JPG, PNG, or WebP up to 2 MB.">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
-            <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer">
+            <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
               {avatarBusy ? 'Uploading…' : 'Change photo'}
               <input
                 type="file"
@@ -585,14 +497,14 @@ export default function SettingsPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder="Your name"
-            className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           />
         </Row>
         <Row label="Native language" description="Used for translations and lookups">
           <select
             value={nativeLanguage}
             onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
-            className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
@@ -605,7 +517,7 @@ export default function SettingsPage() {
           <select
             value={uiLanguage}
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
-            className="w-48 h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
@@ -615,16 +527,16 @@ export default function SettingsPage() {
           </select>
         </Row>
         <Row label="Email" description="Used for login and notifications">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-[#6a7282]">{user?.email}</span>
-            <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5">Verified</span>
+          <div className="flex items-center gap-2 min-w-0 max-w-full">
+            <span className="text-sm text-[#6a7282] truncate">{user?.email}</span>
+            <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">Verified</span>
           </div>
         </Row>
         <Row label="Password">
           <button
             type="button"
             onClick={() => setPwModalOpen(true)}
-            className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50"
+            className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 w-full sm:w-auto"
           >
             Change password
           </button>
@@ -632,13 +544,17 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Target Languages">
-        {targetLanguages.length === 0 ? (
-          <div className="px-5 py-6 text-center text-sm text-gray-400">No target languages set yet.</div>
+        {visibleTargetLanguages.length === 0 ? (
+          <div className="px-5 py-6 text-center text-sm text-gray-400">
+            {targetLanguages.some((tl) => tl.targetLanguage === nativeLanguage)
+              ? 'Your native language cannot be a target. Save settings or add a language to learn.'
+              : 'No target languages set yet.'}
+          </div>
         ) : (
-          targetLanguages.map((tl) => {
+          visibleTargetLanguages.map((tl) => {
             const catalog = languageOptions.find((l) => l.code === tl.targetLanguage);
             return (
-              <div key={tl.targetLanguage} className="flex items-center gap-3 px-5 py-3.5">
+              <div key={tl.targetLanguage} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0">
                 <span className="text-xl leading-none">{catalog?.flagEmoji ?? languageFlag(tl.targetLanguage)}</span>
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? languageLabel(tl.targetLanguage)}</div>
@@ -650,7 +566,7 @@ export default function SettingsPage() {
                 {tl.isPrimary && (
                   <span className="text-[11px] font-semibold text-[#7008e7] bg-[#ede9fe] rounded-full px-2 py-0.5 shrink-0">Primary</span>
                 )}
-                {targetLanguages.length > 1 && (
+                {visibleTargetLanguages.length > 1 && (
                   <button
                     type="button"
                     disabled={langBusy === tl.targetLanguage}
@@ -697,17 +613,17 @@ export default function SettingsPage() {
         </div>
 
         <Row label="Font size" description={`${Math.round(fontScale * 100)}% — base size`}>
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-[#99a1af]">A</span>
+          <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
+            <span className="text-xs text-[#99a1af] shrink-0">A</span>
             <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={setFontScale} />
-            <span className="text-sm font-semibold text-[#0a0a0a]">A</span>
+            <span className="text-sm font-semibold text-[#0a0a0a] shrink-0">A</span>
           </div>
         </Row>
         <Row label="Line spacing" description={`${lineSpacing.toFixed(1)}× line height`}>
           <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={setLineSpacing} />
         </Row>
         <Row label="Reader theme">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             {READER_THEMES.map((t) => (
               <button
                 key={t.value}
@@ -733,16 +649,16 @@ export default function SettingsPage() {
       </Section>
 
       <Section title="Learning Goals">
-        <Row label="Daily reading goal" description={`${dailyGoal} minutes per day`}>
-          <RangeSlider value={dailyGoal} min={5} max={120} step={5} onChange={setDailyGoal} width={128} />
-        </Row>
-        <Row label="Streak reminders" description="Get notified before your streak breaks">
+        <Row
+          label="Email notifications"
+          description="Get an email for new messages, plus reminders before your streak breaks"
+        >
           <Toggle checked={notificationsEnabled} onChange={setNotificationsEnabled} />
         </Row>
       </Section>
 
       <Section title="Usage & Imports">
-        <div className="p-5">
+        <div className="p-4 sm:p-5 min-w-0">
           {subLoading ? (
             <div className="h-20 flex items-center justify-center text-gray-400 text-sm">Loading usage…</div>
           ) : (
@@ -751,88 +667,96 @@ export default function SettingsPage() {
                   allowance, and imports beyond that are billed per-document via Atmos (see the
                   Import page). This card reports real usage, not a "plan" tier. */}
               <div
-                className="rounded-[14px] p-5"
+                className="rounded-[14px] p-4 sm:p-5 min-w-0"
                 style={{ backgroundImage: 'linear-gradient(161deg, #7f22fe 0%, #432dd7 100%)' }}
               >
-                <div className="rounded-[14px] text-white">
-                  <div className="flex items-start justify-between">
-                    <div>
+                <div className="rounded-[14px] text-white min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-[#ddd6ff]">Free allowance</div>
-                      <div className="text-2xl font-bold mt-1">Pay per import</div>
+                      <div className="text-xl sm:text-2xl font-bold mt-1">Pay per import</div>
                     </div>
-                    <Zap className="w-6 h-6 text-white" />
+                    <Zap className="w-6 h-6 text-white shrink-0" />
                   </div>
                   <div className="space-y-1.5 py-4">
                     {[
-                      `AI lookups: ${lookupsToday}/${quota >= 1_000_000 ? '∞' : quota} today`,
-                      `${plan?.importLimit && plan.importLimit < 1_000_000 ? `Up to ${plan.importLimit} free imports per month` : 'Free import allowance applies monthly'}`,
+                      `AI lookups: ${lookupsToday}/${quota === 0 || quota >= 1_000_000 ? '∞' : quota} today`,
+                      importAllowance
+                        ? `${importAllowance.dailyFreeRemaining} of ${importAllowance.dailyFreeImportsPerUser} free imports left today`
+                        : plan?.importLimit && plan.importLimit < 1_000_000
+                          ? `Up to ${plan.importLimit} free imports per day`
+                          : 'Free import allowance from admin Import & Pricing',
+                      importAllowance
+                        ? `${importAllowance.monthlyPagesRemaining} of ${importAllowance.monthlyFreePageLimit} free pages left ${importAllowance.resetCycle === 'daily' ? 'today' : importAllowance.resetCycle === 'yearly' ? 'this year' : 'this month'}`
+                        : null,
                       'Access to the public library',
-                    ].map((f) => (
-                      <div key={f} className="flex items-center gap-2 text-sm">
-                        <Check className="w-3.5 h-3.5 shrink-0 text-[#ddd6ff]" />
-                        <span className="text-[#ddd6ff]">{f}</span>
+                    ].filter(Boolean).map((f) => (
+                      <div key={f as string} className="flex items-start gap-2 text-sm">
+                        <Check className="w-3.5 h-3.5 shrink-0 text-[#ddd6ff] mt-0.5" />
+                        <span className="text-[#ddd6ff] break-words">{f}</span>
                       </div>
                     ))}
                   </div>
                   <button
                     type="button"
                     onClick={() => navigate('/app/import')}
-                    className="w-full h-9 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
+                    className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
                   >
-                    <Zap className="w-4 h-4" />Import more content
+                    <Zap className="w-4 h-4 shrink-0" />Import more content
                   </button>
                 </div>
               </div>
 
-              <div className="pt-4">
-                <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                  <span>AI lookups today</span>
-                  <span>{lookupsToday}/{quota >= 1_000_000 ? '∞' : quota}</span>
+              <div className="pt-4 space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
+                    <span>AI lookups today</span>
+                    <span>{lookupsToday}/{quota === 0 || quota >= 1_000_000 ? '∞' : quota}</span>
+                  </div>
+                  <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
+                    <div className="h-full bg-[#8e51ff] transition-all" style={{ width: `${quota === 0 || quota >= 1_000_000 ? 4 : usagePct}%` }} />
+                  </div>
                 </div>
-                <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                  <div className="h-full bg-[#8e51ff] transition-all" style={{ width: `${quota >= 1_000_000 ? 4 : usagePct}%` }} />
-                </div>
+                {importAllowance ? (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
+                      <span>Free imports today</span>
+                      <span>{importAllowance.dailyFreeUsed}/{importAllowance.dailyFreeImportsPerUser}</span>
+                    </div>
+                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-[#7f22fe] transition-all"
+                        style={{
+                          width: `${
+                            importAllowance.dailyFreeImportsPerUser > 0
+                              ? Math.min(100, Math.round((importAllowance.dailyFreeUsed / importAllowance.dailyFreeImportsPerUser) * 100))
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </>
           )}
         </div>
       </Section>
 
-      <Section title="Danger Zone">
-        <Row label="Export my data" description="Download all your vocabulary and reading history">
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={() => void handleExportData()}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
-          >
-            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
-            Export
-          </button>
-        </Row>
-        <Row label="Delete account" description="Permanently delete your account and all data">
-          <button
-            type="button"
-            onClick={() => setDeleteModalOpen(true)}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[14px] border border-[#ffc9c9] bg-white text-sm font-medium text-[#e7000b] hover:bg-red-50"
-          >
-            <Trash2 className="w-3.5 h-3.5" />Delete
-          </button>
-        </Row>
-      </Section>
-
-      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-2 text-xs text-gray-400">
+      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+        <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
           <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
-          Signed in as{' '}
-          <span className="font-medium text-gray-600 truncate max-w-[180px]">
-            {user?.displayName ?? user?.email}
+          <span className="min-w-0 truncate">
+            Signed in as{' '}
+            <span className="font-medium text-gray-600">
+              {user?.displayName ?? user?.email}
+            </span>
           </span>
         </div>
         <Button
           variant="outline"
           onClick={() => { logout(); navigate('/login'); }}
-          className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2"
+          className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2 w-full sm:w-auto shrink-0"
         >
           <LogOut className="w-4 h-4" />
           Sign out

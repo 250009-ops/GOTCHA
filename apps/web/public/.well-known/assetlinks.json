@@ -1,0 +1,22 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.gotcha.android",
+      "sha256_cert_fingerprints": [
+        "26:1A:18:56:EE:39:27:12:33:7E:8B:A9:28:1C:95:16:A9:33:B3:0B:51:E9:F3:37:70:BA:A6:E2:86:26:08:43"
+      ]
+    }
+  },
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.gotcha.android.debug",
+      "sha256_cert_fingerprints": [
+        "34:2A:2B:B1:77:C8:97:57:38:EF:B7:28:D2:B7:DB:DF:B3:0F:0A:D6:0F:E6:A3:13:53:C9:26:B2:77:AC:67:9B"
+      ]
+    }
+  }
+]

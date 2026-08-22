@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
@@ -25,6 +27,7 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
@@ -59,7 +62,7 @@ import app.gotcha.android.ui.components.GlassLoadingScreen
 import app.gotcha.android.ui.components.GotchaPrimaryButton
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -212,43 +215,49 @@ fun PracticeScreen(
         else -> content?.title ?: "Practice"
     }
 
-    Column(Modifier.fillMaxSize().background(GotchaColors.Surface)) {
+    Column(Modifier.fillMaxSize().background(Color(0xFFFDFCFF)).statusBarsPadding()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 20.dp)
-                .padding(top = 4.dp, bottom = 12.dp)
-                .height(44.dp),
+                .height(48.dp)
+                .background(Color.White)
+                .border(width = 0.dp, color = Color.Transparent)
+                .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Box(
-                Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(GotchaColors.SurfaceCard)
-                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(10.dp))
-                    .clickable(onClick = onBack),
-                contentAlignment = Alignment.Center,
+            Row(
+                modifier = Modifier.clickable(onClick = onBack),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = "Back",
-                    tint = GotchaColors.Ink,
-                    modifier = Modifier.size(18.dp),
+                    contentDescription = "Back to reading",
+                    tint = Color(0xFF6A7282),
+                    modifier = Modifier.size(16.dp),
+                )
+                Text(
+                    "Back to reading",
+                    fontFamily = Inter,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 14.sp,
+                    color = Color(0xFF6A7282),
                 )
             }
-            Spacer(Modifier.width(12.dp))
+            Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)))
             Text(
                 headerTitle,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 18.sp,
-                color = GotchaColors.Ink,
+                fontFamily = Inter,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp,
+                color = Color(0xFF1E2939),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
         }
+        HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
 
         when {
             segmentId == null -> PracticeEmptyState(onBack = onBack)
@@ -301,15 +310,15 @@ private fun PracticeEmptyState(onBack: () -> Unit) {
             Modifier
                 .size(56.dp)
                 .clip(RoundedCornerShape(18.dp))
-                .background(GotchaColors.BrandPurpleSoft),
+                .background(GotchaColors.WebAccentSoft),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(Icons.Outlined.School, null, tint = GotchaColors.BrandPurple, modifier = Modifier.size(26.dp))
+            Icon(Icons.Outlined.School, null, tint = GotchaColors.WebAccent, modifier = Modifier.size(26.dp))
         }
         Spacer(Modifier.height(16.dp))
         Text(
             "Practice what you read",
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
             color = GotchaColors.Ink,
@@ -318,7 +327,7 @@ private fun PracticeEmptyState(onBack: () -> Unit) {
         Text(
             "Open any chapter in the Reader and tap Practice to quiz yourself on it — comprehension, " +
                 "fill-in-the-blank, and short-answer questions generated from that exact passage.",
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,
             textAlign = TextAlign.Center,
@@ -345,18 +354,18 @@ private fun PracticeSetupView(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(GotchaColors.SurfaceCard)
+                .background(Color.White)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column {
-                Text("Quiz yourself", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+                Text("Quiz yourself", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "Generated from the chapter you were just reading" +
                         (contentTitle?.let { " in \u201c$it\u201d" } ?: "") + ".",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.TextMuted,
                 )
@@ -368,10 +377,10 @@ private fun PracticeSetupView(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (active) GotchaColors.BrandPurpleSoft else GotchaColors.SurfaceCard)
+                            .background(if (active) GotchaColors.WebAccentSoft else Color.White)
                             .border(
                                 1.dp,
-                                if (active) GotchaColors.BrandPurple else GotchaColors.Border,
+                                if (active) GotchaColors.WebAccent else GotchaColors.Border,
                                 RoundedCornerShape(14.dp),
                             )
                             .clickable { onSelectType(opt.value) }
@@ -379,17 +388,17 @@ private fun PracticeSetupView(
                     ) {
                         Text(
                             opt.label,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
-                            color = if (active) GotchaColors.BrandPurple else GotchaColors.Ink,
+                            color = if (active) GotchaColors.WebAccent else GotchaColors.Ink,
                         )
-                        Text(opt.description, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                        Text(opt.description, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                     }
                 }
             }
             if (error != null) {
-                Text(error, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(error, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             GotchaPrimaryButton(
                 text = if (starting) "Generating quiz…" else "Start quiz",
@@ -436,12 +445,12 @@ private fun PracticeQuizView(
                         .fillMaxWidth((questionIdx + 1f) / session.questions.size)
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp))
-                        .background(GotchaColors.BrandPurple),
+                        .background(GotchaColors.WebAccent),
                 )
             }
             Text(
                 "${questionIdx + 1} / ${session.questions.size}",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Medium,
                 fontSize = 12.sp,
                 color = GotchaColors.TextSubtle,
@@ -452,12 +461,12 @@ private fun PracticeQuizView(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(GotchaColors.SurfaceCard)
+                .background(Color.White)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
-            Text(question.prompt, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
+            Text(question.prompt, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
 
             if (hasOptions) {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -468,18 +477,18 @@ private fun PracticeQuizView(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(if (isSelected) GotchaColors.BrandPurpleSoft else GotchaColors.SurfaceCard)
+                                .background(if (isSelected) GotchaColors.WebAccentSoft else Color.White)
                                 .border(
                                     1.dp,
-                                    if (isSelected) GotchaColors.BrandPurple else GotchaColors.Border,
+                                    if (isSelected) GotchaColors.WebAccent else GotchaColors.Border,
                                     RoundedCornerShape(14.dp),
                                 )
                                 .clickable { onSelectAnswer(opt) }
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
-                            color = if (isSelected) GotchaColors.BrandPurple else GotchaColors.TextMuted,
+                            color = if (isSelected) GotchaColors.WebAccent else GotchaColors.TextMuted,
                         )
                     }
                 }
@@ -487,12 +496,12 @@ private fun PracticeQuizView(
                 OutlinedTextField(
                     value = freeText,
                     onValueChange = onFreeTextChange,
-                    placeholder = { Text("Type your answer…", fontFamily = Manrope) },
+                    placeholder = { Text("Type your answer…", fontFamily = Inter) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
                     colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = GotchaColors.BrandPurple,
+                        focusedBorderColor = GotchaColors.WebAccent,
                         unfocusedBorderColor = GotchaColors.Border,
                     ),
                 )
@@ -538,14 +547,15 @@ private fun PracticeResultsView(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(24.dp),
+            .padding(horizontal = 24.dp, vertical = 24.dp)
+            .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Column(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(GotchaColors.SurfaceCard)
+                .background(Color.White)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -554,18 +564,18 @@ private fun PracticeResultsView(
                 Modifier.size(64.dp).clip(CircleShape).background(bandBg),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("$pct%", fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = bandColor)
+                Text("$pct%", fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 18.sp, color = bandColor)
             }
             Spacer(Modifier.height(12.dp))
             Text(
                 "$correctCount / ${results.size} correct",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = GotchaColors.Ink,
             )
             Spacer(Modifier.height(4.dp))
-            Text(message, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.TextMuted, textAlign = TextAlign.Center)
+            Text(message, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted, textAlign = TextAlign.Center)
         }
 
         session?.questions?.forEachIndexed { i, q ->
@@ -574,7 +584,7 @@ private fun PracticeResultsView(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(GotchaColors.SurfaceCard)
+                    .background(Color.White)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -597,27 +607,27 @@ private fun PracticeResultsView(
                     Column(Modifier.weight(1f)) {
                         Text(
                             "${i + 1}. ${q.prompt}",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
                             color = GotchaColors.Ink,
                         )
                         Text(
                             "Your answer: ${r?.userAnswer?.takeIf { it.isNotBlank() } ?: "—"}",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 12.sp,
                             color = GotchaColors.TextMuted,
                         )
                         if (r?.isCorrect != true) {
                             Text(
                                 "Correct answer: ${q.correctAnswer}",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.SuccessText,
                             )
                         }
                         if (!q.explanation.isNullOrBlank()) {
-                            Text(q.explanation, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                            Text(q.explanation, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                         }
                     }
                 }
@@ -629,7 +639,7 @@ private fun PracticeResultsView(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(GotchaColors.SurfaceCard)
+                    .background(Color.White)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                     .clickable(onClick = onRestart)
                     .padding(vertical = 14.dp),
@@ -637,19 +647,19 @@ private fun PracticeResultsView(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Outlined.Refresh, null, tint = GotchaColors.Ink, modifier = Modifier.size(16.dp))
-                    Text("Try another quiz", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.Ink)
+                    Text("Try another quiz", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.Ink)
                 }
             }
             Box(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(GotchaColors.BrandPurple)
+                    .background(GotchaColors.WebAccent)
                     .clickable(onClick = onBackToReader)
                     .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Back to reading", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                Text("Back to reading", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
             }
         }
     }

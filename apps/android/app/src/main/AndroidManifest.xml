@@ -45,6 +45,17 @@
                 <data android:scheme="https" android:host="gotchaa.uz" android:pathPrefix="/learn/reset-password" />
                 <data android:scheme="https" android:host="gotchaa.uz" android:path="/verify-email" />
                 <data android:scheme="https" android:host="gotchaa.uz" android:path="/reset-password" />
+                <data android:scheme="https" android:host="www.gotchaa.uz" android:pathPrefix="/learn/verify-email" />
+                <data android:scheme="https" android:host="www.gotchaa.uz" android:pathPrefix="/learn/reset-password" />
+                <data android:scheme="https" android:host="www.gotchaa.uz" android:path="/verify-email" />
+                <data android:scheme="https" android:host="www.gotchaa.uz" android:path="/reset-password" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="gotcha" android:host="verify-email" />
+                <data android:scheme="gotcha" android:host="reset-password" />
             </intent-filter>
         </activity>
     </application>

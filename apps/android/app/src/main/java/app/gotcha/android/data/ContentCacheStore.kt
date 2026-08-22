@@ -43,6 +43,12 @@ class ContentCacheStore(private val context: Context) {
         }
     }
 
+    /** Wipe cached learner data when switching accounts or signing out. */
+    suspend fun clearAll() = withContext(Dispatchers.IO) {
+        dir.listFiles()?.forEach { it.delete() }
+        runCatching { context.contentCacheDataStore.edit { it.clear() } }
+    }
+
     private fun fileFor(key: String): File {
         val safe = key.replace(Regex("[^A-Za-z0-9._-]"), "_")
         return File(dir, "$safe.json")

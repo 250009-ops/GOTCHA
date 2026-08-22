@@ -92,11 +92,17 @@
 
 .landing-catalog-track {
   display: flex;
-  gap: 24px;
   overflow-x: auto;
-  scroll-snap-type: x mandatory;
+  scroll-snap-type: none;
   scrollbar-width: none;
   padding-bottom: 4px;
+}
+
+.landing-catalog-set {
+  display: flex;
+  gap: 24px;
+  flex: 0 0 auto;
+  padding-right: 24px;
 }
 
 .landing-catalog-track::-webkit-scrollbar {
@@ -117,11 +123,23 @@
 .landing-catalog-card {
   flex: 0 0 220px;
   width: 220px;
-  scroll-snap-align: start;
+}
+
+.landing-reveal {
+  animation: landing-reveal 0.45s ease-out both;
+}
+
+@keyframes landing-reveal {
+  from { transform: translateY(10px); }
+  to { transform: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;
+  }
+
+  .landing-reveal {
+    animation: none;
   }
 }

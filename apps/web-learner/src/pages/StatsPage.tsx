@@ -75,7 +75,7 @@ function ChartCard({
 }
 
 export default function StatsPage() {
-  const { user, stats, preferences, vocabItems } = useAuth();
+  const { user, stats, vocabItems } = useAuth();
   const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
   const [range, setRange] = useState<'7d' | '30d'>('30d');
 
@@ -84,9 +84,7 @@ export default function StatsPage() {
   }, []);
 
   const masteredCount = vocabItems.filter((v) => v.mastered).length;
-  const dailyGoal = preferences?.dailyGoalMinutes ?? 15;
   const todayMinutes = stats?.todayMinutes ?? 0;
-  const todayPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
   const totalReadMinutes = apiStats?.totalReadMinutes ?? 0;
   const rangeDays = range === '7d' ? 7 : 30;
   const avgMinPerDay = Math.round(totalReadMinutes / rangeDays);
@@ -189,9 +187,8 @@ export default function StatsPage() {
           color="text-[#1447e6] bg-[#eff6ff] border-[#bedbff]"
         />
         <KpiCard
-          value={`${todayPct}%`}
-          label="Daily goal"
-          sub={`${todayMinutes}/${dailyGoal} min today`}
+          value={`${todayMinutes}m`}
+          label="Read today"
           color="text-[#364153] bg-[#f9fafb] border-[#e5e7eb]"
         />
       </div>

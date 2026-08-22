@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -64,7 +65,10 @@ import app.gotcha.android.ui.components.ProgressStatsSkeleton
 import app.gotcha.android.ui.components.SkeletonBox
 import app.gotcha.android.ui.components.StatCardSkeleton
 import app.gotcha.android.ui.theme.GotchaColors
+import app.gotcha.android.ui.theme.Inter
 import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.WebCenteredColumn
+import app.gotcha.android.ui.theme.WebMaxWidth
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
@@ -83,7 +87,7 @@ private data class LangProgress(
     val wordCount: Int,
 )
 
-/** Progress tab — Figma progress-screen 21:294. Full-bleed under glass nav. */
+/** Statistics tab — matches web-learner StatsPage. */
 @Composable
 fun ProgressScreen(
     onOpenAchievements: () -> Unit = {},
@@ -93,12 +97,10 @@ fun ProgressScreen(
     onOpenStreak: () -> Unit = {},
 ) {
     val container = LocalAppContainer.current
-    val bottomInset = LocalLearnerBottomInset.current
-    val topInset = LocalLearnerTopInset.current
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var me by remember { mutableStateOf<MeResponse?>(null) }
     var vocab by remember { mutableStateOf<List<VocabItem>>(emptyList()) }
-    var weekly by remember { mutableStateOf(true) }
+    var range7d by remember { mutableStateOf(false) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
@@ -107,337 +109,229 @@ fun ProgressScreen(
     LaunchedEffect(reloadKey) {
         loading = stats == null
         error = null
-        if (stats == null) {
-            container.userRepository.statsPeek()?.let { peek ->
-                stats = peek.data
-                loading = false
-            }
-        }
-        if (me == null) {
-            container.userRepository.mePeek()?.let { peek ->
-                me = peek.data
-            }
-        }
-        if (vocab.isEmpty()) {
-            container.vocabRepository.listPeek()?.let { peek ->
-                vocab = peek.data
-            }
-        }
+        container.userRepository.statsPeek()?.let { stats = it.data; loading = false }
+        container.userRepository.mePeek()?.let { me = it.data }
+        container.vocabRepository.listPeek()?.let { vocab = it.data }
         try {
-            val statsResult = container.userRepository.statsFetch()
-            stats = statsResult.data
-            val meResult = runCatching { container.userRepository.meFetch() }.getOrNull()
-            me = meResult?.data ?: me
-            val vocabResult = runCatching { container.vocabRepository.listFetch() }.getOrNull()
-            vocab = vocabResult?.data?.takeIf { it.isNotEmpty() } ?: vocab
+            stats = container.userRepository.statsFetch().data
+            me = runCatching { container.userRepository.meFetch().data }.getOrNull() ?: me
+            vocab = runCatching { container.vocabRepository.listFetch().data }.getOrDefault(vocab)
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (stats == null) {
-                error = e.apiErrorMessage("Failed to load stats")
-            }
+            if (stats == null) error = e.apiErrorMessage("Failed to load statistics")
         } finally {
             loading = false
         }
     }
 
-    val statsLoading = loading && stats == null
+    val s = stats
+    val statsLoading = loading && s == null
+    val streak = s?.streakCount ?: me?.streakCount ?: 0
+    val totalMinutes = s?.totalReadMinutes ?: 0
+    val todayMinutes = s?.todayReadMinutes ?: 0
+    val totalVocab = s?.vocabularyTotal ?: vocab.size
+    val mastered = vocab.count { it.mastered } .takeIf { it > 0 } ?: s?.vocabularyMastered ?: 0
+    val learning = (totalVocab - mastered).coerceAtLeast(0)
+    val rangeDays = if (range7d) 7 else 30
+    val avgMinPerDay = if (rangeDays > 0) totalMinutes / rangeDays else 0
+    val languages = remember(me, vocab) { buildLanguageProgress(me, vocab) }
+    val masteredPct = if (totalVocab > 0) (mastered * 100 / totalVocab) else 0
+    val learningPct = if (totalVocab > 0) 100 - masteredPct else 0
 
-    when {
-        error != null && stats == null && !loading -> OfflineEmptyState(onRetry = { reloadKey += 1 })
-        else -> {
-            val s = stats
-            val words = s?.vocabularyTotal ?: s?.wordsSaved ?: vocab.size
-            val streak = s?.streakCount ?: me?.streakCount ?: 0
-            val articles = s?.contentCompleted ?: 0
-            val totalMinutes = s?.totalReadMinutes ?: 0
-            val hoursLabel = formatReadTime(totalMinutes)
-            val languages = remember(me, vocab) {
-                buildLanguageProgress(me, vocab)
+    WebCenteredColumn(
+        maxWidth = WebMaxWidth.W6xl,
+        modifier = Modifier
+            .fillMaxSize()
+            .background(GotchaColors.WebCanvas),
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Spacer(Modifier.height(learnerScrollTopInset()))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Statistics", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color(0xFF111827))
+                    Text("Track your learning progress over time.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                }
+                Row(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color(0xFFF3F4F6))
+                        .padding(4.dp),
+                ) {
+                    StatsRangeChip("Last 7 days", range7d) { range7d = true }
+                    StatsRangeChip("Last 30 days", !range7d) { range7d = false }
+                }
             }
-            val activityPrimary = languages.firstOrNull()
-            val chosenForBadge = me?.targetLanguages?.firstOrNull { tl ->
-                activityPrimary != null && tl.targetLanguage.equals(activityPrimary.code, ignoreCase = true)
+
+            OfflineBannerIfNeeded(
+                connectivity = container.connectivityObserver,
+                hasCachedContent = stats != null || me != null,
+            )
+            if (error != null && stats == null) {
+                Text(error!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger, modifier = Modifier.clickable { reloadKey++ })
             }
-            val levelCode = cefrCode(chosenForBadge?.cefrLevel ?: inferCefrCode(activityPrimary?.wordCount ?: words))
-            val levelLabel = cefrShortLabel(levelCode)
-            val daily = s?.history?.daily.orEmpty()
-            val weeklyMinutes = remember(daily) { weekMinuteSeries(daily) }
-            val monthlyHours = remember(daily) { monthHourSeries(daily) }
-            val barValues = if (weekly) weeklyMinutes else monthlyHours
-            val barLabels =
-                if (weekly) listOf("M", "T", "W", "T", "F", "S", "S")
-                else listOf("J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D")
-            val maxBar = barValues.maxOrNull()?.coerceAtLeast(0.01f) ?: 1f
-            val barHeightsDp = barValues.map { v ->
-                if (v <= 0f) 4 else (8 + (64 * (v / maxBar))).roundToInt().coerceIn(8, 72)
-            }
-            val peak = barHeightsDp.indices.maxByOrNull { barHeightsDp[it] } ?: 0
-            val earnedBadges = remember(streak, words, articles) {
-                buildEarnedAchievementPreviews(streak, words, articles)
+
+            if (statsLoading) {
+                ProgressStatsSkeleton()
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        StatsKpiCard("$streak days", "Current streak", Color(0xFFBB4D00), Color(0xFFFFFBEB), Color(0xFFFEE685), Modifier.weight(1f))
+                        StatsKpiCard(
+                            "${totalMinutes / 60}h ${totalMinutes % 60}m",
+                            "Total reading",
+                            Color(0xFF7008E7),
+                            Color(0xFFF5F3FF),
+                            Color(0xFFDDD6FF),
+                            Modifier.weight(1f),
+                            sub = "avg ${avgMinPerDay}m/day",
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        StatsKpiCard("$totalVocab", "Words saved", Color(0xFF1447E6), Color(0xFFEFF6FF), Color(0xFFBEDBFF), Modifier.weight(1f), sub = "$mastered mastered")
+                        StatsKpiCard("${todayMinutes}m", "Read today", Color(0xFF364153), Color(0xFFF9FAFB), Color(0xFFE5E7EB), Modifier.weight(1f))
+                    }
+                }
             }
 
             Column(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(GotchaColors.Surface)
-                    .verticalScroll(rememberScrollState())
-                    .padding(top = topInset, bottom = bottomInset + 24.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .padding(top = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "Your Progress",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 28.sp,
-                        color = GotchaColors.Ink,
-                    )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(GotchaColors.BrandPurple)
-                            .clickable(onClick = offline.guardClick(onOpenCefr))
-                            .padding(horizontal = 12.dp, vertical = 6.dp),
-                    ) {
-                        if (statsLoading) {
-                            SkeletonBox(Modifier.width(36.dp).height(14.dp), cornerRadius = 4.dp)
-                        } else {
-                            Text(
-                                levelLabel,
-                                color = Color.White,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                            )
-                        }
-                    }
-                }
-
-                OfflineBannerIfNeeded(
-                    connectivity = container.connectivityObserver,
-                    hasCachedContent = stats != null || me != null,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
-
-                if (statsLoading) {
-                    ProgressStatsSkeleton(Modifier.padding(horizontal = 24.dp))
+                Text("Language Progress", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                if (languages.isEmpty()) {
+                    Text("Language progress appears as you save words while reading.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
                 } else {
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ProgressStatCard(
-                            "Words learned",
-                            formatCount(words),
-                            R.drawable.ic_nav_words,
-                            cardModifier = Modifier.weight(1f),
-                        )
-                        Box(Modifier.weight(1f).clickable(onClick = offline.guardClick(onOpenStreak))) {
-                            ProgressStatCard(
-                                "Reading streak",
-                                "$streak Days",
-                                R.drawable.ic_flame,
-                                cardModifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Box(Modifier.weight(1f).clickable(onClick = offline.guardClick(onOpenHistory))) {
-                            ProgressStatCard(
-                                "Articles read",
-                                "$articles",
-                                R.drawable.ic_nav_book,
-                                cardModifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        ProgressStatCard(
-                            "Time spent",
-                            hoursLabel,
-                            R.drawable.ic_nav_chart,
-                            cardModifier = Modifier.weight(1f),
-                        )
-                    }
-                }
-                }
-
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text(
-                        "Language Progress",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        color = GotchaColors.Ink,
-                    )
-                    if (statsLoading) {
-                        SkeletonBox(Modifier.fillMaxWidth().height(72.dp), cornerRadius = 16.dp)
-                    } else if (languages.isEmpty()) {
-                        Text(
-                            "Language progress appears as you save words while reading.",
-                            fontFamily = Manrope,
-                            fontSize = 13.sp,
-                            color = GotchaColors.TextMuted,
-                        )
-                    } else {
-                        languages.forEach { lang ->
-                            Box(modifier = Modifier.clickable(onClick = offline.guardClick { onOpenLanguage(lang.code) })) {
-                                LanguageProgressCard(lang)
-                            }
-                        }
-                    }
-                }
-
-                Column(
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(
-                            if (weekly) "Weekly Activity (mins)" else "Monthly Activity (hrs)",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = GotchaColors.Ink,
-                            modifier = Modifier.weight(1f, fill = false),
-                        )
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(999.dp))
-                                .background(GotchaColors.BrandPurpleSoft)
-                                .padding(2.dp),
-                        ) {
-                            PeriodChip("Weekly", weekly) { weekly = true }
-                            PeriodChip("Monthly", !weekly) { weekly = false }
-                        }
-                    }
-                    if (statsLoading) {
-                        SkeletonBox(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(100.dp),
-                            cornerRadius = 16.dp,
-                        )
-                    } else if (barValues.all { it <= 0f }) {
-                        Text(
-                            "No reading activity in this period yet.",
-                            fontFamily = Manrope,
-                            fontSize = 13.sp,
-                            color = GotchaColors.TextMuted,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
-                                .padding(16.dp),
-                        )
-                    } else {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
-                                .padding(16.dp)
-                                .height(100.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Bottom,
-                        ) {
-                            barHeightsDp.forEachIndexed { i, hDp ->
-                                val active = barValues.getOrElse(i) { 0f } > 0f
-                                Column(
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                    verticalArrangement = Arrangement.Bottom,
-                                    modifier = Modifier.width(if (weekly) 30.dp else 22.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .width(14.dp)
-                                            .height(hDp.dp)
-                                            .clip(RoundedCornerShape(4.dp))
-                                            .background(
-                                                when {
-                                                    !active -> GotchaColors.Border
-                                                    i == peak -> GotchaColors.BrandPurple
-                                                    else -> GotchaColors.BrandPurpleSoft
-                                                },
-                                            ),
-                                    )
-                                    Spacer(Modifier.height(6.dp))
-                                    Text(
-                                        barLabels.getOrElse(i) { "" },
-                                        fontFamily = Manrope,
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 12.sp,
-                                        color = GotchaColors.TextMuted,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                if (earnedBadges.isNotEmpty()) {
-                    Column(
-                        modifier = Modifier.padding(horizontal = 24.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Text(
-                                "Achievements",
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp,
-                                color = GotchaColors.Ink,
-                            )
-                            Text(
-                                "See all",
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                                color = GotchaColors.BrandPurple,
-                                modifier = Modifier.clickable(onClick = offline.guardClick(onOpenAchievements)),
-                            )
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            earnedBadges.take(3).forEach { badge ->
-                                AchievementCard(
-                                    badge.label,
-                                    badge.iconRes,
-                                    badge.bg,
-                                    badge.tint,
-                                    Modifier.weight(1f).clickable(onClick = offline.guardClick(onOpenAchievements)),
-                                    book = badge.book,
-                                    star = badge.star,
-                                )
-                            }
+                    languages.forEach { lang ->
+                        Box(modifier = Modifier.clickable(onClick = offline.guardClick { onOpenLanguage(lang.code) })) {
+                            LanguageProgressCard(lang)
                         }
                     }
                 }
             }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                    .padding(20.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text("Vocabulary Breakdown", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    VocabBreakdownTile("Total saved", totalVocab, Color(0xFFE5E7EB), Color(0xFF364153), Modifier.weight(1f))
+                    VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), Color(0xFF1447E6), Modifier.weight(1f))
+                    VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .height(10.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xFFF3F4F6)),
+                ) {
+                    Row(Modifier.fillMaxSize()) {
+                        Box(Modifier.fillMaxWidth(masteredPct / 100f).fillMaxHeight().background(Color(0xFF00D492)))
+                        Box(Modifier.fillMaxWidth(learningPct / 100f).fillMaxHeight().background(Color(0xFF51A2FF)))
+                    }
+                }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                    Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                }
+            }
+            Spacer(Modifier.height(learnerScrollBottomInset()))
         }
     }
 }
 
-/** Profile tab — Figma profile-screen 23:182. Full-bleed under glass nav. */
+@Composable
+private fun StatsRangeChip(label: String, active: Boolean, onClick: () -> Unit) {
+    Text(
+        label,
+        fontFamily = Inter,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 12.sp,
+        color = if (active) Color(0xFF1E2939) else Color(0xFF99A1AF),
+        modifier = Modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (active) Color.White else Color.Transparent)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    )
+}
+
+@Composable
+private fun StatsKpiCard(
+    value: String,
+    label: String,
+    textColor: Color,
+    bgColor: Color,
+    borderColor: Color,
+    modifier: Modifier = Modifier,
+    sub: String? = null,
+) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(bgColor)
+            .border(1.dp, borderColor, RoundedCornerShape(16.dp))
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .background(Color(0xFF2107AA)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("G", fontFamily = app.gotcha.android.ui.theme.BagelFatOne, fontSize = 22.sp, color = Color.White)
+        }
+        Column {
+            Text(value, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = textColor)
+            Text(label, fontFamily = Inter, fontSize = 12.sp, color = textColor.copy(alpha = 0.7f))
+            sub?.let { Text(it, fontFamily = Inter, fontSize = 12.sp, color = textColor.copy(alpha = 0.5f)) }
+        }
+    }
+}
+
+@Composable
+private fun VocabBreakdownTile(label: String, value: Int, dot: Color, text: Color, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Color(0xFFF9FAFB))
+            .padding(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.size(12.dp).clip(RoundedCornerShape(6.dp)).background(dot))
+        Column {
+            Text("$value", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = text)
+            Text(label, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+        }
+    }
+}
+
+/** Legacy profile hub — kept for deep links; settings route uses [SettingsScreen]. */
 @Composable
 fun ProfileScreen(
     onLogout: () -> Unit,
@@ -445,10 +339,6 @@ fun ProfileScreen(
     onOpenSettings: (String) -> Unit = {},
 ) {
     val container = LocalAppContainer.current
-    val bottomInset = LocalLearnerBottomInset.current
-    val topInset = LocalLearnerTopInset.current
-    // bottomInset = pill + gap + navBars; +48 fade/frost +24 breathing (Delete Word / progressDir).
-    val profileBottomPad = bottomInset + 48.dp + 24.dp
     var me by remember { mutableStateOf<MeResponse?>(null) }
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var isAdmin by remember { mutableStateOf(false) }
@@ -499,9 +389,9 @@ fun ProfileScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GotchaColors.Surface)
+            .background(GotchaColors.WebCanvas)
             .verticalScroll(rememberScrollState())
-            .padding(top = topInset, bottom = profileBottomPad),
+            .padding(top = 16.dp, bottom = 24.dp),
     ) {
         OfflineBannerIfNeeded(
             connectivity = container.connectivityObserver,

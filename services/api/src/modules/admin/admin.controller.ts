@@ -41,6 +41,13 @@ export class AdminController {
     return this.admin.updateMe(user.sub, dto);
   }
 
+  /** Send a password-reset email to the signed-in admin (links back to admin console after reset). */
+  @Post('me/request-password-reset')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor, AdminRole.moderator)
+  requestPasswordReset(@CurrentUser() user: AuthUserPayload) {
+    return this.admin.requestPasswordReset(user.sub);
+  }
+
   @Get('dashboard')
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
   dashboard() {
@@ -215,6 +222,12 @@ export class AdminController {
     return this.admin.uploadContentCover(id, file);
   }
 
+  @Patch('content/:id/reingest')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  reingestContent(@Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.admin.reingestContentText(id, body);
+  }
+
   @Patch('content/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   updateContent(@Param('id') id: string, @Body() body: UpdateContentDto) {
@@ -297,10 +310,22 @@ export class AdminController {
     return this.admin.updateImportPricingRules(body);
   }
 
+  @Post('import-pricing/tiers')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  createImportPageTier(@Body() body: Record<string, unknown>) {
+    return this.admin.createImportPageTier(body);
+  }
+
   @Patch('import-pricing/tiers/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   updateImportPageTier(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.admin.updateImportPageTier(id, body);
+  }
+
+  @Delete('import-pricing/tiers/:id')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  deleteImportPageTier(@Param('id') id: string) {
+    return this.admin.deleteImportPageTier(id);
   }
 
   @Get('import-pricing/limits')

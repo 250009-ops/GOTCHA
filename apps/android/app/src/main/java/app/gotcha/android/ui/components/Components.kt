@@ -21,6 +21,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -68,6 +70,7 @@ import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.haze
 import dev.chrisbanes.haze.hazeChild
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
@@ -89,14 +92,16 @@ fun GotchaPrimaryButton(
     loading: Boolean = false,
     enabled: Boolean = true,
     containerColor: Color = GotchaColors.BrandPurpleDeep,
+    contentColor: Color = Color.White,
     shapeRadius: Int = 14,
 ) {
     val shape = RoundedCornerShape(shapeRadius.dp)
-    val height = if (shapeRadius >= 16) 54.dp else 52.dp
+    val minHeight = if (shapeRadius >= 16) 54.dp else 52.dp
+    val fontSize = if (text.length > 14) 14.sp else 16.sp
     // Shadow on an outer Box so elevation does not interfere with Button hit-testing.
     Box(
         modifier = modifier
-            .fillMaxWidth()
+            .heightIn(min = minHeight)
             .shadow(8.dp, shape, spotColor = containerColor.copy(alpha = 0.19f)),
     ) {
         Button(
@@ -104,24 +109,28 @@ fun GotchaPrimaryButton(
             enabled = enabled && !loading,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(height),
+                .heightIn(min = minHeight),
             shape = shape,
+            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 14.dp),
             colors = ButtonDefaults.buttonColors(
                 containerColor = containerColor,
-                contentColor = Color.White,
+                contentColor = contentColor,
                 disabledContainerColor = containerColor.copy(alpha = 0.5f),
-                disabledContentColor = Color.White.copy(alpha = 0.8f),
+                disabledContentColor = contentColor.copy(alpha = 0.8f),
             ),
         ) {
             if (loading) {
-                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = Color.White, strokeWidth = 2.dp)
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), color = contentColor, strokeWidth = 2.dp)
             } else {
                 Text(
                     text,
                     fontFamily = Manrope,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = Color.White,
+                    fontSize = fontSize,
+                    color = contentColor,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    softWrap = false,
                 )
             }
         }
@@ -468,7 +477,7 @@ fun GlassLoadingScreen(
     val clamped = progress.coerceIn(0, 100)
     val animatedProgress by animateFloatAsState(
         targetValue = clamped / 100f,
-        animationSpec = tween(durationMillis = 280, easing = LinearEasing),
+        animationSpec = tween(durationMillis = 450, easing = LinearEasing),
         label = "glassLoadProgress",
     )
 
@@ -499,14 +508,14 @@ fun GlassLoadingScreen(
                 Modifier
                     .size(220.dp)
                     .align(Alignment.TopEnd)
-                    .padding(top = 48.dp, end = (-40).dp)
+                    .offset(x = 40.dp, y = 48.dp)
                     .background(GotchaColors.BrandPurple.copy(alpha = 0.12f), RoundedCornerShape(110.dp)),
             )
             Box(
                 Modifier
                     .size(160.dp)
                     .align(Alignment.BottomStart)
-                    .padding(start = (-24).dp, bottom = 80.dp)
+                    .offset(x = (-24).dp, y = (-80).dp)
                     .background(GotchaColors.BrandPurpleMid.copy(alpha = 0.10f), RoundedCornerShape(80.dp)),
             )
         }
@@ -700,9 +709,7 @@ fun FormFieldSkeleton(modifier: Modifier = Modifier, height: Dp = 52.dp) {
 @Composable
 fun HomeScreenSkeleton(modifier: Modifier = Modifier) {
     Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 24.dp),
+        modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(
@@ -730,6 +737,41 @@ fun HomeScreenSkeleton(modifier: Modifier = Modifier) {
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SkeletonBox(Modifier.width(160.dp).height(180.dp), cornerRadius = 16.dp)
             SkeletonBox(Modifier.width(160.dp).height(180.dp), cornerRadius = 16.dp)
+        }
+    }
+}
+
+@Composable
+fun LibraryBrowseSkeleton(
+    columns: Int = 2,
+    modifier: Modifier = Modifier,
+    bottomPadding: Dp = 0.dp,
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(bottom = bottomPadding),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        userScrollEnabled = false,
+    ) {
+        items(10) {
+            Column(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color.White)
+                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
+                    .padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                SkeletonBox(Modifier.fillMaxWidth().height(144.dp), cornerRadius = 12.dp)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    SkeletonBox(Modifier.width(28.dp).height(16.dp), cornerRadius = 4.dp)
+                    SkeletonBox(Modifier.width(28.dp).height(16.dp), cornerRadius = 4.dp)
+                }
+                SkeletonBox(Modifier.fillMaxWidth().height(14.dp), cornerRadius = 4.dp)
+                SkeletonBox(Modifier.width(100.dp).height(12.dp), cornerRadius = 4.dp)
+            }
         }
     }
 }

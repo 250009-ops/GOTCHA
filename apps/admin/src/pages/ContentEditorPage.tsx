@@ -1,9 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, FileText, ImagePlus, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LibraryPreviewModal } from '../components/LibraryPreviewModal';
 import { Button, Card, ErrorBlock, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { api, apiUpload } from '../lib/api';
+import {
+  clearContentEditorDraft,
+  getContentLibraryReturn,
+  loadContentEditorDraft,
+  saveContentEditorDraft,
+  shouldRestoreEditorDraft,
+  type ContentEditorDraft,
+} from '../lib/contentLibraryNav';
 import { APP_LANGUAGES, LANGUAGE_META } from '../lib/utils';
 
 type ChapterPreview = {
@@ -58,13 +66,115 @@ export default function ContentEditorPage() {
   const [loading, setLoading] = useState(editing);
   const [publishStatus, setPublishStatus] = useState('draft');
   const [showLibraryPreview, setShowLibraryPreview] = useState(false);
+  const [enabledLanguages, setEnabledLanguages] = useState<string[]>([...APP_LANGUAGES]);
+  const serverLoaded = useRef(false);
+  const draftRestored = useRef(false);
+
+  function returnToLibrary() {
+    navigate(getContentLibraryReturn());
+  }
+
+  function applyDraft(draft: ContentEditorDraft) {
+    setTitle(draft.title);
+    setAuthor(draft.author);
+    setDescription(draft.description);
+    setGenre(draft.genre);
+    setLanguage(draft.language);
+    setCefrLevel(draft.cefrLevel);
+    setContentType(draft.contentType);
+    setIsFree(draft.isFree);
+    setPriceUsd(draft.priceUsd);
+    setSourceMode(draft.sourceMode);
+    setPlainText(draft.plainText);
+    setSourceUrl(draft.sourceUrl);
+    if (draft.preview) {
+      setPreview(draft.preview as IngestPreview);
+      setOpenChapters(draft.openChapters);
+    }
+  }
+
+  function currentDraft(): ContentEditorDraft {
+    return {
+      savedAt: Date.now(),
+      title,
+      author,
+      description,
+      genre,
+      language,
+      cefrLevel,
+      contentType,
+      isFree,
+      priceUsd,
+      sourceMode,
+      plainText,
+      sourceUrl,
+      preview,
+      openChapters,
+    };
+  }
+
+  useEffect(() => {
+    if (editing && !serverLoaded.current) return;
+    if (loading) return;
+    const timer = window.setTimeout(() => {
+      saveContentEditorDraft(id, currentDraft());
+    }, 400);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    id,
+    editing,
+    loading,
+    title,
+    author,
+    description,
+    genre,
+    language,
+    cefrLevel,
+    contentType,
+    isFree,
+    priceUsd,
+    sourceMode,
+    plainText,
+    sourceUrl,
+    preview,
+    openChapters,
+  ]);
+
+  useEffect(() => {
+    api<{ languages: Array<{ code: string; isEnabled: boolean }> }>('/admin/languages')
+      .then((data) => {
+        const codes = data.languages.filter((l) => l.isEnabled).map((l) => l.code);
+        if (codes.length) setEnabledLanguages(codes);
+      })
+      .catch(console.error);
+  }, []);
+
+  const languageOptions = useMemo(() => {
+    const codes = new Set(enabledLanguages);
+    if (language) codes.add(language);
+    return [...codes];
+  }, [enabledLanguages, language]);
+
+  useEffect(() => {
+    if (id) return;
+    const draft = loadContentEditorDraft(undefined);
+    if (shouldRestoreEditorDraft(draft)) {
+      applyDraft(draft);
+      draftRestored.current = true;
+    }
+  }, [id]);
 
   useEffect(() => {
     if (!id) return;
+    let cancelled = false;
+    serverLoaded.current = false;
+    draftRestored.current = false;
     setLoading(true);
     api<{
       title: string;
       author?: string | null;
+      subtitle?: string | null;
       description?: string | null;
       genre?: string | null;
       language: string;
@@ -79,8 +189,10 @@ export default function ContentEditorPage() {
       chapters?: ChapterPreview[];
     }>(`/admin/content/${id}`)
       .then((item) => {
+        if (cancelled) return;
+        const serverAuthor = (item.author ?? item.subtitle ?? '').trim();
         setTitle(item.title);
-        setAuthor(item.author ?? '');
+        setAuthor(serverAuthor);
         setDescription(item.description ?? '');
         setGenre(item.genre ?? '');
         setLanguage(item.language);
@@ -102,9 +214,24 @@ export default function ContentEditorPage() {
           });
           setOpenChapters(Object.fromEntries(item.chapters.map((c) => [c.chapterIndex, true])));
         }
+        serverLoaded.current = true;
+        const draft = loadContentEditorDraft(id);
+        if (shouldRestoreEditorDraft(draft, { title: item.title, author: serverAuthor })) {
+          applyDraft(draft);
+          draftRestored.current = true;
+        } else {
+          clearContentEditorDraft(id);
+        }
       })
-      .catch((e) => setError(e instanceof Error ? e.message : 'Failed to load'))
-      .finally(() => setLoading(false));
+      .catch((e) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load');
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [id]);
 
   const canAnalyze =
@@ -154,10 +281,10 @@ export default function ContentEditorPage() {
     }
     try {
       const payload = {
-        title,
-        author: author || undefined,
-        description: description || undefined,
-        genre: genre || undefined,
+        title: title.trim(),
+        author: author.trim() || undefined,
+        description: description.trim() || undefined,
+        genre: genre.trim() || undefined,
         language,
         cefrLevel,
         contentType,
@@ -188,7 +315,8 @@ export default function ContentEditorPage() {
         });
         if (coverFile) await apiUpload(`/admin/content/${created.id}/cover`, coverFile);
       }
-      navigate('/content');
+      clearContentEditorDraft(id);
+      returnToLibrary();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -216,7 +344,7 @@ export default function ContentEditorPage() {
                 <Eye className="size-4" /> Preview library
               </Button>
             ) : null}
-            <Button type="button" variant="secondary" onClick={() => navigate('/content')}>
+            <Button type="button" variant="secondary" onClick={returnToLibrary}>
               Back to library
             </Button>
           </div>
@@ -233,8 +361,8 @@ export default function ContentEditorPage() {
             <Input value={genre} onChange={(e) => setGenre(e.target.value)} placeholder="Genre (novel, short story, news…)" />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <Select value={language} onChange={(e) => setLanguage(e.target.value)}>
-                {APP_LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{LANGUAGE_META[l].flag} {LANGUAGE_META[l].label}</option>
+                {languageOptions.map((l) => (
+                  <option key={l} value={l}>{LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.flag ?? '🌐'} {LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.label ?? l}</option>
                 ))}
               </Select>
               <Select value={cefrLevel} onChange={(e) => setCefrLevel(e.target.value)}>

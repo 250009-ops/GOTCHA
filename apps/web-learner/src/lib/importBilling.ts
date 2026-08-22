@@ -2,6 +2,18 @@ import { api } from './api';
 
 export type ImportType = 'paste' | 'url' | 'pdf' | 'epub';
 
+export type ImportFreeAllowance = {
+  gatewayEnabled: boolean;
+  resetCycle: string;
+  allowedFormats: string[];
+  dailyFreeImportsPerUser: number;
+  dailyFreeUsed: number;
+  dailyFreeRemaining: number;
+  monthlyFreePageLimit: number;
+  monthlyPagesUsed: number;
+  monthlyPagesRemaining: number;
+};
+
 export type ImportQuote = {
   gatewayEnabled: boolean;
   importType: ImportType;
@@ -14,6 +26,7 @@ export type ImportQuote = {
   isFree: boolean;
   freeReason: string | null;
   requiresPayment: boolean;
+  freeLimits?: ImportFreeAllowance;
 };
 
 export type ImportCheckout = {
@@ -102,6 +115,15 @@ export async function quoteImport(body: {
   });
 }
 
+export async function inspectImportFile(file: File) {
+  const form = new FormData();
+  form.append('file', file);
+  return api<{ importType: 'pdf' | 'epub'; pageCount: number }>('/imports/inspect', {
+    method: 'POST',
+    body: form,
+  });
+}
+
 export async function checkoutImport(body: {
   importType: ImportType;
   contentFormat?: string;
@@ -179,6 +201,20 @@ export async function getImportPayment(paymentId: string) {
 
 export function wordCountOf(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+export function pageWindowLabel(resetCycle?: string | null) {
+  if (resetCycle === 'daily') return 'today';
+  if (resetCycle === 'yearly') return 'this year';
+  return 'this month';
+}
+
+export function formatFreeAllowance(allowance: ImportFreeAllowance) {
+  const pagesWindow = pageWindowLabel(allowance.resetCycle);
+  if (!allowance.gatewayEnabled) {
+    return `Imports are currently free (payments paused). Configured pool: ${allowance.dailyFreeImportsPerUser} imports/day · ${allowance.monthlyFreePageLimit} pages ${pagesWindow}.`;
+  }
+  return `${allowance.dailyFreeRemaining} of ${allowance.dailyFreeImportsPerUser} free imports left today · ${allowance.monthlyPagesRemaining} of ${allowance.monthlyFreePageLimit} free pages left ${pagesWindow}.`;
 }
 
 export function isValidCardNumber(cardNumber: string) {

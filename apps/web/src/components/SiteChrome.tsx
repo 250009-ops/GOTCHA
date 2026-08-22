@@ -1,15 +1,41 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { LANGUAGE_META } from '@gotcha/shared';
 import { Brand } from './Brand';
 import { loginUrl, registerUrl } from '../lib/links';
+import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
+import { isWebLocale } from '../lib/webLocale';
 
-const NAV_LINKS = [
-  { to: '/#catalog', label: 'Catalog' },
-  { to: '/#pricing', label: 'Pricing' },
-  { to: '/#readers', label: 'Top Readers' },
-  { to: '/#features', label: 'Features' },
-  { to: '/#how', label: 'How It Works' },
-] as const;
+function LanguagePicker({ className }: { className?: string }) {
+  const { locale, copyLocale, setLocale, localeOptions } = useWebLocale();
+  const copy = useMarketingCopy();
+
+  return (
+    <label className={`inline-flex items-center gap-1.5 ${className ?? ''}`}>
+      <span className="sr-only">{copy.nav.language}</span>
+      <select
+        value={copyLocale}
+        onChange={(e) => {
+          const code = e.target.value;
+          if (isWebLocale(code)) setLocale(code);
+        }}
+        aria-label={copy.nav.language}
+        className="h-9 max-w-[9.5rem] truncate rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-xs font-semibold text-[#4a5565] outline-none focus:border-[#2107aa] focus:ring-2 focus:ring-[#2107aa]/15"
+      >
+        {localeOptions.map((opt) => (
+          <option key={opt.code} value={opt.code}>
+            {LANGUAGE_META[opt.code].flag} {opt.nativeName}
+          </option>
+        ))}
+      </select>
+      {locale !== copyLocale && (
+        <span className="hidden text-[10px] text-[#99a1af] lg:inline" title={locale}>
+          auto
+        </span>
+      )}
+    </label>
+  );
+}
 
 function NavLinks({
   className,
@@ -18,9 +44,21 @@ function NavLinks({
   className?: string;
   onNavigate?: () => void;
 }) {
+  const copy = useMarketingCopy();
+  const navLinks = useMemo(
+    () => [
+      { to: '/#catalog', label: copy.nav.catalog },
+      { to: '/#pricing', label: copy.nav.pricing },
+      { to: '/#readers', label: copy.nav.readers },
+      { to: '/#features', label: copy.nav.features },
+      { to: '/#how', label: copy.nav.how },
+    ],
+    [copy],
+  );
+
   return (
     <>
-      {NAV_LINKS.map((link) => (
+      {navLinks.map((link) => (
         <Link
           key={link.to}
           to={link.to}
@@ -35,6 +73,7 @@ function NavLinks({
 }
 
 export function SiteNav() {
+  const copy = useMarketingCopy();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
   const { pathname, hash } = useLocation();
@@ -72,23 +111,24 @@ export function SiteNav() {
           <NavLinks />
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <LanguagePicker className="hidden md:inline-flex" />
           <a
             className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
             href={loginUrl()}
           >
-            Sign in
+            {copy.nav.signIn}
           </a>
           <a
             className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px md:inline-flex"
             href={registerUrl({ plan: 'free' })}
           >
-            Get started
+            {copy.nav.getStarted}
           </a>
           <button
             type="button"
             className="flex h-10 w-10 cursor-pointer flex-col items-center justify-center gap-[5px] rounded-xl border border-[#e2e8f0] bg-white p-2.5 lg:hidden"
-            aria-label={open ? 'Close menu' : 'Open menu'}
+            aria-label={open ? copy.nav.closeMenu : copy.nav.openMenu}
             aria-expanded={open}
             onClick={() => setOpen((v) => !v)}
           >
@@ -113,6 +153,7 @@ export function SiteNav() {
 
       {open && (
         <div className="flex flex-col gap-5 border-b border-[#e2e8f0] bg-white px-5 py-6 shadow-[0_12px_24px_rgba(15,23,42,0.08)] lg:hidden">
+          <LanguagePicker />
           <div className="flex flex-col gap-1">
             <NavLinks
               onNavigate={() => setOpen(false)}
@@ -125,14 +166,14 @@ export function SiteNav() {
               href={loginUrl()}
               onClick={() => setOpen(false)}
             >
-              Sign in
+              {copy.nav.signIn}
             </a>
             <a
               className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-white"
               href={registerUrl({ plan: 'free' })}
               onClick={() => setOpen(false)}
             >
-              Get started
+              {copy.nav.getStarted}
             </a>
           </div>
         </div>
@@ -142,47 +183,47 @@ export function SiteNav() {
 }
 
 export function SiteFooter() {
+  const copy = useMarketingCopy();
+
   return (
     <footer className="w-full border-t border-[#e2e8f0] bg-white">
       <div className="mx-auto flex max-w-[1440px] flex-col gap-16 px-5 pb-10 pt-20 md:px-10 lg:px-20">
         <div className="flex flex-col justify-between gap-10 lg:flex-row lg:items-start">
           <div className="flex max-w-[320px] flex-col gap-4">
             <Brand size="sm" />
-            <p className="font-['Geist',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">
-              Reading-first language learning for English, Russian, and Uzbek.
-            </p>
+            <p className="font-['Geist',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">{copy.footer.tagline}</p>
           </div>
 
           <div className="flex flex-wrap gap-10 lg:gap-16">
             <div className="flex w-[160px] flex-col gap-4">
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
-                Product
+                {copy.footer.product}
               </h4>
               <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
                 <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
-                  Catalog
+                  {copy.nav.catalog}
                 </Link>
                 <Link to="/#pricing" className="transition-colors hover:text-[#101828]">
-                  Pricing
+                  {copy.nav.pricing}
                 </Link>
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
-                  How It Works
+                  {copy.nav.how}
                 </Link>
                 <Link to="/roadmap" className="transition-colors hover:text-[#101828]">
-                  Roadmap
+                  {copy.footer.roadmap}
                 </Link>
               </div>
             </div>
             <div className="flex w-[160px] flex-col gap-4">
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
-                Legal
+                {copy.footer.legal}
               </h4>
               <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
                 <Link to="/privacy" className="transition-colors hover:text-[#101828]">
-                  Privacy Policy
+                  {copy.footer.privacy}
                 </Link>
                 <Link to="/terms" className="transition-colors hover:text-[#101828]">
-                  Terms of Service
+                  {copy.footer.terms}
                 </Link>
               </div>
             </div>
@@ -190,10 +231,8 @@ export function SiteFooter() {
         </div>
 
         <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Geist',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
-          <p>© 2026 GOTCHA. All rights reserved.</p>
-          <p>
-            Powered by <span className="font-['Manrope',sans-serif] font-bold text-[#4a5565]">Atmos</span> · UZS
-          </p>
+          <p>{copy.footer.rights}</p>
+          <p>{copy.footer.powered}</p>
         </div>
       </div>
     </footer>

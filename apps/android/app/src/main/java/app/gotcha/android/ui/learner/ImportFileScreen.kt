@@ -10,8 +10,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Description
@@ -36,7 +41,7 @@ import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.ui.components.GotchaPrimaryButton
 import app.gotcha.android.ui.components.GotchaTextField
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import app.gotcha.android.util.PdfPageCount
 import kotlinx.coroutines.launch
 
@@ -45,7 +50,7 @@ private const val MAX_FILE_BYTES = 100L * 1024 * 1024
 private val ACCEPTED_EXT = listOf(".pdf", ".epub")
 
 @Composable
-fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
+fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
     val container = LocalAppContainer.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -57,6 +62,8 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var paymentStep by remember { mutableStateOf<String?>(null) }
+    var pendingQuote by remember { mutableStateOf<app.gotcha.android.data.model.ImportQuoteResponse?>(null) }
+    var pendingImportType by remember { mutableStateOf<String?>(null) }
     var paymentId by remember { mutableStateOf<String?>(null) }
     var amountLabel by remember { mutableStateOf<String?>(null) }
     var cardNumber by remember { mutableStateOf("") }
@@ -66,6 +73,8 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
 
     fun resetPayment() {
         paymentStep = null
+        pendingQuote = null
+        pendingImportType = null
         paymentId = null
         amountLabel = null
         cardNumber = ""
@@ -123,11 +132,8 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
         onImported()
     }
 
-    LearnerSubpage(
-        title = "Upload File",
-        onBack = onBack,
-        body = {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    val formContent: @Composable () -> Unit = {
+            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 if (paymentStep == null) {
                     Row(
                         modifier = Modifier
@@ -147,28 +153,32 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         Column {
                             Text(
                                 fileName ?: "Choose a PDF or EPUB",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
                                 color = GotchaColors.Ink,
                             )
                             Text(
                                 if (fileUri != null) "${fileSizeBytes / 1024} KB · tap to change" else "Max 100 MB · PDF and EPUB",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.TextMuted,
                             )
                         }
                     }
                     GotchaTextField(label = "Title (optional)", value = title, onValueChange = { title = it }, placeholder = "Auto from filename")
-                    if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
+                    if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                     GotchaPrimaryButton(
-                        text = "Upload File",
+                        text = if (loading) "Importing…" else "Upload File",
                         onClick = {
                             scope.launch {
                                 loading = true
                                 error = null
                                 try {
+                                    container.importRepository.importLimitMessage()?.let {
+                                        error = it
+                                        return@launch
+                                    }
                                     val isEpub = (fileName ?: "").lowercase().endsWith(".epub")
                                     val importType = if (isEpub) "epub" else "pdf"
                                     val uri = fileUri ?: return@launch
@@ -196,14 +206,10 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
                                         pageCount = pageCount,
                                     )
                                     if (quote.gatewayEnabled && quote.requiresPayment) {
-                                        val checkout = container.importRepository.checkout(
-                                            importType = importType,
-                                            contentFormat = "ebook",
-                                            pageCount = pageCount,
-                                        )
-                                        paymentId = checkout.paymentId
-                                        amountLabel = "Payment: ${formatSom(quote.amountUzs)}"
-                                        paymentStep = "card"
+                                        pendingQuote = quote
+                                        pendingImportType = importType
+                                        amountLabel = formatSom(quote.amountUzs)
+                                        paymentStep = "price"
                                         return@launch
                                     }
                                     var payId: String? = null
@@ -224,6 +230,44 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         },
                         loading = loading,
                         enabled = fileUri != null,
+                    )
+                } else if (paymentStep == "price" && pendingQuote != null) {
+                    ImportQuoteStepUi(
+                        quote = pendingQuote!!,
+                        displayTitle = title.ifBlank { fileName ?: "Your Import" },
+                        typeLabel = (pendingImportType ?: "pdf").uppercase(),
+                        loading = loading,
+                        error = error,
+                        onProceed = {
+                            scope.launch {
+                                loading = true
+                                error = null
+                                try {
+                                    val quote = pendingQuote!!
+                                    val importType = pendingImportType ?: "pdf"
+                                    val checkout = container.importRepository.checkout(
+                                        importType = importType,
+                                        contentFormat = "ebook",
+                                        pageCount = quote.estimatedPages,
+                                    )
+                                    if (checkout.isFree || checkout.step == "done") {
+                                        resetPayment()
+                                        finishImport(checkout.paymentId)
+                                    } else {
+                                        paymentId = checkout.paymentId
+                                        paymentStep = "card"
+                                    }
+                                } catch (e: Exception) {
+                                    error = e.apiErrorMessage("Failed to start payment")
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                        onCancel = {
+                            resetPayment()
+                            error = null
+                        },
                     )
                 } else {
                     ImportPaymentStepUi(
@@ -299,12 +343,40 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
                             }
                         },
                         onCancel = {
-                            scope.launch { runCatching { container.importRepository.cancel(paymentId!!) } }
-                            resetPayment()
-                            error = null
+                            if (paymentStep == "otp") {
+                                paymentStep = "card"
+                                otpCode = ""
+                                error = null
+                            } else {
+                                scope.launch { paymentId?.let { runCatching { container.importRepository.cancel(it) } } }
+                                resetPayment()
+                                error = null
+                            }
                         },
                     )
                 }
+            }
+    }
+
+    if (embedded) {
+        formContent()
+    } else {
+        WebDirectoryFormPanel { formContent() }
+    }
+}
+
+@Composable
+fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
+    LearnerSubpage(
+        title = "Upload File",
+        onBack = onBack,
+        body = {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ImportFileForm(onImported = onImported)
             }
         },
     )

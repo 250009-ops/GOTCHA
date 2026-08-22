@@ -1,3 +1,8 @@
+import { isOcrImageJunkLine, stripOcrImageJunk } from './import-text-cleaner';
+import { isDialogueLine } from './dialogue-layout';
+
+export { isDialogueLine } from './dialogue-layout';
+
 export interface SplitChapter {
   title: string;
   text: string;
@@ -27,7 +32,7 @@ const NUMBERED_WORD_CHAPTER = new RegExp(
 const UZ_BOB = /^(\d{1,3})[-.]?\s*bob\b(?:\s*[.:—–-]\s*|\s+)?(.*)$/i;
 const NAMED_FRONT =
   /^(etymology|extracts?|epilogue|prologue|preface|introduction|afterword|coda|interlude|appendix|overture)(?:\s*[.:—–-]\s*(.*))?$/i;
-const CONTENTS_ONLY = /^(contents|table of contents)\.?$/i;
+const CONTENTS_ONLY = /^(contents|table of contents|c[o0]n[tf]ents)\.?$/i;
 const IMAGE_CAPTION = /^\[Image:\s*(.+?)\]$/i;
 const GUTENBERG_START = /\*{3}\s*START OF (?:THE|THIS) PROJECT GUTENBERG[\s\S]*?\*{3}/i;
 const GUTENBERG_END = /\*{3}\s*END OF (?:THE|THIS) PROJECT GUTENBERG[\s\S]*?\*{3}/i;
@@ -111,10 +116,26 @@ function titleKeys(title: string): string[] {
 
 function isEnglishSentence(line: string): boolean {
   const t = line.trim();
-  if (/^(i|we|you|he|she|they|it)\s+[a-z]/i.test(t)) return true;
+  const pronoun = t.match(/^(i|we|you|he|she|they|it)\s+(\S)/i);
+  if (pronoun && /^[a-z]/.test(pronoun[2])) return true;
   if (t.length > 48 && /[,;]/.test(t)) return true;
   if (t.length > 70) return true;
   return false;
+}
+
+/** I / I'm / I’m at the start of a printed heading, not a spoken sentence. */
+const FIRST_PERSON_TITLE_OPEN = /^I(?:['’]m|['’]d|['’]ll| am)?\s+/u;
+
+/** Printed titles like "I Find Elaine Garfield" / "I'm Sorry, Mr Samuel". */
+export function looksLikeFirstPersonTitle(line: string): boolean {
+  const t = collapseWs(stripTocPageRef(line));
+  if (!t || isDialogueLine(t)) return false;
+  if (!FIRST_PERSON_TITLE_OPEN.test(t)) return false;
+  if (!/^I(?:['’]m|['’]d|['’]ll| am)?\s+[\p{Lu}]/u.test(t)) return false;
+  if (t.length > 70) return false;
+  const words = t.split(/\s+/);
+  if (words.length < 2 || words.length > 10) return false;
+  return looksLikeTitleLine(t);
 }
 
 export function looksLikeTitleLine(line: string): boolean {
@@ -128,12 +149,43 @@ export function looksLikeTitleLine(line: string): boolean {
   return true;
 }
 
+function isGarbageHeadingText(line: string): boolean {
+  const t = collapseWs(line);
+  if (!t) return true;
+  if (isOcrImageJunkLine(t)) return true;
+  const symbols = (t.match(/[/\\|\[\]{}<>;]+/g) || []).join('').length;
+  if (symbols >= 3) return true;
+  const letters = (t.match(/\p{L}/gu) || []).length;
+  if (letters >= 8 && letters / Math.max(t.replace(/\s+/g, '').length, 1) < 0.55) return true;
+  return false;
+}
+
+/** Arabic 1–200, or roman I–C. Never "DI" / "MIX" crossword leftovers. */
+function isPlausibleChapterToken(token: string): boolean {
+  const t = collapseWs(token);
+  if (/^\d{1,4}$/.test(t)) {
+    const n = Number(t);
+    return n >= 1 && n <= 200;
+  }
+  if (!/^[IVXLCDM]+$/i.test(t)) return false;
+  if (/[DM]/i.test(t)) return false;
+  const n = romanToInt(t);
+  return n != null && n >= 1 && n <= 100;
+}
+
 function looksLikeChapterTitle(line: string): boolean {
   const t = stripTocPageRef(line).replace(/\s*\(_?\s*(?:contd\.?|continued)_?\s*\)\s*$/i, '');
+  if (isDialogueLine(t) || isDialogueLine(line)) return false;
+  if (isGarbageHeadingText(t) || isGarbageHeadingText(line)) return false;
+  if (looksLikeFirstPersonTitle(t) || looksLikeFirstPersonTitle(line)) return true;
   if (!looksLikeTitleLine(t) && !looksLikeTitleLine(line)) return false;
   const probe = looksLikeTitleLine(t) ? t : stripTocPageRef(line);
   if (/^[(_[]/.test(probe)) return false;
-  if (/^(i|we|you|he|she|they|it|call|there|this|that|what|when|where|why|how|if|as)\s+/i.test(probe)) {
+  // Prose openers ("what she said") — keep Title Case names ("What Happened Next").
+  if (/^(i|we|you|he|she|they|it|call|there|this|that|if|as)\s+[a-z]/i.test(probe)) {
+    return false;
+  }
+  if (/^(what|when|where|why|how)\s+[a-z]/i.test(probe) && !/^(What|When|Where|Why|How)\b/.test(probe)) {
     return false;
   }
   const words = probe.replace(/[.:]+$/, '').split(/\s+/).filter(Boolean);
@@ -173,12 +225,8 @@ function headingFromLine(
 ): ParsedHeading | null {
   const raw = stripTocPageRef(line.trim());
   if (!raw || raw.length > 160) return null;
-
-  const image = raw.match(IMAGE_CAPTION);
-  if (image) {
-    const inner = headingFromLine(image[1], nextLine);
-    return inner ? { title: inner.title, consumeNext: false, kind: inner.kind } : null;
-  }
+  if (isDialogueLine(raw)) return null;
+  if (IMAGE_CAPTION.test(raw) || isOcrImageJunkLine(raw)) return null;
 
   const md = raw.match(MARKDOWN_HEADING);
   if (md) {
@@ -190,10 +238,12 @@ function headingFromLine(
 
   const numbered = raw.match(NUMBERED_CHAPTER);
   if (numbered) {
+    if (!isPlausibleChapterToken(numbered[1])) return null;
     const rest = collapseWs(numbered[2] || '');
     if (rest) {
       // Cetology-style asides: "CHAPTER I. (_Folio_), CHAPTER II. (_Right Whale_)."
       if (/^[(_]/.test(rest)) return null;
+      if (isGarbageHeadingText(rest)) return null;
       if (isEnglishSentence(rest) && rest.length > 60) return null;
       const title = prettyChapterTitle(`Chapter ${numbered[1]}. ${rest}`);
       return { title, consumeNext: false, kind: 'explicit' };
@@ -203,7 +253,11 @@ function headingFromLine(
 
   const only = raw.match(NUMBERED_CHAPTER_ONLY);
   if (only) {
+    if (!isPlausibleChapterToken(only[1])) return null;
     const next = nextLine?.trim() ?? '';
+    if (isGarbageHeadingText(next)) {
+      return { title: prettyChapterTitle(`Chapter ${only[1]}`), consumeNext: false, kind: 'explicit' };
+    }
     if (next && looksLikeChapterTitle(next) && !NUMBERED_CHAPTER.test(next) && !NUMBERED_CHAPTER_ONLY.test(next)) {
       return { title: prettyChapterTitle(`Chapter ${only[1]}. ${next}`), consumeNext: true, kind: 'explicit' };
     }
@@ -242,22 +296,19 @@ function headingFromLine(
   if (isolatedRoman) {
     const token = isolatedRoman[1].toUpperCase();
     const next = nextLine?.trim() ?? '';
-    // A lone "I" is almost always English first person unless the next line is a short title.
-    if (token === 'I' && (!next || !looksLikeChapterTitle(next) || isEnglishSentence(next))) {
-      return null;
-    }
+    // Lone "I" is first-person English, not Chapter I. Use explicit "Chapter I." instead.
+    if (token === 'I') return null;
+    if (!isPlausibleChapterToken(token)) return null;
+    if (isDialogueLine(next) || isGarbageHeadingText(next)) return null;
     if (next && looksLikeChapterTitle(next) && !NUMBERED_CHAPTER.test(next)) {
       return { title: prettyChapterTitle(`Chapter ${token}. ${next}`), consumeNext: true, kind: 'inferred' };
     }
-    if (token !== 'I') {
-      return { title: prettyChapterTitle(`Chapter ${token}`), consumeNext: false, kind: 'inferred' };
-    }
-    return null;
+    return { title: prettyChapterTitle(`Chapter ${token}`), consumeNext: false, kind: 'inferred' };
   }
 
   if (ISOLATED_NUMBER.test(raw)) {
     const next = nextLine?.trim() ?? '';
-    if (next && looksLikeChapterTitle(next) && !isEnglishSentence(next)) {
+    if (next && !isDialogueLine(next) && looksLikeChapterTitle(next) && !isEnglishSentence(next)) {
       return {
         title: prettyChapterTitle(`Chapter ${raw.replace('.', '')}. ${next}`),
         consumeNext: true,
@@ -268,10 +319,16 @@ function headingFromLine(
 
   const bare = raw.match(BARE_NUMBERED_TITLE);
   if (bare) {
+    const token = String(bare[1]);
     const rest = collapseWs(bare[2] || '');
-    if (rest && looksLikeChapterTitle(rest) && !isEnglishSentence(rest)) {
+    if (!isPlausibleChapterToken(token)) return null;
+    if (/^I$/i.test(token) && !/^\s*[.:—–-]/.test(raw.slice(raw.search(/I/i) + 1))) {
+      return null;
+    }
+    if (isGarbageHeadingText(rest)) return null;
+    if (rest && !isDialogueLine(rest) && looksLikeChapterTitle(rest) && !isEnglishSentence(rest)) {
       return {
-        title: prettyChapterTitle(`Chapter ${bare[1]}. ${rest}`),
+        title: prettyChapterTitle(`Chapter ${token}. ${rest}`),
         consumeNext: false,
         kind: 'inferred',
       };
@@ -376,6 +433,9 @@ function romanToInt(raw: string): number | null {
 /** "Chapter XV. The Accuser" / "I. Loomings" / "Chapter 12" → 15 / 1 / 12. */
 function parseChapterOrdinal(title: string): number | null {
   const t = stripTocPageRef(title).replace(/^#+\s+/, '');
+  if (FIRST_PERSON_TITLE_OPEN.test(t) && !/^chapter\s+I\b/i.test(t) && !/^I\./.test(t)) {
+    return null;
+  }
   const m = t.match(/^(?:(?:chapter|глава|part|book|adventure)\s+)?(?:(\d{1,4})|([IVXLCDM]{1,8}))\b/i);
   if (!m) return null;
   if (m[1]) return Number(m[1]);
@@ -453,14 +513,248 @@ function isMostlyTocListing(text: string): boolean {
   return hits / lines.length >= 0.45;
 }
 
-function parseTocEntry(line: string): string | null {
+function parseTocEntry(line: string, nextLine = ''): string | null {
   const t = stripTocPageRef(line);
-  if (!t || CONTENTS_ONLY.test(t)) return null;
-  const heading = headingFromLine(t, '');
+  if (!t || CONTENTS_ONLY.test(t) || isOcrImageJunkLine(t) || isDialogueLine(t)) return null;
+  const heading = headingFromLine(t, nextLine);
   if (heading && !isTocOrContentsTitle(heading.title)) {
-    return heading.title.replace(/^Chapter\s+(?:\d+|[IVXLCDM]+)\.\s*/i, '').trim() || heading.title;
+    return heading.title;
   }
   return null;
+}
+
+type PrintTocEntry = { ordinal: number; title: string };
+type PrintToc = {
+  entries: PrintTocEntry[];
+  coverEnd: number;
+  listingEnd: number;
+};
+
+/** Graded-reader Contents: "1 A Visitor 4" not Gutenberg "CHAPTER 1. Loomings". */
+function normalizeOcrTocLine(line: string): string {
+  let t = collapseWs(line);
+  // OCR often reads "1 A Visitor 4" as "I A Visitor 4" / "l A Visitor 4".
+  // Do not rewrite real first-person titles ("I Find Elaine Garfield 53").
+  if (/^[Il|]\s+(?:A|An|The)\s+[\p{Lu}]/u.test(t)) {
+    t = t.replace(/^[Il|]\s+/, '1 ');
+  }
+  t = t.replace(/^(\d{1,3})([\p{Lu}])/u, '$1 $2');
+  return t;
+}
+
+function splitGluedTocLine(line: string): string[] {
+  const t = normalizeOcrTocLine(line);
+  const matches = [
+    ...t.matchAll(
+      /(\d{1,3})[.)]?\s+([\p{Lu}][\p{L}'’\-]*(?:\s+(?:[\p{Lu}][\p{L}'’\-]*|in|on|of|the|a|an|and|at|to|for|or|mr|my|i'm|i’m)){0,10})\s+(\d{1,3})(?=\s+\d{1,3}[.)]?\s+[\p{Lu}]|$)/giu,
+    ),
+  ];
+  if (matches.length >= 2) {
+    return matches.map((m) => `${m[1]} ${m[2]} ${m[3]}`);
+  }
+  return [t];
+}
+
+function isPrintTocLine(line: string): boolean {
+  const t = stripTocPageRef(normalizeOcrTocLine(line));
+  if (!t || /^chapter\s+/i.test(t)) return false;
+  return /^(?:#{1,3}\s+)?\d{1,3}[.)]?\s+[\p{Lu}]/u.test(t);
+}
+
+function extrasSectionTitle(text: string): string {
+  const sample = text.slice(0, 500);
+  if (/points for understanding/i.test(sample)) return 'Points for Understanding';
+  if (/multiple choice/i.test(sample)) return 'Multiple Choice';
+  if (/find words in the square/i.test(sample)) return 'Activities';
+  const first = text
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l && !isOcrImageJunkLine(l) && !/^\d{1,3}\.?$/.test(l));
+  if (first && looksLikeChapterTitle(first) && first.length <= 80 && !isDialogueLine(first)) {
+    return prettyChapterTitle(first);
+  }
+  return 'Activities';
+}
+
+const EXTRAS_MARK =
+  /(?:^|\n)[ \t]*(Points for Understanding|Multiple Choice|Tick the best answer|Find words in the square|After reading)\b/i;
+
+function splitOffExtras(body: string): { story: string; extras: string } {
+  const m = body.match(EXTRAS_MARK);
+  if (!m || m.index == null || m.index < 40) return { story: body, extras: '' };
+  return {
+    story: body.slice(0, m.index).trim(),
+    extras: stripOcrImageJunk(body.slice(m.index)).trim(),
+  };
+}
+
+function collectPrintTocEntries(lines: string[], start: number): { entries: PrintTocEntry[]; end: number } {
+  const entries: PrintTocEntry[] = [];
+  let misses = 0;
+  let i = start;
+  while (i < lines.length) {
+    const rawLine = lines[i].trim();
+    if (!rawLine) {
+      i += 1;
+      if (entries.length >= 4 && misses >= 2) break;
+      continue;
+    }
+    if (isOcrImageJunkLine(rawLine) || isDialogueLine(rawLine)) {
+      misses += 1;
+      i += 1;
+      if (entries.length >= 4 && misses >= 3) break;
+      continue;
+    }
+    const chunks = splitGluedTocLine(rawLine);
+    let accepted = 0;
+    let consumeExtra = 0;
+    for (let c = 0; c < chunks.length; c++) {
+      const t = stripTocPageRef(chunks[c]);
+      const next =
+        c + 1 < chunks.length ? chunks[c + 1] : (lines[i + 1]?.trim() ?? '');
+      const heading = headingFromLine(t, next);
+      const ordinal = heading ? parseChapterOrdinal(heading.title) : null;
+      const printLike =
+        isPrintTocLine(t) ||
+        (ISOLATED_NUMBER.test(t) && looksLikeChapterTitle(next) && !isDialogueLine(next));
+      if (heading && ordinal != null && ordinal >= 1 && printLike) {
+        const prev = entries[entries.length - 1];
+        if (prev && ordinal < prev.ordinal) {
+          return { entries, end: i };
+        }
+        entries.push({ ordinal, title: heading.title });
+        accepted += 1;
+        misses = 0;
+        if (chunks.length === 1 && heading.consumeNext) consumeExtra = 1;
+      }
+    }
+    if (accepted > 0) {
+      i += 1 + consumeExtra;
+      continue;
+    }
+    if (looksLikeProse(rawLine) && rawLine.length > 60) break;
+    misses += 1;
+    i += 1;
+    if (entries.length >= 4 && misses >= 3) break;
+    if (entries.length < 2 && misses >= 12) break;
+  }
+  return { entries, end: i };
+}
+
+function charOffsetAtLine(lines: string[], lineIndex: number): number {
+  let offset = 0;
+  for (let i = 0; i < lineIndex && i < lines.length; i++) {
+    offset += lines[i].length + 1;
+  }
+  return offset;
+}
+
+/** Printed Contents with 1, 2, 3… titles — the chapter map for graded readers. */
+export function extractPrintContents(text: string): PrintToc | null {
+  const lines = text.split('\n');
+  let start = lines.findIndex((l) => CONTENTS_ONLY.test(l.trim().replace(/^#+\s+/, '')));
+  if (start < 0) {
+    start = lines.findIndex((l, idx) => idx < 400 && isPrintTocLine(l));
+    if (start < 0) return null;
+    start = Math.max(0, start - 1);
+  }
+  const collected = collectPrintTocEntries(lines, start + (CONTENTS_ONLY.test(lines[start]?.trim().replace(/^#+\s+/, '') ?? '') ? 1 : 0));
+  if (collected.entries.length < 4) return null;
+  const nums = collected.entries.map((e) => e.ordinal);
+  if (nums[0] > 2) return null;
+  for (let i = 1; i < nums.length; i++) {
+    if (nums[i] < nums[i - 1]) return null;
+  }
+  return {
+    entries: collected.entries,
+    coverEnd: charOffsetAtLine(lines, start),
+    listingEnd: charOffsetAtLine(lines, collected.end),
+  };
+}
+
+function splitByPrintContents(text: string, toc: PrintToc, fallbackTitle: string): SplitChapter[] | null {
+  const chapters: SplitChapter[] = [];
+  let from = toc.listingEnd;
+  const positions: Array<{ index: number; title: string }> = [];
+
+  for (const entry of toc.entries) {
+    const keys = titleKeys(entry.title);
+    const idx = findTitleIndex(text, entry.title, keys, from, false);
+    if (idx < 0 || idx < toc.listingEnd) continue;
+    if (positions.some((p) => Math.abs(p.index - idx) < 2)) continue;
+    positions.push({ index: idx, title: entry.title });
+    from = idx + Math.max(entry.title.length, 1);
+  }
+
+  // Title-page OCR often misses Chapter 1; the story after Contents is still that chapter.
+  if (positions.length) {
+    const firstOrd = parseChapterOrdinal(positions[0].title);
+    if (firstOrd != null && firstOrd >= 2 && positions[0].index > toc.listingEnd + 8) {
+      const lead = toc.entries.filter((e) => e.ordinal < firstOrd);
+      const gap = text.slice(toc.listingEnd, positions[0].index).trim();
+      if (lead.length && gap && wordCount(gap) >= 8) {
+        const placed: Array<{ index: number; title: string }> = [];
+        let gapFrom = toc.listingEnd;
+        for (const entry of lead) {
+          const keys = titleKeys(entry.title);
+          const idx = findTitleIndex(text, entry.title, keys, gapFrom, false);
+          if (idx >= toc.listingEnd && idx < positions[0].index) {
+            placed.push({ index: idx, title: entry.title });
+            gapFrom = idx + Math.max(entry.title.length, 1);
+          }
+        }
+        if (placed.length) {
+          positions.unshift(...placed);
+          positions.sort((a, b) => a.index - b.index);
+        } else {
+          positions.unshift({ index: toc.listingEnd, title: lead[0].title });
+        }
+      }
+    }
+  }
+
+  if (positions.length < 2 || positions.length < toc.entries.length * 0.3) return null;
+
+  const cover = text.slice(0, toc.coverEnd).trim();
+  if (cover && wordCount(cover) >= 8) {
+    chapters.push({ title: 'Cover', text: cover });
+  }
+  const listing = text.slice(toc.coverEnd, toc.listingEnd).trim();
+  if (listing && wordCount(listing) >= 4) {
+    chapters.push({ title: 'Contents', text: listing });
+  }
+
+  let extras = '';
+  for (let i = 0; i < positions.length; i++) {
+    const start = positions[i].index;
+    const end = i + 1 < positions.length ? positions[i + 1].index : text.length;
+    let body = text.slice(start, end).trim();
+    const headingLine = body.split('\n')[0] ?? '';
+    if (
+      normalizeTitleKey(headingLine) === normalizeTitleKey(positions[i].title) ||
+      titleKeys(headingLine).some((k) => titleKeys(positions[i].title).includes(k))
+    ) {
+      body = body.slice(headingLine.length).trim();
+    }
+    body = body.replace(/^(?:\d{1,3}|[IVXLCDM]{1,8})\.?\s*\n+/, '');
+    const titleLine = body.split('\n')[0] ?? '';
+    if (titleKeys(titleLine).some((k) => titleKeys(positions[i].title).includes(k))) {
+      body = body.slice(titleLine.length).trim();
+    }
+    if (i === positions.length - 1) {
+      const split = splitOffExtras(body);
+      body = split.story;
+      extras = split.extras;
+    }
+    if (!body) continue;
+    chapters.push({ title: positions[i].title.slice(0, 160), text: body });
+  }
+
+  if (extras && wordCount(extras) >= 15) {
+    chapters.push({ title: extrasSectionTitle(extras), text: extras });
+  }
+
+  return chapters.length >= 2 ? chapters : null;
 }
 
 /** Titles listed after CONTENTS / Table of Contents, without page numbers. */
@@ -479,7 +773,7 @@ export function extractContentsTitles(text: string): string[] {
       continue;
     }
     blanks = 0;
-    const entry = parseTocEntry(t);
+    const entry = parseTocEntry(t, lines[i + 1] ?? '');
     if (entry) {
       titles.push(entry);
       continue;
@@ -506,7 +800,7 @@ export function stripContentsListing(text: string): string {
       continue;
     }
     const heading = headingAt(lines, i);
-    if (!heading && parseTocEntry(t)) {
+    if (!heading && parseTocEntry(t, lines[i + 1] ?? '')) {
       i += 1;
       continue;
     }
@@ -565,7 +859,12 @@ function chaptersFromHeadings(lines: string[], headings: FoundHeading[], fallbac
   if (first.index > 0) {
     const preface = lines.slice(0, first.index).join('\n').trim();
     if (preface && wordCount(preface) >= 80 && !isMostlyTocListing(preface)) {
-      chapters.push({ title: fallbackTitle.slice(0, 160), text: preface });
+      const firstNum = parseChapterOrdinal(first.title);
+      const title =
+        firstNum === 2
+          ? prettyChapterTitle('Chapter 1')
+          : fallbackTitle.slice(0, 160);
+      chapters.push({ title, text: preface });
     }
   }
 
@@ -610,10 +909,16 @@ export function chapterSequenceInversions(chapters: Array<{ title: string }>): n
  * Drops Gutenberg license wrappers and table-of-contents duplicates.
  */
 export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1'): SplitChapter[] {
-  const prepared = stripGutenbergBoilerplate(
-    ensureChapterLineBreaks(text.replace(/\r\n/g, '\n')),
+  const prepared = stripOcrImageJunk(
+    stripGutenbergBoilerplate(ensureChapterLineBreaks(text.replace(/\r\n/g, '\n'))),
   ).trim();
   if (!prepared) return [];
+
+  const printToc = extractPrintContents(prepared);
+  if (printToc && printToc.entries.length >= 4) {
+    const graded = splitByPrintContents(prepared, printToc, fallbackTitle);
+    if (graded && graded.length >= 3) return graded;
+  }
 
   const tocTitles = extractContentsTitles(prepared);
   const stripped = stripContentsListing(prepared).trim() || prepared;
@@ -801,7 +1106,13 @@ function findTitleIndex(
     const combined = collapseWs(`${collapsed} ${nextCollapsed}`);
     if (!collapsed) continue;
     const numbered = collapsed.match(/^(?:\d+|[ivxlcdm]+)\s+(.+)$/);
+    const prefixHit =
+      titleNorm.split(' ').length >= 2 &&
+      (collapsed === titleNorm ||
+        collapsed.startsWith(`${titleNorm} `) ||
+        combined.startsWith(`${titleNorm} `));
     const hit =
+      prefixHit ||
       collapsed === titleNorm ||
       keys.includes(collapsed) ||
       combined === titleNorm ||

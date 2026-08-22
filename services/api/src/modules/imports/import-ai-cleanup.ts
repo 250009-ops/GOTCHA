@@ -56,7 +56,9 @@ Rules:
 - When unsure whether something is chrome or content, leave it (empty remove lists). Prefer keeping text over deleting.
 - removeBlocks: 1-based [B#] block indexes that are pure chrome/junk ONLY (nav, menus, sidebars, ads, cookie/GDPR banners, share buttons, related/recommended links, comment widgets, newsletter CTAs, author bio footers that are not part of the work, site chrome, legal/cookie policy blurbs, bare page numbers, repeated running headers/footers, "this page intentionally left blank", publisher marketing, standalone TOC chrome).
 - removeSnippets: exact substrings copied VERBATIM from the blocks when only part of a kept block is junk. Must match the source text exactly. Prefer removeBlocks when a whole block is junk. Use [] when unsure.
-- Keep the main body: headings, paragraphs, lists, dialogue, quotes, transcripts, exam/listening passages, and content image markers like [Image: …].
+- Keep the main body: headings, paragraphs, lists, story dialogue (quoted speech, ‘…’ / "…" lines, "said/asked" attributions), quotes, transcripts, and exam/listening passages. Never rewrite, drop, or re-title spoken lines.
+- Keep conversation layout exactly as printed: each spoken turn on its own line. Never join adjacent quoted lines into one paragraph.
+- Exclude images, figures, photos, illustrations, word-search/crossword letter grids, OCR garbage from pictures, and [Image: …] placeholders. Those are not learner text. Keep nearby story and activity instructions.
 - NEVER remove exam/listening/IELTS-style instructional lines that belong to the document — even if they sound like UI. Always KEEP examples such as: "That is the end of section four", "You now have half a minute to check your answers", "Now listen and answer questions five to ten", "Now turn to section…". These are learner content, not chrome.
 - dropChapter=true ONLY when this entire chunk is pure site/publisher chrome with zero readable main content. Never drop a chunk because it contains section endings, answer-check timing, or other transcript wrap-up lines.
 - title = short chapter/section title if obvious from the body, else "".

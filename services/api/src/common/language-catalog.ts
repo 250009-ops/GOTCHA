@@ -88,3 +88,37 @@ export async function assertEnabledLanguage(prisma: PrismaService, code: string,
     throw new BadRequestException(`${label} "${code}" is not enabled. Ask an admin to add it first.`);
   }
 }
+
+/**
+ * Library / feed language scope:
+ * enabled catalog ∩ languages-to-learn, minus native.
+ * Native is never browsable. When `targetLanguages` is provided (including an
+ * empty list), the library follows it exactly so adding/removing a learn
+ * language shows or hides that catalog. `null`/`undefined` targets fall back
+ * to every enabled language except native.
+ */
+export function resolveLearnerVisibleLanguageCodes(
+  enabled: string[],
+  nativeLanguage?: string | null,
+  targetLanguages?: string[] | null,
+): string[] {
+  const native = nativeLanguage?.trim().toLowerCase() || null;
+  const withoutNative = enabled.filter((code) => code.toLowerCase() !== native);
+  if (targetLanguages == null) return withoutNative;
+  const wanted = new Set(
+    targetLanguages.map((code) => code.trim().toLowerCase()).filter(Boolean),
+  );
+  if (native) wanted.delete(native);
+  if (!wanted.size) return [];
+  return withoutNative.filter((code) => wanted.has(code.toLowerCase()));
+}
+
+/** Enabled catalog languages the learner may see in the library / feed. */
+export async function getLearnerVisibleLanguageCodes(
+  prisma: PrismaService,
+  nativeLanguage?: string | null,
+  targetLanguages?: string[] | null,
+): Promise<string[]> {
+  const enabled = await getEnabledLanguageCodes(prisma);
+  return resolveLearnerVisibleLanguageCodes(enabled, nativeLanguage, targetLanguages);
+}

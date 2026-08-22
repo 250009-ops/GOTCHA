@@ -2,27 +2,22 @@ import { tokenizeText, paginateText, uniqueWordCount } from '../../utils/tokeniz
 import { safeFetch } from '../../common/safe-fetch';
 import {
   extractTextFromPdf,
+  extractTextFromEpub,
   extractTextFromUrl,
   type ExtractedChapter,
 } from '../imports/extract-text';
 import { chaptersHaveRealTitles, splitAccurateChapters } from '../imports/chapter-split';
+import { preparePastedText } from '../imports/import-text-cleaner';
 
-const FRONT_MATTER_TITLE =
-  /^(copyright|contents|table of contents|title page|dedication|acknowledg|foreword|preface|isbn|colophon|legal|credits|about the author)$/i;
+const FRONT_MATTER_TITLE = /^(copyright|isbn|colophon|legal)$/i;
 
 const FRONT_MATTER_MARKERS = [
   'all rights reserved',
-  'copyright',
-  '©',
   'isbn',
   'library of congress',
   'no part of this publication',
   'no part of this book',
   'reproduced or transmitted',
-  'published by',
-  'first published',
-  'printed in',
-  'table of contents',
 ];
 
 function countWords(text: string) {
@@ -34,7 +29,7 @@ export function isFrontMatterChapter(title: string, text: string) {
   if (FRONT_MATTER_TITLE.test(heading)) return true;
   const sample = `${heading}\n${text.slice(0, 900)}`.toLowerCase();
   const hits = FRONT_MATTER_MARKERS.filter((m) => sample.includes(m)).length;
-  return hits >= 2 && countWords(text) < 450;
+  return hits >= 3 && countWords(text) < 200;
 }
 
 /** Book/story chapter split: real headings only, copyright/front matter dropped. */
@@ -66,7 +61,7 @@ export function buildSegmentsFromChapters(
 ): BuiltSegment[] {
   const cleaned = chapters
     .map((c) => ({ title: c.title.trim() || 'Chapter', text: c.text.trim() }))
-    .filter((c) => c.text.length > 0 && !isFrontMatterChapter(c.title, c.text));
+    .filter((c) => c.text.length > 0);
 
   const segments: BuiltSegment[] = [];
 
@@ -144,8 +139,7 @@ export function resolveLiteraryChapters(
     }))
     .filter((c) => c.text.length > 0);
   if (chaptersHaveRealTitles(cleaned)) {
-    const withoutFront = cleaned.filter((c) => !isFrontMatterChapter(c.title, c.text));
-    if (withoutFront.length) return withoutFront;
+    return cleaned;
   }
   const joined = (fullText || cleaned.map((c) => c.text).join('\n\n')).trim();
   if (!joined) return cleaned;
@@ -157,10 +151,19 @@ export async function extractSourceDocument(opts: {
   sourceUrl?: string;
   title?: string;
   pdfBuffer?: Buffer;
+  language?: string;
 }): Promise<{ title?: string; chapters: ExtractedChapter[]; text: string }> {
   const title = opts.title?.trim() || 'Untitled';
+  const pasted = preparePastedText(opts.plainText ?? '');
+  if (pasted) {
+    return {
+      title,
+      text: pasted,
+      chapters: splitLiteraryChapters(pasted, title),
+    };
+  }
   if (opts.pdfBuffer?.length) {
-    const doc = await extractTextFromPdf(opts.pdfBuffer);
+    const doc = await extractTextFromPdf(opts.pdfBuffer, { language: opts.language });
     return finalizeExtractedDoc(doc, title);
   }
   const url = opts.sourceUrl?.trim();
@@ -169,20 +172,21 @@ export async function extractSourceDocument(opts: {
       const res = await safeFetch(url, { signal: AbortSignal.timeout(180_000) });
       if (!res.ok) throw new Error(`Could not download PDF (${res.status})`);
       const buf = Buffer.from(await res.arrayBuffer());
-      const doc = await extractTextFromPdf(buf);
+      const doc = await extractTextFromPdf(buf, { language: opts.language });
+      return finalizeExtractedDoc(doc, title);
+    }
+    if (/\.epub(\?|#|$)/i.test(url)) {
+      const res = await safeFetch(url, { signal: AbortSignal.timeout(180_000) });
+      if (!res.ok) throw new Error(`Could not download EPUB (${res.status})`);
+      const buf = Buffer.from(await res.arrayBuffer());
+      const doc = await extractTextFromEpub(buf);
       return finalizeExtractedDoc(doc, title);
     }
     const doc = await extractTextFromUrl(url);
     return finalizeExtractedDoc(doc, title);
   }
 
-  const plain = (opts.plainText ?? '').trim();
-  if (!plain) return { title, text: '', chapters: [] };
-  return {
-    title,
-    text: plain,
-    chapters: splitLiteraryChapters(plain, title),
-  };
+  return { title, text: '', chapters: [] };
 }
 
 export function previewFromSegments(segments: BuiltSegment[]) {

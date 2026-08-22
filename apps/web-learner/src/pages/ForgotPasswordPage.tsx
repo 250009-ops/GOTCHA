@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { api, clearTokens } from '../lib/api';
 import { openEmailInbox } from '../lib/emailInbox';
-import { MARKETING_URL } from '../lib/links';
+import { MARKETING_URL, isAllowedAdminReturnUrl } from '../lib/links';
+import { authFlowSearch, loginPathWithReturn } from '../lib/authRoutes';
 
 /** Figma 187:8 — Reset password request (email → send link). */
 export default function ForgotPasswordPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  const loginPath = loginPathWithReturn(searchParams);
+  const forgotQuery = authFlowSearch(searchParams);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -33,7 +38,7 @@ export default function ForgotPasswordPage() {
     try {
       await api('/auth/forgot-password', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), clientPlatform: 'web' }),
       });
       setSent(true);
       toast.success('Check your inbox for a reset link');
@@ -50,7 +55,7 @@ export default function ForgotPasswordPage() {
     try {
       await api('/auth/forgot-password', {
         method: 'POST',
-        body: JSON.stringify({ email: email.trim() }),
+        body: JSON.stringify({ email: email.trim(), clientPlatform: 'web' }),
       });
       toast.success('Reset email sent again — check your inbox');
     } catch (err) {
@@ -69,7 +74,9 @@ export default function ForgotPasswordPage() {
               <div className="flex flex-col gap-1.5">
                 <h2 className="text-2xl font-extrabold text-[#101828] leading-8">Reset password</h2>
                 <p className="text-[#6b7280] text-sm leading-5">
-                  Enter your email and we&apos;ll send you a reset link.
+                  {adminReturnUrl
+                    ? 'Enter your admin account email and we will send a reset link. After resetting, sign in to return to the admin console.'
+                    : "Enter your email and we'll send you a reset link."}
                 </p>
               </div>
 
@@ -103,7 +110,7 @@ export default function ForgotPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">Already have an account?</span>
-                <Link to="/login" className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
                   Sign in
                 </Link>
               </div>
@@ -166,7 +173,7 @@ export default function ForgotPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">Already have an account?</span>
-                <Link to="/login" className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
                   Sign in
                 </Link>
               </div>
@@ -175,7 +182,7 @@ export default function ForgotPasswordPage() {
                 type="button"
                 onClick={() => {
                   setSent(false);
-                  navigate('/forgot-password');
+                  navigate(forgotQuery ? `/forgot-password?${forgotQuery}` : '/forgot-password');
                 }}
                 className="flex items-center justify-center gap-2 text-[13px] text-[#9ca3af] hover:text-[#4a5565] w-full"
               >

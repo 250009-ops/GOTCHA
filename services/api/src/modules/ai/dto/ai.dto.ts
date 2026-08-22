@@ -1,3 +1,4 @@
+import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
@@ -34,4 +35,15 @@ export class TranslateDto {
 
   @IsEnum(AppLanguage)
   targetLang!: AppLanguage;
+}
+
+export class SpeechDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(400)
+  text!: string;
+
+  @Transform(({ value }) => String(value ?? 'en').trim().toLowerCase().replace(/_/g, '-').slice(0, 2))
+  @IsEnum(AppLanguage)
+  lang!: AppLanguage;
 }

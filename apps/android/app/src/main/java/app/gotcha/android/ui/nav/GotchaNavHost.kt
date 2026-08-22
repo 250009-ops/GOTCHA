@@ -5,6 +5,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -30,6 +31,7 @@ import app.gotcha.android.ui.nav.slideUpSheetComposable
 import app.gotcha.android.ui.onboarding.OnboardingScreen
 import app.gotcha.android.ui.onboarding.SplashScreen
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 object Routes {
     const val Splash = "splash"
@@ -58,13 +60,14 @@ object Routes {
 fun GotchaNavHost() {
     val nav = rememberNavController()
     val container = LocalAppContainer.current
+    val scope = rememberCoroutineScope()
     var bootstrapped by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { bootstrapped = true }
 
     LaunchedEffect(Unit) {
         container.sessionExpired.collectLatest {
-            container.messagingRealtime.stop()
+            container.endSession()
             nav.navigate(Routes.SignIn) {
                 popUpTo(0) { inclusive = true }
             }
@@ -85,17 +88,40 @@ fun GotchaNavHost() {
         PendingAuthDeepLink.collectLatest { link ->
             if (link == null) return@collectLatest
             PendingAuthDeepLink.value = null
+            container.endSession()
             val dest = when (link) {
                 is AuthDeepLink.VerifyEmail -> Routes.verifyEmail(link.token)
                 is AuthDeepLink.ResetPassword -> Routes.resetPassword(link.token)
             }
-            nav.navigate(dest) { launchSingleTop = true }
+            nav.navigate(dest) {
+                popUpTo(Routes.Splash) { inclusive = true }
+                launchSingleTop = true
+            }
         }
     }
 
     NavHost(navController = nav, startDestination = Routes.Splash) {
         composable(Routes.Splash) {
             SplashScreen { loggedIn, isAdmin, onboardingDone ->
+                val pending = PendingAuthDeepLink.value
+                if (pending != null) {
+                    PendingAuthDeepLink.value = null
+                    scope.launch {
+                        container.endSession()
+                        val dest = when (pending) {
+                            is AuthDeepLink.VerifyEmail -> Routes.verifyEmail(pending.token)
+                            is AuthDeepLink.ResetPassword -> Routes.resetPassword(pending.token)
+                        }
+                        nav.navigate(dest) {
+                            popUpTo(Routes.Splash) { inclusive = true }
+                            launchSingleTop = true
+                        }
+                    }
+                    return@SplashScreen
+                }
+                if (nav.currentBackStackEntry?.destination?.route != Routes.Splash) {
+                    return@SplashScreen
+                }
                 val dest = when {
                     !onboardingDone -> Routes.Onboarding
                     !loggedIn -> Routes.SignIn
@@ -164,11 +190,17 @@ fun GotchaNavHost() {
             LearnerShell(
                 onOpenReader = { id -> nav.navigate(Routes.reader(id)) },
                 onOpenImport = { nav.navigate(Routes.Import) },
+                onOpenPractice = { nav.navigate(Routes.practice(null, null)) },
+                onOpenImportUrl = { nav.navigate(Routes.ImportUrl) },
+                onOpenImportPaste = { nav.navigate(Routes.ImportPaste) },
+                onOpenImportFile = { nav.navigate(Routes.ImportFile) },
                 onLogout = {
-                    nav.navigate(Routes.SignIn) { popUpTo(0) { inclusive = true } }
+                    scope.launch {
+                        container.endSession()
+                        nav.navigate(Routes.SignIn) { popUpTo(0) { inclusive = true } }
+                    }
                 },
                 onOpenAdmin = {
-                    // Only if session is admin — shell already gates visibility
                     nav.navigate(Routes.Admin)
                 },
             )
@@ -181,7 +213,10 @@ fun GotchaNavHost() {
                     }
                 },
                 onLogout = {
-                    nav.navigate(Routes.SignIn) { popUpTo(0) { inclusive = true } }
+                    scope.launch {
+                        container.endSession()
+                        nav.navigate(Routes.SignIn) { popUpTo(0) { inclusive = true } }
+                    }
                 },
             )
         }
@@ -221,12 +256,14 @@ fun GotchaNavHost() {
                 onOpenUrl = { nav.navigate(Routes.ImportUrl) },
                 onOpenPaste = { nav.navigate(Routes.ImportPaste) },
                 onOpenFile = { nav.navigate(Routes.ImportFile) },
+                onRead = { id -> nav.navigate(Routes.reader(id)) },
             )
         }
         rootSlideComposable(Routes.ImportUrl) {
             app.gotcha.android.ui.learner.ImportUrlScreen(
                 onBack = { nav.popBackStack() },
                 onImported = {
+                    nav.popBackStack()
                     nav.popBackStack(Routes.Import, inclusive = true)
                 },
             )
@@ -235,6 +272,7 @@ fun GotchaNavHost() {
             app.gotcha.android.ui.learner.PasteTextScreen(
                 onBack = { nav.popBackStack() },
                 onImported = {
+                    nav.popBackStack()
                     nav.popBackStack(Routes.Import, inclusive = true)
                 },
             )
@@ -243,6 +281,7 @@ fun GotchaNavHost() {
             app.gotcha.android.ui.learner.ImportFileScreen(
                 onBack = { nav.popBackStack() },
                 onImported = {
+                    nav.popBackStack()
                     nav.popBackStack(Routes.Import, inclusive = true)
                 },
             )

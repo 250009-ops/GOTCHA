@@ -1,7 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
-import { ensureLanguageCatalog } from '../../common/language-catalog';
+import { ensureLanguageCatalog, getLearnerVisibleLanguageCodes } from '../../common/language-catalog';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import {
   getDevContentById,
@@ -19,6 +19,7 @@ import {
   requiresCatalogPayment,
   type CatalogPricedItem,
 } from './catalog-access';
+import { interleaveByLanguage } from './feed-order';
 
 const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; flagEmoji: string }> = Object.fromEntries(
   Object.entries(LANGUAGE_META).map(([code, meta]) => [
@@ -64,6 +65,28 @@ export class ContentService {
 
   private useDevContent() {
     return isDevAuthEnabled() && !this.prisma.dbAvailable;
+  }
+
+  private async learnerVisibleLanguages(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { nativeLanguage: true },
+    });
+    const allowed = await getLearnerVisibleLanguageCodes(this.prisma, user?.nativeLanguage);
+    return { nativeLanguage: user?.nativeLanguage ?? null, allowed };
+  }
+
+  private catalogLanguageWhere(
+    allowed: string[],
+    targetLang?: string,
+  ): Prisma.ContentItemWhereInput {
+    if (targetLang) {
+      if (!allowed.includes(targetLang)) {
+        return { language: { in: [] as never[] } };
+      }
+      return { language: targetLang as never };
+    }
+    return { language: { in: allowed as never[] } };
   }
 
   private async decorateLearnerItems(
@@ -155,20 +178,24 @@ export class ContentService {
   }
 
   async getFeed(userId: string, targetLang?: string) {
+    const { allowed } = await this.learnerVisibleLanguages(userId);
+    const langWhere = this.catalogLanguageWhere(allowed, targetLang);
+    const isVisible = (language: string) =>
+      targetLang ? language === targetLang && allowed.includes(targetLang) : allowed.includes(language);
+
     if (this.useDevContent()) {
       const feed = getDevFeed();
-      if (targetLang) {
-        return {
-          ...feed,
-          featuredCollections: feed.featuredCollections.map((c) => ({
-            ...c,
-            items: c.items.filter((i) => i.content.language === targetLang),
-          })),
-          recentlyPublished: feed.recentlyPublished.filter((i) => i.language === targetLang),
-          myImports: [],
-        };
-      }
-      return { ...feed, myImports: [] };
+      const filterItem = (item: { language: string }) => isVisible(item.language);
+      return {
+        ...feed,
+        continueReading: feed.continueReading?.filter(filterItem) ?? [],
+        featuredCollections: feed.featuredCollections.map((c) => ({
+          ...c,
+          items: c.items.filter((i) => filterItem(i.content)),
+        })),
+        recentlyPublished: feed.recentlyPublished.filter(filterItem),
+        myImports: [],
+      };
     }
 
     const progress = await this.prisma.readingProgress.findMany({
@@ -186,12 +213,15 @@ export class ContentService {
       publishStatus: PublishStatus.published,
       contentSource: { not: ContentSource.user_import },
       contentType: { not: ContentType.user_import },
-      ...(targetLang ? { language: targetLang as never } : {}),
+      ...langWhere,
     };
 
     const [featured, recent, myImports] = await Promise.all([
       this.prisma.contentCollection.findMany({
-        where: { isFeatured: true, ...(targetLang ? { language: targetLang as never } : {}) },
+        where: {
+          isFeatured: true,
+          ...(targetLang && allowed.includes(targetLang) ? { language: targetLang as never } : {}),
+        },
         include: {
           items: {
             include: { content: true },
@@ -204,33 +234,37 @@ export class ContentService {
       this.prisma.contentItem.findMany({
         where: catalogWhere,
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
-        take: 48,
+        take: 96,
       }),
       this.prisma.contentItem.findMany({
         where: {
           publishStatus: { in: [PublishStatus.published, PublishStatus.review] },
           createdById: userId,
           contentSource: ContentSource.user_import,
-          ...(targetLang ? { language: targetLang as never } : {}),
+          ...langWhere,
         },
         orderBy: [{ publishedAt: 'desc' }, { createdAt: 'desc' }],
         take: 24,
       }),
     ]);
 
+    const visibleProgress = progress.filter((p) => isVisible(p.content.language));
+
     const featuredContents = featured.flatMap((c) =>
       c.items
         .filter(
           (i) =>
+            isVisible(i.content.language) &&
             i.content.contentSource !== ContentSource.user_import &&
             i.content.contentType !== ContentType.user_import,
         )
         .map((i) => i.content),
     );
+    const recentInterleaved = interleaveByLanguage(recent, 48);
     const [continueRows, featuredRows, recentRows, importRows] = await Promise.all([
-      this.decorateLearnerItems(progress.map((p) => p.content), userId),
+      this.decorateLearnerItems(visibleProgress.map((p) => p.content), userId),
       this.decorateLearnerItems(featuredContents, userId),
-      this.decorateLearnerItems(recent, userId),
+      this.decorateLearnerItems(recentInterleaved, userId),
       this.decorateLearnerItems(myImports, userId),
     ]);
     const featuredById = new Map(featuredRows.map((row) => [row.id, row]));
@@ -240,6 +274,7 @@ export class ContentService {
       items: c.items
         .filter(
           (i) =>
+            isVisible(i.content.language) &&
             i.content.contentSource !== ContentSource.user_import &&
             i.content.contentType !== ContentType.user_import,
         )
@@ -252,9 +287,9 @@ export class ContentService {
     return {
       continueReading: continueRows.map((row, index) => ({
         ...row,
-        progressPct: progress[index]?.progressPct,
-        lastReadAt: progress[index]?.lastReadAt,
-        knownWordRatio: progress[index]?.knownWordRatio ?? null,
+        progressPct: visibleProgress[index]?.progressPct,
+        lastReadAt: visibleProgress[index]?.lastReadAt,
+        knownWordRatio: visibleProgress[index]?.knownWordRatio ?? null,
       })),
       featuredCollections: catalogFeatured,
       recentlyPublished: recentRows,
@@ -263,9 +298,20 @@ export class ContentService {
   }
 
   async list(query: ContentQueryDto, userId?: string, isAdmin?: boolean) {
+    const learnerScope = userId ? await this.learnerVisibleLanguages(userId) : null;
+
     if (this.useDevContent()) {
       let items = getDevFeed().recentlyPublished;
-      if (query.lang) items = items.filter((i) => i.language === query.lang);
+      if (learnerScope) {
+        items = items.filter((i) => learnerScope.allowed.includes(i.language));
+      }
+      if (query.lang) {
+        if (learnerScope && !learnerScope.allowed.includes(query.lang)) {
+          items = [];
+        } else {
+          items = items.filter((i) => i.language === query.lang);
+        }
+      }
       if (query.level) items = items.filter((i) => i.cefrLevel === query.level);
       if (query.q) {
         const q = query.q.toLowerCase();
@@ -282,9 +328,17 @@ export class ContentService {
     const pageSize = query.pageSize ?? 20;
     const skip = (page - 1) * pageSize;
 
+    if (learnerScope && query.lang && !learnerScope.allowed.includes(query.lang)) {
+      return { items: [], total: 0, page, pageSize, hasMore: false };
+    }
+
     const where: Prisma.ContentItemWhereInput = {
       publishStatus: PublishStatus.published,
-      ...(query.lang ? { language: query.lang } : {}),
+      ...(query.lang
+        ? { language: query.lang }
+        : learnerScope
+          ? { language: { in: learnerScope.allowed as never[] } }
+          : {}),
       ...(query.level ? { cefrLevel: query.level } : {}),
       ...(query.genre ? { genre: query.genre } : {}),
       ...(query.type ? { contentType: query.type } : {}),

@@ -74,7 +74,7 @@ import app.gotcha.android.ui.components.OfflineBannerIfNeeded
 import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.components.rememberOfflineInteraction
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import java.time.LocalDate
 import java.time.YearMonth
 import java.time.format.DateTimeFormatter
@@ -124,7 +124,7 @@ private fun ProgressDirHeader(
             Column {
                 Text(
                     title,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                     color = GotchaColors.Ink,
@@ -132,7 +132,7 @@ private fun ProgressDirHeader(
                 if (subtitle != null) {
                     Text(
                         subtitle,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Normal,
                         fontSize = 12.sp,
                         color = GotchaColors.TextMuted,
@@ -237,7 +237,7 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                 ) {
                     Text(
                         "$streak",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 40.sp,
                         color = Color.White,
@@ -247,14 +247,14 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
                     "$streak-Day Streak!",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 24.sp,
                     color = GotchaColors.Ink,
                 )
                 Text(
                     "Longest streak: $best days",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
@@ -279,7 +279,7 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                 ) {
                     Text(
                         formatMonthYear(visibleMonth),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = GotchaColors.Ink,
@@ -313,7 +313,7 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                             d,
                             modifier = Modifier.width(32.dp),
                             textAlign = TextAlign.Center,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
                             color = GotchaColors.TextSubtle,
@@ -349,7 +349,7 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                             ) {
                                 Text(
                                     "${date.dayOfMonth}",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = when {
                                         isToday -> FontWeight.ExtraBold
                                         on -> FontWeight.Bold
@@ -390,8 +390,8 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                         .padding(14.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    Text(label, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
-                    Text(value, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
+                    Text(label, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
+                    Text(value, fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
                 }
             }
         }
@@ -408,14 +408,14 @@ fun StreakDetailScreen(onBack: () -> Unit, onStartReading: () -> Unit = onBack) 
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                Text("Keep it up!", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.BrandPurpleMid)
+                Text("Keep it up!", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.BrandPurpleMid)
                 Text(
                     if (streak > 0) {
                         "Read today to reach a ${streak + 1}-day streak and secure your learning habit."
                     } else {
                         "Read today to start a streak and build your learning habit."
                     },
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 14.sp,
                     lineHeight = 20.sp,
                     color = GotchaColors.TextMuted,
@@ -551,14 +551,14 @@ fun DailyGoalScreen(onBack: () -> Unit) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text(
                         "$today / $goal",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 20.sp,
                         color = GotchaColors.Ink,
                     )
                     Text(
                         copy.minutes,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 11.sp,
                         color = GotchaColors.TextMuted,
@@ -567,7 +567,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
             }
             Text(
                 "${(pct * 100).toInt()}${copy.goalAchieved}",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
@@ -575,7 +575,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
         }
 
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(copy.adjustGoal, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
+            Text(copy.adjustGoal, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -601,7 +601,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
                                 }
                             }
                             .padding(horizontal = 16.dp, vertical = 10.dp),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = if (selected) Color.White else GotchaColors.TextMuted,
@@ -611,7 +611,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
         }
 
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(copy.reminders, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
+            Text(copy.reminders, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -623,8 +623,8 @@ fun DailyGoalScreen(onBack: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column {
-                    Text(copy.dailyReminder, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
-                    Text(copy.dailyReminderSub, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                    Text(copy.dailyReminder, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
+                    Text(copy.dailyReminderSub, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                 }
                 Switch(
                     checked = reminder,
@@ -645,7 +645,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
         }
 
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(copy.thisWeek, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
+            Text(copy.thisWeek, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
             Row(
                 Modifier
                     .fillMaxWidth()
@@ -676,7 +676,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
                                 )
                             }
                         }
-                        Text(label, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                        Text(label, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.TextMuted)
                     }
                 }
             }
@@ -685,7 +685,7 @@ fun DailyGoalScreen(onBack: () -> Unit) {
         if (saveError != null) {
             Text(
                 saveError!!,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 13.sp,
                 color = GotchaColors.Danger,
                 modifier = Modifier.padding(horizontal = 20.dp),
@@ -809,13 +809,13 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                                 .background(GotchaColors.BrandPurple),
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text(level, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 36.sp, color = Color.White)
+                            Text(level, fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 36.sp, color = Color.White)
                         }
                     }
                     Spacer(Modifier.height(16.dp))
                     Text(
                         cefrBandName(level),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 22.sp,
                         color = GotchaColors.Ink,
@@ -825,7 +825,7 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                         "$langName · from your learning profile",
                         modifier = Modifier.padding(horizontal = 48.dp),
                         textAlign = TextAlign.Center,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 13.sp,
                         color = GotchaColors.TextMuted,
                         lineHeight = 18.sp,
@@ -837,14 +837,14 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(
                                 "Progress to $next",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 16.sp,
                                 color = GotchaColors.Ink,
                             )
                             Text(
                                 "${(pct * 100).toInt()}%",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = GotchaColors.BrandPurple,
@@ -867,7 +867,7 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                         }
                         Text(
                             "Estimate from $words saved words (not a placement test).",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 13.sp,
                             color = GotchaColors.TextSubtle,
                         )
@@ -877,7 +877,7 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     "At a glance",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = GotchaColors.Ink,
@@ -902,8 +902,8 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                                 .padding(14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
-                            Text(label, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
-                            Text(value, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            Text(label, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
+                            Text(value, fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
                         }
                     }
                 }
@@ -912,7 +912,7 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                     Spacer(Modifier.height(24.dp))
                     Text(
                         "What $next typically unlocks",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = GotchaColors.Ink,
@@ -926,7 +926,7 @@ fun CefrLevelScreen(onBack: () -> Unit, onTakeTest: () -> Unit = {}) {
                         unlocks.forEach { line ->
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Icon(Icons.Outlined.Check, null, tint = GotchaColors.BrandPurple, modifier = Modifier.size(18.dp))
-                                Text(line, fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.TextMuted, lineHeight = 18.sp)
+                                Text(line, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted, lineHeight = 18.sp)
                             }
                         }
                     }
@@ -1043,7 +1043,7 @@ fun LanguageDetailScreen(
                                 .background(GotchaColors.BrandPurpleMid)
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
                         ) {
-                            Text(level, color = Color.White, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text(level, color = Color.White, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     },
                 )
@@ -1073,7 +1073,7 @@ fun LanguageDetailScreen(
                 ) {
                     Text(
                         "Reading History",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
                         color = GotchaColors.Ink,
@@ -1081,7 +1081,7 @@ fun LanguageDetailScreen(
                     if (historyRows.isEmpty()) {
                         Text(
                             "No in-progress reading for $name yet.",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 13.sp,
                             color = GotchaColors.TextMuted,
                             modifier = Modifier.padding(vertical = 12.dp),
@@ -1103,7 +1103,7 @@ fun LanguageDetailScreen(
                     ) {
                         Text(
                             "Recommended Next",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = GotchaColors.Ink,
@@ -1154,8 +1154,8 @@ private fun LangStatBlock(label: String, value: String, modifier: Modifier = Mod
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(label, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextSubtle)
-        Text(value, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
+        Text(label, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+        Text(value, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
     }
 }
 
@@ -1172,7 +1172,7 @@ private fun LanguageHistoryRow(row: LangHistRow) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
                     row.title,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = GotchaColors.Ink,
@@ -1186,15 +1186,15 @@ private fun LanguageHistoryRow(row: LangHistRow) {
                             .background(GotchaColors.BrandPurpleTint)
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
-                        Text(row.level, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.BrandPurpleMid)
+                        Text(row.level, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.BrandPurpleMid)
                     }
-                    Text(row.whenLabel, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                    Text(row.whenLabel, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                 }
             }
             if (row.pct != null) {
                 Text(
                     "${row.pct}%",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 12.sp,
                     color = GotchaColors.BrandPurpleMid,
@@ -1254,7 +1254,7 @@ private fun RecommendedNextCard(
         }
         Text(
             title,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = GotchaColors.Ink,
@@ -1262,14 +1262,14 @@ private fun RecommendedNextCard(
             overflow = TextOverflow.Ellipsis,
         )
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text(words, fontFamily = Manrope, fontSize = 11.sp, color = GotchaColors.TextSubtle)
+            Text(words, fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextSubtle)
             Box(
                 Modifier
                     .clip(RoundedCornerShape(4.dp))
                     .background(GotchaColors.BrandPurpleTint)
                     .padding(horizontal = 4.dp, vertical = 1.dp),
             ) {
-                Text(level, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 9.sp, color = GotchaColors.BrandPurpleMid)
+                Text(level, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 9.sp, color = GotchaColors.BrandPurpleMid)
             }
         }
     }
@@ -1362,7 +1362,7 @@ fun AchievementsScreen(onBack: () -> Unit) {
                 ) {
                     sections.forEach { (cat, badges) ->
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text(cat, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
+                            Text(cat, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = GotchaColors.Ink)
                             badges.chunked(2).forEach { row ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     row.forEach { badge ->
@@ -1422,7 +1422,7 @@ private fun BadgeCard(badge: BadgeVm, modifier: Modifier = Modifier) {
         Spacer(Modifier.height(10.dp))
         Text(
             badge.title,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = GotchaColors.Ink,
@@ -1432,7 +1432,7 @@ private fun BadgeCard(badge: BadgeVm, modifier: Modifier = Modifier) {
         )
         Text(
             badge.subtitle,
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontSize = 11.sp,
             color = GotchaColors.TextSubtle,
             textAlign = TextAlign.Center,
@@ -1527,7 +1527,7 @@ fun ReadingHistoryScreen(onBack: () -> Unit, onOpenReader: (String) -> Unit) {
             sections.isEmpty() -> {
                 Text(
                     "No reading history yet. Start an article from Library or Home.",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
                     modifier = Modifier.padding(24.dp),
@@ -1544,7 +1544,7 @@ fun ReadingHistoryScreen(onBack: () -> Unit, onOpenReader: (String) -> Unit) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Text(
                                     month.uppercase(),
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = GotchaColors.TextMuted,
@@ -1592,7 +1592,7 @@ private fun HistoryListItem(row: HistoryVm, onClick: () -> Unit) {
         ) {
             Text(
                 row.lang.uppercase(),
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 12.sp,
                 color = Color.White,
@@ -1601,7 +1601,7 @@ private fun HistoryListItem(row: HistoryVm, onClick: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 row.title,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
                 color = GotchaColors.Ink,
@@ -1609,7 +1609,7 @@ private fun HistoryListItem(row: HistoryVm, onClick: () -> Unit) {
                 overflow = TextOverflow.Ellipsis,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(row.whenLabel, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                Text(row.whenLabel, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                 if (row.completed) {
                     Box(
                         Modifier
@@ -1617,7 +1617,7 @@ private fun HistoryListItem(row: HistoryVm, onClick: () -> Unit) {
                             .background(GotchaColors.SuccessBg)
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
-                        Text("Completed", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFF059669))
+                        Text("Completed", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = Color(0xFF059669))
                     }
                 } else if (row.pct != null) {
                     Box(
@@ -1628,7 +1628,7 @@ private fun HistoryListItem(row: HistoryVm, onClick: () -> Unit) {
                     ) {
                         Text(
                             "${row.pct}% read",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 10.sp,
                             color = GotchaColors.Amber,

@@ -85,7 +85,10 @@ import app.gotcha.android.ui.components.rememberOfflineInteraction
 import app.gotcha.android.ui.i18n.LocalUiCopy
 import java.time.Instant
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
+import app.gotcha.android.ui.theme.Inter
+import app.gotcha.android.ui.theme.webPageHorizontalPad
+import app.gotcha.android.ui.theme.webScreenWidthDp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -115,7 +118,7 @@ private fun ProfileDirHeader(
             ProfileBackButton(onBack)
             Text(
                 title,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = GotchaColors.Ink,
@@ -136,7 +139,7 @@ private fun ProfileDirHeader(
             Spacer(Modifier.width(12.dp))
             Text(
                 title,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
                 color = GotchaColors.Ink,
@@ -171,7 +174,7 @@ private fun ProfileBackButton(onBack: () -> Unit) {
 private fun SectionLabel(text: String) {
     Text(
         text.uppercase(),
-        fontFamily = Manrope,
+        fontFamily = Inter,
         fontWeight = FontWeight.Bold,
         fontSize = 13.sp,
         color = GotchaColors.TextMuted,
@@ -208,8 +211,8 @@ private fun ToggleRow(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
-            Text(subtitle, fontFamily = Manrope, fontSize = 11.sp, color = GotchaColors.TextSubtle)
+            Text(title, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+            Text(subtitle, fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextSubtle)
         }
         Switch(
             checked = checked,
@@ -228,7 +231,7 @@ private fun ToggleRow(
 
 @Composable
 private fun FieldLabel(text: String) {
-    Text(text, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.TextMuted)
+    Text(text, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.TextMuted)
 }
 
 @Composable
@@ -268,7 +271,7 @@ private fun ProfileField(
                 androidx.compose.foundation.text.KeyboardOptions.Default
             },
             textStyle = TextStyle(
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Normal,
                 fontSize = 14.sp,
                 color = GotchaColors.Ink,
@@ -306,7 +309,7 @@ private fun SegmentedControl(
                     .clickable { onSelect(opt) }
                     .padding(vertical = 8.dp),
                 textAlign = TextAlign.Center,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = if (on) FontWeight.Bold else FontWeight.Medium,
                 fontSize = 13.sp,
                 color = if (on) GotchaColors.BrandPurpleMid else GotchaColors.TextMuted,
@@ -455,7 +458,7 @@ fun EditProfileScreen(
             trailing = {
                 Text(
                     if (saving) "…" else "Save",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = GotchaColors.BrandPurpleMid,
@@ -494,7 +497,7 @@ fun EditProfileScreen(
             if (error != null && name.isEmpty() && email.isEmpty()) {
                 Text(
                     error!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                     modifier = Modifier.clickable { reloadKey += 1 },
@@ -503,7 +506,7 @@ fun EditProfileScreen(
             if (saveError != null) {
                 Text(
                     saveError!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                 )
@@ -541,7 +544,7 @@ fun EditProfileScreen(
                         } else {
                             Text(
                                 initials,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.ExtraBold,
                                 fontSize = 32.sp,
                                 color = GotchaColors.BrandPurpleMid,
@@ -551,7 +554,7 @@ fun EditProfileScreen(
                     val copy = LocalUiCopy.current
                     Text(
                         if (uploadingPhoto) "…" else copy.changePhoto,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
                         color = GotchaColors.BrandPurpleMid,
@@ -563,7 +566,7 @@ fun EditProfileScreen(
                     )
                     Text(
                         copy.photoHint,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 12.sp,
                         color = GotchaColors.TextMuted,
                     )
@@ -596,7 +599,7 @@ fun EditProfileScreen(
                                         ) {
                                             Text(
                                                 "Verified",
-                                                fontFamily = Manrope,
+                                                fontFamily = Inter,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 10.sp,
                                                 color = Color(0xFF027A48),
@@ -621,7 +624,7 @@ fun EditProfileScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                 ) {
-                                    Text(langLabel(nativeLang), fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.Ink)
+                                    Text(langLabel(nativeLang), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink)
                                     Icon(
                                         painter = painterResource(R.drawable.ic_book_open),
                                         contentDescription = "Change native language",
@@ -638,7 +641,7 @@ fun EditProfileScreen(
                                             text = {
                                                 Text(
                                                     "${opt.flag}  ${opt.englishLabel}",
-                                                    fontFamily = Manrope,
+                                                    fontFamily = Inter,
                                                     fontWeight = FontWeight.SemiBold,
                                                     fontSize = 14.sp,
                                                 )
@@ -678,14 +681,17 @@ fun NotificationsListScreen(
     var filter by remember { mutableStateOf("all") }
     var reloadKey by remember { mutableIntStateOf(0) }
     val unreadCount = items.count { it.unread }
+    val libraryCount = items.count { it.kind.equals("content", ignoreCase = true) }
+    val systemCount = items.count { it.kind.equals("system", ignoreCase = true) }
     val filtered = remember(filter, items) {
         when (filter) {
             "unread" -> items.filter { it.unread }
+            "library" -> items.filter { it.kind.equals("content", ignoreCase = true) }
             "system" -> items.filter { it.kind.equals("system", ignoreCase = true) }
             else -> items
         }
     }
-    val bottom = profileDirBottomPad()
+    val pad = webPageHorizontalPad(webScreenWidthDp())
 
     LaunchedEffect(reloadKey) {
         loading = items.isEmpty()
@@ -734,80 +740,73 @@ fun NotificationsListScreen(
         if (href.isNotBlank()) onOpenHref(href) else onOpenSettings()
     }
 
-    Column(
-        Modifier
-            .fillMaxSize()
-            .background(GotchaColors.Surface)
-            .learnerDirectoryStatusPad(),
-    ) {
-        Row(
+    LearnerSubpage(title = "Notifications", onBack = onBack) {
+        Column(
             Modifier
-                .fillMaxWidth()
-                .background(Color.White)
-                .padding(horizontal = 24.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween,
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = pad)
+                .padding(bottom = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                ProfileBackButton(onBack)
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
                 Text(
-                    "Notifications",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = 20.sp,
-                    color = GotchaColors.Ink,
+                    "New books, messages, and learning reminders",
+                    fontFamily = Inter,
+                    fontSize = 14.sp,
+                    color = Color(0xFF6B7280),
+                    modifier = Modifier.weight(1f),
+                )
+                Text(
+                    if (unreadCount > 0) "Mark all as read" else "All caught up",
+                    fontFamily = Inter,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 14.sp,
+                    color = if (unreadCount > 0) GotchaColors.WebAccent else Color(0xFF9CA3AF),
+                    modifier = Modifier.clickable(enabled = unreadCount > 0, onClick = offline.guardClick(::markAllRead)),
                 )
             }
-            Text(
-                if (unreadCount > 0) "Mark all as read" else "All caught up",
-                fontFamily = Manrope,
-                fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp,
-                color = if (unreadCount > 0) GotchaColors.BrandPurple else GotchaColors.TextSubtle,
-                modifier = Modifier.clickable(enabled = unreadCount > 0, onClick = offline.guardClick(::markAllRead)),
-            )
-        }
-        HorizontalDivider(color = GotchaColors.Border)
         OfflineBannerIfNeeded(
             connectivity = container.connectivityObserver,
             hasCachedContent = items.isNotEmpty(),
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
         )
         Row(
-            Modifier
-                .horizontalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
+            Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             listOf(
                 "all" to "All (${items.size})",
                 "unread" to "Unread ($unreadCount)",
-                "system" to "System",
+                "library" to "Library ($libraryCount)",
+                "system" to "System ($systemCount)",
             ).forEach { (key, label) ->
                 val selected = filter == key
                 Text(
                     label,
                     modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(if (selected) GotchaColors.BrandPurple else Color.White)
-                        .border(1.dp, if (selected) GotchaColors.BrandPurple else GotchaColors.Border, RoundedCornerShape(20.dp))
+                        .clip(RoundedCornerShape(50))
+                        .background(if (selected) GotchaColors.WebAccent else Color.White)
+                        .border(
+                            1.dp,
+                            if (selected) GotchaColors.WebAccent else Color(0xFFE5E7EB),
+                            RoundedCornerShape(50),
+                        )
                         .clickable { filter = key }
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontFamily = Manrope,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
-                    fontSize = 13.sp,
-                    color = if (selected) Color.White else GotchaColors.TextMuted,
+                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                    fontFamily = Inter,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 12.sp,
+                    color = if (selected) Color.White else Color(0xFF4B5563),
                 )
             }
         }
         when {
             loading && items.isEmpty() -> {
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .padding(horizontal = 24.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     repeat(4) { SkeletonBox(Modifier.fillMaxWidth().height(88.dp), cornerRadius = 16.dp) }
                 }
             }
@@ -816,37 +815,48 @@ fun NotificationsListScreen(
                 onRetry = { reloadKey += 1 },
             )
             filtered.isEmpty() -> {
-                Box(
+                Column(
                     Modifier
-                        .weight(1f)
                         .fillMaxWidth()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center,
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White)
+                        .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                        .padding(horizontal = 24.dp, vertical = 64.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    Icon(
+                        painter = painterResource(R.drawable.ic_bell),
+                        contentDescription = null,
+                        tint = Color(0xFFD1D5DB),
+                        modifier = Modifier.size(32.dp),
+                    )
                     Text(
                         when (filter) {
-                            "unread" -> "No unread notifications."
-                            "system" -> "No system notifications yet."
-                            else -> "You're all caught up."
+                            "unread" -> "No unread notifications"
+                            "library" -> "No new library alerts"
+                            else -> "You're all caught up"
                         },
-                        fontFamily = Manrope,
-                        fontSize = 14.sp,
-                        color = GotchaColors.TextMuted,
+                        fontFamily = Inter,
+                        fontWeight = FontWeight.SemiBold,
+                        fontSize = 16.sp,
+                        color = Color(0xFF111827),
                         textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                    Text(
+                        "New catalog books will show up here when they are published.",
+                        fontFamily = Inter,
+                        fontSize = 14.sp,
+                        color = Color(0xFF6B7280),
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
             }
             else -> {
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 24.dp)
-                        .padding(bottom = bottom),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     filtered.forEach { item ->
-                        val (iconRes, iconBg) = notificationVisual(item.kind)
+                        val (iconRes, iconBg, iconFg) = notificationVisual(item.kind)
                         Row(
                             Modifier
                                 .fillMaxWidth()
@@ -854,11 +864,11 @@ fun NotificationsListScreen(
                                 .background(Color.White)
                                 .border(
                                     width = if (item.unread) 1.5.dp else 1.dp,
-                                    color = if (item.unread) GotchaColors.BrandPurple else GotchaColors.Border,
+                                    color = if (item.unread) GotchaColors.WebAccent else Color(0xFFF3F4F6),
                                     shape = RoundedCornerShape(16.dp),
                                 )
                                 .clickable(onClick = { openItem(item) })
-                                .padding(14.dp),
+                                .padding(16.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             Box(
@@ -871,48 +881,42 @@ fun NotificationsListScreen(
                                 Icon(
                                     painter = painterResource(iconRes),
                                     contentDescription = null,
-                                    tint = GotchaColors.Ink,
+                                    tint = iconFg,
                                     modifier = Modifier.size(20.dp),
                                 )
                             }
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Column(Modifier.weight(1f)) {
                                 Row(
                                     Modifier.fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically,
+                                    verticalAlignment = Alignment.Top,
                                 ) {
                                     Text(
                                         item.title,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = if (item.unread) FontWeight.Bold else FontWeight.SemiBold,
-                                        fontSize = 15.sp,
-                                        color = GotchaColors.Ink,
+                                        fontSize = 14.sp,
+                                        color = if (item.unread) Color(0xFF111827) else Color(0xFF1F2937),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.weight(1f),
+                                        modifier = Modifier.weight(1f).padding(end = 12.dp),
                                     )
-                                    if (item.unread) {
-                                        Box(
-                                            Modifier
-                                                .size(8.dp)
-                                                .clip(CircleShape)
-                                                .background(GotchaColors.BrandPurple),
-                                        )
-                                    }
+                                    Text(
+                                        notificationTimeLabel(item.createdAt),
+                                        fontFamily = Inter,
+                                        fontSize = 11.sp,
+                                        color = Color(0xFF9CA3AF),
+                                    )
                                 }
                                 Text(
                                     item.body,
-                                    fontFamily = Manrope,
-                                    fontSize = 13.sp,
-                                    lineHeight = 18.sp,
-                                    color = GotchaColors.TextMuted,
-                                )
-                                Text(
-                                    notificationTimeLabel(item.createdAt),
-                                    fontFamily = Manrope,
-                                    fontWeight = FontWeight.Medium,
-                                    fontSize = 11.sp,
-                                    color = GotchaColors.TextSubtle,
+                                    fontFamily = Inter,
+                                    fontSize = 14.sp,
+                                    lineHeight = 20.sp,
+                                    color = Color(0xFF6B7280),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.padding(top = 4.dp),
                                 )
                             }
                         }
@@ -921,16 +925,16 @@ fun NotificationsListScreen(
             }
         }
     }
+    }
 }
 
-private fun notificationVisual(kind: String): Pair<Int, Color> = when (kind.lowercase()) {
-    "streak" -> R.drawable.ic_flame to Color(0xFFFFEDD5)
-    "vocab" -> R.drawable.ic_activity_clock to Color(0xFFE0F2FE)
-    "message" -> R.drawable.ic_message to GotchaColors.BrandPurpleSoft
-    "achievement" -> R.drawable.ic_party_popper to Color(0xFFFEF3C7)
-    "content" -> R.drawable.ic_book_open to GotchaColors.BrandPurpleSoft
-    "goal" -> R.drawable.ic_target to Color(0xFFEDE9FE)
-    else -> R.drawable.ic_bell to Color(0xFFD1FAE5)
+private fun notificationVisual(kind: String): Triple<Int, Color, Color> = when (kind.lowercase()) {
+    "content" -> Triple(R.drawable.ic_book_open, Color(0xFFF3E8FF), Color(0xFF7008E7))
+    "message" -> Triple(R.drawable.ic_message, Color(0xFFE0F2FE), Color(0xFF0369A1))
+    "streak" -> Triple(R.drawable.ic_flame, Color(0xFFFFF7ED), Color(0xFFC2410C))
+    "goal" -> Triple(R.drawable.ic_target, Color(0xFFECFDF5), Color(0xFF047857))
+    "vocab" -> Triple(R.drawable.ic_activity_clock, Color(0xFFEEF2FF), Color(0xFF3730A3))
+    else -> Triple(R.drawable.ic_bell, Color(0xFFF3F4F6), Color(0xFF4B5563))
 }
 
 private fun notificationTimeLabel(iso: String?): String {
@@ -939,7 +943,7 @@ private fun notificationTimeLabel(iso: String?): String {
         val then = Instant.parse(iso).toEpochMilli()
         val mins = ((System.currentTimeMillis() - then) / 60_000).toInt()
         when {
-            mins < 1 -> "now"
+            mins < 1 -> "just now"
             mins < 60 -> "${mins}m ago"
             mins < 1440 -> "${mins / 60}h ago"
             mins < 2880 -> "Yesterday"
@@ -1008,14 +1012,14 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             if (error != null && !hasLoaded) {
                 Text(
                     error!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                     modifier = Modifier.clickable { reloadKey += 1 },
                 )
             }
             if (saveError != null) {
-                Text(saveError!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             SectionLabel("Reminders")
             SettingsCard {
@@ -1040,7 +1044,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             }
             Text(
                 "Granular notification channels aren’t available yet — this matches the web preference.",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 12.sp,
                 color = GotchaColors.TextMuted,
             )
@@ -1143,24 +1147,24 @@ fun ReadingPreferencesScreen(onBack: () -> Unit) {
             if (error != null && !hasLoaded) {
                 Text(
                     error!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                     modifier = Modifier.clickable { reloadKey += 1 },
                 )
             }
             if (saveError != null) {
-                Text(saveError!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SectionLabel("Reading")
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text(copy.defaultFontSize, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.TextMuted)
+                        Text(copy.defaultFontSize, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.TextMuted)
                         if (loading) {
                             SkeletonBox(Modifier.width(40.dp).height(14.dp), cornerRadius = 4.dp)
                         } else {
-                            Text(fontScaleLabel(fontScale), fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
+                            Text(fontScaleLabel(fontScale), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
                         }
                     }
                     Slider(
@@ -1243,10 +1247,10 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Email Support", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text("Email Support", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text(
                             "support@gotchaa.uz",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = GotchaColors.BrandPurpleMid,
@@ -1267,10 +1271,10 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Version", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text("Version", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text(
                             BuildConfig.VERSION_NAME,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = GotchaColors.TextMuted,
@@ -1289,8 +1293,8 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Privacy Policy", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
-                        Text("gotchaa.uz", fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
+                        Text("Privacy Policy", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
                     }
                     HorizontalDivider(color = GotchaColors.Border)
                     Row(
@@ -1301,8 +1305,8 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Terms of Service", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
-                        Text("gotchaa.uz", fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
+                        Text("Terms of Service", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
                     }
                 }
             }
@@ -1340,14 +1344,14 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
             ) {
                 Text(
                     "Password updated",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = GotchaColors.Ink,
                 )
                 Text(
                     "Your password has been changed. You'll need to sign in again on your other devices.",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
                 )
@@ -1381,7 +1385,7 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                     ProfileField(confirmPassword, onValueChange = { confirmPassword = it; error = null }, isPassword = true)
                 }
                 if (error != null) {
-                    Text(error!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                    Text(error!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
                 }
                 Spacer(Modifier.weight(1f))
                 GotchaPrimaryButton(
@@ -1444,7 +1448,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
             ) {
                 Text(
                     "Delete account",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = GotchaColors.Ink,
@@ -1476,7 +1480,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 )
                 Text(
                     "This permanently anonymizes your account and signs you out everywhere. This cannot be undone.",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 12.sp,
                     color = Color(0xFFB91C1C),
                     lineHeight = 16.sp,
@@ -1491,7 +1495,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 ProfileField(confirmText, onValueChange = { confirmText = it; error = null })
             }
             if (error != null) {
-                Text(error!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(error!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             GotchaPrimaryButton(
                 text = "Permanently delete my account",
@@ -1591,7 +1595,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
         ) {
             Text(
                 copy.appLanguageHint,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
             )
@@ -1602,14 +1606,14 @@ fun AppLanguageScreen(onBack: () -> Unit) {
             if (error != null && !hasLoaded) {
                 Text(
                     error!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                     modifier = Modifier.clickable { reloadKey += 1 },
                 )
             }
             if (saveError != null) {
-                Text(saveError!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             Row(
                 Modifier
@@ -1632,7 +1636,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                     onValueChange = { query = it },
                     singleLine = true,
                     textStyle = TextStyle(
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 15.sp,
                         color = GotchaColors.Ink,
                     ),
@@ -1642,7 +1646,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                             if (query.isEmpty()) {
                                 Text(
                                     copy.searchLanguages,
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontSize = 15.sp,
                                     color = GotchaColors.TextSubtle,
                                 )
@@ -1695,14 +1699,14 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                     Text(
                                         lang.nativeLabel,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontWeight = FontWeight.SemiBold,
                                         fontSize = 15.sp,
                                         color = GotchaColors.Ink,
                                     )
                                     Text(
                                         lang.englishLabel,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontSize = 12.sp,
                                         color = GotchaColors.TextMuted,
                                     )
@@ -1735,7 +1739,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                 }
             Text(
                 copy.languageSaved,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 12.sp,
                 color = GotchaColors.TextMuted,
             )
@@ -1795,7 +1799,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
         ) {
             Text(
                 "Chat translations and word meanings use this language. You can reset it anytime.",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
             )
@@ -1806,14 +1810,14 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
             if (error != null && !hasLoaded) {
                 Text(
                     error!!,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.Danger,
                     modifier = Modifier.clickable { reloadKey += 1 },
                 )
             }
             if (saveError != null) {
-                Text(saveError!!, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+                Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 rememberCatalogLanguageOptions().forEach { lang ->
@@ -1858,14 +1862,14 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                                 Text(
                                     lang.nativeLabel,
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 15.sp,
                                     color = GotchaColors.Ink,
                                 )
                                 Text(
                                     lang.englishLabel,
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontSize = 12.sp,
                                     color = GotchaColors.TextMuted,
                                 )

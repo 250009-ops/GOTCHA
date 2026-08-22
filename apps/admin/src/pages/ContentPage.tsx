@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BookOpen, Eye, Pencil, Plus, Trash2 } from 'lucide-react';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { catalogListHref, saveContentLibraryReturn } from '../lib/contentLibraryNav';
 import { AdminReaderPreview } from '../components/AdminReaderPreview';
-import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Button, Card, DataTable, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard, TablePagination } from '../components/ui';
 import { api } from '../lib/api';
 import { APP_LANGUAGES, LANGUAGE_META, cn, formatMoney, formatNumber, levelBadgeClass } from '../lib/utils';
 
@@ -77,6 +78,8 @@ const TABS: Array<{ id: Tab; label: string }> = [
   { id: 'user_imports', label: 'User Imports' },
 ];
 
+const PAGE_SIZE = 15;
+
 const langBadge: Record<string, string> = {
   fr: 'bg-violet-50 text-[#6c1d95]',
   en: 'bg-sky-50 text-sky-700',
@@ -104,6 +107,7 @@ function statusLabel(status: string) {
 
 export default function ContentPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { directory } = useParams();
   const [params] = useSearchParams();
   const tabFromPath = directory ? DIRECTORY_TO_TAB[directory] : undefined;
@@ -121,6 +125,7 @@ export default function ContentPage() {
   const [q, setQ] = useState(() => params.get('q') ?? '');
   const [langFilter, setLangFilter] = useState(() => params.get('lang') ?? 'all');
   const [levelFilter, setLevelFilter] = useState(() => params.get('level') ?? 'all');
+  const [page, setPage] = useState(() => Math.max(1, Number(params.get('page') ?? 1) || 1));
   const [licenses, setLicenses] = useState<LicenseRow[]>([]);
   const [moderation, setModeration] = useState<ModerationRow[]>([]);
   const [ingestion, setIngestion] = useState<IngestionRow[]>([]);
@@ -142,6 +147,7 @@ export default function ContentPage() {
       qs.set('type', type);
       if (langFilter !== 'all') qs.set('language', langFilter);
       if (levelFilter !== 'all') qs.set('level', levelFilter);
+      if (q.trim()) qs.set('q', q.trim());
       const statsQs = new URLSearchParams();
       if (langFilter !== 'all') statsQs.set('language', langFilter);
       if (levelFilter !== 'all') statsQs.set('level', levelFilter);
@@ -161,7 +167,7 @@ export default function ContentPage() {
         setError(e instanceof Error ? e.message : 'Failed to load content');
       }
     }
-  }, [tab, langFilter, levelFilter]);
+  }, [tab, langFilter, levelFilter, q]);
 
   async function loadOps() {
     const [lic, mod, ing] = await Promise.allSettled([
@@ -180,30 +186,37 @@ export default function ContentPage() {
   }, [loadCurriculum]);
 
   useEffect(() => {
+    saveContentLibraryReturn(`${location.pathname}${location.search}`);
+  }, [location.pathname, location.search]);
+
+  useEffect(() => {
     const fromUrl = params.get('q');
     if (fromUrl != null && fromUrl !== q) setQ(fromUrl);
     const fromLang = params.get('lang') ?? 'all';
     if (fromLang !== langFilter) setLangFilter(fromLang);
     const fromLevel = params.get('level') ?? 'all';
     if (fromLevel !== levelFilter) setLevelFilter(fromLevel);
+    const fromPage = Math.max(1, Number(params.get('page') ?? 1) || 1);
+    if (fromPage !== page) setPage(fromPage);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
+
+  const filtered = useMemo(() => items ?? [], [items]);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paginated = useMemo(() => {
+    const start = (safePage - 1) * PAGE_SIZE;
+    return filtered.slice(start, start + PAGE_SIZE);
+  }, [filtered, safePage]);
 
   useEffect(() => {
     if (tab === 'user_imports') loadOps().catch(console.error);
   }, [tab]);
 
-  const filtered = useMemo(() => {
-    const query = q.trim().toLowerCase();
-    return (items ?? []).filter((item) => {
-      if (!query) return true;
-      return (
-        item.title.toLowerCase().includes(query) ||
-        item.language.toLowerCase().includes(query) ||
-        item.cefrLevel.toLowerCase().includes(query)
-      );
-    });
-  }, [items, q]);
+  function setTab(next: Tab) {
+    setPage(1);
+    navigate(`${TAB_TO_PATH[next]}${catalogQuery({ page: 1 })}`);
+  }
 
   async function publish(id: string) {
     setBusyId(id);
@@ -241,30 +254,42 @@ export default function ContentPage() {
     await loadOps();
   }
 
-  function catalogQuery(next?: { lang?: string; level?: string; q?: string }) {
+  function catalogQuery(next?: { lang?: string; level?: string; q?: string; page?: number }) {
     const qs = new URLSearchParams();
     const lang = next?.lang ?? langFilter;
     const level = next?.level ?? levelFilter;
     const query = next?.q ?? q;
+    const pageNum = next?.page ?? page;
     if (query.trim()) qs.set('q', query.trim());
     if (lang !== 'all') qs.set('lang', lang);
     if (level !== 'all') qs.set('level', level);
+    if (pageNum > 1) qs.set('page', String(pageNum));
     const s = qs.toString();
     return s ? `?${s}` : '';
   }
 
-  function setTab(next: Tab) {
-    navigate(`${TAB_TO_PATH[next]}${catalogQuery()}`);
-  }
-
   function setLang(next: string) {
     setLangFilter(next);
-    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ lang: next })}`, { replace: true });
+    setPage(1);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ lang: next, page: 1 })}`, { replace: true });
   }
 
   function setLevel(next: string) {
     setLevelFilter(next);
-    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ level: next })}`, { replace: true });
+    setPage(1);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ level: next, page: 1 })}`, { replace: true });
+  }
+
+  function setSearch(next: string) {
+    setQ(next);
+    setPage(1);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ q: next, page: 1 })}`, { replace: true });
+  }
+
+  function setCatalogPage(next: number) {
+    const clamped = Math.max(1, Math.min(next, totalPages));
+    setPage(clamped);
+    navigate(`${TAB_TO_PATH[tab]}${catalogQuery({ page: clamped })}`, { replace: true });
   }
 
   if (error && !items) return <ErrorBlock message={error} onRetry={() => void loadCurriculum()} />;
@@ -283,23 +308,9 @@ export default function ContentPage() {
         }
         actions={
           catalogForbidden ? undefined : (
-            <div className="flex flex-wrap gap-2">
-              <Select value={langFilter} onChange={(e) => setLang(e.target.value)} className="w-36">
-                <option value="all">Language: All</option>
-                {APP_LANGUAGES.map((l) => (
-                  <option key={l} value={l}>{LANGUAGE_META[l].flag} {LANGUAGE_META[l].label}</option>
-                ))}
-              </Select>
-              <Select value={levelFilter} onChange={(e) => setLevel(e.target.value)} className="w-36">
-                <option value="all">Level: A1-C2</option>
-                {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
-                  <option key={l} value={l}>{l.toUpperCase()}</option>
-                ))}
-              </Select>
-              <Button onClick={() => navigate('/content/new')}>
-                <Plus className="size-4" /> Add Product
-              </Button>
-            </div>
+            <Button onClick={() => navigate('/content/new')}>
+              <Plus className="size-4" /> Add Product
+            </Button>
           )
         }
       />
@@ -340,12 +351,28 @@ export default function ContentPage() {
             ))}
           </div>
           {showCatalog && (
-            <Input
-              className="max-w-xs mb-2"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Search curriculum..."
-            />
+            <div className="flex flex-wrap items-center justify-end gap-2 mb-2 ml-auto">
+              <Select value={langFilter} onChange={(e) => setLang(e.target.value)} className="w-40" aria-label="Filter by language">
+                <option value="all">All languages</option>
+                {APP_LANGUAGES.map((l) => (
+                  <option key={l} value={l}>
+                    {LANGUAGE_META[l].flag} {LANGUAGE_META[l].label}
+                  </option>
+                ))}
+              </Select>
+              <Select value={levelFilter} onChange={(e) => setLevel(e.target.value)} className="w-32" aria-label="Filter by CEFR level">
+                <option value="all">All levels</option>
+                {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
+                  <option key={l} value={l}>{l.toUpperCase()}</option>
+                ))}
+              </Select>
+              <Input
+                className="w-52"
+                value={q}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search curriculum..."
+              />
+            </div>
           )}
         </div>
 
@@ -419,8 +446,9 @@ export default function ContentPage() {
             </div>
           </div>
         ) : showCatalog ? (
+          <>
           <DataTable headers={['Curriculum Item', 'Language', 'Level', 'Type', 'Word Count', 'Active Reads', 'Completion', 'Status', 'Price (UZS)', 'Sales', 'Actions']}>
-            {filtered.map((item) => (
+            {paginated.map((item) => (
               <tr key={item.id}>
                 <td className="px-4 py-3 text-sm font-semibold max-w-[240px] truncate">{item.title}</td>
                 <td className="px-4 py-3">
@@ -498,7 +526,7 @@ export default function ContentPage() {
                 </td>
               </tr>
             ))}
-            {filtered.length === 0 && (
+            {paginated.length === 0 && (
               <tr>
                 <td colSpan={11} className="px-4 py-10 text-sm text-slate-500 text-center">
                   No catalog items match these filters.
@@ -506,6 +534,13 @@ export default function ContentPage() {
               </tr>
             )}
           </DataTable>
+          <TablePagination
+            page={safePage}
+            pageSize={PAGE_SIZE}
+            total={filtered.length}
+            onPageChange={setCatalogPage}
+          />
+          </>
         ) : null}
       </Card>
 

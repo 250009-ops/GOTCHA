@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators';
@@ -23,8 +23,11 @@ export class AuthController {
 
   @Public()
   @Post('register')
-  register(@Body() dto: RegisterDto) {
-    return this.auth.register(dto);
+  register(
+    @Body() dto: RegisterDto,
+    @Headers('x-gotcha-client-platform') clientHeader?: string,
+  ) {
+    return this.auth.register(dto, clientHeader);
   }
 
   @Public()
@@ -53,14 +56,20 @@ export class AuthController {
 
   @Public()
   @Post('resend-verification')
-  resendEmailVerification(@Body() dto: ResendEmailVerificationDto) {
-    return this.auth.resendEmailVerification(dto.email);
+  resendEmailVerification(
+    @Body() dto: ResendEmailVerificationDto,
+    @Headers('x-gotcha-client-platform') clientHeader?: string,
+  ) {
+    return this.auth.resendEmailVerification(dto.email, dto.clientPlatform ?? clientHeader);
   }
 
   @Public()
   @Post('forgot-password')
-  forgotPassword(@Body() dto: ForgotPasswordDto) {
-    return this.auth.forgotPassword(dto.email);
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Headers('x-gotcha-client-platform') clientHeader?: string,
+  ) {
+    return this.auth.forgotPassword(dto.email, dto.clientPlatform ?? clientHeader);
   }
 
   @Public()

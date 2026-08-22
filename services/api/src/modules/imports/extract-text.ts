@@ -15,6 +15,7 @@ import {
 import {
   chapterSequenceInversions,
   chaptersHaveRealTitles,
+  extractPrintContents,
   splitAccurateChapters,
   splitByOutlineTitles,
 } from './chapter-split';
@@ -147,7 +148,7 @@ export function assertMaxChars(text: string, label = 'text'): void {
  * Falls back to a single chapter when no structure is found (paginateText handles pages).
  */
 export function splitTextIntoChapters(text: string, fallbackTitle = 'Imported text'): ExtractedChapter[] {
-  const normalized = normalizeWhitespace(text);
+  const normalized = cleanImportPlainText(text);
   if (!normalized) return [];
   return splitAccurateChapters(normalized, fallbackTitle);
 }
@@ -462,6 +463,28 @@ async function extractWikipediaViaApi(
 
 function decodeFetchedText(buf: Buffer, charsetHint: string): string {
   const hint = charsetHint.toLowerCase().replace(/['"]/g, '');
+  const tryDecode = (encoding: string) => {
+    try {
+      return new TextDecoder(encoding).decode(buf);
+    } catch {
+      return null;
+    }
+  };
+
+  const cp1251 =
+    hint.includes('windows-1251') ||
+    hint.includes('cp1251') ||
+    hint.includes('koi8-r') ||
+    hint.includes('koi8');
+  if (cp1251) {
+    return tryDecode(hint.includes('koi8') ? 'koi8-r' : 'windows-1251') ?? buf.toString('latin1');
+  }
+  if (hint.includes('windows-1254') || hint.includes('cp1254') || hint.includes('iso-8859-9')) {
+    return tryDecode('windows-1254') ?? tryDecode('iso-8859-9') ?? buf.toString('latin1');
+  }
+  if (hint.includes('euc-kr') || hint.includes('euc_kr') || hint.includes('cp949')) {
+    return tryDecode('euc-kr') ?? buf.toString('utf8');
+  }
   if (
     hint.includes('iso-8859') ||
     hint.includes('latin') ||
@@ -470,12 +493,29 @@ function decodeFetchedText(buf: Buffer, charsetHint: string): string {
   ) {
     return buf.toString('latin1');
   }
+
   const utf8 = buf.toString('utf8');
   const bad = (utf8.match(/\uFFFD/g) ?? []).length;
   if (bad > 40 && bad / Math.max(utf8.length, 1) > 0.002) {
+    for (const enc of ['windows-1251', 'windows-1254', 'euc-kr', 'iso-8859-9']) {
+      const decoded = tryDecode(enc);
+      if (decoded && countWords(decoded) >= MIN_IMPORT_WORDS) return decoded;
+    }
     return buf.toString('latin1');
   }
+
+  // Heuristic: Cyrillic bytes mis-decoded as Latin-1 (Ð, Ñ, Ã patterns).
+  if (/[ÃÐÑÒÓÔÕÖØÙÚÛÜÝÞßà-ÿ]{8,}/.test(utf8) && !/[\u0400-\u04FF]/.test(utf8)) {
+    const win1251 = tryDecode('windows-1251');
+    if (win1251 && /[\u0400-\u04FF]/.test(win1251)) return win1251;
+  }
+
   return utf8;
+}
+
+function charsetFromHtmlMeta(html: string): string {
+  const meta = html.match(/<meta[^>]+charset=["']?\s*([^"'\s/>]+)/i)?.[1] ?? '';
+  return meta.trim();
 }
 
 type ReadUrlOptions = {
@@ -546,7 +586,19 @@ async function readUrlBody(
   }
   const buf = await readResponseBounded(response, maxBytes);
   const contentType = (response.headers.get('content-type') ?? '').toLowerCase();
-  const charset = contentType.match(/charset=([^\s;]+)/i)?.[1] ?? '';
+  let charset = contentType.match(/charset=([^\s;]+)/i)?.[1] ?? '';
+  if (!charset && contentType.includes('html')) {
+    const peek = buf.toString('latin1', 0, Math.min(buf.length, 8192));
+    charset = charsetFromHtmlMeta(peek);
+  }
+  if (!charset) {
+    try {
+      const host = new URL(response.url || url).hostname.toLowerCase();
+      if (/\.lib\.ru$/i.test(host)) charset = 'windows-1251';
+    } catch {
+      // ignore bad URL
+    }
+  }
   return {
     body: decodeFetchedText(buf, charset),
     contentType,
@@ -984,6 +1036,20 @@ export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocu
 
   if (chapters.length === 0) {
     throw new Error('No extractable text found in EPUB');
+  }
+
+  const joined = chapters.map((c) => `## ${c.title}\n\n${c.text}`).join('\n\n');
+  const printToc = extractPrintContents(joined) || extractPrintContents(chapters.map((c) => c.text).join('\n\n'));
+  if (printToc && printToc.entries.length >= 4) {
+    const split = splitAccurateChapters(
+      chapters.map((c) => c.text).join('\n\n'),
+      chapters[0]?.title || 'Imported EPUB',
+    );
+    if (split.length >= 3) return chaptersToDocument(split);
+  }
+  if (chapters.length === 1 && countWords(chapters[0].text) >= 400) {
+    const split = splitAccurateChapters(chapters[0].text, chapters[0].title);
+    if (split.length >= 2) return chaptersToDocument(split, undefined);
   }
 
   return chaptersToDocument(chapters);

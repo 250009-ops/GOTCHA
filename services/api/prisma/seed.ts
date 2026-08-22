@@ -236,12 +236,17 @@ async function main() {
   const adminPassword = await bcrypt.hash('GotchaAdmin2026!', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@gotcha.app' },
-    update: {},
+    update: {
+      passwordHash: adminPassword,
+      emailVerifiedAt: new Date(),
+      deletedAt: null,
+    },
     create: {
       email: 'admin@gotcha.app',
       passwordHash: adminPassword,
       displayName: 'Alex Mercer',
       nativeLanguage: 'en',
+      emailVerifiedAt: new Date(),
       preferences: { create: {} },
       targetLanguages: {
         create: [{ targetLanguage: 'ru', isPrimary: true }, { targetLanguage: 'uz' }],

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
@@ -545,9 +546,11 @@ function WordMeaningPanel({
 
 export default function MessagesPage() {
   const { user, refreshVocab, vocabItems, markVocabMastered } = useAuth();
+  const [searchParams] = useSearchParams();
+  const requestedChat = searchParams.get('c')?.trim() || null;
   const [conversations, setConversations] = useState<ConversationRow[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(requestedChat);
   const [detail, setDetail] = useState<ConversationDetail | null>(null);
   const [search, setSearch] = useState('');
   const [draft, setDraft] = useState('');
@@ -623,9 +626,13 @@ export default function MessagesPage() {
   }, []);
 
   useEffect(() => {
+    if (requestedChat) {
+      setSelectedId(requestedChat);
+      return;
+    }
     if (!isDesktop || selectedId || conversations.length === 0) return;
     setSelectedId(conversations[0].id);
-  }, [isDesktop, selectedId, conversations]);
+  }, [isDesktop, selectedId, conversations, requestedChat]);
 
   useEffect(() => {
     const t = setTimeout(() => {

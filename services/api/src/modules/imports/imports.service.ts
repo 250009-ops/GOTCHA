@@ -11,6 +11,7 @@ import { extname, join } from 'path';
 import { randomUUID } from 'crypto';
 import { ContentSource, ContentType, ImportType, IngestionStatus, ModerationStatus, PublishStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertEnabledLanguage } from '../../common/language-catalog';
 import { LimitsService } from '../../services/limits.service';
 import { ImportCommerceService } from '../billing/import-commerce.service';
 import { AiService } from '../ai/ai.service';
@@ -20,6 +21,7 @@ import { assertPdfOrEpubMagic } from '../../common/upload-magic';
 import {
   assertMaxChars,
   assertMinWords,
+  countImportDocumentPages,
   countWords,
   ExtractedChapter,
   extractTextFromEpub,
@@ -54,6 +56,31 @@ const STALE_WATCH_MS = 60_000;
 const STALE_URL_MESSAGE =
   'Import timed out. Gutenberg illustrated HTML pages are skipped — we fetch the plain-text book instead. Try again.';
 const STALE_FILE_MESSAGE = 'Import timed out while processing the file. Try again, or use a smaller PDF.';
+
+/** Stashed on errorMessage while an import is still running — stripped before the client sees it. */
+const PROGRESS_PHASE_PREFIX = 'gotcha.progress:';
+const PROGRESS_PHASES = ['extract', 'ocr', 'ai'] as const;
+type ProgressPhase = (typeof PROGRESS_PHASES)[number];
+
+function encodeProgressPhase(phase: ProgressPhase) {
+  return `${PROGRESS_PHASE_PREFIX}${phase}`;
+}
+
+function parseProgressPhase(errorMessage: string | null | undefined): ProgressPhase | null {
+  if (!errorMessage?.startsWith(PROGRESS_PHASE_PREFIX)) return null;
+  const phase = errorMessage.slice(PROGRESS_PHASE_PREFIX.length);
+  return (PROGRESS_PHASES as readonly string[]).includes(phase) ? (phase as ProgressPhase) : null;
+}
+
+function presentImport<T extends { ingestionStatus: string; errorMessage: string | null }>(row: T) {
+  const pending = row.ingestionStatus === 'queued' || row.ingestionStatus === 'processing' || row.ingestionStatus === 'tokenizing';
+  const phase = parseProgressPhase(row.errorMessage);
+  return {
+    ...row,
+    progressPhase: pending ? phase : null,
+    errorMessage: pending && phase ? null : row.errorMessage,
+  };
+}
 
 @Injectable()
 export class ImportsService implements OnModuleInit, OnModuleDestroy {
@@ -96,7 +123,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     const safePage = Math.max(1, Math.floor(page) || 1);
     const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize) || 20));
 
-    const [items, total, quota] = await Promise.all([
+    const [items, total, quota, freeAllowance] = await Promise.all([
       this.prisma.userImport.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
@@ -106,10 +133,11 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       }),
       this.prisma.userImport.count({ where: { userId } }),
       this.limits.getImportQuota(userId),
+      this.importCommerce.learnerAllowance(userId),
     ]);
 
     return {
-      items,
+      items: items.map((item) => presentImport(item)),
       total,
       page: safePage,
       pageSize: safePageSize,
@@ -117,6 +145,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       importLimit: quota.limit,
       importRemaining: quota.remaining,
       importsUnlimited: quota.unlimited,
+      freeAllowance,
     };
   }
 
@@ -146,6 +175,36 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     return { id, deleted: true };
   }
 
+  async inspectFile(file: Express.Multer.File | undefined) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('File is required');
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      throw new BadRequestException(`File exceeds ${formatFileSizeLimit()} limit`);
+    }
+
+    const original = file.originalname || 'upload';
+    const ext = extname(original).toLowerCase();
+    const mime = (file.mimetype || '').toLowerCase();
+    const isPdf = ext === '.pdf' || mime === 'application/pdf';
+    const isEpub =
+      ext === '.epub' ||
+      mime === 'application/epub+zip' ||
+      mime === 'application/epub';
+
+    if (!isPdf && !isEpub) {
+      throw new BadRequestException('Only PDF and EPUB files are supported');
+    }
+    assertPdfOrEpubMagic(file);
+
+    try {
+      const pageCount = await countImportDocumentPages(file.buffer, isPdf ? 'pdf' : 'epub');
+      return { importType: isPdf ? 'pdf' : 'epub', pageCount };
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
+    }
+  }
+
   /**
    * Reads the admin-configured moderation settings (`/admin/settings`) so import behavior
    * actually reflects them — previously these toggles were persisted but never read
@@ -167,8 +226,22 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     return { contentModerationEnabled, autoApproveImports };
   }
 
+  private async resolveImportLanguage(userId: string, language?: string | null): Promise<import('@prisma/client').AppLanguage> {
+    const code = language ?? 'en';
+    await assertEnabledLanguage(this.prisma, code, 'Import language');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { nativeLanguage: true },
+    });
+    if (user?.nativeLanguage === code) {
+      throw new BadRequestException('Import language cannot be the same as your native language.');
+    }
+    return code as import('@prisma/client').AppLanguage;
+  }
+
   async importPaste(userId: string, dto: ImportPasteDto) {
     await this.limits.assertImportAllowed(userId);
+    const importLanguage = await this.resolveImportLanguage(userId, dto.language);
     const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste);
 
     try {
@@ -191,7 +264,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         userId,
         title,
         importType: ImportType.paste,
-        language: dto.language,
+        language: importLanguage,
         ingestionStatus: 'processing',
       },
     });
@@ -203,7 +276,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         userId,
         title,
         chapters,
-        dto.language,
+        importLanguage,
         undefined,
         userImport.id,
       );
@@ -237,6 +310,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
    */
   async importUrl(userId: string, dto: ImportUrlDto) {
     await this.limits.assertImportAllowed(userId);
+    const importLanguage = await this.resolveImportLanguage(userId, dto.language);
     const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.url);
 
     const title = (dto.title?.trim() || titleFromUrl(dto.url)).slice(0, 200);
@@ -246,7 +320,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         title,
         importType: ImportType.url,
         sourceUrl: dto.url,
-        language: dto.language,
+        language: importLanguage,
         ingestionStatus: 'processing',
       },
     });
@@ -269,12 +343,12 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       // Match admin literary ingest: Gutenberg / long-form books skip OpenAI cleanup.
       const chapters = this.shouldSkipAiCleanup(literary, dto.url)
         ? literary
-        : await this.aiCleanChapters(literary, 'url', finalTitle, userId);
+        : await this.aiCleanChapters(literary, 'url', finalTitle, userId, userImport.id);
       const content = await this.createImportContent(
         userId,
         finalTitle,
         chapters,
-        dto.language,
+        importLanguage,
         dto.url,
         userImport.id,
       );
@@ -318,6 +392,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
 
   async importFile(userId: string, file: Express.Multer.File | undefined, dto: ImportFileDto) {
     await this.limits.assertImportAllowed(userId);
+    const importLanguage = await this.resolveImportLanguage(userId, dto.language);
 
     if (!file?.buffer?.length) {
       throw new BadRequestException('File is required');
@@ -341,7 +416,14 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     assertPdfOrEpubMagic(file);
 
     const importType = isPdf ? ImportType.pdf : ImportType.epub;
+    let actualPages = 1;
+    try {
+      actualPages = await countImportDocumentPages(file.buffer, isPdf ? 'pdf' : 'epub');
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
+    }
     const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
+    await this.importCommerce.assertPaymentCoversPages(userId, payment, actualPages, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';
     const title =
       (dto.title?.trim() ||
@@ -359,7 +441,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         title,
         importType,
         fileKey,
-        language: dto.language,
+        language: importLanguage,
         ingestionStatus: 'processing',
       },
     });
@@ -380,19 +462,19 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
 
     const run = async () => {
       const extracted = isPdf
-        ? await extractTextFromPdf(buffer, { onProgress, language: dto.language })
+        ? await extractTextFromPdf(buffer, { onProgress, language: importLanguage })
         : await extractTextFromEpub(buffer);
       const sourceLabel = isPdf ? 'text from PDF' : 'text from EPUB';
       assertMinWords(extracted.text, sourceLabel);
       const literary = resolveLiteraryChapters(extracted.chapters, title, extracted.text);
       const chapters = this.shouldSkipAiCleanup(literary)
         ? literary
-        : await this.aiCleanChapters(literary, isPdf ? 'pdf' : 'epub', title, userId);
+        : await this.aiCleanChapters(literary, isPdf ? 'pdf' : 'epub', title, userId, userImport.id);
       const content = await this.createImportContent(
         userId,
         title,
         chapters,
-        dto.language,
+        importLanguage,
         undefined,
         userImport.id,
       );
@@ -453,9 +535,13 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     source: ImportCleanupSource,
     documentTitle: string,
     userId: string,
+    importId?: string,
   ): Promise<ExtractedChapter[]> {
     if (this.shouldSkipAiCleanup(chapters)) {
       return chapters;
+    }
+    if (importId) {
+      await this.setProgressPhase(importId, 'ai');
     }
     try {
       const cleaned = await this.ai.cleanImportChapters(chapters, {
@@ -481,6 +567,15 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
+  private async setProgressPhase(importId: string, phase: ProgressPhase) {
+    await this.prisma.userImport
+      .update({
+        where: { id: importId },
+        data: { errorMessage: encodeProgressPhase(phase) },
+      })
+      .catch(() => undefined);
+  }
+
   private async updateImportProgress(importId: string, progress: ImportProgress) {
     await this.prisma.userImport
       .update({
@@ -488,6 +583,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         data: {
           progressPagesDone: progress.pagesDone,
           progressPagesTotal: progress.pagesTotal,
+          ...(progress.phase ? { errorMessage: encodeProgressPhase(progress.phase) } : {}),
         },
       })
       .catch(() => undefined);

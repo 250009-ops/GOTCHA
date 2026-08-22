@@ -15,7 +15,13 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <DocumentTitle />
         <App />
-        <Toaster position="top-right" richColors />
+        <Toaster
+          position="top-right"
+          richColors
+          visibleToasts={4}
+          offset={{ top: 'var(--gotcha-toast-top, 16px)', right: '16px', bottom: '16px', left: '16px' }}
+          mobileOffset={{ top: 'var(--gotcha-toast-top, 16px)', right: '16px', bottom: '16px', left: '16px' }}
+        />
       </AuthProvider>
     </BrowserRouter>
   </StrictMode>,

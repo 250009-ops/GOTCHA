@@ -95,6 +95,62 @@ export function languagePromptLabel(code?: string | null): string {
   return key ? `${meta.label} (${key})` : meta.label;
 }
 
+/** BCP-47 tags for TTS engines (browser SpeechSynthesis, Android, OpenAI). */
+const TTS_LOCALES: Record<string, string> = {
+  en: 'en-US',
+  ru: 'ru-RU',
+  uz: 'uz-UZ',
+  fr: 'fr-FR',
+  es: 'es-ES',
+  ja: 'ja-JP',
+  de: 'de-DE',
+  ko: 'ko-KR',
+  pt: 'pt-BR',
+  ar: 'ar-SA',
+  bn: 'bn-BD',
+  bg: 'bg-BG',
+  ca: 'ca-ES',
+  zh: 'zh-CN',
+  hr: 'hr-HR',
+  cs: 'cs-CZ',
+  da: 'da-DK',
+  nl: 'nl-NL',
+  fi: 'fi-FI',
+  el: 'el-GR',
+  he: 'he-IL',
+  hi: 'hi-IN',
+  hu: 'hu-HU',
+  id: 'id-ID',
+  it: 'it-IT',
+  ms: 'ms-MY',
+  no: 'nb-NO',
+  fa: 'fa-IR',
+  pl: 'pl-PL',
+  ro: 'ro-RO',
+  sr: 'sr-RS',
+  sk: 'sk-SK',
+  sw: 'sw-KE',
+  sv: 'sv-SE',
+  tl: 'fil-PH',
+  th: 'th-TH',
+  tr: 'tr-TR',
+  uk: 'uk-UA',
+  ur: 'ur-PK',
+  vi: 'vi-VN',
+};
+
+/** Two-letter app language → a real TTS locale. `uz` becomes `uz-UZ`. */
+export function ttsLocale(code?: string | null): string {
+  const raw = (code ?? 'en').trim().toLowerCase().replace(/_/g, '-');
+  if (raw.includes('-') && raw.length >= 4) return raw;
+  const short = raw.slice(0, 2);
+  return TTS_LOCALES[short] ?? `${short}-${short.toUpperCase()}`;
+}
+
+export function ttsLangPrefix(code?: string | null): string {
+  return ttsLocale(code).slice(0, 2).toLowerCase();
+}
+
 export const CEFR_LEVELS = ['a1', 'a2', 'b1', 'b2', 'c1', 'c2'] as const;
 export type CefrLevel = (typeof CEFR_LEVELS)[number];
 

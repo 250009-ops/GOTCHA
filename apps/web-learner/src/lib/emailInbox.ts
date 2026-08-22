@@ -1,10 +1,8 @@
 /** Open the learner's real inbox — never a blank mailto: compose window. */
 
 const WEBMAIL: Record<string, (email: string) => string> = {
-  'gmail.com': (email) =>
-    `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}#search/gotcha`,
-  'googlemail.com': (email) =>
-    `https://mail.google.com/mail/u/?authuser=${encodeURIComponent(email)}#search/gotcha`,
+  'gmail.com': () => 'https://mail.google.com/mail/u/0/#inbox',
+  'googlemail.com': () => 'https://mail.google.com/mail/u/0/#inbox',
   'outlook.com': () => 'https://outlook.live.com/mail/0/inbox',
   'hotmail.com': () => 'https://outlook.live.com/mail/0/inbox',
   'live.com': () => 'https://outlook.live.com/mail/0/inbox',
@@ -35,10 +33,9 @@ export function emailInboxUrl(email?: string | null): string | null {
 export function openEmailInbox(email?: string | null): boolean {
   const url = emailInboxUrl(email);
   if (url) {
-    const opened = window.open(url, '_blank', 'noopener,noreferrer');
-    if (!opened) {
-      window.location.assign(url);
-    }
+    // Same tab on purpose: a new Gmail tab left GOTCHA open, and the verification
+    // link then opened a third tab. Take this tab to the inbox instead.
+    window.location.assign(url);
     return true;
   }
 

@@ -29,6 +29,7 @@ data class RegisterRequest(
     val displayName: String? = null,
     val nativeLanguage: String,
     val targetLanguages: List<String>,
+    val clientPlatform: String = "android",
 )
 
 /**
@@ -53,10 +54,16 @@ data class RegisterResponse(
 data class RefreshRequest(val refreshToken: String)
 
 @Serializable
-data class ForgotPasswordRequest(val email: String)
+data class ForgotPasswordRequest(
+    val email: String,
+    val clientPlatform: String = "android",
+)
 
 @Serializable
-data class ResendVerificationRequest(val email: String)
+data class ResendVerificationRequest(
+    val email: String,
+    val clientPlatform: String = "android",
+)
 
 @Serializable
 data class ResetPasswordRequest(
@@ -193,6 +200,8 @@ data class ContentItem(
     val authorName: String? = null,
     val description: String? = null,
     val progressPct: Double? = null,
+    val knownWordRatio: Double? = null,
+    val subtitle: String? = null,
     val lastReadAt: String? = null,
     /** Learner feed uses `status`; admin Nest payloads use `publishStatus`. */
     val status: String? = null,
@@ -218,9 +227,12 @@ data class ContentItem(
 @Serializable
 data class FeaturedCollection(
     val id: String? = null,
+    val slug: String? = null,
     val title: String? = null,
+    val description: String? = null,
+    val isFeatured: Boolean = false,
     val items: List<FeaturedCollectionItem> = emptyList(),
-)
+) { val browseKey: String get() = slug?.ifBlank { null } ?: id.orEmpty() }
 
 @Serializable
 data class FeaturedCollectionItem(
@@ -543,6 +555,11 @@ data class UserImport(
     val ingestionStatus: String? = null,
     val contentId: String? = null,
     val createdAt: String? = null,
+    val sourceUrl: String? = null,
+    val errorMessage: String? = null,
+    val progressPagesDone: Int? = null,
+    val progressPagesTotal: Int? = null,
+    val progressPhase: String? = null,
     val content: ContentItem? = null,
 )
 
@@ -550,6 +567,10 @@ data class UserImport(
 data class ImportsListResponse(
     val items: List<UserImport> = emptyList(),
     val total: Int = 0,
+    val page: Int = 1,
+    val pageSize: Int = 20,
+    val hasMore: Boolean = false,
+    val importLimit: Int? = null,
     val importRemaining: Int? = null,
     val importsUnlimited: Boolean? = null,
     val freeAllowance: ImportQuoteFreeLimits? = null,
@@ -595,6 +616,7 @@ data class UserStats(
     val wordsTapped: Int = 0,
     /** Live current streak (same source as /users/me when streak is active). */
     val streakCount: Int = 0,
+    val wordsLearned: Int = 0,
     val bestStreak: Int = 0,
     val history: StatsHistory? = null,
 )
@@ -608,6 +630,40 @@ data class UserPreferences(
     val ttsEnabled: Boolean? = null,
     val dailyGoalMinutes: Int? = null,
     val notificationsEnabled: Boolean? = null,
+)
+
+@Serializable
+data class SubscriptionPlan(
+    val id: String = "",
+    val tier: String = "free",
+    val name: String = "",
+    val aiDailyQuota: Int = 50,
+    val importLimit: Int = 0,
+)
+
+@Serializable
+data class ImportAllowance(
+    val gatewayEnabled: Boolean = false,
+    val resetCycle: String = "monthly",
+    val dailyFreeImportsPerUser: Int = 0,
+    val dailyFreeUsed: Int = 0,
+    val dailyFreeRemaining: Int = 0,
+    val monthlyFreePageLimit: Int = 0,
+    val monthlyPagesUsed: Int = 0,
+    val monthlyPagesRemaining: Int = 0,
+)
+
+@Serializable
+data class SubscriptionUsage(
+    val lookupsToday: Int = 0,
+    val quota: Int = 50,
+    val importAllowance: ImportAllowance? = null,
+)
+
+@Serializable
+data class SubscriptionInfo(
+    val subscription: SubscriptionPlan? = null,
+    val usage: SubscriptionUsage = SubscriptionUsage(),
 )
 
 @Serializable
@@ -702,11 +758,16 @@ data class AdminDashboard(
     val conversionPct: Double = 0.0,
     val revenueToday: Double = 0.0,
     val revenueMomDelta: Double = 0.0,
+    val revenue: Double = 0.0,
+    val revenueGrowthPct: Double = 0.0,
     val revenueCurrency: String? = "USD",
     val importCurrency: String? = "UZS",
     val importRevenueUzs: Int = 0,
     val revenueTrend: List<AdminTrendPoint> = emptyList(),
     val revenueDaily: List<AdminTrendPoint> = emptyList(),
+    val userGrowth: List<AdminTrendPoint> = emptyList(),
+    val aiCategories: List<AdminAiCategory> = emptyList(),
+    val topPhrases: List<AdminTopPhrase> = emptyList(),
     val recentUsers: List<AdminRecentUser> = emptyList(),
     val recentActivity: List<AdminActivityItem> = emptyList(),
 )
@@ -716,7 +777,30 @@ data class AdminTrendPoint(
     val month: String? = null,
     val day: String? = null,
     val mrr: Double = 0.0,
+    val revenue: Double = 0.0,
     val users: Int = 0,
+) {
+    fun chartValue(): Double = when {
+        revenue != 0.0 -> revenue
+        mrr != 0.0 -> mrr
+        else -> 0.0
+    }
+}
+
+@Serializable
+data class AdminAiCategory(
+    val name: String = "",
+    val pct: Double = 0.0,
+    val color: String = "",
+)
+
+@Serializable
+data class AdminTopPhrase(
+    val phrase: String = "",
+    val language: String = "",
+    val level: String = "",
+    val lookups: Int = 0,
+    val aiMatch: Double = 0.0,
 )
 
 @Serializable

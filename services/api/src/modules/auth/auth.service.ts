@@ -73,6 +73,41 @@ export class AuthService {
     ).replace(/\/$/, '');
   }
 
+  /** Recognises mobile vs web auth email requests. */
+  private normalizeClientPlatform(value?: string): 'android' | 'web' | undefined {
+    const normalized = value?.trim().toLowerCase();
+    if (normalized === 'android' || normalized === 'web') return normalized;
+    return undefined;
+  }
+
+  /** HTTPS learner links for all auth emails — clickable in Gmail; Android opens the app via App Links / web handoff. */
+  private authActionUrl(
+    path: 'verify-email' | 'reset-password',
+    token: string,
+    adminQuery: string,
+    clientPlatform?: string,
+  ): string {
+    const encodedToken = encodeURIComponent(token);
+    const platformQuery =
+      this.normalizeClientPlatform(clientPlatform) === 'android' ? '&client=android' : '';
+    return `${this.learnerAppUrl()}/${path}?token=${encodedToken}${platformQuery}${adminQuery}`;
+  }
+
+  private adminAppUrl(): string {
+    return (
+      this.config.get<string>('ADMIN_APP_URL')?.trim() ||
+      this.config.get<string>('VITE_ADMIN_APP_URL')?.trim()?.split(',')?.[0]?.trim() ||
+      'http://localhost:5173/'
+    ).replace(/\/?$/, '/');
+  }
+
+  /** Append admin returnUrl so verify/reset pages can hand off back to the admin console. */
+  private async adminReturnQuery(userId: string): Promise<string> {
+    const admin = await this.prisma.adminUser.findUnique({ where: { userId } });
+    if (!admin) return '';
+    return `&returnUrl=${encodeURIComponent(this.adminAppUrl())}`;
+  }
+
   private async createVerificationToken(userId: string) {
     const rawToken = randomBytes(32).toString('hex');
     const emailVerificationToken = this.hashToken(rawToken);
@@ -89,9 +124,13 @@ export class AuthService {
     return rawToken;
   }
 
-  private async sendVerification(user: { id: string; email: string; displayName: string | null }) {
+  private async sendVerification(
+    user: { id: string; email: string; displayName: string | null },
+    clientPlatform?: string,
+  ) {
     const rawToken = await this.createVerificationToken(user.id);
-    const verifyUrl = `${this.learnerAppUrl()}/verify-email?token=${rawToken}`;
+    const adminQuery = await this.adminReturnQuery(user.id);
+    const verifyUrl = this.authActionUrl('verify-email', rawToken, adminQuery, clientPlatform);
     const name = user.displayName?.trim() || user.email.split('@')[0];
 
     void this.mail.sendEmailVerificationEmail(user.email, name, verifyUrl).catch((err) => {
@@ -136,7 +175,8 @@ export class AuthService {
     return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
   }
 
-  async register(dto: RegisterDto) {
+  async register(dto: RegisterDto, clientPlatformHeader?: string) {
+    const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
     if (isDevAuthEnabled()) {
       return this.devAuth.register(dto);
     }
@@ -145,7 +185,7 @@ export class AuthService {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) {
       if (!existing.emailVerifiedAt) {
-        await this.sendVerification(existing);
+        await this.sendVerification(existing, clientPlatform);
         throw new ConflictException({
           statusCode: 409,
           error: 'Conflict',
@@ -165,6 +205,9 @@ export class AuthService {
     await assertEnabledLanguage(this.prisma, dto.nativeLanguage, 'Native language');
     for (const lang of dto.targetLanguages) {
       await assertEnabledLanguage(this.prisma, lang, 'Target language');
+      if (lang === dto.nativeLanguage) {
+        throw new BadRequestException('Target languages cannot include your native language.');
+      }
     }
 
     const passwordHash = await bcrypt.hash(dto.password, 12);
@@ -200,7 +243,7 @@ export class AuthService {
       });
     }
 
-    await this.sendVerification(user);
+    await this.sendVerification(user, clientPlatform);
 
     return {
       requiresEmailVerification: true,
@@ -310,7 +353,19 @@ export class AuthService {
     return { verified: true, email: user.email };
   }
 
-  async resendEmailVerification(emailRaw: string) {
+  /** Send (or re-send) the verification email for a user id — used after admin email change. */
+  async sendVerificationEmail(userId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    await this.sendVerification(user);
+    return {
+      sent: true,
+      email: user.email,
+      message: 'Verification email sent.',
+    };
+  }
+
+  async resendEmailVerification(emailRaw: string, clientPlatform?: string) {
     const email = emailRaw.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email } });
 
@@ -322,7 +377,7 @@ export class AuthService {
       };
     }
 
-    await this.sendVerification(user);
+    await this.sendVerification(user, clientPlatform);
     return {
       sent: true,
       message: 'If the email exists and still needs verification, we sent a new link.',
@@ -345,9 +400,13 @@ export class AuthService {
     return rawToken;
   }
 
-  private async sendPasswordReset(user: { id: string; email: string; displayName: string | null }) {
+  private async sendPasswordReset(
+    user: { id: string; email: string; displayName: string | null },
+    clientPlatform?: string,
+  ) {
     const rawToken = await this.createPasswordResetToken(user.id);
-    const resetUrl = `${this.learnerAppUrl()}/reset-password?token=${rawToken}`;
+    const adminQuery = await this.adminReturnQuery(user.id);
+    const resetUrl = this.authActionUrl('reset-password', rawToken, adminQuery, clientPlatform);
     const name = user.displayName?.trim() || user.email.split('@')[0];
 
     void this.mail.sendPasswordResetEmail(user.email, name, resetUrl).catch((err) => {
@@ -357,13 +416,13 @@ export class AuthService {
     return resetUrl;
   }
 
-  async forgotPassword(emailRaw: string) {
+  async forgotPassword(emailRaw: string, clientPlatform?: string) {
     const email = emailRaw.trim().toLowerCase();
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     // Always return the same generic success (no account enumeration).
     if (user?.passwordHash) {
-      await this.sendPasswordReset(user);
+      await this.sendPasswordReset(user, clientPlatform);
     }
 
     return {

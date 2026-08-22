@@ -1,4 +1,5 @@
 import * as cheerio from 'cheerio';
+import { restoreDialogueLayout } from './dialogue-layout';
 
 /** Chrome / chrome-adjacent selectors stripped before article text extraction. */
 const CHROME_SELECTORS = [
@@ -192,18 +193,58 @@ function isMeaningfulCaption(raw: string | undefined | null): string | null {
   return t;
 }
 
-/** Strip binary/base64/markdown image noise and leftover markup from plain text. */
+/** Strip binary/base64/markdown image noise. Images are excluded from learner text. */
 export function stripImageNoise(text: string): string {
   let out = text;
   out = out.replace(/data:image\/[a-z0-9.+-]+;base64,[A-Za-z0-9+/=\s]+/gi, ' ');
-  out = out.replace(/!\[([^\]]*)\]\((?:[^)]+)\)/g, (_, alt: string) => {
-    const caption = isMeaningfulCaption(alt);
-    return caption ? `\n[Image: ${caption}]\n` : ' ';
-  });
+  out = out.replace(/!\[[^\]]*]\((?:[^)]+)\)/g, ' ');
   out = out.replace(/<img\b[^>]*>/gi, ' ');
   out = out.replace(/<\/?(?:svg|picture|source|figure|figcaption)\b[^>]*>/gi, ' ');
+  out = out.replace(/\[Image:\s*[^\]]*]/gi, ' ');
   out = out.replace(/(?:^|\s)(?:[A-Za-z0-9+/]{80,}={0,2})(?=\s|$)/g, ' ');
   return out;
+}
+
+/**
+ * True when a line is OCR of a picture, puzzle grid, or decorative scan — not learner text.
+ * Dialogue and normal sentences must not match.
+ */
+export function isOcrImageJunkLine(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length < 6) return false;
+  if (/^[“"‘'«].{8,}/.test(t)) return false;
+  const compact = t.replace(/\s+/g, '');
+  const letters = (t.match(/\p{L}/gu) || []).length;
+  const symbols = (t.match(/[/\\|\[\]{}<>]+/g) || []).join('').length;
+  const letterRatio = letters / Math.max(compact.length, 1);
+  if (symbols >= 4 && letterRatio < 0.6) return true;
+  if (letterRatio < 0.38 && compact.length >= 10) return true;
+  const tokens = t.split(/[\s/|]+/).filter(Boolean);
+  if (tokens.length >= 5) {
+    const shards = tokens.filter((tok) => {
+      const clean = tok.replace(/[^A-Za-z0-9]/g, '');
+      return clean.length > 0 && clean.length <= 3;
+    });
+    if (shards.length / tokens.length >= 0.7 && letterRatio < 0.72) return true;
+  }
+  return false;
+}
+
+/** Drop illustration/grid OCR; keep story, dialogue, and activity instructions. */
+export function stripOcrImageJunk(text: string): string {
+  const kept = text.split('\n').filter((line) => !isOcrImageJunkLine(line));
+  if (kept.length === text.split('\n').length) return text;
+  return kept.join('\n');
+}
+
+/** False for empty/illustration leftovers; true for story, dialogue, headings, activities. */
+export function hasUsableLearnerText(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  if (/^(?:\d{1,3}|[IVXLCDM]{2,8})\.?$/i.test(t)) return true;
+  if (/^(chapter|part|contents|bob)\b/i.test(t)) return true;
+  const real = t.split(/\s+/).filter((w) => /[\p{L}]{4,}/u.test(w) || /^\d{1,3}\.?$/.test(w));
+  return real.length >= 1;
 }
 
 export function normalizeImportWhitespace(text: string): string {
@@ -233,10 +274,12 @@ function stripChromePhrases(text: string): string {
 export function cleanImportPlainText(text: string): string {
   let out = decodeBasicEntities(text);
   out = stripImageNoise(out);
+  out = stripOcrImageJunk(out);
   out = stripChromePhrases(out);
   out = out.replace(/<\/?[a-z][^>]*>/gi, ' ');
   out = decodeBasicEntities(out);
   out = normalizeImportWhitespace(out);
+  out = restoreDialogueLayout(out);
   return out;
 }
 
@@ -322,9 +365,8 @@ function nearestMediaCaption($: CheerioAPI, el: any): string | null {
   );
 }
 
-function imagePlaceholder($: CheerioAPI, el: any): string {
-  const caption = nearestMediaCaption($, el);
-  return caption ? `\n[Image: ${caption}]\n` : '';
+function imagePlaceholder(_$: CheerioAPI, _el: any): string {
+  return '';
 }
 
 function isMediaCaptionNode($: CheerioAPI, node: any): boolean {
@@ -355,12 +397,9 @@ function nodeToText($: CheerioAPI, node: any): string {
     const plain = tableToPlainText($, node);
     return plain ? `\n${plain}\n` : '';
   }
-  // Captions are emitted once via [Image: …] from the related <img>.
+  // Images and their captions are excluded from learner text.
   if (isMediaCaptionNode($, node)) {
-    const container = $(node).closest('figure, .thumb, .thumbinner, .gallerybox, .mw-file');
-    if (container.find('img, picture, svg').length) return '';
-    const t = isMeaningfulCaption($(node).text());
-    return t ? `\n${t}\n` : '';
+    return '';
   }
 
   let inner = '';
@@ -379,10 +418,10 @@ function nodeToText($: CheerioAPI, node: any): string {
 
 /**
  * Wikipedia / Parsoid often renders galleries as <p><img></p><p>caption</p>.
- * Promote sibling captions onto the image alt, then drop the caption paragraph.
+ * Drop those caption paragraphs — images are not learner text.
  */
 function promoteSiblingFileCaptions($: CheerioAPI): void {
-  $('span[typeof*="mw:File"], figure, .thumb').each((_, el) => {
+  $('span[typeof*="mw:File"], figure, .thumb, img').each((_, el) => {
     const $el = $(el);
     const img = $el.find('img').get(0) || ($el.is('img') ? el : null);
     if (!img) return;
@@ -391,27 +430,23 @@ function promoteSiblingFileCaptions($: CheerioAPI): void {
     const captionEl = fileBlock.next('p');
     if (!captionEl.length) return;
     if (captionEl.find('img, span[typeof*="mw:File"], table').length) return;
-
-    const caption = isMeaningfulCaption(captionEl.text());
-    if (!caption) return;
-
-    if (!isMeaningfulCaption($(img).attr('alt'))) {
-      $(img).attr('alt', caption);
-    }
+    if (!isMeaningfulCaption(captionEl.text())) return;
     captionEl.remove();
   });
 }
 
 /**
  * Convert HTML to reader-ready plain text:
- * strips chrome, tables → "a | b | c" rows, images → optional [Image: caption].
+ * strips chrome, tables → "a | b | c" rows, images and captions dropped.
  */
 export function htmlToCleanText(html: string): string {
   if (!html?.trim()) return '';
 
   const $ = cheerio.load(html);
   $(CHROME_SELECTORS).remove();
-  $('svg').remove();
+  promoteSiblingFileCaptions($);
+  $('svg, img, picture').remove();
+  $('figcaption').remove();
   // Drop empty Parsoid template marker spans (payload lives in data-mw attrs).
   $('span[typeof*="mw:Transclusion"]').each((_, el) => {
     if (!$(el).text().trim() && !$(el).find('img, table, p').length) {

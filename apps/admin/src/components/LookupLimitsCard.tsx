@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { formatNumber } from '../lib/utils';
@@ -15,6 +15,7 @@ type LookupLimitsCardProps = {
   todayPlatformUsed?: number;
   canEdit: boolean;
   showSettingsLink?: boolean;
+  showImportPricingLink?: boolean;
   onSaved?: () => void;
 };
 
@@ -25,6 +26,7 @@ export function LookupLimitsCard({
   todayPlatformUsed,
   canEdit,
   showSettingsLink = true,
+  showImportPricingLink = true,
   onSaved,
 }: LookupLimitsCardProps) {
   const [userQuota, setUserQuota] = useState(defaultUserQuota);
@@ -67,14 +69,29 @@ export function LookupLimitsCard({
         <div className="font-semibold">Daily word-lookup quota</div>
         <div className="text-sm text-slate-500">
           This is the cap learners hit after tapping words in a book or chat
-          (“Daily AI lookup limit reached”). Change it here — it applies immediately.
-          {showSettingsLink ? (
+          (“Daily AI lookup limit reached”). Change it here — it applies on the next lookup.
+          {showSettingsLink || showImportPricingLink ? (
             <>
               {' '}
               Also under{' '}
-              <Link to="/settings" className="text-[#6c1d95] font-medium hover:underline">
-                Settings → AI controls
-              </Link>
+              {[
+                showImportPricingLink ? (
+                  <Link key="pricing" to="/import-pricing" className="text-[#6c1d95] font-medium hover:underline">
+                    Import & Pricing
+                  </Link>
+                ) : null,
+                showSettingsLink ? (
+                  <Link key="settings" to="/settings" className="text-[#6c1d95] font-medium hover:underline">
+                    Settings → AI controls
+                  </Link>
+                ) : null,
+              ]
+                .filter(Boolean)
+                .reduce<ReactNode[]>((acc, node, i) => {
+                  if (i > 0) acc.push(' and ');
+                  acc.push(node);
+                  return acc;
+                }, [])}
               .
             </>
           ) : null}

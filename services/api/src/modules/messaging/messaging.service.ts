@@ -2,20 +2,24 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AppLanguage, Prisma } from '@prisma/client';
 import {
   isFigmaSampleDisplayName,
   isSyntheticUserEmail,
   liveMessagingPeerWhere,
 } from '../../common/production-users';
+import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EditMessageDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const ONLINE_WINDOW_MS = 90 * 1000;
 const TYPING_WINDOW_MS = 4 * 1000;
+const MESSAGE_EMAIL_COOLDOWN_MS = 10 * 60 * 1000;
 
 const messageInclude = {
   sender: { select: { id: true, displayName: true, avatarUrl: true } },
@@ -55,9 +59,15 @@ function isLiveMessagingPeer(user: {
 
 @Injectable()
 export class MessagingService {
+  private readonly logger = new Logger(MessagingService.name);
   private typingUntil = new Map<string, number>();
+  private lastMessageEmailAt = new Map<string, number>();
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private mail: MailService,
+    private config: ConfigService,
+  ) {}
 
   private presenceOf(lastSeenAt?: Date | null) {
     const online = !!lastSeenAt && Date.now() - lastSeenAt.getTime() < ONLINE_WINDOW_MS;
@@ -373,7 +383,13 @@ export class MessagingService {
       }),
     ]);
 
-    return this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
+    const presented = this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
+    void this.notifyRecipientsByEmail(userId, conversationId, presented.body).catch((err) => {
+      this.logger.warn(
+        `Message email notify failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    });
+    return presented;
   }
 
   async editMessage(userId: string, conversationId: string, messageId: string, dto: EditMessageDto) {
@@ -654,5 +670,67 @@ export class MessagingService {
           ? `Shared Readings: You both saved ${sharedVocab} common words.`
           : null,
     };
+  }
+
+  private learnerAppUrl(): string {
+    return (
+      this.config.get<string>('LEARNER_APP_URL')?.trim() ||
+      this.config.get<string>('VITE_LEARNER_APP_URL')?.trim() ||
+      'https://gotchaa.uz/learn'
+    ).replace(/\/$/, '');
+  }
+
+  private async notifyRecipientsByEmail(senderId: string, conversationId: string, preview: string) {
+    if (!this.mail.isConfigured()) return;
+
+    const recipients = await this.prisma.conversationParticipant.findMany({
+      where: { conversationId, userId: { not: senderId } },
+      include: {
+        user: {
+          select: {
+            id: true,
+            email: true,
+            displayName: true,
+            emailVerifiedAt: true,
+            lastSeenAt: true,
+            deletedAt: true,
+            preferences: { select: { notificationsEnabled: true } },
+          },
+        },
+      },
+    });
+
+    const sender = await this.prisma.user.findUnique({
+      where: { id: senderId },
+      select: { displayName: true, email: true },
+    });
+    const senderName =
+      sender?.displayName?.trim() || sender?.email?.split('@')[0] || 'A learner';
+
+    const now = Date.now();
+    for (const row of recipients) {
+      const user = row.user;
+      if (!user || user.deletedAt) continue;
+      if (!user.emailVerifiedAt) continue;
+      if (isSyntheticUserEmail(user.email)) continue;
+      if (user.preferences?.notificationsEnabled === false) continue;
+      if (user.lastSeenAt && now - user.lastSeenAt.getTime() < ONLINE_WINDOW_MS) continue;
+      if (row.lastReadAt && now - row.lastReadAt.getTime() < ONLINE_WINDOW_MS) continue;
+
+      const cooldownKey = `${conversationId}:${user.id}`;
+      const lastSent = this.lastMessageEmailAt.get(cooldownKey) ?? 0;
+      if (now - lastSent < MESSAGE_EMAIL_COOLDOWN_MS) continue;
+      this.lastMessageEmailAt.set(cooldownKey, now);
+
+      const messagesUrl = `${this.learnerAppUrl()}/app/messages?c=${encodeURIComponent(conversationId)}`;
+      const recipientName = user.displayName?.trim() || user.email.split('@')[0] || 'there';
+      await this.mail.sendNewMessageEmail(
+        user.email,
+        recipientName,
+        senderName,
+        preview,
+        messagesUrl,
+      );
+    }
   }
 }

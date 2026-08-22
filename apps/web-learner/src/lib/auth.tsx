@@ -204,7 +204,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         requiresEmailVerification?: boolean;
         email?: string;
         message?: string;
-      }>('/auth/register', { method: 'POST', body: JSON.stringify(data) });
+      }>('/auth/register', {
+        method: 'POST',
+        body: JSON.stringify({ ...data, clientPlatform: 'web' }),
+      });
 
       if (res.requiresEmailVerification || (!res.accessToken && res.email)) {
         return {

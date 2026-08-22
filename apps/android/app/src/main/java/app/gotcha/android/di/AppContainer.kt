@@ -102,6 +102,13 @@ class AppContainer(context: Context) {
 
 
 
+    private val clientPlatformInterceptor = Interceptor { chain ->
+        val request = chain.request().newBuilder()
+            .header("X-GOTCHA-Client-Platform", "android")
+            .build()
+        chain.proceed(request)
+    }
+
     private val authInterceptor = Interceptor { chain ->
 
         val request = chain.request()
@@ -184,6 +191,7 @@ class AppContainer(context: Context) {
 
         .readTimeout(60, TimeUnit.SECONDS)
 
+        .addInterceptor(clientPlatformInterceptor)
         .addInterceptor(authInterceptor)
 
         .addInterceptor(refreshInterceptor)
@@ -351,7 +359,12 @@ class AppContainer(context: Context) {
 
     val practiceRepository = PracticeRepository(api)
 
-
+    /** Clears tokens, cached learner data, and live messaging when signing out or switching accounts. */
+    suspend fun endSession() {
+        messagingRealtime.stop()
+        tokenStore.clear()
+        contentCacheStore.clearAll()
+    }
 
     private companion object {
 

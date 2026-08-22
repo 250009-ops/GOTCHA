@@ -37,7 +37,55 @@ export class UsersService {
 
   ) {}
 
+  /** Target languages must never equal native — drop conflicts and fix primary if needed. */
+  private async removeNativeFromTargets(userId: string, nativeLanguage: string) {
+    const conflicts = await this.prisma.userTargetLanguage.findMany({
+      where: { userId, targetLanguage: nativeLanguage as never },
+    });
+    if (!conflicts.length) return;
 
+    const removedPrimary = conflicts.some((row) => row.isPrimary);
+    await this.prisma.userTargetLanguage.deleteMany({
+      where: { userId, targetLanguage: nativeLanguage as never },
+    });
+
+    if (removedPrimary) {
+      const next = await this.prisma.userTargetLanguage.findFirst({
+        where: { userId },
+        orderBy: { targetLanguage: 'asc' },
+      });
+      if (next) {
+        await this.prisma.userTargetLanguage.update({
+          where: {
+            userId_targetLanguage: { userId, targetLanguage: next.targetLanguage },
+          },
+          data: { isPrimary: true },
+        });
+      }
+    }
+  }
+
+  /** After a native-language change, the previous native becomes a language to learn. */
+  private async addPreviousNativeAsTarget(userId: string, previousNative: string) {
+    try {
+      await assertEnabledLanguage(this.prisma, previousNative, 'Language');
+    } catch {
+      return;
+    }
+    const remaining = await this.prisma.userTargetLanguage.count({ where: { userId } });
+    await this.prisma.userTargetLanguage.upsert({
+      where: {
+        userId_targetLanguage: { userId, targetLanguage: previousNative as never },
+      },
+      create: {
+        userId,
+        targetLanguage: previousNative as never,
+        cefrLevel: 'a1',
+        isPrimary: remaining === 0,
+      },
+      update: {},
+    });
+  }
 
   async getProfile(userId: string) {
 
@@ -85,9 +133,23 @@ export class UsersService {
 
     if (!user) throw new NotFoundException('User not found');
 
+    await this.removeNativeFromTargets(userId, user.nativeLanguage);
 
+    const refreshed = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        targetLanguages: true,
+        preferences: true,
+        subscriptions: {
+          include: { plan: true },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+        },
+      },
+    });
+    if (!refreshed) throw new NotFoundException('User not found');
 
-    const { passwordHash: _, ...safe } = user;
+    const { passwordHash: _, ...safe } = refreshed;
 
     return safe;
 
@@ -184,13 +246,11 @@ export class UsersService {
     // Best never below current; heatmap may miss older days outside the window.
     const bestStreak = Math.max(history.bestStreak, streakCount);
 
-    const todayKey = new Date().toISOString().slice(0, 10);
-    const todaySessions = recentSessions.filter(
-      (s) => s.startedAt.toISOString().slice(0, 10) === todayKey,
-    );
-    const todayReadMinutes = Math.round(
-      todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60,
-    );
+    const todayKey = dateKey(new Date());
+    const todaySessions = recentSessions.filter((s) => dateKey(s.startedAt) === todayKey);
+    const todayReadMinutes =
+      history.history.daily.find((d) => d.date === todayKey)?.minutes ??
+      Math.round(todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60);
     const todayWordsSaved = todaySessions.reduce((s, row) => s + row.wordsSaved, 0);
 
     return {
@@ -235,30 +295,38 @@ export class UsersService {
 
     }
 
+    if (dto.nativeLanguage) {
+      await assertEnabledLanguage(this.prisma, dto.nativeLanguage, 'Native language');
+    }
+    if (dto.uiLanguage) {
+      await assertEnabledLanguage(this.prisma, dto.uiLanguage, 'UI language');
+    }
+
+    if (dto.nativeLanguage) {
+      const current = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { nativeLanguage: true },
+      });
+      const previousNative = current?.nativeLanguage;
+      await this.removeNativeFromTargets(userId, dto.nativeLanguage);
+      if (previousNative && previousNative !== dto.nativeLanguage) {
+        await this.addPreviousNativeAsTarget(userId, previousNative);
+      }
+    }
+
     return this.prisma.user.update({
-
       where: { id: userId },
-
       data: dto,
-
       select: {
-
         id: true,
-
         email: true,
-
         displayName: true,
-
         avatarUrl: true,
-
         uiLanguage: true,
-
         nativeLanguage: true,
-
         streakCount: true,
-
+        targetLanguages: true,
       },
-
     });
 
   }
@@ -354,6 +422,13 @@ export class UsersService {
 
   async addTargetLanguage(userId: string, dto: AddTargetLanguageDto) {
     await assertEnabledLanguage(this.prisma, dto.targetLanguage, 'Target language');
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { nativeLanguage: true },
+    });
+    if (user?.nativeLanguage === dto.targetLanguage) {
+      throw new BadRequestException('Target language cannot be the same as your native language.');
+    }
     const existingCount = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (dto.isPrimary || existingCount === 0) {
       await this.prisma.userTargetLanguage.updateMany({

@@ -20,8 +20,10 @@ import { Button } from '../components/ui/button';
 import { Dialog } from '../components/ui/dialog';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
-import { quoteImport, formatUzs, type ImportQuote } from '../lib/importBilling';
+import { formatUzs, formatFreeAllowance, inspectImportFile, type ImportQuote, type ImportFreeAllowance } from '../lib/importBilling';
+import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
+import { useAuth } from '../lib/auth';
 
 interface ImportItem {
   id: string;
@@ -34,6 +36,7 @@ interface ImportItem {
   errorMessage?: string | null;
   progressPagesDone?: number | null;
   progressPagesTotal?: number | null;
+  progressPhase?: 'extract' | 'ocr' | 'ai' | null;
   content?: { id: string; title: string; wordCount?: number | null } | null;
 }
 
@@ -46,6 +49,7 @@ interface ImportListResponse {
   importLimit?: number | null;
   importRemaining?: number | null;
   importsUnlimited?: boolean;
+  freeAllowance?: ImportFreeAllowance;
 }
 
 const PAGE_SIZE = 8;
@@ -113,17 +117,19 @@ function relativeTime(iso: string) {
 
 function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
   const { langs } = useCatalogLanguages();
+  const { user } = useAuth();
+  const options = langs.filter((l) => l.code !== user?.nativeLanguage);
   return (
-    <div className="py-4">
+    <div className="py-4 min-w-0 max-w-full">
       <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Language</label>
-      <div className="relative">
+      <div className="relative min-w-0 max-w-full">
         <select
           value={value}
           disabled={disabled}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full h-10 pl-3 pr-8 bg-white border border-[#e5e7eb] rounded-[14px] text-sm text-[#364153] outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] appearance-none transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full h-10 pl-3 pr-8 bg-white border border-[#e5e7eb] rounded-[14px] text-sm text-[#364153] outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] appearance-none transition-all disabled:opacity-50"
         >
-          {langs.map((l) => (
+          {options.map((l) => (
             <option key={l.code} value={l.code}>{l.flagEmoji} {l.name}</option>
           ))}
         </select>
@@ -151,7 +157,7 @@ function SubmitButton({
       type="button"
       onClick={onClick}
       disabled={disabled || loading}
-      className="w-full h-10 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium flex items-center justify-center gap-2 transition-colors"
+      className="w-full min-w-0 max-w-full h-10 px-3 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
     >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
       {children}
@@ -166,10 +172,10 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
   const valid = /^https?:\/\//i.test(url.trim());
 
   return (
-    <div>
-      <div>
+    <div className="min-w-0 max-w-full">
+      <div className="min-w-0">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">URL</label>
-        <div className="relative">
+        <div className="relative min-w-0 max-w-full">
           <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             type="url"
@@ -177,12 +183,12 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
             disabled={loading}
             onChange={(e) => setUrl(e.target.value)}
             placeholder="https://example.com/article"
-            className="w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+            className="block w-full min-w-0 max-w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
           />
         </div>
-        <p className="text-xs text-[#99a1af] mt-1">Works with Gutenberg, Wikipedia, public articles, and .txt URLs. Novels are split into printed chapters. Paywalled pages will fail with a clear error.</p>
+        <p className="text-xs text-[#99a1af] mt-1 leading-relaxed [overflow-wrap:anywhere]">Works with Gutenberg, Wikipedia, public articles, and .txt URLs. Novels are split into printed chapters. Paywalled pages will fail with a clear error.</p>
       </div>
-      <div className="pt-4">
+      <div className="pt-4 min-w-0">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
         <input
           type="text"
@@ -190,12 +196,17 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Auto-detected from page"
-          className="w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
       <SubmitButton icon={Link} disabled={!valid} loading={loading} onClick={() => onSubmit({ url: url.trim(), title, lang })}>
-        {loading ? 'Importing…' : 'Import from URL'}
+        {loading ? 'Importing…' : (
+          <>
+            <span className="sm:hidden">Import URL</span>
+            <span className="hidden sm:inline">Import from URL</span>
+          </>
+        )}
       </SubmitButton>
     </div>
   );
@@ -210,8 +221,8 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
   const valid = words >= MIN_PASTE_WORDS && title.trim().length > 0 && !tooLong;
 
   return (
-    <div>
-      <div>
+    <div className="min-w-0 max-w-full">
+      <div className="min-w-0">
         <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title</label>
         <input
           type="text"
@@ -219,10 +230,10 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="My text"
-          className="w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
-      <div className="pt-4">
+      <div className="pt-4 min-w-0">
         <div className="flex items-center justify-between mb-1.5">
           <label className="block text-xs font-semibold text-[#4a5565]">Text</label>
           <span className={cn('text-xs tabular-nums', words < MIN_PASTE_WORDS || tooLong ? 'text-[#99a1af]' : 'text-emerald-600 font-medium')}>
@@ -235,7 +246,7 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
           onChange={(e) => setText(e.target.value)}
           placeholder={`Paste your text here… (minimum ${MIN_PASTE_WORDS} words). Books are split into printed chapters, then pages.`}
           rows={8}
-          className="w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
         {words > 0 && words < MIN_PASTE_WORDS && (
           <p className="text-xs text-amber-600 mt-1">{MIN_PASTE_WORDS - words} more words needed</p>
@@ -289,7 +300,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
   const valid = !!file && !fileError;
 
   return (
-    <div>
+    <div className="min-w-0 max-w-full">
       <div
         onClick={() => !loading && inputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); if (!loading) setDragOver(true); }}
@@ -301,7 +312,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
           validateFile(e.dataTransfer.files?.[0] ?? null);
         }}
         className={cn(
-          'border-[1.6px] border-dashed rounded-[14px] p-8 text-center cursor-pointer transition-all flex flex-col items-center',
+          'border-[1.6px] border-dashed rounded-[14px] p-5 sm:p-8 text-center cursor-pointer transition-all flex flex-col items-center min-w-0 w-full max-w-full',
           dragOver || file ? 'border-violet-300 bg-violet-50' : 'border-[#e5e7eb] hover:border-violet-300 hover:bg-violet-50/50',
           loading && 'opacity-50 pointer-events-none',
         )}
@@ -316,15 +327,15 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
         />
         {file ? (
           <>
-            <FileText className="w-8 h-8 text-violet-500 mb-2" />
-            <div className="font-medium text-gray-700 text-sm">{file.name}</div>
+            <FileText className="w-8 h-8 text-violet-500 mb-2 shrink-0" />
+            <div className="font-medium text-gray-700 text-sm px-1 max-w-full truncate">{file.name}</div>
             <div className="text-[#99a1af] text-xs mt-0.5">{(file.size / 1024).toFixed(0)} KB · click to change</div>
           </>
         ) : (
           <>
-            <Upload className="w-8 h-8 text-gray-300 mb-2" />
-            <div className="text-sm text-[#6a7282]">Drop a PDF or ePub here, or <span className="text-[#7f22fe] font-medium">browse</span></div>
-            <div className="text-xs text-[#99a1af] mt-1">Max {MAX_FILE_MB} MB · PDF and EPUB · books split into printed chapters</div>
+            <Upload className="w-8 h-8 text-gray-300 mb-2 shrink-0" />
+            <div className="text-sm text-[#6a7282] px-1 leading-snug [overflow-wrap:anywhere]">Drop a PDF or ePub here, or <span className="text-[#7f22fe] font-medium">browse</span></div>
+            <div className="text-xs text-[#99a1af] mt-1 px-1 leading-snug [overflow-wrap:anywhere]">Max {MAX_FILE_MB} MB · PDF and EPUB · books split into printed chapters</div>
           </>
         )}
       </div>
@@ -341,7 +352,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Auto from filename"
-          className="w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
@@ -599,6 +610,15 @@ function PaymentConfirmModal({
                 <span className="text-[#7008e7] text-base font-bold">{formatUzs(quote.amountUzs)}</span>
               </div>
             </div>
+            {quote.freeLimits && (
+              <p className="text-[11px] text-[#6a7282] text-center leading-relaxed">
+                {quote.freeReason === 'Within free import allowance'
+                  ? 'Covered by your free import allowance.'
+                  : quote.requiresPayment && !quote.tier
+                    ? 'This length is not priced yet. Try a shorter document or try again later.'
+                    : formatFreeAllowance(quote.freeLimits)}
+              </p>
+            )}
 
             {error && (
               <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
@@ -609,7 +629,7 @@ function PaymentConfirmModal({
             <button
               type="button"
               onClick={handleProceedToCard}
-              disabled={loading || externalLoading}
+              disabled={loading || externalLoading || (quote.requiresPayment && (!quote.tier || quote.amountUzs <= 0))}
               className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
               style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
             >
@@ -787,6 +807,7 @@ export default function ImportPage() {
   const [importLimit, setImportLimit] = useState<number | null>(null);
   const [importRemaining, setImportRemaining] = useState<number | null>(null);
   const [importsUnlimited, setImportsUnlimited] = useState(false);
+  const [freeAllowance, setFreeAllowance] = useState<ImportFreeAllowance | null>(null);
   const [loading, setLoading] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -804,14 +825,15 @@ export default function ImportPage() {
       setImportLimit(res.importLimit ?? null);
       setImportRemaining(res.importRemaining ?? null);
       setImportsUnlimited(!!res.importsUnlimited);
+      if (res.freeAllowance) {
+        setFreeAllowance(res.freeAllowance);
+        setGatewayEnabled(res.freeAllowance.gatewayEnabled);
+      }
       return res;
     });
 
   useEffect(() => {
     void load(1).finally(() => setHistoryLoading(false));
-    quoteImport({ importType: 'paste', wordCount: 0 })
-      .then((q) => setGatewayEnabled(q.gatewayEnabled))
-      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -822,6 +844,27 @@ export default function ImportPage() {
     }, 2500);
     return () => window.clearInterval(id);
   }, [imports, page]);
+
+  const slowPhaseToastShown = useRef(new Set<string>());
+  useEffect(() => {
+    for (const item of imports) {
+      if (!isPendingStatus(item.ingestionStatus) || !item.progressPhase) continue;
+      const key = `${item.id}:${item.progressPhase}`;
+      if (slowPhaseToastShown.current.has(key)) continue;
+      slowPhaseToastShown.current.add(key);
+      if (item.progressPhase === 'ocr') {
+        toast.info('AI detected scanned pages. Reading them may take a few minutes.', {
+          id: key,
+          duration: 9000,
+        });
+      } else if (item.progressPhase === 'ai') {
+        toast.info('AI is cleaning up the text. This can take a little longer.', {
+          id: key,
+          duration: 8000,
+        });
+      }
+    }
+  }, [imports]);
 
   const toastReady = (item: ImportItem) => {
     const contentId = item.content?.id;
@@ -971,7 +1014,10 @@ export default function ImportPage() {
       const { quoteImport: getQuote, checkoutImport } = await import('../lib/importBilling');
       const isEpub = data.file.name.toLowerCase().endsWith('.epub');
       const importType = isEpub ? 'epub' : 'pdf';
-      const pageCount = Math.max(1, Math.min(500, Math.ceil(data.file.size / 50_000)));
+      let pageCount = !isEpub ? await countPdfPagesFromFile(data.file) : null;
+      if (!pageCount) {
+        pageCount = (await inspectImportFile(data.file)).pageCount;
+      }
       const quoteParams = { importType: importType as 'pdf' | 'epub', contentFormat: 'ebook', pageCount };
       const quote = await getQuote(quoteParams);
 
@@ -1036,22 +1082,22 @@ export default function ImportPage() {
     }
   };
 
-  const tabs: { key: ImportTab; label: string; icon: React.ElementType }[] = [
-    { key: 'url', label: 'URL', icon: Link },
-    { key: 'paste', label: 'Paste text', icon: Clipboard },
-    { key: 'pdf', label: 'PDF / EPUB', icon: FileText },
+  const tabs: { key: ImportTab; label: string; short: string; icon: React.ElementType }[] = [
+    { key: 'url', label: 'URL', short: 'URL', icon: Link },
+    { key: 'paste', label: 'Paste text', short: 'Paste', icon: Clipboard },
+    { key: 'pdf', label: 'PDF / EPUB', short: 'File', icon: FileText },
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 lg:py-8">
-      <div className="mb-6">
+    <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-6 lg:py-8 min-w-0 overflow-x-clip">
+      <div className="mb-6 min-w-0 max-w-full">
         <h1 className="text-2xl font-bold text-gray-900">Import Content</h1>
-        <p className="text-[#99a1af] text-sm mt-0.5">Add your own texts — articles, books, or any text you want to read and learn from.</p>
+        <p className="text-[#99a1af] text-sm mt-0.5 [overflow-wrap:anywhere]">Add your own texts — articles, books, or any text you want to read and learn from.</p>
       </div>
 
-      <div className="grid lg:grid-cols-[420px_1fr] gap-6 lg:gap-8 items-start">
-        <div className="bg-white rounded-2xl border border-[#f3f4f6] overflow-hidden">
-          <div className="flex border-b border-[#f3f4f6]">
+      <div className="grid grid-cols-1 w-full min-w-0 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-6 lg:gap-8 items-start">
+        <section className="gotcha-import-panel bg-white rounded-2xl border border-[#f3f4f6] overflow-hidden w-full max-w-full min-w-0">
+          <div className="grid grid-cols-3 min-w-0 border-b border-[#f3f4f6]">
             {tabs.map((t) => (
               <button
                 key={t.key}
@@ -1059,43 +1105,52 @@ export default function ImportPage() {
                 disabled={loading}
                 onClick={() => setTab(t.key)}
                 className={cn(
-                  'flex-1 flex items-center justify-center gap-1.5 py-3 text-xs font-semibold border-b-2 transition-all disabled:opacity-60',
+                  'min-w-0 max-w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 sm:py-3 px-1 text-[10px] sm:text-xs font-semibold border-b-2 transition-all disabled:opacity-60',
                   tab === t.key ? 'border-[#7f22fe] text-[#7008e7] bg-[rgba(245,243,255,0.5)]' : 'border-transparent text-[#99a1af] hover:text-gray-600 hover:bg-gray-50',
                 )}
               >
-                <t.icon className="w-3.5 h-3.5" />{t.label}
+                <t.icon className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate max-w-full sm:hidden">{t.short}</span>
+                <span className="hidden sm:inline truncate max-w-full">{t.label}</span>
               </button>
             ))}
           </div>
-          <div className="p-5">
+          <div className="p-3 sm:p-5 min-w-0 max-w-full [overflow-wrap:anywhere]">
             {atImportLimit && (
               <div className="flex items-start gap-2 p-3 mb-4 bg-[#fffbeb] border border-[#fee685] rounded-[14px]">
                 <AlertCircle className="w-4 h-4 text-[#bb4d00] shrink-0 mt-0.5" />
-                <p className="text-xs text-[#bb4d00]">
+                <p className="text-xs text-[#bb4d00] break-words">
                   {gatewayEnabled
                     ? 'Import allowance reached. Delete an old import or pay per material size via Atmos.'
                     : 'Import allowance reached. Delete an old import to free up space — paid imports are not available right now.'}
                 </p>
               </div>
             )}
-            <p className="text-[11px] text-[#99a1af] mb-3">
+            {freeAllowance && (
+              <div className="flex items-start gap-2 p-3 mb-4 bg-[#f5f3ff] border border-[#ddd6ff] rounded-[14px]">
+                <p className="text-xs text-[#5b21b6] leading-relaxed break-words">{formatFreeAllowance(freeAllowance)}</p>
+              </div>
+            )}
+            <p className="text-[11px] text-[#99a1af] mb-3 leading-relaxed break-words">
               {gatewayEnabled
-                ? 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/monthly allowances still apply when enabled.'
-                : 'Imports are free right now — paid imports via Atmos are currently disabled. Free daily/monthly allowances still apply when enabled.'}
+                ? 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first.'
+                : 'Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled.'}
             </p>
             {tab === 'url' && <URLForm loading={loading || atImportLimit} onSubmit={handleUrlImport} />}
             {tab === 'paste' && <PasteForm loading={loading || atImportLimit} onSubmit={handlePasteImport} />}
             {tab === 'pdf' && <FileForm loading={loading || atImportLimit} onSubmit={handleFileImport} />}
           </div>
-        </div>
+        </section>
 
-        <div>
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-bold text-gray-900 text-xl">Import History</h2>
-            <span className="text-xs text-[#99a1af]">
-              {importsUnlimited || importLimit == null
-                ? `${total} import${total !== 1 ? 's' : ''}`
-                : `${total} / ${importLimit} imports`}
+        <div className="min-w-0 w-full max-w-full">
+          <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
+            <h2 className="font-bold text-gray-900 text-xl min-w-0">Import History</h2>
+            <span className="text-xs text-[#99a1af] text-right shrink-0 max-w-[55%] leading-snug">
+              {freeAllowance
+                ? `${freeAllowance.dailyFreeRemaining} free left today · ${total} import${total !== 1 ? 's' : ''}`
+                : importsUnlimited || importLimit == null
+                  ? `${total} import${total !== 1 ? 's' : ''}`
+                  : `${total} / ${importLimit} imports`}
             </span>
           </div>
 
@@ -1141,7 +1196,19 @@ export default function ImportPage() {
                                 {item.progressPagesTotal} pages
                               </span>
                             )}
-                          {isPendingStatus(item.ingestionStatus) && pendingForMs(item.createdAt) > 3 * 60_000 && (
+                          {isPendingStatus(item.ingestionStatus) && item.progressPhase === 'ocr' && (
+                            <span className="text-xs text-[#5b21b6]">
+                              AI is reading scanned pages…
+                            </span>
+                          )}
+                          {isPendingStatus(item.ingestionStatus) && item.progressPhase === 'ai' && (
+                            <span className="text-xs text-[#5b21b6]">
+                              AI is cleaning up the text…
+                            </span>
+                          )}
+                          {isPendingStatus(item.ingestionStatus) &&
+                            !item.progressPhase &&
+                            pendingForMs(item.createdAt) > 3 * 60_000 && (
                             <span className="text-xs text-[#bb4d00]">
                               Still working — this will fail automatically if it stays stuck.
                             </span>

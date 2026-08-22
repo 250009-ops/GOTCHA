@@ -23,6 +23,7 @@ import { join } from 'path';
 import { PrismaService } from '../../prisma/prisma.service';
 import { tokenizeText, slugify, uniqueWordCount } from '../../utils/tokenizer';
 import { AiService } from '../ai/ai.service';
+import { chaptersHaveRealTitles } from '../imports/chapter-split';
 import {
   buildSegmentsFromChapters,
   extractSourceDocument,
@@ -46,7 +47,7 @@ import { UpdateAdminProfileDto } from './dto/admin.dto';
 import { assertAtmosMinPriceSom, atmosMinAmountSom } from '../billing/atmos.client';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import { liveLearnerWhere, syntheticUserEmailWhere } from '../../common/production-users';
-import { describePageTierGaps, normalizeAllowedFormats } from '../../common/import-format';
+import { defaultPageTierLabel, describePageTierGaps, normalizeAllowedFormats } from '../../common/import-format';
 import {
   normalizeCampaignAudience,
   PUSH_CAMPAIGN_CHANNELS,
@@ -54,6 +55,7 @@ import {
 import {
   ensureLanguageCatalog,
   isAppLanguageCode,
+  assertEnabledLanguage,
 } from '../../common/language-catalog';
 import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, languageFlag, languageLabel } from '@gotcha/shared';
 
@@ -857,12 +859,14 @@ export class AdminService {
       sourceUrl: body.sourceUrl ? String(body.sourceUrl) : undefined,
       title: body.title ? String(body.title) : undefined,
       pdfBuffer: Buffer.isBuffer(body.pdfBuffer) ? body.pdfBuffer : undefined,
+      language: body.language ? String(body.language) : undefined,
     });
     let chapters = extracted.chapters;
     // Books/stories: keep the deterministic chapter tree. AI cleanup is for
     // article chrome and truncates novels (chunk budget), which looks like
     // "chapters missing" on Gutenberg-scale URLs.
-    if (mode === 'tight') {
+    const hasBookStructure = chaptersHaveRealTitles(chapters) && chapters.length >= 2;
+    if (mode === 'tight' && !hasBookStructure) {
       const text = extracted.text || chapters.map((c) => c.text).join('\n\n');
       return buildSegmentsFromChapters([{ title: extracted.title || 'Content', text }], 'tight');
     }
@@ -891,6 +895,8 @@ export class AdminService {
   async createContent(adminId: string, body: Record<string, unknown>) {
     const title = String(body.title ?? 'Untitled');
     const contentType = (body.contentType as ContentType) ?? ContentType.article;
+    const language = String(body.language ?? 'en');
+    await assertEnabledLanguage(this.prisma, language, 'Content language');
     const pricing = this.parseContentPricing(body);
     const segments = await this.ingestSegments(body);
     const stats = segmentStats(segments);
@@ -903,7 +909,7 @@ export class AdminService {
         author,
         subtitle: author,
         description: body.description ? String(body.description) : undefined,
-        language: (body.language as never) ?? 'en',
+        language: language as never,
         contentType,
         contentSource: (body.contentSource as ContentSource) ?? ContentSource.public_domain,
         cefrLevel: (body.cefrLevel as never) ?? 'b1',
@@ -950,16 +956,94 @@ export class AdminService {
     };
   }
 
+  /** Replace segment text in place — preserves cover, pricing, and metadata. */
+  async reingestContentText(id: string, body: Record<string, unknown>) {
+    const existing = await this.prisma.contentItem.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Content not found');
+    if (
+      existing.contentSource === ContentSource.user_import ||
+      existing.contentType === ContentType.user_import
+    ) {
+      throw new BadRequestException('Learner imports cannot be re-ingested from the catalog.');
+    }
+
+    const segments = await this.ingestSegments({
+      ...body,
+      title: body.title ?? existing.title,
+      contentType: body.contentType ?? existing.contentType,
+      language: body.language ?? existing.language,
+    });
+    if (!segments.length) throw new BadRequestException('No text to ingest');
+    const stats = segmentStats(segments);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.contentSegment.deleteMany({ where: { contentId: id } });
+      const BATCH = 80;
+      for (let i = 0; i < segments.length; i += BATCH) {
+        const batch = segments.slice(i, i + BATCH);
+        await tx.contentSegment.createMany({
+          data: batch.map((s) => ({
+            contentId: id,
+            segmentIndex: s.segmentIndex,
+            chapterIndex: s.chapterIndex,
+            chapterTitle: s.chapterTitle,
+            pageIndex: s.pageIndex,
+            title: s.title,
+            plainText: s.plainText,
+            tokenMap: s.tokenMap as never,
+            sentenceMap: s.sentenceMap as never,
+            wordCount: s.wordCount,
+          })),
+        });
+      }
+      await tx.contentItem.update({
+        where: { id },
+        data: {
+          wordCount: stats.wordCount,
+          uniqueWordCount: stats.uniqueWordCount,
+        },
+      });
+    });
+
+    return {
+      id,
+      title: existing.title,
+      coverImageKey: existing.coverImageKey,
+      wordCount: stats.wordCount,
+      chapterCount: new Set(segments.map((s) => s.chapterIndex)).size,
+      pageCount: segments.length,
+    };
+  }
+
   async getContent(id: string) {
     const item = await this.prisma.contentItem.findUnique({
       where: { id },
       include: { segments: { orderBy: { segmentIndex: 'asc' } }, license: true },
     });
     if (!item) throw new NotFoundException('Content not found');
+    const author = item.author?.trim() || item.subtitle?.trim() || null;
     return {
-      ...item,
+      id: item.id,
+      slug: item.slug,
+      title: item.title,
+      author,
+      subtitle: item.subtitle,
+      description: item.description,
+      genre: item.genre,
+      language: item.language,
+      cefrLevel: item.cefrLevel,
+      contentType: item.contentType,
+      contentSource: item.contentSource,
+      isFree: item.isFree,
       priceUsd: Number(item.priceUsd ?? 0),
       priceUzs: Number(item.priceUsd ?? 0),
+      sourceUrl: item.sourceUrl,
+      coverImageKey: item.coverImageKey,
+      publishStatus: item.publishStatus,
+      wordCount: item.wordCount,
+      uniqueWordCount: item.uniqueWordCount,
+      salesCount: item.salesCount,
+      license: item.license,
       chapters: previewFromSegments(
         item.segments.map((s) => ({
           segmentIndex: s.segmentIndex,
@@ -1056,6 +1140,10 @@ export class AdminService {
     const existing = await this.prisma.contentItem.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Content not found');
 
+    if (body.language !== undefined) {
+      await assertEnabledLanguage(this.prisma, String(body.language), 'Content language');
+    }
+
     const pricing =
       body.isFree !== undefined ||
       body.priceUsd !== undefined ||
@@ -1069,12 +1157,19 @@ export class AdminService {
           })
         : null;
 
+    const nextTitle =
+      body.title !== undefined ? String(body.title).trim() || existing.title : undefined;
+    const nextAuthor =
+      body.author !== undefined
+        ? String(body.author).trim() || existing.author || existing.subtitle || undefined
+        : undefined;
+
     return this.prisma.contentItem.update({
       where: { id },
       data: {
-        title: body.title !== undefined ? String(body.title) : undefined,
-        author: body.author !== undefined ? String(body.author) : undefined,
-        subtitle: body.author !== undefined ? String(body.author) : undefined,
+        title: nextTitle,
+        author: nextAuthor,
+        subtitle: nextAuthor,
         description: body.description !== undefined ? String(body.description) : undefined,
         genre: body.genre !== undefined ? String(body.genre) : undefined,
         language: body.language !== undefined ? (body.language as never) : undefined,
@@ -1271,17 +1366,7 @@ export class AdminService {
       // The column name is a legacy misnomer kept for backward compatibility.
       // Always use `priceUzs` in new code — `priceUsd` is exposed only for legacy clients.
       // See schema.prisma doc-comment and docs/E2E_AUDIT_REPORT.md #9 for context.
-      tiers: tiers.map((t) => ({
-        id: t.id,
-        label: t.label,
-        minPages: t.minPages,
-        maxPages: t.maxPages,
-        /** @deprecated Use priceUzs — this field name is misleading (stores UZS, not USD). */
-        priceUsd: Number(t.priceUsd),
-        /** Amount in UZS (soʻm) — the correct accessor for this tier's price. */
-        priceUzs: Number(t.priceUsd),
-        sortOrder: t.sortOrder,
-      })),
+      tiers: tiers.map((t) => this.mapImportPageTier(t)),
       pageTierGaps: describePageTierGaps(tiers),
       freeLimits,
     };
@@ -1314,38 +1399,126 @@ export class AdminService {
     return this.importPricing();
   }
 
-  async updateImportPageTier(id: string, body: Record<string, unknown>) {
-    const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Page tier not found');
-    const price =
+  private mapImportPageTier(t: {
+    id: string;
+    label: string;
+    minPages: number;
+    maxPages: number | null;
+    priceUsd: unknown;
+    sortOrder: number;
+  }) {
+    const priceUzs = Number(t.priceUsd);
+    return {
+      id: t.id,
+      label: t.label,
+      minPages: t.minPages,
+      maxPages: t.maxPages,
+      /** @deprecated Use priceUzs — this field name is misleading (stores UZS, not USD). */
+      priceUsd: priceUzs,
+      priceUzs,
+      sortOrder: t.sortOrder,
+    };
+  }
+
+  private parsePageTierRange(body: Record<string, unknown>, fallbackMin?: number) {
+    const minPages = Math.floor(Number(body.minPages ?? fallbackMin ?? 1));
+    if (!Number.isFinite(minPages) || minPages < 1) {
+      throw new BadRequestException('Each tier needs a minimum of at least 1 page.');
+    }
+    const maxRaw = body.maxPages;
+    const maxPages =
+      maxRaw === null || maxRaw === undefined || maxRaw === ''
+        ? null
+        : Math.floor(Number(maxRaw));
+    if (maxPages != null && (!Number.isFinite(maxPages) || maxPages < minPages)) {
+      throw new BadRequestException('Max pages must be empty (unlimited) or ≥ min pages.');
+    }
+    return { minPages, maxPages };
+  }
+
+  private parsePageTierPrice(body: Record<string, unknown>) {
+    const raw =
       body.priceUzs !== undefined
         ? Number(body.priceUzs)
         : body.priceUsd !== undefined
           ? Number(body.priceUsd)
           : undefined;
-    if (price !== undefined) {
-      assertAtmosMinPriceSom(price, `Page tier "${existing.label}"`);
+    if (raw === undefined) return undefined;
+    if (!Number.isFinite(raw) || raw < 0) {
+      throw new BadRequestException('Price must be a non-negative UZS amount.');
     }
-    return this.prisma.importPageTier.update({
-      where: { id },
+    return raw;
+  }
+
+  private async reorderImportPageTiers() {
+    const tiers = await this.prisma.importPageTier.findMany({
+      orderBy: [{ minPages: 'asc' }, { sortOrder: 'asc' }],
+    });
+    await Promise.all(
+      tiers.map((tier, index) =>
+        this.prisma.importPageTier.update({
+          where: { id: tier.id },
+          data: { sortOrder: index + 1 },
+        }),
+      ),
+    );
+  }
+
+  async createImportPageTier(body: Record<string, unknown>) {
+    const { minPages, maxPages } = this.parsePageTierRange(body);
+    const price = this.parsePageTierPrice(body) ?? 0;
+    const label = String(body.label ?? '').trim() || defaultPageTierLabel(minPages, maxPages);
+    assertAtmosMinPriceSom(price, `Page tier "${label}"`);
+    const count = await this.prisma.importPageTier.count();
+    const created = await this.prisma.importPageTier.create({
       data: {
-        label: body.label !== undefined ? String(body.label) : undefined,
-        minPages:
-          body.minPages !== undefined ? Math.max(1, Math.floor(Number(body.minPages))) : undefined,
-        maxPages:
-          body.maxPages === null
-            ? null
-            : body.maxPages !== undefined
-              ? Math.max(1, Math.floor(Number(body.maxPages)))
-              : undefined,
-        priceUsd:
-          body.priceUzs !== undefined
-            ? Number(body.priceUzs)
-            : body.priceUsd !== undefined
-              ? Number(body.priceUsd)
-              : undefined,
+        label,
+        minPages,
+        maxPages,
+        priceUsd: price,
+        sortOrder: count + 1,
       },
     });
+    await this.reorderImportPageTiers();
+    const next = await this.prisma.importPageTier.findUnique({ where: { id: created.id } });
+    return this.mapImportPageTier(next ?? created);
+  }
+
+  async updateImportPageTier(id: string, body: Record<string, unknown>) {
+    const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Page tier not found');
+    const range =
+      body.minPages !== undefined || body.maxPages !== undefined
+        ? this.parsePageTierRange(body, existing.minPages)
+        : null;
+    const price = this.parsePageTierPrice(body);
+    const labelRaw = body.label !== undefined ? String(body.label).trim() : undefined;
+    const nextMin = range?.minPages ?? existing.minPages;
+    const nextMax = range ? range.maxPages : existing.maxPages;
+    const label = labelRaw || existing.label || defaultPageTierLabel(nextMin, nextMax);
+    if (price !== undefined) {
+      assertAtmosMinPriceSom(price, `Page tier "${label}"`);
+    }
+    await this.prisma.importPageTier.update({
+      where: { id },
+      data: {
+        label,
+        minPages: range?.minPages,
+        maxPages: range ? range.maxPages : undefined,
+        priceUsd: price,
+      },
+    });
+    await this.reorderImportPageTiers();
+    const next = await this.prisma.importPageTier.findUnique({ where: { id } });
+    return this.mapImportPageTier(next ?? existing);
+  }
+
+  async deleteImportPageTier(id: string) {
+    const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Page tier not found');
+    await this.prisma.importPageTier.delete({ where: { id } });
+    await this.reorderImportPageTiers();
+    return { deleted: true, id };
   }
 
   async getImportFreeLimits() {
@@ -2666,11 +2839,18 @@ export class AdminService {
    * since the admin panel authenticates via the same JWT/User row but has its own settings UI.
    */
   async updateMe(userId: string, dto: UpdateAdminProfileDto) {
+    const current = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { adminProfile: true },
+    });
+    if (!current?.adminProfile) throw new NotFoundException('Admin account not found');
+
     if (dto.email) {
       const email = dto.email.trim().toLowerCase();
-      const existing = await this.prisma.user.findUnique({ where: { email } });
-      if (existing && existing.id !== userId) {
-        throw new ConflictException('Email is already in use by another account.');
+      if (email !== current.email) {
+        throw new BadRequestException(
+          'Admin login email cannot be changed here — it prevents lockouts. Use forgot password to reset your password, or run restore-admin on the server if locked out.',
+        );
       }
     }
 
@@ -2678,7 +2858,6 @@ export class AdminService {
       where: { id: userId },
       data: {
         displayName: dto.displayName?.trim() || undefined,
-        email: dto.email ? dto.email.trim().toLowerCase() : undefined,
       },
       include: { adminProfile: true },
     });
@@ -2690,6 +2869,19 @@ export class AdminService {
       avatarUrl: user.avatarUrl,
       role: user.adminProfile?.role ?? null,
     };
+  }
+
+  /** Self-service password reset email for the signed-in admin (same token path as forgot-password). */
+  async requestPasswordReset(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { adminProfile: true },
+    });
+    if (!user?.adminProfile) throw new NotFoundException('Admin account not found');
+    if (!user.passwordHash) {
+      throw new BadRequestException('This account has no password login to reset.');
+    }
+    return this.auth.adminTriggerPasswordReset(userId);
   }
 
   private mapUserRow(

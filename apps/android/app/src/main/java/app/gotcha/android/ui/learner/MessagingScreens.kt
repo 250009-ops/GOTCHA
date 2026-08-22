@@ -76,6 +76,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
@@ -104,7 +105,7 @@ import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.components.SkeletonBox
 import app.gotcha.android.ui.components.rememberOfflineInteraction
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import coil.compose.AsyncImage
 import app.gotcha.android.data.model.coverUrl
 import app.gotcha.android.data.resolveMediaUrl
@@ -148,7 +149,7 @@ private fun MsgLangChip(code: String) {
             .clip(RoundedCornerShape(6.dp))
             .background(bg)
             .padding(horizontal = 8.dp, vertical = 2.dp),
-        fontFamily = Manrope,
+        fontFamily = Inter,
         fontWeight = FontWeight.Bold,
         fontSize = 11.sp,
         color = fg,
@@ -188,14 +189,14 @@ private fun ToLangPicker(
         ) {
             Text(
                 "To",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
                 color = fg.copy(alpha = 0.75f),
             )
             Text(
                 "${selectedMeta.flag} $code",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 12.sp,
                 color = fg,
@@ -229,7 +230,7 @@ private fun ToLangPicker(
                             Text(meta.flag, fontSize = 16.sp)
                             Text(
                                 "${meta.englishLabel} (${meta.code.uppercase(Locale.US)})",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = if (active) FontWeight.ExtraBold else FontWeight.SemiBold,
                                 fontSize = 14.sp,
                                 color = if (active) GotchaColors.BrandPurple else GotchaColors.Ink,
@@ -340,7 +341,7 @@ private fun AvatarCircle(name: String?, url: String?, size: androidx.compose.ui.
         } else {
             Text(
                 initials,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = (size.value * 0.35f).sp,
                 color = GotchaColors.BrandPurple,
@@ -429,7 +430,7 @@ fun MessagesInboxScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GotchaColors.Surface)
+            .background(Color.White)
             .then(if (!embedded) Modifier.messagingDirectoryStatusPad() else Modifier),
     ) {
         if (!embedded) {
@@ -457,50 +458,57 @@ fun MessagesInboxScreen(
         ) {
             if (embedded) {
                 item {
-                    Text(
-                        "Messages",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 28.sp,
-                        color = GotchaColors.Ink,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-                    )
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp)
+                            .padding(top = 16.dp, bottom = 12.dp),
+                    ) {
+                        Text(
+                            "Messages",
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = Color(0xFF111827),
+                        )
+                    }
                 }
             }
             item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 24.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color.White)
-                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                        .padding(horizontal = 16.dp)
+                        .height(36.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color(0xFFF9FAFB))
+                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                        .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Outlined.Search, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Outlined.Search, null, tint = Color(0xFF99A1AF), modifier = Modifier.size(14.dp))
                     BasicTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
-                        textStyle = TextStyle(fontFamily = Manrope, fontSize = 15.sp, color = GotchaColors.Ink),
-                        cursorBrush = SolidColor(GotchaColors.BrandPurple),
+                        textStyle = TextStyle(fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink),
+                        cursorBrush = SolidColor(GotchaColors.WebAccent),
                         modifier = Modifier.weight(1f),
                         singleLine = true,
                         decorationBox = { inner ->
                             if (searchQuery.isBlank()) {
                                 Text(
-                                    "Search conversations, learners...",
-                                    fontFamily = Manrope,
-                                    color = GotchaColors.TextSubtle,
-                                    fontSize = 15.sp,
+                                    "Search conversations...",
+                                    fontFamily = Inter,
+                                    color = Color(0xFF99A1AF),
+                                    fontSize = 14.sp,
                                 )
                             }
                             inner()
                         },
                     )
                 }
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(12.dp))
             }
 
             if (conversations.isNotEmpty() || suggestions.isNotEmpty()) {
@@ -528,23 +536,24 @@ fun MessagesInboxScreen(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .padding(horizontal = 24.dp),
+                            .padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "Suggested from Readings",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 16.sp,
-                            color = GotchaColors.Ink,
+                            "SUGGESTED FROM READINGS",
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            color = Color(0xFF99A1AF),
+                            letterSpacing = 0.4.sp,
                         )
                         Text(
                             "Find more",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
-                            color = GotchaColors.BrandPurple,
+                            color = GotchaColors.WebAccent,
                             modifier = Modifier.clickable(onClick = onFindLearners),
                         )
                     }
@@ -552,7 +561,7 @@ fun MessagesInboxScreen(
                     Row(
                         Modifier
                             .horizontalScroll(rememberScrollState())
-                            .padding(horizontal = 24.dp),
+                            .padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         suggestions.take(8).forEach { s ->
@@ -579,12 +588,13 @@ fun MessagesInboxScreen(
 
             item {
                 Text(
-                    "Recent Chats",
-                    fontFamily = Manrope,
+                    "RECENT CHATS",
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 18.sp,
-                    color = GotchaColors.Ink,
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                    fontSize = 11.sp,
+                    color = Color(0xFF99A1AF),
+                    letterSpacing = 0.4.sp,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
             }
 
@@ -598,7 +608,7 @@ fun MessagesInboxScreen(
                 item {
                     Text(
                         "No conversations yet. Find learners from shared readings.",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         color = GotchaColors.TextMuted,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
@@ -608,7 +618,7 @@ fun MessagesInboxScreen(
                 item {
                     Text(
                         "No conversations match your search.",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         color = GotchaColors.TextMuted,
                         fontSize = 14.sp,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 16.dp),
@@ -632,60 +642,46 @@ fun MessagesInboxScreen(
 
 @Composable
 private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
+    val first = peer.displayName.orEmpty().split(" ").filter { it.isNotBlank() }
+    val shortName = buildString {
+        append(first.firstOrNull() ?: "Learner")
+        first.getOrNull(1)?.firstOrNull()?.let { append(" $it.") }
+    }
     Column(
         modifier = Modifier
-            .width(154.dp)
+            .width(130.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(Color.White)
-            .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
+            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AvatarCircle(peer.displayName, peer.avatarUrl, 36.dp, online = peer.online)
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    peer.displayName.orEmpty(),
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = GotchaColors.Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Text(
-                    peer.handle.orEmpty(),
-                    fontFamily = Manrope,
-                    fontSize = 11.sp,
-                    color = GotchaColors.TextSubtle,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
-        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+        AvatarCircle(peer.displayName, peer.avatarUrl, 40.dp, online = peer.online)
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                shortName,
+                fontFamily = Inter,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                color = Color(0xFF111827),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = 70.dp),
+            )
             MsgLangChip(peer.primaryLanguage ?: peer.nativeLanguage ?: "en")
-            Text("Learner", fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaColors.TextMuted)
         }
-        Box(modifier = Modifier.fillMaxWidth().height(1.dp).background(GotchaColors.Border))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            peer.reading?.coverUrl()?.let { url ->
-                CoverThumb(url, Modifier.size(width = 28.dp, height = 40.dp), corner = 6)
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
-                Text("READING", fontFamily = Manrope, fontSize = 10.sp, color = GotchaColors.TextSubtle)
-                Text(
-                    peer.reading?.title ?: "Shared reading",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 11.sp,
-                    color = GotchaColors.Ink,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
-        }
+        Text(
+            peer.reading?.title ?: "Learner",
+            fontFamily = Inter,
+            fontSize = 10.sp,
+            color = Color(0xFF99A1AF),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth(),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 
@@ -701,7 +697,7 @@ private fun ChatRow(
             .background(Color.White)
             .border(width = 0.dp, color = Color.Transparent, shape = RoundedCornerShape(0))
             .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 12.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -717,7 +713,7 @@ private fun ChatRow(
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
                         conversation.peer?.displayName ?: "Learner",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = GotchaColors.Ink,
@@ -732,7 +728,7 @@ private fun ChatRow(
                 ) {
                     Text(
                         conversation.lastMessage?.body ?: "No messages yet",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 13.sp,
                         fontStyle = if (conversation.lastMessage?.deleted == true) FontStyle.Italic else FontStyle.Normal,
                         color = GotchaColors.TextMuted,
@@ -740,7 +736,7 @@ private fun ChatRow(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (!conversation.lastMessage?.deleted && !conversation.lastMessage?.translation.isNullOrBlank()) {
+                    if (conversation.lastMessage?.deleted != true && !conversation.lastMessage?.translation.isNullOrBlank()) {
                         Icon(
                             Icons.Outlined.Translate,
                             contentDescription = "Translated message",
@@ -754,7 +750,7 @@ private fun ChatRow(
         Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 relativeAgo(conversation.lastMessageAt ?: conversation.lastMessage?.createdAt),
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 11.sp,
                 color = GotchaColors.TextSubtle,
             )
@@ -768,7 +764,7 @@ private fun ChatRow(
                 ) {
                     Text(
                         "${conversation.unreadCount.coerceAtMost(9)}",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.ExtraBold,
                         fontSize = 10.sp,
                         color = Color.White,
@@ -1064,7 +1060,7 @@ fun MessagingChatScreen(
                 val merged = sent.copy(
                     body = toText ?: sent.body.ifBlank { text },
                     translation = sent.translation?.takeIf { it.isNotBlank() } ?: nativeText,
-                    bodyLang = (if (toText != null) to else detected).lowercase(Locale.US),
+                    bodyLang = (if (toText != null) to else source).lowercase(Locale.US),
                     status = sent.status ?: "sent",
                 )
                 rememberPair(merged.id, toText, nativeText)
@@ -1238,7 +1234,7 @@ fun MessagingChatScreen(
                 val sourceLemma = (lookup?.lemma ?: selectedWord).orEmpty()
                 Text(
                     if (sentenceLike) selectedWord.orEmpty() else lookup?.phrase?.takeIf { it.isNotBlank() } ?: sourceLemma,
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = if (sentenceLike) 18.sp else 28.sp,
                     color = GotchaColors.BrandPurple,
@@ -1247,7 +1243,7 @@ fun MessagingChatScreen(
                     lookup?.phrase?.takeIf { it.isNotBlank() && !it.equals(sourceLemma, ignoreCase = true) }?.let { phrase ->
                         Text(
                             phrase,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 14.sp,
                             color = GotchaColors.TextSubtle,
                         )
@@ -1255,7 +1251,7 @@ fun MessagingChatScreen(
                     if (sourceLemma.isNotBlank() && lookup?.phrase?.equals(sourceLemma, ignoreCase = true) != true) {
                         Text(
                             sourceLemma,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 15.sp,
                             color = GotchaColors.TextSubtle,
                         )
@@ -1264,13 +1260,13 @@ fun MessagingChatScreen(
                 when {
                     lookupLoading -> Text(
                         "Looking up…",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 15.sp,
                         color = GotchaColors.TextMuted,
                     )
                     lookupError != null -> Text(
                         lookupError!!,
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 15.sp,
                         color = Color(0xFFB42318),
                     )
@@ -1279,7 +1275,7 @@ fun MessagingChatScreen(
                         if (!pos.isNullOrBlank()) {
                             Text(
                                 pos,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextSubtle,
                             )
@@ -1288,40 +1284,40 @@ fun MessagingChatScreen(
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     "NATURAL MEANING",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
                                     color = GotchaColors.BrandPurple,
                                 )
-                                Text(meaning, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
+                                Text(meaning, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
                             }
                         }
                         lookup?.translation?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { tr ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     "TRANSLATION",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
                                     color = GotchaColors.BrandPurple,
                                 )
-                                Text(tr, fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.Ink)
+                                Text(tr, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink)
                             }
                         }
                         lookup?.grammarNote?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { note ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
                                     "GRAMMAR NOTE",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
                                     color = GotchaColors.TextSubtle,
                                 )
-                                Text(note, fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.TextMuted)
+                                Text(note, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted)
                             }
                         }
                         savedMsg?.let { note ->
-                            Text(note, fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.SuccessText)
+                            Text(note, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.SuccessText)
                         }
                         val markable = lookup?.kind != "sentence"
                             && (selectedWord?.trim()?.split(Regex("\\s+"))?.count { it.isNotBlank() } ?: 0) <= 1
@@ -1368,7 +1364,7 @@ fun MessagingChatScreen(
                             Text(
                                 "Save to vocabulary",
                                 color = Color.White,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                             )
@@ -1383,7 +1379,7 @@ fun MessagingChatScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GotchaColors.Surface)
+            .background(Color.White)
             .messagingDirectoryStatusPad()
             .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
     ) {
@@ -1411,7 +1407,7 @@ fun MessagingChatScreen(
                     detail?.peer?.displayName?.takeIf { it.isNotBlank() }
                         ?: detail?.peer?.handle?.takeIf { it.isNotBlank() }
                         ?: "Chat",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
                     color = GotchaColors.Ink,
@@ -1424,10 +1420,10 @@ fun MessagingChatScreen(
                         lastSeenAt = detail?.peer?.lastSeenAt,
                         typing = detail?.peer?.typing == true,
                     ).ifBlank { detail?.peer?.handle.orEmpty() },
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 11.sp,
                     color = when {
-                        detail?.peer?.typing == true -> GotchaColors.BrandPurple
+                        detail?.peer?.typing == true -> GotchaColors.WebAccent
                         detail?.peer?.online == true -> Color(0xFF16A34A)
                         else -> GotchaColors.TextSubtle
                     },
@@ -1454,7 +1450,7 @@ fun MessagingChatScreen(
             ) {
                 Text(
                     "💡 Tap words to learn their meaning.",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
                     color = GotchaColors.BrandPurple,
@@ -1527,7 +1523,7 @@ fun MessagingChatScreen(
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(Color(0xFFF3F4F6))
                                         .padding(horizontal = 14.dp, vertical = 8.dp),
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 13.sp,
                                     color = GotchaColors.BrandPurple,
@@ -1550,7 +1546,7 @@ fun MessagingChatScreen(
                         .fillMaxWidth()
                         .background(Color(0xFFFFEBEE))
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = Color(0xFFB42318),
                 )
@@ -1562,7 +1558,7 @@ fun MessagingChatScreen(
                         .fillMaxWidth()
                         .background(Color(0xFFFFF7ED))
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontSize = 13.sp,
                     color = Color(0xFFC2410C),
                 )
@@ -1586,7 +1582,7 @@ fun MessagingChatScreen(
                         Text(
                             if (editing != null) "Editing message"
                             else "Reply to ${if (replyTo?.mine == true) "yourself" else (detail?.peer?.displayName ?: "learner")}",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
                             color = GotchaColors.BrandPurple,
@@ -1596,7 +1592,7 @@ fun MessagingChatScreen(
                                 (editing ?: replyTo)?.body,
                                 (editing ?: replyTo)?.deleted == true,
                             ),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 12.sp,
                             color = GotchaColors.TextSubtle,
                             maxLines = 1,
@@ -1645,14 +1641,14 @@ fun MessagingChatScreen(
                                 }
                             }
                         },
-                        textStyle = TextStyle(fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.Ink),
-                        cursorBrush = SolidColor(GotchaColors.BrandPurple),
+                        textStyle = TextStyle(fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink),
+                        cursorBrush = SolidColor(GotchaColors.WebAccent),
                         modifier = Modifier.weight(1f),
                         decorationBox = { inner ->
                             if (draft.isBlank()) {
                                 Text(
                                     if (editing != null) "Edit message..." else "Type a message...",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontSize = 14.sp,
                                     color = GotchaColors.TextSubtle,
                                 )
@@ -1666,8 +1662,8 @@ fun MessagingChatScreen(
                         .size(40.dp)
                         .clip(RoundedCornerShape(20.dp))
                         .background(
-                            if (draft.isNotBlank()) GotchaColors.BrandPurple
-                            else GotchaColors.BrandPurple.copy(alpha = 0.45f),
+                            if (draft.isNotBlank()) GotchaColors.WebAccent
+                            else GotchaColors.WebAccent.copy(alpha = 0.45f),
                         )
                         .clickable(enabled = draft.isNotBlank(), onClick = ::sendMessage),
                     contentAlignment = Alignment.Center,
@@ -1683,16 +1679,16 @@ fun MessagingChatScreen(
             confirmDelete?.let { msg ->
                 AlertDialog(
                     onDismissRequest = { confirmDelete = null },
-                    title = { Text("Delete message?", fontFamily = Manrope, fontWeight = FontWeight.Bold) },
-                    text = { Text("This message will be deleted for everyone.", fontFamily = Manrope) },
+                    title = { Text("Delete message?", fontFamily = Inter, fontWeight = FontWeight.Bold) },
+                    text = { Text("This message will be deleted for everyone.", fontFamily = Inter) },
                     confirmButton = {
                         TextButton(onClick = { deleteConfirmed(msg) }) {
-                            Text("Delete", color = Color(0xFFB42318), fontFamily = Manrope)
+                            Text("Delete", color = Color(0xFFB42318), fontFamily = Inter)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { confirmDelete = null }) {
-                            Text("Cancel", fontFamily = Manrope)
+                            Text("Cancel", fontFamily = Inter)
                         }
                     },
                 )
@@ -1827,8 +1823,8 @@ private fun MessageBubble(
                             msg.deleted -> Modifier
                                 .background(Color.White)
                                 .border(1.dp, Color(0xFFD1D5DC), RoundedCornerShape(16.dp))
-                            msg.mine -> Modifier.background(GotchaColors.BrandNavy)
-                            else -> Modifier.background(Color(0xFFF3F4F6))
+                            msg.mine -> Modifier.background(GotchaColors.WebAccent)
+                            else -> Modifier.background(Color.White).border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
                         },
                     )
                     .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1837,7 +1833,7 @@ private fun MessageBubble(
                 if (msg.deleted) {
                     Text(
                         "This message was deleted",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 14.sp,
                         fontStyle = FontStyle.Italic,
                         color = GotchaColors.TextSubtle,
@@ -1851,14 +1847,14 @@ private fun MessageBubble(
                         ) {
                             Text(
                                 replyName ?: "Reply",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 11.sp,
                                 color = if (msg.mine) Color.White else GotchaColors.BrandPurple,
                             )
                             Text(
                                 messageSnippet(parent.body, parent.deleted),
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = if (msg.mine) Color.White.copy(alpha = 0.8f) else Color(0xFF6A7282),
                                 maxLines = 2,
@@ -1869,7 +1865,7 @@ private fun MessageBubble(
                     if (presented.primary.isBlank()) {
                         Text(
                             "…",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 15.sp,
                             color = bodyColor.copy(alpha = 0.7f),
                             lineHeight = 20.sp,
@@ -1918,7 +1914,7 @@ private fun MessageBubble(
                     append(clockTime(msg.createdAt))
                     if (!msg.editedAt.isNullOrBlank() && !msg.deleted) append(" · edited")
                 },
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontSize = 10.sp,
                 color = GotchaColors.TextSubtle,
             )
@@ -1937,7 +1933,7 @@ private fun MessageSendStatus(status: String?) {
             strokeWidth = 1.4.dp,
             color = GotchaColors.TextSubtle,
         )
-        "failed" -> Text("!", fontFamily = Manrope, fontSize = 10.sp, color = Color(0xFFB42318))
+        "failed" -> Text("!", fontFamily = Inter, fontSize = 10.sp, color = Color(0xFFB42318))
         "read" -> Icon(
             Icons.Outlined.DoneAll,
             contentDescription = "Read",
@@ -1979,7 +1975,7 @@ private fun MessageActionsButton(
             containerColor = Color.White,
         ) {
             DropdownMenuItem(
-                text = { Text("Reply", fontFamily = Manrope, fontSize = 14.sp) },
+                text = { Text("Reply", fontFamily = Inter, fontSize = 14.sp) },
                 onClick = {
                     onExpandedChange(false)
                     onReply()
@@ -1987,7 +1983,7 @@ private fun MessageActionsButton(
             )
             if (canEdit) {
                 DropdownMenuItem(
-                    text = { Text("Edit", fontFamily = Manrope, fontSize = 14.sp) },
+                    text = { Text("Edit", fontFamily = Inter, fontSize = 14.sp) },
                     onClick = {
                         onExpandedChange(false)
                         onEdit()
@@ -1996,7 +1992,7 @@ private fun MessageActionsButton(
             }
             if (canDelete) {
                 DropdownMenuItem(
-                    text = { Text("Delete", fontFamily = Manrope, fontSize = 14.sp, color = Color(0xFFB42318)) },
+                    text = { Text("Delete", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFB42318)) },
                     onClick = {
                         onExpandedChange(false)
                         onDelete()
@@ -2051,7 +2047,7 @@ private fun TappableMessageText(
                             selected -> GotchaColors.BrandPurpleSoft
                             else -> Color.Unspecified
                         },
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = fontSize,
                         fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
                         fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
@@ -2070,7 +2066,7 @@ private fun TappableMessageText(
     Text(
         text = annotated,
         style = TextStyle(
-            fontFamily = Manrope,
+            fontFamily = Inter,
             fontSize = fontSize,
             fontStyle = if (italic) FontStyle.Italic else FontStyle.Normal,
             color = color,
@@ -2217,13 +2213,13 @@ fun FindLearnersScreen(
             BasicTextField(
                 value = query,
                 onValueChange = { query = it },
-                textStyle = TextStyle(fontFamily = Manrope, fontSize = 15.sp, color = GotchaColors.Ink),
+                textStyle = TextStyle(fontFamily = Inter, fontSize = 15.sp, color = GotchaColors.Ink),
                 cursorBrush = SolidColor(GotchaColors.BrandPurple),
                 modifier = Modifier.weight(1f),
                 singleLine = true,
                 decorationBox = { inner ->
                     if (query.isBlank()) {
-                        Text("Search @username...", fontFamily = Manrope, fontSize = 15.sp, color = GotchaColors.TextSubtle)
+                        Text("Search @username...", fontFamily = Inter, fontSize = 15.sp, color = GotchaColors.TextSubtle)
                     }
                     inner()
                 },
@@ -2247,7 +2243,7 @@ fun FindLearnersScreen(
                         .border(1.dp, if (selected) GotchaColors.BrandPurple else GotchaColors.Border, RoundedCornerShape(10.dp))
                         .clickable { filter = key }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
                     color = if (selected) Color.White else GotchaColors.TextMuted,
@@ -2289,7 +2285,7 @@ fun FindLearnersScreen(
                             }
                             Text(
                                 section,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
                                 color = GotchaColors.TextSubtle,
@@ -2331,7 +2327,7 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.weight(1f)) {
                     Text(
                         peer.displayName.orEmpty(),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
                         color = GotchaColors.Ink,
@@ -2340,7 +2336,7 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
                     )
                     Text(
                         peer.handle.orEmpty(),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 13.sp,
                         color = GotchaColors.TextSubtle,
                         maxLines = 1,
@@ -2358,16 +2354,16 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
                     ) {
                         Text(
                             native ?: target.orEmpty(),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
                             color = GotchaColors.TextMuted,
                         )
                         if (native != null && target != null && native != target) {
-                            Text("→", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = GotchaColors.TextSubtle)
+                            Text("→", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = GotchaColors.TextSubtle)
                             Text(
                                 target,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 11.sp,
                                 color = GotchaColors.BrandPurple,
@@ -2389,10 +2385,10 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
                         Modifier.size(width = 18.dp, height = 26.dp),
                         corner = 3,
                     )
-                    Text("Reading:", fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.TextMuted)
+                    Text("Reading:", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
                     Text(
                         peer.reading.title.orEmpty(),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 13.sp,
                         color = GotchaColors.Ink,
@@ -2492,10 +2488,10 @@ fun MessagingPeerProfileScreen(
                         AvatarCircle(p.displayName, p.avatarUrl, 80.dp)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(p.displayName.orEmpty(), fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GotchaColors.Ink)
-                        Text(p.handle.orEmpty(), fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.TextMuted)
+                        Text(p.displayName.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GotchaColors.Ink)
+                        Text(p.handle.orEmpty(), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
                         formatMemberSince(p.createdAt)?.let { since ->
-                            Text("Member since $since", fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                            Text("Member since $since", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                         }
                     }
                     Row(
@@ -2526,7 +2522,7 @@ fun MessagingPeerProfileScreen(
                         )
                         Text(
                             "Message ${p.displayName?.split(" ")?.firstOrNull() ?: "learner"}",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                             color = Color.White,
@@ -2540,7 +2536,7 @@ fun MessagingPeerProfileScreen(
                     }
                     if (p.targetLanguages.isNotEmpty() || p.nativeLanguage != null) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Languages", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            Text("Languages", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val langs = buildList {
                                     p.nativeLanguage?.let { add(it to "Native") }
@@ -2557,8 +2553,8 @@ fun MessagingPeerProfileScreen(
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
                                     ) {
                                         MsgLangChip(code)
-                                        Text(langName(code), fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
-                                        Text(cefrDisplay(level), fontFamily = Manrope, fontSize = 11.sp, color = GotchaColors.TextMuted)
+                                        Text(langName(code), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                                        Text(cefrDisplay(level), fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextMuted)
                                     }
                                 }
                             }
@@ -2566,7 +2562,7 @@ fun MessagingPeerProfileScreen(
                     }
                     p.currentlyReading?.let { book ->
                         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Currently Reading", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            Text("Currently Reading", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
                             Column(
                                 Modifier
                                     .fillMaxWidth()
@@ -2589,12 +2585,12 @@ fun MessagingPeerProfileScreen(
                                             MsgLangChip(book.language ?: "en")
                                             Text(
                                                 "${book.progressPct.toInt()}% read",
-                                                fontFamily = Manrope,
+                                                fontFamily = Inter,
                                                 fontSize = 13.sp,
                                                 color = GotchaColors.TextSubtle,
                                             )
                                         }
-                                        Text(book.title.orEmpty(), fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                                        Text(book.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
                                     }
                                 }
                                 Box(
@@ -2623,7 +2619,7 @@ fun MessagingPeerProfileScreen(
                                 .clip(RoundedCornerShape(12.dp))
                                 .background(GotchaColors.BrandPurpleSoft)
                                 .padding(12.dp),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
                             color = GotchaColors.BrandPurple,
@@ -2664,8 +2660,8 @@ private fun PeerStat(value: String, label: String, iconRes: Int, modifier: Modif
             tint = GotchaColors.BrandPurple,
             modifier = Modifier.size(20.dp),
         )
-        Text(value, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
-        Text(label, fontFamily = Manrope, fontSize = 11.sp, color = GotchaColors.TextMuted, maxLines = 1)
+        Text(value, fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
+        Text(label, fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextMuted, maxLines = 1)
     }
 }
 

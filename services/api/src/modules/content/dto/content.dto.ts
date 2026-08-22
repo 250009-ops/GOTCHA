@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AppLanguage, CefrLevel, ContentSource, ContentType } from '@prisma/client';
 
@@ -37,6 +37,7 @@ export class ContentQueryDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(100)
   pageSize?: number = 20;
 }
 

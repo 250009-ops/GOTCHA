@@ -10,9 +10,11 @@ import androidx.compose.ui.unit.dp
  * Tuned so icon→label is balanced (not overlapping, not overly gappy).
  */
 object GlassChrome {
-    val NavHeight = 76.dp
+    val NavHeight = 64.dp
 
     val TopBarHeight = 56.dp
+
+    val SearchPanelHeight = 44.dp
 
     /** Figma bottom nav inset ~x=35 on 390. */
     val NavSideInset = 24.dp
@@ -24,23 +26,19 @@ object GlassChrome {
     val NavPillBottomGap = 8.dp
     val NavPillTopGap = 10.dp
 
-    /** Breathing room below bottom pill / above system nav (lists still scroll under frost). */
-    val ContentClearance = 8.dp
+    /** Breathing room below bottom pill — content ends just above nav frost. */
+    val ContentClearance = 12.dp
 
-    /**
-     * Breathing room below the top pill (or status glass on secondary screens).
-     * Must clear the opaque frost band so titles/headers are not under the glass.
-     */
-    val TopContentClearance = 20.dp
+    /** Gap between top pill bottom and first scroll content. */
+    val TopContentClearance = 12.dp
 
-    val NavInnerVerticalPad = 8.dp
+    val NavInnerVerticalPad = 3.dp
     val NavInnerHorizontalPad = 2.dp
 
-    val TabIconCircle = 30.dp
+    val TabIconCircle = 28.dp
     val TabIconSize = 17.dp
 
-    /** Clear air between purple circle bottom and label top (was 14 → balanced at 4). */
-    val TabIconLabelGap = 4.dp
+    val TabIconLabelGap = 2.dp
 
     @Deprecated("Prefer icon-circle + label-below")
     val TabCapsuleHeight = 52.dp

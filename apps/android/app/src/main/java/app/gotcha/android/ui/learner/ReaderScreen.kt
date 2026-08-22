@@ -15,21 +15,32 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.BookmarkBorder
+import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronLeft
+import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.School
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
+import androidx.compose.material.icons.outlined.VolumeUp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -38,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -46,13 +58,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import app.gotcha.android.R
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.SpanStyle
@@ -60,6 +79,10 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
@@ -79,7 +102,7 @@ import app.gotcha.android.ui.components.OfflineEmptyState
 import app.gotcha.android.ui.components.rememberOfflineInteraction
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import app.gotcha.android.util.CloudPronouncer
 import app.gotcha.android.util.ttsLanguageReady
 import app.gotcha.android.util.ttsLocale
@@ -115,7 +138,9 @@ fun ReaderScreen(
     var lookupError by remember(contentId) { mutableStateOf<String?>(null) }
     var savedMsg by remember(contentId) { mutableStateOf<String?>(null) }
     var vocabMarkable by remember(contentId) { mutableStateOf(true) }
-    var loadProgress by remember(contentId) { mutableIntStateOf(if (seededContent != null) 30 else 0) }
+    var loadProgress by remember(contentId) { mutableIntStateOf(0) }
+    var smoothProgress by remember(contentId) { mutableIntStateOf(0) }
+    var loaderDone by remember(contentId) { mutableStateOf(false) }
     var isFetching by remember(contentId) { mutableStateOf(false) }
     var preparingText by remember(contentId) { mutableStateOf(false) }
     var preparedSource by remember(contentId) { mutableStateOf<String?>(null) }
@@ -135,10 +160,12 @@ fun ReaderScreen(
     val bodyScrollState = rememberScrollState()
     var lastProgressAtMs by remember(contentId) { mutableStateOf(0L) }
     var targetLang by remember(contentId) { mutableStateOf("en") }
-    var showKnownWords by remember(contentId) { mutableStateOf(false) }
+    var showUnknownOnly by remember(contentId) { mutableStateOf(false) }
+    var pageDraft by remember(contentId) { mutableStateOf("1") }
     var fontScale by remember(contentId) { mutableStateOf(1.0) }
     var readerTheme by remember(contentId) { mutableStateOf("light") }
-    var knownLemmas by remember(contentId) { mutableStateOf<Set<String>>(emptySet()) }
+    var wordStatuses by remember(contentId) { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var segmentIndex by remember(contentId) { mutableIntStateOf(0) }
     val context = LocalContext.current
     val ttsEngine = remember { arrayOfNulls<TextToSpeech>(1) }
     val cloudPronouncer = remember { CloudPronouncer() }
@@ -172,80 +199,106 @@ fun ReaderScreen(
         }
     }
 
-    suspend fun applyPreparedPage(targetId: String, pageText: String, selectedWord: String?) {
-        val known = if (showKnownWords) knownLemmas else emptySet()
-        val cacheKey = ReaderPageCache.key(targetId, pageText, known)
+    suspend fun applyPreparedPage(targetId: String, pageText: String) {
+        val cacheKey = ReaderPageCache.key(targetId, pageText, wordStatuses, showUnknownOnly)
         val annotated = ReaderPageCache.get(cacheKey)
-            ?: withContext(Dispatchers.Default) { buildTappableAnnotated(pageText, selectedWord, known) }
-                .also { ReaderPageCache.put(cacheKey, it) }
+            ?: withContext(Dispatchers.Default) {
+                buildTappableAnnotated(pageText, wordStatuses = wordStatuses, showUnknownOnly = showUnknownOnly)
+            }.also { ReaderPageCache.put(cacheKey, it) }
         coroutineContext.ensureActive()
         if (targetId != contentId) return
         preparedSource = pageText
         preparedAnnotated = annotated
     }
 
+    LaunchedEffect(loadProgress) {
+        while (smoothProgress < loadProgress) {
+            smoothProgress = (smoothProgress + 1).coerceAtMost(loadProgress)
+            delay(10)
+        }
+    }
+
+    suspend fun stepProgress(target: Int, pauseMs: Long = 90) {
+        if (loadProgress < target) loadProgress = target
+        delay(pauseMs)
+    }
+
+    suspend fun finishLoader() {
+        loadProgress = 100
+        while (smoothProgress < 100) delay(16)
+        delay(400)
+        loaderDone = true
+    }
+
     LaunchedEffect(contentId, reloadKey) {
         val targetId = contentId
+        loaderDone = false
+        smoothProgress = 0
+        loadProgress = 0
         isFetching = false
         preparingText = false
         fetchError = false
-        if (content == null) loadProgress = 10
+        stepProgress(8, 80)
 
         container.userRepository.mePeek()?.data?.let { me ->
             targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            showKnownWords = me.preferences?.showKnownWords == true
             fontScale = me.preferences?.readerFontScale ?: 1.0
             readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
         }
         runCatching {
             val me = container.userRepository.me()
             targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            showKnownWords = me.preferences?.showKnownWords == true
             fontScale = me.preferences?.readerFontScale ?: 1.0
             readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
         }
         runCatching {
-            knownLemmas = container.contentRepository.knownWords()
-                .filter { it.status.equals("known", ignoreCase = true) }
-                .mapNotNull { it.lemma.lowercase().takeIf(String::isNotBlank) }
-                .toSet()
+            wordStatuses = container.contentRepository.knownWords()
+                .associate { kw ->
+                    kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
+                }
         }
 
         val peekedContent = container.contentRepository.getPeek(targetId)?.data
         val peekedSegments = container.contentRepository.segmentsPeek(targetId)?.data?.segments.orEmpty()
-        if (peekedContent != null) loadProgress = 30
+        if (peekedContent != null) stepProgress(25, 70)
         if (peekedContent?.needsCatalogPayment() == true) {
             if (targetId != contentId) return@LaunchedEffect
             content = peekedContent
             segments = emptyList()
-            loadProgress = 100
+            finishLoader()
             return@LaunchedEffect
         }
-        if (peekedSegments.isNotEmpty()) loadProgress = 70
+        if (peekedSegments.isNotEmpty()) stepProgress(50, 70)
 
         val bothCached = peekedContent != null && peekedSegments.isNotEmpty()
         if (bothCached) {
-            val pageText = readerBodyText(peekedSegments, FIRST_PAGE_CHAR_LIMIT)
-            applyPreparedPage(targetId, pageText, selected)
             if (targetId != contentId) return@LaunchedEffect
             content = peekedContent
             segments = peekedSegments
-            loadProgress = 100
+            segmentIndex = segmentIndex.coerceIn(0, peekedSegments.lastIndex)
+            val pageText = peekedSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
+                .ifBlank { readerBodyText(peekedSegments, FIRST_PAGE_CHAR_LIMIT) }
+            stepProgress(75, 80)
+            if (pageText.isNotBlank()) {
+                applyPreparedPage(targetId, pageText)
+            }
+            stepProgress(92, 100)
             lastProgressAtMs = System.currentTimeMillis()
             refreshInBackground(targetId)
+            finishLoader()
             return@LaunchedEffect
         }
 
         isFetching = true
-        loadProgress = maxOf(loadProgress, 10)
+        stepProgress(15, 60)
         try {
             val fetchedContent = peekedContent ?: container.contentRepository.getFetch(targetId).data
             if (targetId != contentId) return@LaunchedEffect
             content = fetchedContent
-            loadProgress = 30
+            stepProgress(35, 80)
             if (fetchedContent.needsCatalogPayment()) {
                 segments = emptyList()
-                loadProgress = 100
+                finishLoader()
                 return@LaunchedEffect
             }
 
@@ -256,19 +309,23 @@ fun ReaderScreen(
             }
             if (targetId != contentId) return@LaunchedEffect
             segments = fetchedSegments
-            loadProgress = 70
+            stepProgress(60, 90)
 
             if (fetchedSegments.isEmpty()) {
-                loadProgress = 100
+                finishLoader()
                 return@LaunchedEffect
             }
 
+            segmentIndex = segmentIndex.coerceIn(0, fetchedSegments.lastIndex)
             preparingText = true
-            val pageText = readerBodyText(fetchedSegments, FIRST_PAGE_CHAR_LIMIT)
-            loadProgress = 95
-            applyPreparedPage(targetId, pageText, selected)
+            val pageText = fetchedSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
+                .ifBlank { readerBodyText(fetchedSegments, FIRST_PAGE_CHAR_LIMIT) }
+            stepProgress(85, 100)
+            if (pageText.isNotBlank()) {
+                applyPreparedPage(targetId, pageText)
+            }
             if (targetId != contentId) return@LaunchedEffect
-            loadProgress = 100
+            finishLoader()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -282,19 +339,12 @@ fun ReaderScreen(
         }
     }
 
-    // After the first page is on screen, tokenize the rest without blanking the body.
-    LaunchedEffect(contentId, segments, preparedSource) {
-        if (content == null || segments.isEmpty() || preparedAnnotated == null) return@LaunchedEffect
-        val full = readerBodyText(segments, FULL_BODY_CHAR_LIMIT)
-        if (full.isEmpty() || full == preparedSource) return@LaunchedEffect
-        val known = if (showKnownWords) knownLemmas else emptySet()
-        val cacheKey = ReaderPageCache.key(contentId, full, known)
-        val built = ReaderPageCache.get(cacheKey)
-            ?: withContext(Dispatchers.Default) { buildTappableAnnotated(full, selected, known) }
-                .also { ReaderPageCache.put(cacheKey, it) }
-        if (!isActive) return@LaunchedEffect
-        preparedSource = full
-        preparedAnnotated = built
+    LaunchedEffect(contentId, segmentIndex, segments, showUnknownOnly, wordStatuses) {
+        if (content == null || segments.isEmpty()) return@LaunchedEffect
+        val pageText = segments.getOrNull(segmentIndex)?.plainText?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+        preparingText = true
+        applyPreparedPage(contentId, pageText)
+        preparingText = false
     }
 
     // Reading progress + streak wiring — PUT content/{id}/progress with a real readSeconds is
@@ -311,12 +361,12 @@ fun ReaderScreen(
         } else {
             100.0
         }
-        val completed = markCompleted || scrollPct >= 97.0
+        val completed = markCompleted || scrollPct >= 97.0 || segmentIndex >= segments.lastIndex
         runCatching {
             container.contentRepository.updateProgress(
                 id = contentId,
-                pct = if (completed) 100.0 else scrollPct,
-                segmentId = segments.firstOrNull()?.id,
+                pct = if (completed) 100.0 else ((segmentIndex + 1).toDouble() / segments.size.coerceAtLeast(1) * 100.0),
+                segmentId = segments.getOrNull(segmentIndex)?.id,
                 readSeconds = elapsedSeconds.coerceAtLeast(0),
                 completed = completed,
             )
@@ -345,9 +395,12 @@ fun ReaderScreen(
         }
     }
 
+    val currentSegment = segments.getOrNull(segmentIndex)
+    val currentPageText = currentSegment?.plainText?.takeIf { it.isNotBlank() }.orEmpty()
     val paymentRequired = content?.needsCatalogPayment() == true
-    val readerReady = !paymentRequired && content != null && segments.isNotEmpty() && preparedAnnotated != null
-    val showGlassLoader = !paymentRequired && !readerReady && !fetchError
+    val readerReady = !paymentRequired && content != null && segments.isNotEmpty() &&
+        currentPageText.isNotBlank() && preparedAnnotated != null
+    val showGlassLoader = !paymentRequired && !fetchError && !loaderDone
 
     when {
         paymentRequired -> {
@@ -363,7 +416,7 @@ fun ReaderScreen(
                 ) {
                     Text(
                         "Library",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
                         color = GotchaColors.TextMuted,
@@ -383,14 +436,14 @@ fun ReaderScreen(
                                 )
                                 Text(
                                     "Congratulations!",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 24.sp,
                                     color = GotchaColors.Ink,
                                 )
                                 Text(
                                     "${book.title?.takeIf { it.isNotBlank() } ?: "This book"} is yours. Opening…",
-                                    fontFamily = Manrope,
+                                    fontFamily = Inter,
                                     fontSize = 14.sp,
                                     color = GotchaColors.TextMuted,
                                 )
@@ -403,27 +456,27 @@ fun ReaderScreen(
                     } else {
                     Text(
                         book.title?.takeIf { it.isNotBlank() } ?: "Paid book",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
                         color = GotchaColors.Ink,
                     )
                     Text(
                         "Pay once to unlock this book in your library.",
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontSize = 14.sp,
                         color = GotchaColors.TextMuted,
                     )
                     Text(
                         formatSom(amount),
-                        fontFamily = Manrope,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 24.sp,
                         color = GotchaColors.BrandPurple,
                     )
                     if (payStep == "price") {
                         if (payError != null) {
-                            Text(payError!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
+                            Text(payError!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                         }
                         GotchaPrimaryButton(
                             text = "Unlock for ${formatSom(amount)}",
@@ -443,7 +496,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = apiErrorMessage(e)
+                                        payError = e.apiErrorMessage("Could not start checkout")
                                     } finally {
                                         payLoading = false
                                     }
@@ -480,7 +533,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = apiErrorMessage(e)
+                                        payError = e.apiErrorMessage("Card verification failed")
                                     } finally {
                                         payLoading = false
                                     }
@@ -501,7 +554,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = apiErrorMessage(e)
+                                        payError = e.apiErrorMessage("Payment confirmation failed")
                                     } finally {
                                         payLoading = false
                                     }
@@ -511,12 +564,18 @@ fun ReaderScreen(
                                 val id = paymentId ?: return@ImportPaymentStepUi
                                 scope.launch {
                                     runCatching { container.importRepository.retryOtp(id) }
-                                        .onFailure { payError = apiErrorMessage(it) }
+                                        .onFailure { payError = it.apiErrorMessage("Could not resend OTP") }
                                 }
                             },
                             onCancel = {
-                                payStep = "price"
-                                payError = null
+                                if (payStep == "otp") {
+                                    payStep = "card"
+                                    otpCode = ""
+                                    payError = null
+                                } else {
+                                    payStep = "price"
+                                    payError = null
+                                }
                             },
                         )
                     }
@@ -526,23 +585,64 @@ fun ReaderScreen(
         }
         readerReady -> {
             val hasSegments = segments.isNotEmpty()
-            val body = preparedSource ?: readerBodyText(segments, FIRST_PAGE_CHAR_LIMIT)
+            val body = preparedSource ?: currentPageText
             val pageAnnotated = preparedAnnotated!!
-            val chapterTitle = segments.firstOrNull()?.chapterTitle?.takeIf { it.isNotBlank() }
-                ?: segments.firstOrNull()?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
+            val chapterTitle = currentSegment?.chapterTitle?.takeIf { it.isNotBlank() }
+                ?: currentSegment?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
             val bookTitle = content?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
             // Honest API progress only — never invent a Figma % (same rule as Content Detail).
-            val displayProgress = ((content?.progressPct ?: 0.0) / 100.0).toFloat().coerceIn(0f, 1f)
+            val pageInChapter = remember(segments, segmentIndex, currentSegment) {
+                val chapterIdx = currentSegment?.chapterIndex ?: segments.getOrNull(segmentIndex)?.chapterIndex ?: 0
+                val chapterSegments = segments.withIndex().filter { (_, seg) -> seg.chapterIndex == chapterIdx }
+                val pos = chapterSegments.indexOfFirst { it.index == segmentIndex }.coerceAtLeast(0)
+                Pair(pos + 1, chapterSegments.size.coerceAtLeast(1))
+            }
+            val chapterGroups = remember(segments) {
+                val groups = linkedMapOf<Int, Triple<Int, String, Int>>()
+                segments.forEachIndexed { index, seg ->
+                    val key = seg.chapterIndex
+                    if (!groups.containsKey(key)) {
+                        val title = seg.chapterTitle?.takeIf { it.isNotBlank() }
+                            ?: seg.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
+                            ?: "Chapter ${key + 1}"
+                        groups[key] = Triple(index, title, 1)
+                    } else {
+                        val current = groups.getValue(key)
+                        groups[key] = Triple(current.first, current.second, current.third + 1)
+                    }
+                }
+                groups.map { (key, triple) -> key to triple }
+            }
+
+            LaunchedEffect(pageInChapter.first) {
+                pageDraft = pageInChapter.first.toString()
+            }
+
+            fun goToSegment(nextIndex: Int) {
+                if (nextIndex !in segments.indices) return
+                scope.launch { sendProgress(markCompleted = false) }
+                segmentIndex = nextIndex
+            }
+
+            fun commitPageJump() {
+                val raw = pageDraft.filter { it.isDigit() }.toIntOrNull() ?: pageInChapter.first
+                val nextPage = raw.coerceIn(1, pageInChapter.second)
+                pageDraft = nextPage.toString()
+                val chapterIdx = currentSegment?.chapterIndex ?: segments.getOrNull(segmentIndex)?.chapterIndex ?: 0
+                val chapterSegments = segments.withIndex().filter { (_, seg) -> seg.chapterIndex == chapterIdx }
+                val target = chapterSegments.getOrNull(nextPage - 1)?.index ?: segmentIndex
+                goToSegment(target)
+            }
             val sourceLang = (content?.language ?: "RU").uppercase()
             val pageBg = when (readerTheme) {
                 "sepia" -> Color(0xFFF4E8D0)
                 "dark" -> Color(0xFF1C1917)
-                else -> Color.White
+                else -> Color(0xFFFDFCFF)
             }
             val pageInk = when (readerTheme) {
                 "sepia" -> Color(0xFF3D2B1F)
                 "dark" -> Color(0xFFF5F5F4)
-                else -> GotchaColors.Ink
+                else -> ReaderWordColors.bodyInk
             }
             val bodySize = (16 * fontScale).sp
             val titleSize = (20 * fontScale).sp
@@ -557,80 +657,121 @@ fun ReaderScreen(
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .background(pageBg)
-                            .border(width = 0.dp, color = Color.Transparent)
-                            .padding(horizontal = 24.dp)
-                            .padding(top = 8.dp, bottom = 12.dp),
+                            .height(48.dp)
+                            .background(Color.White)
+                            .padding(horizontal = 12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        Icon(
-                            Icons.Outlined.ChevronLeft,
-                            contentDescription = "Back",
-                            tint = GotchaColors.Ink,
-                            modifier = Modifier
-                                .size(20.dp)
-                                .clickable(onClick = handleBack),
-                        )
+                        Row(
+                            modifier = Modifier.clickable(onClick = handleBack),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Outlined.ArrowBack,
+                                contentDescription = "Library",
+                                tint = Color(0xFF6A7282),
+                                modifier = Modifier.size(16.dp),
+                            )
+                            Text(
+                                "Library",
+                                fontFamily = Inter,
+                                fontWeight = FontWeight.Medium,
+                                fontSize = 14.sp,
+                                color = Color(0xFF6A7282),
+                            )
+                        }
+                        Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)))
                         Text(
                             bookTitle,
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 12.dp),
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = GotchaColors.Ink,
+                            modifier = Modifier.weight(1f),
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            color = Color(0xFF1E2939),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
-                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .size(32.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(2.dp),
+                        ) {
+                            Icon(
+                                Icons.Outlined.Remove,
+                                contentDescription = "Zoom out",
+                                tint = Color(0xFF6A7282),
+                                modifier = Modifier
+                                    .size(28.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFF3F4F6))
+                                    .clickable {
+                                        val next = (fontScale - 0.1).coerceAtLeast(0.75)
+                                        fontScale = kotlin.math.round(next * 10) / 10.0
+                                        scope.launch {
+                                            runCatching { container.userRepository.updatePreferences(readerFontScale = fontScale) }
+                                        }
+                                    }
+                                    .padding(6.dp),
+                            )
+                            Text(
+                                "${(fontScale * 100).toInt()}%",
+                                fontFamily = Inter,
+                                fontSize = 12.sp,
+                                color = Color(0xFF99A1AF),
+                                modifier = Modifier.width(32.dp),
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                            Icon(
+                                Icons.Outlined.Add,
+                                contentDescription = "Zoom in",
+                                tint = Color(0xFF6A7282),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .clickable {
+                                        val next = (fontScale + 0.1).coerceAtMost(1.5)
+                                        fontScale = kotlin.math.round(next * 10) / 10.0
+                                        scope.launch {
+                                            runCatching { container.userRepository.updatePreferences(readerFontScale = fontScale) }
+                                        }
+                                    }
+                                    .padding(6.dp),
+                            )
+                            Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)).padding(horizontal = 4.dp))
+                            Icon(
+                                Icons.Outlined.Visibility,
+                                contentDescription = "Unknown only",
+                                tint = if (showUnknownOnly) Color(0xFF7008E7) else Color(0xFF6A7282),
+                                modifier = Modifier
+                                    .size(28.dp)
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(if (showUnknownOnly) Color(0xFFF5F3FF) else Color.Transparent)
+                                    .clickable { showUnknownOnly = !showUnknownOnly }
+                                    .padding(6.dp),
+                            )
+                            Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)))
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
                                     .clickable(enabled = hasSegments) {
                                         offline.guardClick {
                                             onOpenPractice(contentId, segments.firstOrNull()?.id)
                                         }()
-                                    },
-                                contentAlignment = Alignment.Center,
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
                             ) {
                                 Icon(
                                     Icons.Outlined.School,
                                     contentDescription = "Practice",
-                                    tint = if (hasSegments) GotchaColors.BrandPurple else GotchaColors.TextSubtle,
-                                    modifier = Modifier.size(18.dp),
+                                    tint = if (hasSegments) Color(0xFF7008E7) else GotchaColors.TextSubtle,
+                                    modifier = Modifier.size(14.dp),
                                 )
-                            }
-                            Box(
-                                Modifier
-                                    .size(32.dp)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(Color(0xFFF3F4F6)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    Icons.Outlined.BookmarkBorder,
-                                    contentDescription = "Bookmark",
-                                    tint = GotchaColors.Ink,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                            Box(
-                                Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(GotchaColors.BrandPurpleSoft)
-                                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(6.dp))
-                                    .padding(horizontal = 8.dp, vertical = 4.dp),
-                            ) {
-                                Text("AА", color = GotchaColors.BrandPurple, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
                     }
-                    HorizontalDivider(color = GotchaColors.Border, thickness = 1.dp)
+                    HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
 
                     OfflineBannerIfNeeded(
                         connectivity = container.connectivityObserver,
@@ -653,54 +794,81 @@ fun ReaderScreen(
                             Spacer(Modifier.height(12.dp))
                             Text(
                                 "This content has no readable text yet",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
                                 color = GotchaColors.TextMuted,
                             )
                             Text(
                                 "It may still be processing — check back soon.",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextSubtle,
                             )
                         }
                     } else {
+                    key(segmentIndex) {
                     Column(
                         modifier = Modifier
                             .weight(1f)
-                            .verticalScroll(bodyScrollState)
-                            .padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                            .verticalScroll(bodyScrollState),
                     ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Box(
-                                Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(GotchaColors.BrandPurpleSoft)
-                                    .padding(horizontal = 8.dp, vertical = 2.dp),
-                            ) {
+                        Row(
+                            modifier = Modifier
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            chapterGroups.forEach { (key, triple) ->
+                                val (firstIndex, title, pageCount) = triple
+                                val active = segmentIndex >= firstIndex && segmentIndex < firstIndex + pageCount
                                 Text(
-                                    sourceLang,
-                                    color = GotchaColors.BrandPurple,
-                                    fontFamily = Manrope,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 11.sp,
+                                    title,
+                                    fontFamily = Inter,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 12.sp,
+                                    color = if (active) Color(0xFF7008E7) else Color(0xFF4A5565),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(50))
+                                        .background(if (active) Color(0xFFF5F3FF) else Color.White)
+                                        .border(
+                                            1.dp,
+                                            if (active) GotchaColors.WebAccent else Color(0xFFE5E7EB),
+                                            RoundedCornerShape(50),
+                                        )
+                                        .clickable { goToSegment(firstIndex) }
+                                        .padding(horizontal = 12.dp, vertical = 6.dp),
                                 )
                             }
-                            Text(
-                                "Chapter ${(segments.firstOrNull()?.chapterIndex ?: 0) + 1}",
-                                color = GotchaColors.TextMuted,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 13.sp,
-                            )
                         }
+                    Column(
+                        modifier = Modifier
+                            .padding(horizontal = 20.dp)
+                            .padding(bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(20.dp),
+                    ) {
+                        Text(
+                            if (chapterGroups.size > 1) {
+                                val chapterNum = chapterGroups.indexOfFirst { (_, triple) ->
+                                    segmentIndex >= triple.first && segmentIndex < triple.first + triple.third
+                                }.let { if (it >= 0) it + 1 else 1 }
+                                "Chapter $chapterNum of ${chapterGroups.size}"
+                            } else {
+                                "${segmentIndex + 1} of ${segments.size}"
+                            },
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            letterSpacing = 1.2.sp,
+                            color = Color(0xFF8E51FF),
+                        )
 
                         Text(
                             chapterTitle ?: bookTitle,
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
+                            fontFamily = FontFamily.Serif,
+                            fontWeight = FontWeight.Bold,
                             fontSize = titleSize,
                             lineHeight = (titleSize.value + 8).sp,
                             color = pageInk,
@@ -710,14 +878,15 @@ fun ReaderScreen(
                             text = body,
                             prepared = pageAnnotated,
                             selected = selected,
-                            knownLemmas = if (showKnownWords) knownLemmas else emptySet(),
+                            wordStatuses = wordStatuses,
+                            showUnknownOnly = showUnknownOnly,
                             fontSize = bodySize,
                             textColor = pageInk,
                             onWordClick = { word, sentence ->
                                 offline.guardClick {
                                     selected = word
                                     selectedSentence = sentence
-                                    vocabMarkable = phraseParts(word).size <= 1
+                                    vocabMarkable = isReaderVocabMarkable(word)
                                     lookingUp = true
                                     lookup = null
                                     lookupError = null
@@ -735,9 +904,8 @@ fun ReaderScreen(
                                                 ),
                                             )
                                             lookup = result
-                                            if (result.kind == "sentence") vocabMarkable = false
-                                            selected = if (result.kind == "sentence") word
-                                            else result.phrase?.takeIf { it.isNotBlank() } ?: word
+                                            selected = readerActiveWord(word, result)
+                                            vocabMarkable = isReaderVocabMarkable(word, result.kind)
                                         } catch (e: Exception) {
                                             lookupError = e.apiErrorMessage("Lookup failed. Try again.")
                                         } finally {
@@ -751,125 +919,233 @@ fun ReaderScreen(
                         Spacer(Modifier.height(120.dp))
                     }
                     }
+                    }
 
-                    // Sticky progress — Figma 23:53
+                    // Footer navigation — matches web ReaderPage
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(Color.White)
-                            .padding(horizontal = 24.dp)
-                            .padding(top = 12.dp, bottom = navBottom + 8.dp),
+                            .border(1.dp, Color(0xFFE5E7EB))
+                            .padding(horizontal = 16.dp, vertical = 10.dp)
+                            .padding(bottom = navBottom),
                     ) {
-                        HorizontalDivider(color = GotchaColors.Border, thickness = 1.dp, modifier = Modifier.padding(bottom = 12.dp))
-                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(
-                                "Immersive Reading Mode",
-                                color = GotchaColors.TextMuted,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 12.sp,
-                            )
-                            Text(
-                                "${(displayProgress * 100).toInt()}% completed",
-                                color = GotchaColors.BrandPurple,
-                                fontFamily = Manrope,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(GotchaColors.Border),
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth(displayProgress)
-                                    .height(6.dp)
-                                    .clip(RoundedCornerShape(3.dp))
-                                    .background(GotchaColors.BrandPurple),
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                                    .clickable(enabled = segmentIndex > 0) { goToSegment(segmentIndex - 1) }
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                Icon(
+                                    Icons.Outlined.ChevronLeft,
+                                    contentDescription = null,
+                                    tint = if (segmentIndex > 0) Color(0xFF1E2939) else GotchaColors.TextSubtle,
+                                    modifier = Modifier.size(16.dp),
+                                )
+                                Text(
+                                    "Previous",
+                                    fontFamily = Inter,
+                                    fontWeight = FontWeight.Medium,
+                                    fontSize = 13.sp,
+                                    color = if (segmentIndex > 0) Color(0xFF1E2939) else GotchaColors.TextSubtle,
+                                )
+                            }
+
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            ) {
+                                BasicTextField(
+                                    value = pageDraft,
+                                    onValueChange = { pageDraft = it.filter { ch -> ch.isDigit() }.take(3) },
+                                    singleLine = true,
+                                    textStyle = TextStyle(
+                                        fontFamily = Inter,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = Color(0xFF1E2939),
+                                        textAlign = TextAlign.Center,
+                                    ),
+                                    keyboardOptions = KeyboardOptions(
+                                        keyboardType = KeyboardType.Number,
+                                        imeAction = ImeAction.Done,
+                                    ),
+                                    keyboardActions = KeyboardActions(onDone = { commitPageJump() }),
+                                    modifier = Modifier
+                                        .width(48.dp)
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                                        .background(Color.White)
+                                        .padding(horizontal = 4.dp, vertical = 6.dp),
+                                )
+                                Text(
+                                    "/ ${pageInChapter.second}",
+                                    fontFamily = Inter,
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF99A1AF),
+                                )
+                            }
+
+                            if (segmentIndex < segments.lastIndex) {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(GotchaColors.WebAccent)
+                                        .clickable { goToSegment(segmentIndex + 1) }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Text(
+                                        "Next",
+                                        fontFamily = Inter,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = Color.White,
+                                    )
+                                    Icon(
+                                        Icons.Outlined.ChevronRight,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                }
+                            } else {
+                                Row(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(Color(0xFF059669))
+                                        .clickable {
+                                            scope.launch {
+                                                sendProgress(markCompleted = true)
+                                                handleBack()
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                ) {
+                                    Icon(
+                                        Icons.Outlined.Check,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp),
+                                    )
+                                    Text(
+                                        "Finish",
+                                        fontFamily = Inter,
+                                        fontWeight = FontWeight.Medium,
+                                        fontSize = 13.sp,
+                                        color = Color.White,
+                                    )
+                                }
+                            }
                         }
                     }
                 }
 
+                }
+
                 if (selected != null) {
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = navBottom + 72.dp),
-                    ) {
-                        LookupCard(
-                            word = selected!!,
-                            lookup = lookup,
-                            loading = lookingUp,
-                            savedMsg = savedMsg,
-                            contextSentence = selectedSentence,
-                            error = lookupError,
-                            ttsEnabled = true,
-                            onSpeak = {
-                                val spoken = lookup?.phrase?.takeIf { it.isNotBlank() }
-                                    ?: lookup?.lemma
-                                    ?: selected
-                                if (!spoken.isNullOrBlank()) {
-                                    val lang = content?.language ?: "en"
-                                    scope.launch {
-                                        try {
-                                            if (ttsLanguageReady(ttsEngine[0], lang)) {
-                                                ttsEngine[0]?.language = ttsLocale(lang)
-                                                ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
-                                            } else {
-                                                val bytes = container.contentRepository.speech(spoken, lang)
-                                                cloudPronouncer.playMp3(context, bytes)
-                                            }
-                                        } catch (_: Exception) {
-                                            ttsEngine[0]?.language = ttsLocale(lang)
-                                            ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
-                                        }
-                                    }
-                                }
-                            },
-                            onDismiss = { selected = null; lookup = null; lookupError = null; selectedSentence = null },
-                            showVocabActions = vocabMarkable,
-                            onSave = offline.guardClick {
-                                val l = lookup ?: return@guardClick
+                    DictionaryBottomSheet(
+                        word = selected!!,
+                        lookup = lookup,
+                        loading = lookingUp,
+                        savedMsg = savedMsg,
+                        error = lookupError,
+                        wordStatus = readerLemmaStatus(selected!!, wordStatuses),
+                        onClose = { selected = null; lookup = null; lookupError = null; selectedSentence = null },
+                        onSpeak = {
+                            val spoken = lookup?.phrase?.takeIf { it.isNotBlank() }
+                                ?: lookup?.lemma
+                                ?: selected
+                            if (!spoken.isNullOrBlank()) {
+                                val lang = content?.language ?: "en"
                                 scope.launch {
                                     try {
-                                        val lemma = (l.lemma ?: selected!!).lowercase()
-                                        val source = content?.language ?: "ru"
-                                        container.vocabRepository.save(
-                                            SaveVocabularyRequest(
-                                                lemma = lemma,
-                                                sourceLang = source,
-                                                targetLang = targetLang,
-                                                translation = l.translation ?: "",
-                                                contextSentence = selectedSentence?.take(200)
-                                                    ?: segments.firstOrNull()?.plainText?.take(200),
-                                                contextSegmentId = segments.firstOrNull()?.id,
-                                                contentId = contentId,
-                                            ),
-                                        )
-                                        runCatching {
-                                            container.contentRepository.markKnownWord(lemma, source, "learning")
+                                        if (ttsLanguageReady(ttsEngine[0], lang)) {
+                                            ttsEngine[0]?.language = ttsLocale(lang)
+                                            ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
+                                        } else {
+                                            val bytes = container.contentRepository.speech(spoken, lang)
+                                            cloudPronouncer.playMp3(context, bytes)
                                         }
-                                        savedMsg = "Saved to vocabulary"
-                                    } catch (e: Exception) {
-                                        savedMsg = e.message ?: "Save failed"
+                                    } catch (_: Exception) {
+                                        ttsEngine[0]?.language = ttsLocale(lang)
+                                        ttsEngine[0]?.speak(spoken, TextToSpeech.QUEUE_FLUSH, null, spoken)
                                     }
                                 }
-                            },
-                        )
-                    }
+                            }
+                        },
+                        showVocabActions = vocabMarkable,
+                        onSave = offline.guardClick {
+                            val l = lookup ?: return@guardClick
+                            val activeWord = selected?.trim().orEmpty().ifBlank { return@guardClick }
+                            scope.launch {
+                                try {
+                                    val source = content?.language ?: "ru"
+                                    container.vocabRepository.save(
+                                        SaveVocabularyRequest(
+                                            lemma = activeWord,
+                                            sourceLang = source,
+                                            targetLang = targetLang,
+                                            translation = l.translation ?: "",
+                                            contextSentence = selectedSentence?.take(200)
+                                                ?: segments.getOrNull(segmentIndex)?.plainText?.take(200),
+                                            contextSegmentId = segments.getOrNull(segmentIndex)?.id,
+                                            contentId = contentId,
+                                        ),
+                                    )
+                                    wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "learning")
+                                    savedMsg = "Saved to vocabulary"
+                                } catch (e: Exception) {
+                                    savedMsg = e.apiErrorMessage("Save failed")
+                                }
+                            }
+                        },
+                        onKnown = offline.guardClick {
+                            val activeWord = selected?.trim().orEmpty().ifBlank { return@guardClick }
+                            scope.launch {
+                                try {
+                                    val source = content?.language ?: "ru"
+                                    container.contentRepository.markKnownWord(activeWord, source, "known")
+                                    wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "known")
+                                    savedMsg = "Marked as known"
+                                } catch (e: Exception) {
+                                    savedMsg = e.apiErrorMessage("Update failed")
+                                }
+                            }
+                        },
+                        onIgnore = offline.guardClick {
+                            val activeWord = selected?.trim().orEmpty().ifBlank { return@guardClick }
+                            scope.launch {
+                                try {
+                                    val source = content?.language ?: "ru"
+                                    container.contentRepository.markKnownWord(activeWord, source, "ignored")
+                                    wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "ignored")
+                                    savedMsg = "Word ignored"
+                                } catch (e: Exception) {
+                                    savedMsg = e.apiErrorMessage("Update failed")
+                                }
+                            }
+                        },
+                        modifier = Modifier.align(Alignment.BottomCenter),
+                    )
                 }
             }
         }
         showGlassLoader -> {
             GlassLoadingScreen(
-                progress = loadProgress.coerceAtLeast(10),
+                progress = smoothProgress.coerceIn(0, 100),
                 title = "Loading your book…",
                 subtitle = when {
                     loadProgress < 30 -> "Fetching book details"
@@ -889,14 +1165,14 @@ fun ReaderScreen(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             "This content has no readable text yet",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = GotchaColors.TextMuted,
                         )
                         Text(
                             "It may still be processing — check back soon.",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 13.sp,
                             color = GotchaColors.TextSubtle,
                         )
@@ -917,7 +1193,8 @@ private fun TappableText(
     text: String,
     prepared: AnnotatedString,
     selected: String?,
-    knownLemmas: Set<String> = emptySet(),
+    wordStatuses: Map<String, String> = emptyMap(),
+    showUnknownOnly: Boolean = false,
     fontSize: androidx.compose.ui.unit.TextUnit = 16.sp,
     textColor: Color = GotchaColors.Ink,
     onWordClick: (word: String, sentence: String) -> Unit,
@@ -925,19 +1202,25 @@ private fun TappableText(
     val display = remember(text) {
         if (text.length > FULL_BODY_CHAR_LIMIT) text.take(FULL_BODY_CHAR_LIMIT) + "…" else text
     }
+    var dragRange by remember(display) { mutableStateOf<IntRange?>(null) }
     var annotated by remember(display) { mutableStateOf(prepared) }
     var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
-    LaunchedEffect(prepared) {
-        annotated = prepared
-    }
-    LaunchedEffect(display, selected) {
-        if (selected == null) {
-            annotated = prepared
-            return@LaunchedEffect
+
+    LaunchedEffect(display, selected, dragRange, showUnknownOnly, wordStatuses, prepared) {
+        val built = if (selected == null && dragRange == null) {
+            prepared
+        } else {
+            withContext(Dispatchers.Default) {
+                buildTappableAnnotated(
+                    text = display,
+                    selected = selected,
+                    wordStatuses = wordStatuses,
+                    showUnknownOnly = showUnknownOnly,
+                    highlightCharRange = dragRange,
+                )
+            }
         }
-        val built = withContext(Dispatchers.Default) { buildTappableAnnotated(display, selected, knownLemmas) }
-        if (!isActive) return@LaunchedEffect
-        annotated = built
+        if (isActive) annotated = built
     }
 
     fun offsetAt(pos: Offset): Int? {
@@ -962,197 +1245,365 @@ private fun TappableText(
 
     Text(
         text = annotated,
-        style = androidx.compose.ui.text.TextStyle(
+        style = TextStyle(
             fontFamily = FontFamily.Serif,
             fontSize = fontSize,
-            lineHeight = (fontSize.value * 1.75f).sp,
+            lineHeight = (fontSize.value * 1.9f).sp,
             color = textColor,
         ),
         onTextLayout = { layoutResult = it },
-        modifier = Modifier
-            .pointerInput(annotated) {
-                detectTapGestures(
-                    onTap = { pos ->
-                        val off = offsetAt(pos) ?: return@detectTapGestures
-                        annotated.getStringAnnotations("word", off, off).firstOrNull()?.let { ann ->
-                            onWordClick(ann.item, sentenceFor(ann.item))
-                        }
-                    },
+        modifier = Modifier.drawWithContent {
+            drawContent()
+            val layout = layoutResult ?: return@drawWithContent
+            val underlineYInset = 1.dp.toPx()
+            val underlineWidth = 1.6.dp.toPx()
+            val dash = PathEffect.dashPathEffect(floatArrayOf(5f, 4f), 0f)
+            annotated.getStringAnnotations("highlight", 0, annotated.length).forEach { ann ->
+                val boxes = (ann.start until ann.end).mapNotNull { index ->
+                    runCatching { layout.getBoundingBox(index) }.getOrNull()
+                }
+                if (boxes.isEmpty()) return@forEach
+                val left = boxes.minOf { it.left }
+                val right = boxes.maxOf { it.right }
+                val bottom = boxes.maxOf { it.bottom } + underlineYInset
+                when (ann.item) {
+                    "unknown" -> drawLine(
+                        color = ReaderWordColors.unknownUnderline,
+                        start = Offset(left, bottom),
+                        end = Offset(right, bottom),
+                        strokeWidth = underlineWidth,
+                        pathEffect = dash,
+                    )
+                    "learning" -> drawLine(
+                        color = ReaderWordColors.learningUnderline,
+                        start = Offset(left, bottom),
+                        end = Offset(right, bottom),
+                        strokeWidth = underlineWidth,
+                    )
+                }
+            }
+            annotated.getStringAnnotations("selected", 0, annotated.length).forEach { ann ->
+                val boxes = (ann.start until ann.end).mapNotNull { index ->
+                    runCatching { layout.getBoundingBox(index) }.getOrNull()
+                }
+                if (boxes.isEmpty()) return@forEach
+                val left = boxes.minOf { it.left } - 1.dp.toPx()
+                val top = boxes.minOf { it.top } - 1.dp.toPx()
+                val right = boxes.maxOf { it.right } + 1.dp.toPx()
+                val bottom = boxes.maxOf { it.bottom } + 1.dp.toPx()
+                drawRoundRect(
+                    color = ReaderWordColors.selectionRing,
+                    topLeft = Offset(left, top),
+                    size = androidx.compose.ui.geometry.Size(right - left, bottom - top),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(6.dp.toPx()),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.dp.toPx()),
                 )
             }
-            .pointerInput(annotated) {
-                var startOff = 0
-                var endOff = 0
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { pos ->
-                        startOff = offsetAt(pos) ?: 0
-                        endOff = startOff
-                    },
-                    onDrag = { change, _ ->
-                        change.consume()
-                        endOff = offsetAt(change.position) ?: endOff
-                    },
-                    onDragEnd = {
-                        val phrase = wordsBetween(startOff, endOff)
-                        if (phrase.isNotBlank()) onWordClick(phrase, sentenceFor(phrase))
-                    },
-                )
-            },
+        }.pointerInput(display) {
+            awaitEachGesture {
+                val down = awaitFirstDown(requireUnconsumed = false)
+                val startOff = offsetAt(down.position) ?: return@awaitEachGesture
+                val startWord = annotated.getStringAnnotations("word", startOff, startOff).firstOrNull()
+                    ?: return@awaitEachGesture
+
+                var endOff = startOff
+                var dragged = false
+                dragRange = startOff..startOff
+                var lastPaintMs = 0L
+
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                    if (!change.pressed) break
+                    val distance = (change.position - down.position).getDistance()
+                    if (distance > 12f) dragged = true
+                    endOff = offsetAt(change.position) ?: endOff
+                    val lo = minOf(startOff, endOff)
+                    val hi = maxOf(startOff, endOff)
+                    val now = System.currentTimeMillis()
+                    if (now - lastPaintMs >= 40) {
+                        dragRange = lo..hi
+                        lastPaintMs = now
+                    }
+                    change.consume()
+                }
+
+                dragRange = null
+                if (dragged) {
+                    val phrase = wordsBetween(startOff, endOff)
+                    if (phrase.isNotBlank()) onWordClick(phrase, sentenceFor(phrase))
+                } else {
+                    onWordClick(startWord.item, sentenceFor(startWord.item))
+                }
+            }
+        },
     )
 }
 
 @Composable
-private fun LookupCard(
+private fun DictionaryBottomSheet(
     word: String,
     lookup: LookupResponse?,
     loading: Boolean,
     savedMsg: String?,
-    contextSentence: String?,
-    error: String? = null,
-    ttsEnabled: Boolean = false,
-    onSpeak: () -> Unit = {},
-    onDismiss: () -> Unit,
-    showVocabActions: Boolean = true,
+    error: String?,
+    wordStatus: String,
+    onClose: () -> Unit,
+    onSpeak: () -> Unit,
+    showVocabActions: Boolean,
     onSave: () -> Unit,
+    onKnown: () -> Unit,
+    onIgnore: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .shadow(10.dp, RoundedCornerShape(16.dp), spotColor = Color(0x266C2BD9))
-            .clip(RoundedCornerShape(16.dp))
+            .shadow(16.dp, RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
             .background(Color.White)
-            .border(2.dp, GotchaColors.BrandPurple, RoundedCornerShape(16.dp))
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            .navigationBarsPadding(),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                val sentenceLike = lookup?.kind == "sentence"
-                Text(
-                    if (sentenceLike) word else lookup?.phrase?.takeIf { it.isNotBlank() } ?: lookup?.lemma ?: word,
-                    color = GotchaColors.BrandPurple,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.ExtraBold,
-                    fontSize = if (sentenceLike && word.length > 48) 16.sp else 22.sp,
-                )
-                if (!sentenceLike) {
-                    lookup?.lemma?.takeIf {
-                        it.isNotBlank() && !it.equals(lookup?.phrase, ignoreCase = true) && lookup?.phrase?.isNotBlank() == true
-                    }?.let { head ->
-                        Text(
-                            head,
-                            color = GotchaColors.TextSubtle,
-                            fontFamily = Manrope,
-                            fontSize = 13.sp,
-                        )
-                    }
-                }
-                Text(
-                    buildString {
-                        val meta = listOfNotNull(lookup?.partOfSpeech, lookup?.grammarNote)
-                            .joinToString(", ")
-                        when {
-                            meta.isNotBlank() -> append(meta)
-                            loading -> append("Looking up…")
-                            error != null -> append("Lookup failed")
-                            else -> append(if (sentenceLike) "sentence" else "word")
-                        }
-                    },
-                    color = GotchaColors.TextSubtle,
-                    fontFamily = Manrope,
-                    fontSize = 12.sp,
-                )
+            Text(
+                "Dictionary",
+                fontFamily = Inter,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                letterSpacing = 0.6.sp,
+                color = Color(0xFF99A1AF),
+            )
+            Box(
+                Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .clickable(onClick = onClose),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color(0xFF99A1AF), modifier = Modifier.size(16.dp))
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                if (ttsEnabled) {
+        }
+        HorizontalDivider(color = Color(0xFFF3F4F6))
+
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(max = 520.dp)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            if (loading) {
+                Column(
+                    Modifier.fillMaxWidth().padding(vertical = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    CircularProgressIndicator(color = GotchaColors.WebAccent, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+                    Text("Looking up…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                }
+            } else if (error != null) {
+                Text(error, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFDC2626))
+            } else if (lookup != null) {
+                val sentenceLike = lookup.kind == "sentence"
+                val headline = if (sentenceLike) word else lookup.phrase?.takeIf { it.isNotBlank() } ?: lookup.lemma ?: word
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                headline,
+                                fontFamily = Inter,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = if (sentenceLike) 18.sp else 24.sp,
+                                lineHeight = if (sentenceLike) 26.sp else 30.sp,
+                                color = Color(0xFF101828),
+                            )
+                            if (sentenceLike || lookup.phrase?.isNotBlank() == true) {
+                                Text(
+                                    if (sentenceLike) "Sentence" else "Phrase",
+                                    fontFamily = Inter,
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = 10.sp,
+                                    color = GotchaColors.WebAccent,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(Color(0xFFF5F3FF))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp),
+                                )
+                            }
+                        }
+                        if (!sentenceLike && lookup.lemma?.isNotBlank() == true &&
+                            lookup.phrase?.isNotBlank() == true &&
+                            !lookup.lemma.equals(lookup.phrase, ignoreCase = true)
+                        ) {
+                            Text(lookup.lemma.orEmpty(), fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF6B7382))
+                        }
+                    }
                     Box(
                         Modifier
-                            .size(28.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(GotchaColors.BrandPurpleSoft)
+                            .size(32.dp)
+                            .clip(RoundedCornerShape(8.dp))
                             .clickable(onClick = onSpeak),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(
-                            painter = painterResource(R.drawable.ic_volume),
-                            contentDescription = "Speak",
-                            tint = GotchaColors.BrandPurple,
-                            modifier = Modifier.size(16.dp),
+                        Icon(Icons.Outlined.VolumeUp, contentDescription = "Pronounce", tint = Color(0xFF99A1AF), modifier = Modifier.size(18.dp))
+                    }
+                }
+
+                lookup.contextualMeaning?.takeIf { it.isNotBlank() && !sentenceLike }?.let { meaning ->
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(Color(0xFFF5F3FF))
+                            .padding(12.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("Natural meaning", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
+                        Text(meaning, fontFamily = Inter, fontSize = 15.sp, lineHeight = 22.sp, color = Color(0xFF1E2939))
+                    }
+                }
+
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .then(
+                            if (lookup.contextualMeaning?.isNotBlank() == true && !sentenceLike) {
+                                Modifier.border(1.dp, Color(0xFFE5E8EB), RoundedCornerShape(12.dp)).background(Color(0xFFF9FAFB))
+                            } else {
+                                Modifier.background(Color(0xFFF5F3FF))
+                            },
+                        )
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("Translation", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
+                    Text(
+                        lookup.translation.orEmpty(),
+                        fontFamily = Inter,
+                        fontSize = 15.sp,
+                        lineHeight = 22.sp,
+                        color = Color(0xFF1E2939),
+                    )
+                }
+
+                if (showVocabActions) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val statusColors = when (wordStatus) {
+                            "known" -> Color(0xFFD1FAE5) to Color(0xFF047857)
+                            "learning" -> Color(0xFFEFF6FF) to Color(0xFF1447E6)
+                            "ignored" -> Color(0xFFF3F4F6) to Color(0xFF6B7280)
+                            else -> Color(0xFFFFFBEB) to Color(0xFFBB4D00)
+                        }
+                        Text(
+                            wordStatus.replaceFirstChar { it.uppercase() },
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 12.sp,
+                            color = statusColors.second,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(statusColors.first)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                        )
+                        Text("→ Mark as:", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DictionaryActionButton(
+                            label = "Save",
+                            icon = Icons.Outlined.BookmarkBorder,
+                            active = wordStatus == "learning",
+                            activeBorder = Color(0xFFBFDBFE),
+                            activeBg = Color(0xFFEFF6FF),
+                            activeColor = Color(0xFF1447E6),
+                            enabled = wordStatus != "learning",
+                            onClick = onSave,
+                            modifier = Modifier.weight(1f),
+                        )
+                        DictionaryActionButton(
+                            label = "Known",
+                            icon = Icons.Outlined.Check,
+                            active = wordStatus == "known",
+                            activeBorder = Color(0xFFA7F3D0),
+                            activeBg = Color(0xFFD1FAE5),
+                            activeColor = Color(0xFF059669),
+                            enabled = wordStatus != "known",
+                            onClick = onKnown,
+                            modifier = Modifier.weight(1f),
+                        )
+                        DictionaryActionButton(
+                            label = "Ignore",
+                            icon = Icons.Outlined.VisibilityOff,
+                            active = wordStatus == "ignored",
+                            activeBorder = Color(0xFFD1D5DB),
+                            activeBg = Color(0xFFF3F4F6),
+                            activeColor = Color(0xFF6B7280),
+                            enabled = wordStatus != "ignored",
+                            onClick = onIgnore,
+                            modifier = Modifier.weight(1f),
                         )
                     }
                 }
-                Box(
-                    Modifier
-                        .size(28.dp)
-                        .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFFF3F4F6))
-                        .clickable(onClick = onDismiss),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(Icons.Outlined.Close, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(16.dp))
-                }
+            }
+
+            savedMsg?.let {
+                Text(it, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.SuccessText)
             }
         }
-        HorizontalDivider(color = GotchaColors.Border, thickness = 1.dp)
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val sentenceLike = lookup?.kind == "sentence"
-            val natural = lookup?.contextualMeaning?.takeIf { it.isNotBlank() && !sentenceLike }
-            if (loading) {
-                Text(
-                    "Looking up…",
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 15.sp,
-                    color = GotchaColors.Ink,
-                )
-            } else if (error != null) {
-                Text(error, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFFDC2626))
-            } else {
-                if (natural != null) {
-                    Text(
-                        "NATURAL MEANING",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = GotchaColors.BrandPurple,
-                    )
-                    Text(natural, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = GotchaColors.Ink)
-                }
-                lookup?.translation?.takeIf { it.isNotBlank() && it != natural }?.let { tr ->
-                    Text(
-                        "TRANSLATION",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp,
-                        color = GotchaColors.BrandPurple,
-                    )
-                    Text(tr, fontFamily = Manrope, fontSize = 14.sp, lineHeight = 20.sp, color = GotchaColors.Ink)
-                }
-            }
-            if (savedMsg != null) {
-                Text(savedMsg, color = GotchaColors.SuccessText, fontFamily = Manrope, fontSize = 13.sp)
-            }
-        }
-        if (showVocabActions) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(GotchaColors.BrandPurple)
-                .clickable(enabled = !loading && lookup?.translation != null, onClick = onSave)
-                .padding(vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(Icons.Outlined.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
-            Spacer(Modifier.size(8.dp))
-            Text("Add to vocabulary", color = Color.White, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-        }
-        }
+    }
+}
+
+@Composable
+private fun DictionaryActionButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    active: Boolean,
+    activeBorder: Color,
+    activeBg: Color,
+    activeColor: Color,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                1.dp,
+                if (active) activeBorder else Color(0xFFE5E7EB),
+                RoundedCornerShape(12.dp),
+            )
+            .background(if (active) activeBg else Color.White)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (active) activeColor else if (enabled) Color(0xFF4A5565) else Color(0xFFD1D5DB),
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            label,
+            fontFamily = Inter,
+            fontWeight = FontWeight.Medium,
+            fontSize = 12.sp,
+            color = if (active) activeColor else if (enabled) Color(0xFF4A5565) else Color(0xFFD1D5DB),
+        )
     }
 }
 
@@ -1170,6 +1621,34 @@ private fun readerBodyText(segments: List<Segment>, limit: Int): String {
     return if (joined.length > limit) joined.take(limit) + "…" else joined
 }
 
+private object ReaderWordColors {
+    val bodyInk = Color(0xFF1E2939)
+    val unknownText = Color(0xFF973C00)
+    val unknownUnderline = Color(0xFFFFB900)
+    val learningText = Color(0xFF193CB8)
+    val learningUnderline = Color(0xFF51A2FF)
+    val ignoredText = Color(0xFF9CA3AF)
+    val selectionBg = Color(0xFFF5F3FF)
+    val selectionRing = Color(0x998E51FF)
+    val dragHighlightBg = Color(0xFFF5F3FF)
+    val dragHighlightText = Color(0xFF8E51FF)
+}
+
+private fun readerHighlightStatus(status: String, showUnknownOnly: Boolean): String? {
+    if (showUnknownOnly) return if (status == "unknown") "unknown" else null
+    return when (status) {
+        "unknown", "learning", "ignored" -> status
+        else -> null
+    }
+}
+
+private fun readerWordTextStyle(highlightStatus: String?): SpanStyle? = when (highlightStatus) {
+    "unknown" -> SpanStyle(color = ReaderWordColors.unknownText)
+    "learning" -> SpanStyle(color = ReaderWordColors.learningText)
+    "ignored" -> SpanStyle(color = ReaderWordColors.ignoredText)
+    else -> null
+}
+
 private fun phraseParts(selected: String?): List<String> {
     if (selected.isNullOrBlank()) return emptyList()
     return selected.split(Regex("[\\s-]+")).map { raw ->
@@ -1177,10 +1656,61 @@ private fun phraseParts(selected: String?): List<String> {
     }.filter { it.isNotEmpty() }
 }
 
+private fun readerLemmaStatus(lemma: String, statuses: Map<String, String>): String =
+    statuses[lemma.lowercase()] ?: "unknown"
+
+private fun readerStatusKeys(activeWord: String, lookup: LookupResponse?): Set<String> = buildSet {
+    add(activeWord.trim().lowercase())
+    lookup?.lemma?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { add(it) }
+    phraseParts(activeWord).forEach { add(it) }
+    lookup?.phrase?.trim()?.lowercase()?.takeIf { it.isNotEmpty() }?.let { phrase ->
+        add(phrase)
+        phraseParts(phrase).forEach { add(it) }
+    }
+}
+
+private fun applyReaderWordStatus(
+    current: Map<String, String>,
+    activeWord: String,
+    lookup: LookupResponse?,
+    status: String,
+): Map<String, String> = current + readerStatusKeys(activeWord, lookup).associateWith { status }
+
+private fun readerActiveWord(surface: String, lookup: LookupResponse?): String {
+    if (lookup?.kind == "sentence") return surface
+    return lookup?.phrase?.trim()?.takeIf { it.isNotEmpty() }
+        ?: lookup?.lemma?.trim()?.takeIf { it.isNotEmpty() }
+        ?: surface
+}
+
+private fun isReaderSentenceLike(surface: String, sentence: String? = null): Boolean {
+    val words = surface.trim().split(Regex("\\s+")).count { it.isNotBlank() }
+    if (words <= 1) return false
+    if (words > 8) return true
+    if (Regex("[.!?…。！？]").containsMatchIn(surface) && words >= 3) return true
+    val normalizedSurface = surface.trim().lowercase().replace(Regex("\\s+"), " ")
+    val normalizedSentence = sentence?.trim()?.lowercase()?.replace(Regex("\\s+"), " ").orEmpty()
+    if (normalizedSurface.length >= 12 &&
+        (normalizedSurface == normalizedSentence ||
+            (normalizedSentence.startsWith(normalizedSurface) && words >= 5))
+    ) {
+        return true
+    }
+    return false
+}
+
+private fun isReaderVocabMarkable(surface: String, kind: String? = null): Boolean {
+    if (kind == "sentence") return false
+    if (isReaderSentenceLike(surface)) return false
+    return phraseParts(surface).size <= 1
+}
+
 private fun buildTappableAnnotated(
     text: String,
     selected: String? = null,
-    knownLemmas: Set<String> = emptySet(),
+    wordStatuses: Map<String, String> = emptyMap(),
+    showUnknownOnly: Boolean = false,
+    highlightCharRange: IntRange? = null,
 ): AnnotatedString {
     val tokens = Regex("""\S+|\s+""").findAll(text).toList()
     val wordIndexes = mutableListOf<Int>()
@@ -1222,21 +1752,47 @@ private fun buildTappableAnnotated(
             val clean = token.trim().trim { ch -> ch in ".,!?;:\"'()[]«»—–-" }
             val isWord = clean.isNotEmpty() && token.any { it.isLetter() }
             if (isWord) {
-                pushStringAnnotation("word", clean)
-                if (selectedTokenIndexes.contains(index)) {
-                    withStyle(
-                        SpanStyle(
-                            fontWeight = FontWeight.Bold,
-                            textDecoration = TextDecoration.Underline,
-                            background = GotchaColors.BrandPurpleSoft,
-                        ),
-                    ) { append(token) }
-                } else if (knownLemmas.contains(clean.lowercase())) {
-                    withStyle(SpanStyle(color = GotchaColors.TextSubtle)) { append(token) }
-                } else {
-                    append(token)
+                val status = readerLemmaStatus(clean, wordStatuses)
+                val highlightStatus = readerHighlightStatus(status, showUnknownOnly)
+                val wordStyle = readerWordTextStyle(highlightStatus)
+                val tokenRange = match.range
+                val inDragHighlight = highlightCharRange?.let { range ->
+                    tokenRange.first <= range.last && tokenRange.last >= range.first
+                } == true
+                val isSelected = selectedTokenIndexes.contains(index)
+                val start = length
+                pushStringAnnotation(tag = "word", annotation = clean)
+                when {
+                    isSelected -> {
+                        if (wordStyle != null) {
+                            withStyle(SpanStyle(background = ReaderWordColors.selectionBg, color = wordStyle.color)) {
+                                append(token)
+                            }
+                        } else {
+                            withStyle(SpanStyle(background = ReaderWordColors.selectionBg)) {
+                                append(token)
+                            }
+                        }
+                    }
+                    inDragHighlight -> {
+                        withStyle(
+                            SpanStyle(
+                                background = ReaderWordColors.dragHighlightBg,
+                                color = ReaderWordColors.dragHighlightText,
+                            ),
+                        ) { append(token) }
+                    }
+                    wordStyle != null -> withStyle(wordStyle) { append(token) }
+                    else -> append(token)
                 }
+                val end = length
                 pop()
+                if (highlightStatus != null && (highlightStatus == "unknown" || highlightStatus == "learning")) {
+                    addStringAnnotation(tag = "highlight", annotation = highlightStatus, start = start, end = end)
+                }
+                if (isSelected) {
+                    addStringAnnotation(tag = "selected", annotation = "1", start = start, end = end)
+                }
             } else {
                 append(token)
             }
@@ -1251,8 +1807,8 @@ private object ReaderPageCache {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, AnnotatedString>?): Boolean = size > MAX
     }
 
-    fun key(contentId: String, text: String, known: Set<String> = emptySet()): String =
-        "$contentId|${text.length}|${text.hashCode()}|${known.size}"
+    fun key(contentId: String, text: String, statuses: Map<String, String> = emptyMap(), showUnknownOnly: Boolean = false): String =
+        "$contentId|${text.length}|${text.hashCode()}|${statuses.size}|${statuses.hashCode()}|$showUnknownOnly"
 
     fun get(key: String): AnnotatedString? = synchronized(lock) { map[key] }
 

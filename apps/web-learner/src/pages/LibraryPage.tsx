@@ -9,6 +9,7 @@ import { api, getAccessToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { resolveMediaUrl } from '../lib/media';
 import { formatUzs } from '../lib/importBilling';
+import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { type ContentItem, gradientForId } from '../lib/types';
 
 const cefrStyle: Record<string, string> = {
@@ -19,9 +20,37 @@ const cefrStyle: Record<string, string> = {
   c1: 'bg-violet-100 text-[#7008e7]',
   c2: 'bg-pink-100 text-pink-700',
 };
-const langFlag: Record<string, string> = { en: '🇬🇧', ru: '🇷🇺', uz: '🇺🇿' };
-const filterTabs = ['All', 'EN', 'RU', 'UZ', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
-type FilterTab = (typeof filterTabs)[number];
+const staticFilterTabs = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
+type StaticFilterTab = (typeof staticFilterTabs)[number];
+type FilterTab = 'All' | StaticFilterTab | string;
+
+function SectionHeading({
+  title,
+  subtitle,
+  onSeeAll,
+}: {
+  title: string;
+  subtitle?: string;
+  onSeeAll?: () => void;
+}) {
+  return (
+    <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-gray-900 font-bold">{title}</h2>
+        {subtitle ? <p className="text-gray-400 text-sm mt-0.5 leading-snug">{subtitle}</p> : null}
+      </div>
+      {onSeeAll ? (
+        <button
+          type="button"
+          onClick={onSeeAll}
+          className="flex items-center gap-0.5 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
+        >
+          See all <ChevronRight className="w-3.5 h-3.5" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function formatWordCount(count: number) {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
@@ -67,11 +96,13 @@ function ContentCard({
   item,
   view = 'grid',
   highlighted = false,
+  langFlags = {},
 }: {
   item: ContentItem;
   view?: 'grid' | 'list';
   compact?: boolean;
   highlighted?: boolean;
+  langFlags?: Record<string, string>;
 }) {
   const navigate = useNavigate();
   const isProg = (item.progressPct ?? 0) > 0;
@@ -98,7 +129,7 @@ function ContentCard({
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
               <CefrBadge level={item.cefrLevel} />
-              <span className="text-sm">{langFlag[item.language] ?? '🌐'}</span>
+              <span className="text-sm">{langFlags[item.language] ?? '🌐'}</span>
             </div>
           </div>
           <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
@@ -148,7 +179,7 @@ function ContentCard({
               {formatUzs(item.priceUzs ?? 0)}
             </span>
           )}
-          <span className="text-lg leading-none drop-shadow">{langFlag[item.language] ?? '🌐'}</span>
+          <span className="text-lg leading-none drop-shadow">{langFlags[item.language] ?? '🌐'}</span>
         </div>
       </div>
       <div className="p-3 flex-1 flex flex-col min-h-0">
@@ -241,21 +272,32 @@ interface FeedResponse {
   featuredCollections: FeaturedCollection[];
 }
 
+interface ContentListResponse {
+  items: ContentItem[];
+  total: number;
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
+}
+
+const BROWSE_PAGE_SIZE = 100;
+const BROWSE_MAX_PAGES = 10;
+
 function isUserImport(item: ContentItem) {
   return item.contentType === 'user_import' || item.contentSource === 'user_import';
 }
 
-function parseFilterParam(raw: string | null): FilterTab {
+function parseFilterParam(
+  raw: string | null,
+  languageTabs: string[],
+  nativeLanguage?: string | null,
+): FilterTab {
   if (!raw) return 'All';
   const normalized = raw.trim().toLowerCase().replace(/\s+/g, '').replace(/–/g, '-').replace(/—/g, '-');
+  const native = nativeLanguage?.trim().toLowerCase() || null;
+  if (native && normalized === native) return 'All';
   const aliases: Record<string, FilterTab> = {
     all: 'All',
-    en: 'EN',
-    english: 'EN',
-    ru: 'RU',
-    russian: 'RU',
-    uz: 'UZ',
-    uzbek: 'UZ',
     fiction: 'Fiction',
     news: 'News',
     imports: 'Imports',
@@ -270,31 +312,49 @@ function parseFilterParam(raw: string | null): FilterTab {
     c1c2: 'C1–C2',
   };
   if (aliases[normalized]) return aliases[normalized];
-  const exact = filterTabs.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
-  return exact ?? 'All';
+  const langTab = languageTabs.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
+  if (langTab) return langTab;
+  const staticMatch = (['All', ...staticFilterTabs] as const).find((t) => t.toLowerCase() === raw.trim().toLowerCase());
+  return staticMatch ?? 'All';
 }
 
-function inferFilterFromCollection(collection: Pick<FeaturedCollection, 'slug' | 'title'>): FilterTab | null {
+function inferFilterFromCollection(
+  collection: Pick<FeaturedCollection, 'slug' | 'title'>,
+  languageTabs: string[],
+): FilterTab | null {
   const hay = `${collection.slug} ${collection.title}`.toLowerCase();
   if (hay.includes('fiction')) return 'Fiction';
   if (hay.includes('news')) return 'News';
-  if (/\ben\b|english/.test(hay)) return 'EN';
-  if (/\bru\b|russian/.test(hay)) return 'RU';
-  if (/\buz\b|uzbek/.test(hay)) return 'UZ';
+  for (const tab of languageTabs) {
+    const code = tab.toLowerCase();
+    if (new RegExp(`\\b${code}\\b`).test(hay)) return tab;
+  }
   if (hay.includes('a1') || hay.includes('beginner')) return 'A1–A2';
   if (hay.includes('b1') || hay.includes('intermediate')) return 'B1–B2';
   return null;
 }
 
-function matchesFilter(item: ContentItem, activeFilter: FilterTab) {
+function itemLanguage(item: ContentItem) {
+  return (item.language ?? '').trim().toLowerCase();
+}
+
+function matchesSearch(item: ContentItem, query: string) {
+  if (!query) return true;
+  const hay = `${item.title} ${item.subtitle ?? ''} ${item.authorName ?? ''}`.toLowerCase();
+  return hay.includes(query.toLowerCase());
+}
+
+function matchesFilter(item: ContentItem, activeFilter: FilterTab, languageTabs: string[]) {
   if (activeFilter === 'Imports') {
     return isUserImport(item);
   }
   if (isUserImport(item)) return false;
   if (activeFilter === 'All') return true;
-  if (activeFilter === 'EN') return item.language === 'en';
-  if (activeFilter === 'RU') return item.language === 'ru';
-  if (activeFilter === 'UZ') return item.language === 'uz';
+  const langTab = languageTabs.find((t) => t.toLowerCase() === String(activeFilter).toLowerCase());
+  if (langTab) return itemLanguage(item) === langTab.toLowerCase();
+  if (/^[a-z]{2}$/i.test(String(activeFilter))) {
+    return itemLanguage(item) === String(activeFilter).toLowerCase();
+  }
   if (activeFilter === 'Fiction') {
     const g = (item.genre ?? '').toLowerCase();
     return (
@@ -310,14 +370,14 @@ function matchesFilter(item: ContentItem, activeFilter: FilterTab) {
   if (activeFilter === 'A1–A2') return item.cefrLevel === 'a1' || item.cefrLevel === 'a2';
   if (activeFilter === 'B1–B2') return item.cefrLevel === 'b1' || item.cefrLevel === 'b2';
   if (activeFilter === 'C1–C2') return item.cefrLevel === 'c1' || item.cefrLevel === 'c2';
-  return true;
+  return false;
 }
 
 /** Scope by collection; prefill chip from rail title/slug when it maps cleanly. */
-function browsePathForCollection(collection: FeaturedCollection) {
+function browsePathForCollection(collection: FeaturedCollection, languageTabs: string[]) {
   const params = new URLSearchParams();
   params.set('collection', collection.slug);
-  const inferred = inferFilterFromCollection(collection);
+  const inferred = inferFilterFromCollection(collection, languageTabs);
   if (inferred) params.set('filter', inferred);
   return `/app/browse?${params.toString()}`;
 }
@@ -331,9 +391,36 @@ export default function LibraryPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, stats } = useAuth();
+  const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [catalogItems, setCatalogItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [view, setView] = useState<'grid' | 'list'>('grid');
+
+  const nativeCode = (user?.nativeLanguage ?? '').trim().toLowerCase() || null;
+  const targetScopeKey = (user?.targetLanguages ?? [])
+    .map((t) => t.targetLanguage.toLowerCase())
+    .sort()
+    .join(',');
+
+  const learnableLangCodes = useMemo(() => {
+    return catalogLangs
+      .map((l) => l.code.toLowerCase())
+      .filter((code) => Boolean(code) && code !== nativeCode);
+  }, [catalogLangs, nativeCode]);
+  const languageTabs = useMemo(
+    () => learnableLangCodes.map((code) => code.toUpperCase()),
+    [learnableLangCodes],
+  );
+  const filterTabs = useMemo(
+    () => ['All', ...languageTabs, ...staticFilterTabs] as FilterTab[],
+    [languageTabs],
+  );
+  const langFlags = useMemo(
+    () => Object.fromEntries(catalogLangs.map((l) => [l.code, l.flagEmoji])),
+    [catalogLangs],
+  );
 
   const isBrowse = location.pathname.replace(/\/$/, '').endsWith('/browse');
 
@@ -350,6 +437,7 @@ export default function LibraryPage() {
   useEffect(() => {
     if (!user || !getAccessToken()) return;
     let cancelled = false;
+    setLoading(true);
     api<FeedResponse>('/content/feed')
       .then((data) => {
         if (!cancelled) setFeed(data);
@@ -361,7 +449,36 @@ export default function LibraryPage() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, nativeCode, targetScopeKey]);
+
+  const initialFilter = useMemo(
+    () => parseFilterParam(searchParams.get('filter') ?? searchParams.get('genre'), languageTabs, nativeCode),
+    [searchParams, languageTabs, nativeCode],
+  );
+
+  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
+  const [activeFilter, setActiveFilter] = useState<FilterTab>(initialFilter);
+
+  useEffect(() => {
+    const isStatic =
+      activeFilter === 'All' || (staticFilterTabs as readonly string[]).includes(activeFilter as StaticFilterTab);
+    const isNativeChip = Boolean(nativeCode && activeFilter.toLowerCase() === nativeCode);
+    const isOrphanLang =
+      /^[a-z]{2}$/i.test(activeFilter) && languageTabs.length > 0 && !languageTabs.includes(activeFilter);
+    if (!isNativeChip && (isStatic || !isOrphanLang)) return;
+    setActiveFilter('All');
+    if (!isBrowse) return;
+    const params = new URLSearchParams(searchParams);
+    params.delete('filter');
+    params.delete('genre');
+    setSearchParams(params, { replace: true });
+  }, [activeFilter, languageTabs, nativeCode, isBrowse, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    if (!isBrowse) return;
+    setSearch(searchParams.get('q') ?? '');
+    setActiveFilter(initialFilter);
+  }, [isBrowse, searchParams, initialFilter]);
 
   const collectionSlug = searchParams.get('collection');
   const activeCollection = useMemo(
@@ -369,19 +486,44 @@ export default function LibraryPage() {
     [feed, collectionSlug],
   );
 
-  const initialFilter = useMemo(
-    () => parseFilterParam(searchParams.get('filter') ?? searchParams.get('genre')),
-    [searchParams],
-  );
-
-  const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
-  const [activeFilter, setActiveFilter] = useState<FilterTab>(initialFilter);
+  const catalogLangQuery = useMemo(() => {
+    if (!languageTabs.includes(activeFilter)) return '';
+    const code = activeFilter.toLowerCase();
+    if (nativeCode && code === nativeCode) return '';
+    return code;
+  }, [activeFilter, languageTabs, nativeCode]);
 
   useEffect(() => {
-    if (!isBrowse) return;
-    setSearch(searchParams.get('q') ?? '');
-    setActiveFilter(initialFilter);
-  }, [isBrowse, searchParams, initialFilter]);
+    if (!isBrowse || !user || !getAccessToken() || collectionSlug) {
+      if (!isBrowse) setCatalogItems([]);
+      return;
+    }
+    let cancelled = false;
+    setCatalogLoading(true);
+    (async () => {
+      const all: ContentItem[] = [];
+      let page = 1;
+      let hasMore = true;
+      while (hasMore && page <= BROWSE_MAX_PAGES && !cancelled) {
+        const qs = new URLSearchParams();
+        qs.set('page', String(page));
+        qs.set('pageSize', String(BROWSE_PAGE_SIZE));
+        if (catalogLangQuery) qs.set('lang', catalogLangQuery);
+        const data = await api<ContentListResponse>(`/content?${qs.toString()}`);
+        all.push(...(data.items ?? []));
+        hasMore = Boolean(data.hasMore);
+        page += 1;
+      }
+      if (!cancelled) setCatalogItems(dedupeItems(all));
+    })()
+      .catch(console.error)
+      .finally(() => {
+        if (!cancelled) setCatalogLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery]);
 
   const uniqueItems = useMemo(() => {
     if (!feed) return [];
@@ -406,13 +548,24 @@ export default function LibraryPage() {
   }, [highlightedItem, isBrowse]);
 
   const browseBaseItems = useMemo(() => {
-    if (!activeCollection) return uniqueItems;
-    return dedupeItems(activeCollection.items.map((i) => i.content).filter(Boolean));
-  }, [activeCollection, uniqueItems]);
+    if (activeCollection) {
+      return dedupeItems(activeCollection.items.map((i) => i.content).filter(Boolean));
+    }
+    if (isBrowse && activeFilter === 'Imports') {
+      return feed?.myImports ?? [];
+    }
+    if (isBrowse) return catalogItems;
+    return uniqueItems;
+  }, [activeCollection, isBrowse, activeFilter, feed, catalogItems, uniqueItems]);
 
+  const allowedLangs = useMemo(() => new Set(learnableLangCodes), [learnableLangCodes]);
   const filtered = browseBaseItems.filter((item) => {
-    if (search) return item.title.toLowerCase().includes(search.toLowerCase());
-    return matchesFilter(item, activeFilter);
+    if (!isUserImport(item)) {
+      const lang = itemLanguage(item);
+      if (nativeCode && lang === nativeCode) return false;
+      if (allowedLangs.size > 0 && !allowedLangs.has(lang)) return false;
+    }
+    return matchesSearch(item, search) && matchesFilter(item, activeFilter, languageTabs);
   });
 
   const hero = feed?.continueReading?.[0];
@@ -428,7 +581,10 @@ export default function LibraryPage() {
   const hour = new Date().getHours();
   const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
   const firstName = (user?.displayName ?? 'Learner').split(' ')[0];
-  const libraryEmpty = !loading && uniqueItems.length === 0;
+  const libraryEmpty =
+    isBrowse
+      ? !loading && !catalogLoading && browseBaseItems.length === 0
+      : !loading && uniqueItems.length === 0;
 
   const setFilter = (next: FilterTab) => {
     setActiveFilter(next);
@@ -449,11 +605,13 @@ export default function LibraryPage() {
     setSearchParams(params, { replace: true });
   };
 
-  if (loading) return <LibrarySkeleton />;
+  if (loading || (isBrowse && !activeCollection && catalogLoading && catalogItems.length === 0)) {
+    return <LibrarySkeleton />;
+  }
 
   if (isBrowse) {
     return (
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-6">
+      <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-6 min-w-0">
         <div className="space-y-3">
           <nav className="flex items-center gap-1.5 text-sm text-gray-400">
             <button
@@ -542,13 +700,13 @@ export default function LibraryPage() {
         ) : view === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} />
+              <ContentCard key={item.id} item={item} langFlags={langFlags} />
             ))}
           </div>
         ) : (
           <div className="space-y-2">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} view="list" />
+              <ContentCard key={item.id} item={item} view="list" langFlags={langFlags} />
             ))}
           </div>
         )}
@@ -567,18 +725,18 @@ export default function LibraryPage() {
         : "Keep your streak alive — you're on a roll.";
 
   return (
-    <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-8">
-      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-        <div>
+    <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-8 min-w-0">
+      <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 lg:gap-6 min-w-0">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {firstName} 👋</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{streakSubtitle}</p>
         </div>
-        <div className="flex gap-3 shrink-0">
+        <div className="flex gap-3 min-w-0 w-full lg:w-auto">
           {[
             { icon: Flame, value: `${streakCount} days`, label: 'Streak', color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
             { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: 'Words', color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
           ].map((s) => (
-            <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3.5 py-2.5 min-w-[7.5rem]', s.color)}>
+            <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3 py-2.5 min-w-0 flex-1 lg:flex-none lg:min-w-[7.5rem]', s.color)}>
               <s.icon className="w-4 h-4 shrink-0" />
               <div>
                 <div className="font-bold text-sm leading-none">{s.value}</div>
@@ -597,7 +755,7 @@ export default function LibraryPage() {
             <p className="text-gray-400 text-sm">On your library dashboard — open it when you want to read or purchase.</p>
           </div>
           <div className="max-w-[10.5rem] sm:max-w-[12rem]">
-            <ContentCard item={highlightedItem} highlighted />
+            <ContentCard item={highlightedItem} highlighted langFlags={langFlags} />
           </div>
         </section>
       )}
@@ -622,7 +780,7 @@ export default function LibraryPage() {
               )}
             >
               {heroSideItems.map((item) => (
-                <ContentCard key={item.id} item={item} compact />
+                <ContentCard key={item.id} item={item} compact langFlags={langFlags} />
               ))}
             </div>
           )}
@@ -631,20 +789,12 @@ export default function LibraryPage() {
 
       {(feed?.recentlyPublished?.length ?? 0) > 0 && (
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-gray-900 font-bold">New in the library</h2>
-              <p className="text-gray-400 text-sm">Admin catalog — A4 covers, not your personal imports</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate('/app/browse')}
-              className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              See all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
+          <SectionHeading
+            title="New in the library"
+            subtitle="Admin catalog — A4 covers, not your personal imports"
+            onSeeAll={() => navigate('/app/browse')}
+          />
+          <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
             {feed!.recentlyPublished.slice(0, 10).map((item) => (
               <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
                 <ContentCard item={item} compact highlighted={item.id === highlightId} />
@@ -657,20 +807,12 @@ export default function LibraryPage() {
 
       {(feed?.myImports?.length ?? 0) > 0 && (
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-gray-900 font-bold">Your imports</h2>
-              <p className="text-gray-400 text-sm">Files and URLs you brought in — kept separate from the store</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate('/app/browse?filter=Imports')}
-              className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              See all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
+          <SectionHeading
+            title="Your imports"
+            subtitle="Files and URLs you brought in — kept separate from the store"
+            onSeeAll={() => navigate('/app/browse?filter=Imports')}
+          />
+          <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
             {feed!.myImports.slice(0, 10).map((item) => (
               <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
                 <ContentCard item={item} compact />
@@ -686,20 +828,12 @@ export default function LibraryPage() {
         if (!items.length) return null;
         return (
           <section key={collection.slug}>
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-gray-900 font-bold">{collection.title}</h2>
-                <p className="text-gray-400 text-sm">{collection.description}</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => navigate(browsePathForCollection(collection))}
-                className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                See all <ChevronRight className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="flex gap-4 overflow-x-auto pb-3 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
+            <SectionHeading
+              title={collection.title}
+              subtitle={collection.description}
+              onSeeAll={() => navigate(browsePathForCollection(collection, languageTabs))}
+            />
+            <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
               {items.map((item) => (
                 <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
                   <ContentCard item={item} compact />
@@ -735,19 +869,11 @@ export default function LibraryPage() {
 
       {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
         <section>
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <h2 className="text-gray-900 font-bold">Browse Library</h2>
-              <p className="text-gray-400 text-sm">Explore all available reading content</p>
-            </div>
-            <button
-              type="button"
-              onClick={() => navigate('/app/browse')}
-              className="flex items-center gap-1 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              See all <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
+          <SectionHeading
+            title="Browse Library"
+            subtitle="Explore all available reading content"
+            onSeeAll={() => navigate('/app/browse')}
+          />
         </section>
       )}
     </div>

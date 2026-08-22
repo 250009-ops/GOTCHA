@@ -20,7 +20,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
@@ -35,7 +37,9 @@ import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.automirrored.outlined.TrendingUp
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Campaign
+import androidx.compose.material.icons.outlined.CreditCard
 import androidx.compose.material.icons.outlined.EmojiEvents
+import androidx.compose.material.icons.outlined.Group
 import androidx.compose.material.icons.outlined.HeadsetMic
 import androidx.compose.material.icons.outlined.Language
 import androidx.compose.material.icons.outlined.Memory
@@ -107,7 +111,10 @@ import app.gotcha.android.ui.components.LoadingBox
 import app.gotcha.android.ui.theme.GlassChrome
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
+import app.gotcha.android.ui.theme.Inter
 import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.webPageHorizontalPad
+import app.gotcha.android.ui.theme.webScreenWidthDp
 import coil.compose.AsyncImage
 import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
@@ -119,18 +126,6 @@ import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.util.Locale
 import kotlin.math.max
-
-private data class AdminTab(val route: String, val label: String, @DrawableRes val iconRes: Int)
-
-private val adminTabs = listOf(
-    AdminTab("dashboard", "Dashboard", R.drawable.ic_admin_nav_grid),
-    AdminTab("content", "Content", R.drawable.ic_admin_nav_book),
-    AdminTab("pricing", "Pricing", R.drawable.ic_admin_nav_card),
-    AdminTab("users", "Users", R.drawable.ic_admin_nav_users),
-    AdminTab("more", "More", R.drawable.ic_admin_nav_more),
-)
-
-private val bottomTabRoutes = adminTabs.map { it.route }.toSet()
 
 /** Bottom inset so lists scroll under frosted bar + system nav. */
 val LocalAdminBottomInset = staticCompositionLocalOf { 0.dp }
@@ -144,42 +139,47 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination?.route
     GotchaSystemBars(darkIcons = true)
-    val showChrome = current in bottomTabRoutes
+    val container = LocalAppContainer.current
+    var me by remember { mutableStateOf<AdminMe?>(null) }
+    LaunchedEffect(Unit) {
+        runCatching { me = container.adminRepository.me() }
+        if (me?.role.equals("moderator", true) && (current == null || current == "dashboard")) {
+            nav.navigate("content") { launchSingleTop = true }
+        }
+    }
 
-    val hazeState = remember { HazeState() }
-    val navBarDp = adminNavBarInset()
-    val statusBarDp = adminStatusBarInset()
-    val glassFadeTop = 36.dp
-    val glassFadeBottom = 36.dp
-    val bottomInset =
-        if (showChrome) {
-            GlassChrome.NavHeight + GlassChrome.NavPillBottomGap + navBarDp + GlassChrome.ContentClearance
-        } else {
-            max(navBarDp - 12.dp, 32.dp)
+    fun goTab(route: String) {
+        nav.navigate(route) {
+            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
         }
-    val topInset =
-        if (showChrome) {
-            statusBarDp + GlassChrome.NavPillTopGap + GlassChrome.TopBarHeight + GlassChrome.TopContentClearance
-        } else {
-            // Secondary: top pill hidden, but status frost remains — clear camera/status bar.
-            statusBarDp + GlassChrome.TopContentClearance
-        }
+    }
 
     CompositionLocalProvider(
-        LocalAdminBottomInset provides bottomInset,
-        LocalAdminTopInset provides topInset,
+        LocalAdminBottomInset provides 0.dp,
+        LocalAdminTopInset provides 0.dp,
     ) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(GotchaColors.Surface),
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .background(GotchaColors.WebAdminCanvas),
         ) {
+            WebAdminShellFrame(
+                currentRoute = current,
+                role = me?.role,
+                displayName = me?.displayName,
+                email = me?.email,
+                avatarUrl = me?.avatarUrl,
+                onNav = ::goTab,
+                onLogout = onLogout,
+            ) {
             NavHost(
                 navController = nav,
                 startDestination = "dashboard",
-                modifier = Modifier
-                    .fillMaxSize()
-                    .haze(state = hazeState),
+                modifier = Modifier.fillMaxSize(),
             ) {
                 composable("dashboard") {
                     AdminDashboardScreen(
@@ -346,346 +346,9 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
                 composable("settings") { AdminSettingsScreen(onBack = { nav.popBackStack() }) }
                 composable("ai-usage") { AdminAiUsageScreen(onBack = { nav.popBackStack() }) }
             }
-
-            if (showChrome) {
-                AdminFrostedTopBar(
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    hazeState = hazeState,
-                    fadeBottom = glassFadeBottom,
-                    onNotifications = { nav.navigate("notifications") },
-                )
-                AdminFrostedBottomBar(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    hazeState = hazeState,
-                    fadeTop = glassFadeTop,
-                    currentRoute = current,
-                    onSelect = { route ->
-                        nav.navigate(route) {
-                            popUpTo(nav.graph.findStartDestination().id) { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                )
-            } else {
-                AdminSystemStatusGlass(
-                    modifier = Modifier.align(Alignment.TopCenter),
-                    hazeState = hazeState,
-                    fadeBottom = 28.dp,
-                )
-                AdminSystemNavGlass(
-                    modifier = Modifier.align(Alignment.BottomCenter),
-                    hazeState = hazeState,
-                    fadeTop = 40.dp,
-                )
             }
         }
     }
-}
-
-@Composable
-private fun adminNavBarInset(): Dp {
-    val fromInsets = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
-    return max(fromInsets, 48.dp)
-}
-
-@Composable
-private fun adminStatusBarInset(): Dp {
-    val fromInsets = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
-    return max(fromInsets, 24.dp)
-}
-
-@Composable
-private fun AdminClearGlassSheet(
-    hazeState: HazeState,
-    fadeTop: Dp,
-    modifier: Modifier = Modifier,
-    fadeAtBottom: Boolean = false,
-) {
-    val blurCapable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-    val clearTintWhite = if (blurCapable) 0.035f else 0.08f
-    val clearTintBlack = if (blurCapable) 0.02f else 0.05f
-    val clearBlur = 5.dp
-    val clearGlassStyle = HazeStyle(
-        backgroundColor = GotchaColors.Surface,
-        tints = listOf(
-            HazeTint(Color.White.copy(alpha = clearTintWhite)),
-            HazeTint(Color.Black.copy(alpha = clearTintBlack)),
-        ),
-        blurRadius = clearBlur,
-        noiseFactor = 0f,
-        fallbackTint = HazeTint(Color.Black.copy(alpha = 0.08f)),
-    )
-
-    Box(
-        modifier = modifier
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                val fadeEnd = (fadeTop.toPx() / size.height).coerceIn(0.1f, 0.55f)
-                val stops = if (fadeAtBottom) {
-                    arrayOf(
-                        0f to Color.Black,
-                        (1f - fadeEnd) to Color.Black,
-                        (1f - fadeEnd * 0.5f) to Color.Black.copy(alpha = 0.45f),
-                        1f to Color.Transparent,
-                    )
-                } else {
-                    arrayOf(
-                        0f to Color.Transparent,
-                        fadeEnd * 0.5f to Color.Black.copy(alpha = 0.45f),
-                        fadeEnd to Color.Black,
-                        1f to Color.Black,
-                    )
-                }
-                drawRect(
-                    brush = Brush.verticalGradient(colorStops = stops),
-                    blendMode = BlendMode.DstIn,
-                )
-            }
-            .hazeChild(state = hazeState, style = clearGlassStyle) {
-                backgroundColor = GotchaColors.Surface
-                tints = listOf(
-                    HazeTint(Color.White.copy(alpha = clearTintWhite)),
-                    HazeTint(Color.Black.copy(alpha = clearTintBlack)),
-                )
-                blurRadius = clearBlur
-                noiseFactor = 0f
-            },
-    )
-}
-
-@Composable
-private fun AdminFrostedTopBar(
-    hazeState: HazeState,
-    fadeBottom: Dp,
-    onNotifications: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val barShape = RoundedCornerShape(GlassChrome.NavBarCorner)
-    val statusInset = adminStatusBarInset()
-    val totalHeight = statusInset + GlassChrome.NavPillTopGap + GlassChrome.TopBarHeight + fadeBottom
-    val blurCapable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(totalHeight),
-    ) {
-        AdminClearGlassSheet(
-            hazeState = hazeState,
-            fadeTop = fadeBottom,
-            fadeAtBottom = true,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = statusInset + GlassChrome.NavPillTopGap)
-                .fillMaxWidth()
-                .padding(horizontal = GlassChrome.TopPillSideInset)
-                .height(GlassChrome.TopBarHeight)
-                .shadow(
-                    elevation = 6.dp,
-                    shape = barShape,
-                    clip = false,
-                    spotColor = Color.Black.copy(alpha = 0.06f),
-                    ambientColor = Color.Black.copy(alpha = 0.03f),
-                )
-                .clip(barShape)
-                .background(Color.White.copy(alpha = if (blurCapable) 0.90f else 0.96f)),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    BrandMark(
-                        size = 32,
-                        cornerRadius = 7,
-                        tileColor = GotchaColors.BrandPurpleMid,
-                    )
-                    BrandWordmark(
-                        fontSize = 18,
-                        color = GotchaColors.BrandNavy,
-                    )
-                }
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(GotchaColors.Surface)
-                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onNotifications,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.ic_bell),
-                        contentDescription = "Notifications",
-                        tint = GotchaColors.BrandNavy,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Box(
-                        modifier = Modifier
-                            .align(Alignment.TopEnd)
-                            .padding(top = 6.dp, end = 6.dp)
-                            .size(7.dp)
-                            .clip(CircleShape)
-                            .background(GotchaColors.Danger),
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdminFrostedBottomBar(
-    hazeState: HazeState,
-    currentRoute: String?,
-    onSelect: (String) -> Unit,
-    fadeTop: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val barShape = RoundedCornerShape(GlassChrome.NavBarCorner)
-    val navInset = adminNavBarInset()
-    val totalHeight = fadeTop + GlassChrome.NavHeight + GlassChrome.NavPillBottomGap + navInset
-    val blurCapable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(totalHeight),
-    ) {
-        AdminClearGlassSheet(
-            hazeState = hazeState,
-            fadeTop = fadeTop,
-            modifier = Modifier.fillMaxSize(),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = fadeTop)
-                .fillMaxWidth()
-                .padding(horizontal = GlassChrome.NavSideInset)
-                .height(GlassChrome.NavHeight)
-                .shadow(
-                    elevation = 6.dp,
-                    shape = barShape,
-                    clip = false,
-                    spotColor = Color.Black.copy(alpha = 0.06f),
-                    ambientColor = Color.Black.copy(alpha = 0.03f),
-                )
-                .clip(barShape)
-                .background(Color.White.copy(alpha = if (blurCapable) 0.90f else 0.96f)),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(
-                        horizontal = GlassChrome.NavInnerHorizontalPad,
-                        vertical = GlassChrome.NavInnerVerticalPad,
-                    ),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                adminTabs.forEach { tab ->
-                    val selected = currentRoute == tab.route
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .fillMaxHeight()
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null,
-                            ) { onSelect(tab.route) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                        ) {
-                            Box(
-                                modifier = Modifier.size(GlassChrome.TabIconCircle),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (selected) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(CircleShape)
-                                            .background(GotchaColors.BrandPurple),
-                                    )
-                                }
-                                Icon(
-                                    painter = painterResource(tab.iconRes),
-                                    contentDescription = tab.label,
-                                    modifier = Modifier.size(GlassChrome.TabIconSize),
-                                    tint = if (selected) Color.White else GotchaColors.TextSubtle,
-                                )
-                            }
-                            Text(
-                                tab.label,
-                                modifier = Modifier.padding(top = GlassChrome.TabIconLabelGap),
-                                style = TextStyle(
-                                    fontFamily = Manrope,
-                                    fontSize = 10.sp,
-                                    lineHeight = 12.sp,
-                                    fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
-                                    color = if (selected) GotchaColors.BrandPurple else GotchaColors.TextSubtle,
-                                    // Drop Android font padding; do not Trim (glyphs can paint upward).
-                                    platformStyle = PlatformTextStyle(includeFontPadding = false),
-                                ),
-                                maxLines = 1,
-                                softWrap = false,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AdminSystemStatusGlass(
-    hazeState: HazeState,
-    fadeBottom: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val statusInset = adminStatusBarInset()
-    AdminClearGlassSheet(
-        hazeState = hazeState,
-        fadeTop = fadeBottom,
-        fadeAtBottom = true,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(statusInset + fadeBottom),
-    )
-}
-
-@Composable
-private fun AdminSystemNavGlass(
-    hazeState: HazeState,
-    fadeTop: Dp,
-    modifier: Modifier = Modifier,
-) {
-    val navInset = adminNavBarInset()
-    AdminClearGlassSheet(
-        hazeState = hazeState,
-        fadeTop = fadeTop,
-        modifier = modifier
-            .fillMaxWidth()
-            .height(fadeTop + navInset),
-    )
 }
 
 @Composable
@@ -701,6 +364,16 @@ private fun AdminDashboardScreen(
     var error by remember { mutableStateOf<String?>(null) }
     var loading by remember { mutableStateOf(true) }
     var reloadKey by remember { mutableStateOf(0) }
+    var firstName by remember { mutableStateOf("Admin") }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            val me = container.adminRepository.me()
+            firstName = me.displayName?.split(" ")?.firstOrNull()?.takeIf { it.isNotBlank() }
+                ?: me.email?.substringBefore("@")
+                ?: "Admin"
+        }
+    }
 
     LaunchedEffect(reloadKey) {
         loading = true
@@ -723,31 +396,32 @@ private fun AdminDashboardScreen(
         error != null -> ErrorBox(error!!, onRetry = { reloadKey++ })
         else -> {
             val d = data!!
-            val growthAccent = when {
-                d.userGrowthPct > 0 -> "+${formatPct(d.userGrowthPct)}%"
-                d.userGrowthPct < 0 -> "${formatPct(d.userGrowthPct)}%"
-                else -> "0%"
+            val pad = webPageHorizontalPad(webScreenWidthDp())
+            val wide = webScreenWidthDp() >= 1024
+            val growthHintColor = if (d.userGrowthPct >= 0) Color(0xFF059669) else Color(0xFFE11D48)
+            val growthHint = when {
+                d.userGrowthPct > 0 -> "+${formatPct(d.userGrowthPct)}% this week"
+                d.userGrowthPct < 0 -> "${formatPct(d.userGrowthPct)}% this week"
+                else -> "0% this week"
             }
-            val revenueAccent = when {
-                d.revenueToday > 0 -> "+$${formatCompactMoney(d.revenueToday)}"
-                d.revenueMomDelta != 0.0 -> {
-                    val sign = if (d.revenueMomDelta > 0) "+" else ""
-                    "$sign$${formatCompactMoney(kotlin.math.abs(d.revenueMomDelta))}"
-                }
-                d.mrrGrowthPct != 0.0 -> {
-                    val sign = if (d.mrrGrowthPct > 0) "+" else ""
-                    "$sign${formatPct(d.mrrGrowthPct)}%"
-                }
-                else -> "-"
+            val revenueValue = when {
+                d.revenue > 0 -> d.revenue
+                d.importRevenueUzs > 0 -> d.importRevenueUzs.toDouble()
+                else -> d.mrr
             }
-            val revenueHint = when {
-                d.revenueToday > 0 -> "today"
-                d.revenueMomDelta != 0.0 -> "MoM"
-                else -> "MRR"
+            val revenueHint = buildString {
+                if (d.revenueToday > 0) append("+${formatUzs(d.revenueToday)} today")
+                else if (d.revenueGrowthPct != 0.0) {
+                    val sign = if (d.revenueGrowthPct > 0) "+" else ""
+                    append("${sign}${formatPct(d.revenueGrowthPct)}% MoM")
+                } else append("Real Atmos import payments only")
             }
-            val dailyBars = d.revenueDaily.map { it.mrr }
-            val trendBars = if (dailyBars.any { it > 0 }) dailyBars else d.revenueTrend.map { it.mrr }
-            val trendLabel = if (dailyBars.any { it > 0 }) "7 Days" else "6 Mo"
+            val hasDaily = d.revenueDaily.any { it.chartValue() > 0 }
+            val revenueBars = (if (hasDaily) d.revenueDaily else d.revenueTrend).map {
+                (it.month ?: it.day ?: "") to it.chartValue().toFloat()
+            }
+            val revenueBadge = if (hasDaily) "7 Days" else "6 Mo"
+            val userGrowthPoints = d.userGrowth.map { (it.month ?: "") to it.users.toFloat() }
             val activities = d.recentActivity.ifEmpty {
                 buildList {
                     d.recentUsers.take(3).forEach { user ->
@@ -772,163 +446,180 @@ private fun AdminDashboardScreen(
                             ),
                         )
                     }
-                    if (isEmpty() && d.publishedContent > 0) {
-                        add(
-                            AdminActivityItem(
-                                id = "content-count",
-                                type = "content",
-                                title = "Content published",
-                                subtitle = "${d.publishedContent} items live in store",
-                                createdAt = null,
-                            ),
-                        )
-                    }
                 }
             }
 
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
-                contentPadding = PaddingValues(top = topInset, bottom = bottomInset + 16.dp),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
+                contentPadding = PaddingValues(top = topInset, bottom = bottomInset + 24.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 item {
-                    // Figma 122:61 — title; bell lives in frosted top chrome.
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 24.dp),
-                    ) {
-                        Text("Overview", color = GotchaColors.TextMuted, fontSize = 14.sp, fontFamily = Manrope)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "Admin Console",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp,
-                            color = GotchaColors.Ink,
-                        )
-                    }
+                    AdminPageHeader(
+                        title = "Dashboard Overview",
+                        subtitle = "Welcome back, $firstName. Live platform metrics from the database.",
+                    )
                 }
                 item {
                     Column(
-                        modifier = Modifier.padding(horizontal = 24.dp),
+                        modifier = Modifier.padding(horizontal = pad),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            MetricCard(
+                            AdminStatCard(
                                 label = "Total Users",
                                 value = formatInt(d.users),
-                                accent = growthAccent,
-                                accentHint = "this week",
-                                accentColor = if (d.userGrowthPct >= 0) GotchaColors.SuccessBright else GotchaColors.Danger,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(onClick = onOpenUsers),
+                                hint = growthHint,
+                                hintColor = growthHintColor,
+                                icon = Icons.Outlined.Group,
+                                modifier = Modifier.weight(1f).clickable(onClick = onOpenUsers),
                             )
-                            MetricCard(
+                            AdminStatCard(
                                 label = "Active Today",
                                 value = formatInt(d.activeToday),
-                                accent = "${formatPct(d.engagementPct)}%",
-                                accentHint = "engagement",
-                                accentColor = GotchaColors.SuccessBright,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(onClick = onOpenUsers),
+                                hint = "${formatPct(d.engagementPct)}% engagement · ${formatInt(d.activeSubscribers)} pay as you go",
+                                hintColor = Color(0xFF059669),
+                                icon = Icons.Outlined.CreditCard,
+                                accentBg = Color(0xFFF0F9FF),
+                                accentFg = Color(0xFF0369A1),
+                                modifier = Modifier.weight(1f).clickable(onClick = onOpenUsers),
                             )
                         }
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            MetricCard(
+                            AdminStatCard(
                                 label = "Revenue",
-                                value = "$${formatInt(d.mrr.toInt())}",
-                                accent = if (d.importRevenueUzs > 0) {
-                                    "${formatInt(d.importRevenueUzs)} ${d.importCurrency ?: "UZS"}"
-                                } else {
-                                    revenueAccent
-                                },
-                                accentHint = if (d.importRevenueUzs > 0) "imports mo" else revenueHint,
-                                accentColor = if (revenueAccent.startsWith("-") && d.importRevenueUzs <= 0) {
-                                    GotchaColors.Danger
-                                } else {
-                                    GotchaColors.SuccessBright
-                                },
+                                value = formatUzs(revenueValue),
+                                hint = revenueHint,
+                                hintColor = Color(0xFF059669),
+                                icon = Icons.AutoMirrored.Outlined.TrendingUp,
+                                accentBg = Color(0xFFECFDF5),
+                                accentFg = Color(0xFF047857),
                                 modifier = Modifier.weight(1f),
                             )
-                            MetricCard(
+                            AdminStatCard(
                                 label = "AI Lookups",
                                 value = formatCompact(d.aiLookupsToday),
-                                accent = if (d.aiLimit > 0) "${formatPct(d.aiUsagePct)}%" else "-",
-                                accentHint = if (d.aiLimit > 0) "of daily limit" else "today",
-                                accentColor = GotchaColors.BrandPurple,
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clickable(onClick = onOpenAiUsage),
+                                hint = if (d.aiLimit > 0) "${formatPct(d.aiUsagePct)}% of daily limit" else "No platform limit configured",
+                                hintColor = GotchaColors.WebAdminActive,
+                                icon = Icons.Outlined.Memory,
+                                accentBg = Color(0xFFFAE8FF),
+                                accentFg = Color(0xFFA21CAF),
+                                modifier = Modifier.weight(1f).clickable(onClick = onOpenAiUsage),
                             )
-                        }
-                    }
-                }
-                if (trendBars.isNotEmpty()) {
-                    item {
-                        Column(
-                            modifier = Modifier
-                                .padding(horizontal = 24.dp)
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(Color.White)
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
-                                .padding(16.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text("Revenue Trend", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
-                                Text(trendLabel, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.BrandPurple)
-                            }
-                            Spacer(Modifier.height(12.dp))
-                            MiniBarChart(values = trendBars)
                         }
                     }
                 }
                 item {
-                    Column(modifier = Modifier.padding(horizontal = 24.dp)) {
-                        Text("Recent Activity", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = GotchaColors.Ink)
-                        Spacer(Modifier.height(12.dp))
-                        if (activities.isEmpty()) {
-                            EmptyState("No recent activity yet.")
-                        } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                activities.take(5).forEach { item ->
-                                    val (icon, iconBg, iconTint) = when (item.type?.lowercase()) {
-                                        "content" -> Triple(
-                                            Icons.AutoMirrored.Outlined.MenuBook,
-                                            GotchaColors.BrandPurpleSoft,
-                                            GotchaColors.BrandPurple,
-                                        )
-                                        "support" -> Triple(
-                                            Icons.Outlined.WarningAmber,
-                                            GotchaColors.WarningBg,
-                                            Color(0xFFF59E0B),
-                                        )
-                                        else -> Triple(
-                                            Icons.Outlined.PersonAdd,
-                                            GotchaColors.SuccessBg,
-                                            GotchaColors.SuccessBright,
-                                        )
+                    if (wide) {
+                        Row(
+                            Modifier.padding(horizontal = pad),
+                            horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            AdminCard(Modifier.weight(1f)) {
+                                DashboardChartHeader(
+                                    "User Growth Trend",
+                                    if (d.userGrowth.isNotEmpty()) {
+                                        "${d.userGrowth.first().month ?: ""} – ${d.userGrowth.last().month ?: ""}"
+                                    } else "No data",
+                                )
+                                AdminLineChart(userGrowthPoints)
+                            }
+                            AdminCard(Modifier.weight(1f)) {
+                                DashboardChartHeader("Revenue Trend", revenueBadge, accent = true)
+                                AdminBarChart(revenueBars)
+                            }
+                        }
+                    } else {
+                        Column(
+                            Modifier.padding(horizontal = pad),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            AdminCard {
+                                DashboardChartHeader(
+                                    "User Growth Trend",
+                                    if (d.userGrowth.isNotEmpty()) {
+                                        "${d.userGrowth.first().month ?: ""} – ${d.userGrowth.last().month ?: ""}"
+                                    } else "No data",
+                                )
+                                AdminLineChart(userGrowthPoints)
+                            }
+                            AdminCard {
+                                DashboardChartHeader("Revenue Trend", revenueBadge, accent = true)
+                                AdminBarChart(revenueBars)
+                            }
+                        }
+                    }
+                }
+                if (d.aiCategories.isNotEmpty() || d.topPhrases.isNotEmpty()) {
+                    item {
+                        Column(
+                            Modifier.padding(horizontal = pad),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            if (d.aiCategories.isNotEmpty()) {
+                                AdminCard {
+                                    Text("AI Lookup Categories", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A))
+                                    Spacer(Modifier.height(12.dp))
+                                    d.aiCategories.forEach { cat ->
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            Box(Modifier.size(10.dp).clip(CircleShape).background(parseAdminHex(cat.color)))
+                                            Text(cat.name, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF475569), modifier = Modifier.weight(1f))
+                                            Text("${cat.pct.toInt()}%", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF0F172A))
+                                        }
                                     }
+                                }
+                            }
+                            if (d.topPhrases.isNotEmpty()) {
+                                AdminCard {
+                                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                        Text("Most Looked-up Idioms & Phrases", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A), modifier = Modifier.weight(1f))
+                                        Text("View Library", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.WebAdminActive, modifier = Modifier.clickable(onClick = onOpenContent))
+                                    }
+                                    Spacer(Modifier.height(8.dp))
+                                    d.topPhrases.take(6).forEach { row ->
+                                        Row(
+                                            Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                        ) {
+                                            Column(Modifier.weight(1f)) {
+                                                Text(row.phrase, fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Color(0xFF0F172A))
+                                                Text("${row.language} · ${row.level.uppercase()}", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF64748B))
+                                            }
+                                            Text("${row.lookups} · ${row.aiMatch.toInt()}%", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color(0xFF059669))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (activities.isNotEmpty()) {
+                    item {
+                        AdminCard(Modifier.padding(horizontal = pad)) {
+                            Text("Recent Activity", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A))
+                            Spacer(Modifier.height(12.dp))
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                activities.take(8).forEach { item ->
                                     val onClick = when (item.type?.lowercase()) {
                                         "content" -> onOpenContent
                                         "support" -> onOpenSupport
                                         else -> onOpenUsers
+                                    }
+                                    val (icon, iconBg, iconTint) = when (item.type?.lowercase()) {
+                                        "content" -> Triple(Icons.AutoMirrored.Outlined.MenuBook, Color(0xFFF0E7FF), Color(0xFF7008E7))
+                                        "support" -> Triple(Icons.Outlined.WarningAmber, Color(0xFFFEF3C7), Color(0xFFF59E0B))
+                                        else -> Triple(Icons.Outlined.PersonAdd, Color(0xFFECFDF5), Color(0xFF10B981))
                                     }
                                     ActivityRow(
                                         icon = icon,
                                         iconBg = iconBg,
                                         iconTint = iconTint,
                                         title = item.title,
-                                        subtitle = item.subtitle.orEmpty()
-                                            .replace(" - ", " • ")
-                                            .replace(" · ", " • "),
+                                        subtitle = item.subtitle.orEmpty().replace(" - ", " • ").replace(" · ", " • "),
                                         time = relativeShort(item.createdAt),
                                         onClick = onClick,
                                     )
@@ -938,14 +629,53 @@ private fun AdminDashboardScreen(
                     }
                 }
                 item {
+                    AdminCard(Modifier.padding(horizontal = pad)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Recent User Acquisitions", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A))
+                            Text("View users", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.WebAdminActive, modifier = Modifier.clickable(onClick = onOpenUsers))
+                        }
+                        Spacer(Modifier.height(12.dp))
+                        if (d.recentUsers.isEmpty()) {
+                            Text("No users yet.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF64748B), modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp))
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                d.recentUsers.take(8).forEach { user ->
+                                    Row(
+                                        Modifier.fillMaxWidth().clickable { onOpenUsers() },
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                    ) {
+                                        Box(
+                                            Modifier.size(32.dp).clip(CircleShape).background(Color(0xFFEDE9FE)),
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Text(
+                                                (user.displayName ?: user.email ?: "L").take(1).uppercase(),
+                                                fontFamily = Inter,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 12.sp,
+                                                color = GotchaColors.WebAdminActive,
+                                            )
+                                        }
+                                        Column(Modifier.weight(1f)) {
+                                            Text(user.displayName ?: "Learner", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Color(0xFF0F172A))
+                                            Text(user.email.orEmpty(), fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF64748B), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        }
+                                        AdminBadge(user.billingTier ?: "Free")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                item {
                     Text(
                         "Open learner app",
-                        color = GotchaColors.BrandPurple,
+                        color = GotchaColors.WebAdminActive,
+                        fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 13.sp,
-                        modifier = Modifier
-                            .padding(horizontal = 24.dp)
-                            .clickable(onClick = onOpenLearner),
+                        modifier = Modifier.padding(horizontal = pad).clickable(onClick = onOpenLearner),
                     )
                 }
             }
@@ -972,18 +702,19 @@ private fun AdminContentScreen(onOpenDetail: (String) -> Unit, onAdd: () -> Unit
         }
     }
 
-    val filters = listOf("All", "Books", "Stories", "Articles", "News", "Free")
+    val filters = listOf("All", "Books", "Articles", "News", "User Imports")
     val filtered = items.filter { item ->
         val qOk = query.isBlank() ||
             (item.title?.contains(query, true) == true) ||
             (item.language?.contains(query, true) == true) ||
             (item.author?.contains(query, true) == true)
+        val type = item.contentType.orEmpty().lowercase()
+        val source = item.contentSource.orEmpty().lowercase()
         val fOk = when (filter) {
-            "Books" -> item.contentType?.equals("book", true) == true || item.contentType?.equals("ebook", true) == true
-            "Stories" -> item.contentType?.equals("story", true) == true
-            "Articles" -> item.contentType?.equals("article", true) == true
-            "News" -> item.contentType?.equals("news", true) == true
-            "Free" -> item.isFree == true || (item.priceUsd ?: 0.0) <= 0.0
+            "Books" -> type == "book" || type == "ebook" || type == "e-book"
+            "Articles" -> type == "article"
+            "News" -> type == "news"
+            "User Imports" -> type.contains("import") || source.contains("user") || source.contains("import")
             else -> true
         }
         qOk && fOk
@@ -996,7 +727,7 @@ private fun AdminContentScreen(onOpenDetail: (String) -> Unit, onAdd: () -> Unit
         loading -> LoadingBox(Modifier.fillMaxSize())
         error != null -> ErrorBox(error!!)
         else -> LazyColumn(
-            modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+            modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
             contentPadding = PaddingValues(top = topInset, bottom = bottomInset + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1008,25 +739,33 @@ private fun AdminContentScreen(onOpenDetail: (String) -> Unit, onAdd: () -> Unit
                             .padding(horizontal = 24.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Text(
-                            "Content Store",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp,
-                            color = GotchaColors.Ink,
-                            modifier = Modifier.weight(1f),
-                        )
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "Content Library",
+                                fontFamily = Inter,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 26.sp,
+                                color = Color(0xFF0F172A),
+                            )
+                            Text(
+                                "Catalog, licenses, and user imports",
+                                fontFamily = Inter,
+                                fontSize = 14.sp,
+                                color = Color(0xFF64748B),
+                                modifier = Modifier.padding(top = 4.dp),
+                            )
+                        }
                         Box(
                             modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(GotchaColors.BrandPurple)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(GotchaColors.WebAdminActive)
                                 .clickable(onClick = onAdd)
                                 .padding(horizontal = 14.dp, vertical = 8.dp),
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(Icons.Outlined.Add, null, tint = Color.White, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(4.dp))
-                                Text("Add", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Add product", color = Color.White, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                             }
                         }
                     }
@@ -1062,21 +801,17 @@ private fun AdminContentScreen(onOpenDetail: (String) -> Unit, onAdd: () -> Unit
                     ) {
                         filters.forEach { chip ->
                             val selected = filter == chip
-                            val isFreeChip = chip == "Free"
                             val bg = when {
-                                selected -> GotchaColors.BrandPurple
-                                isFreeChip -> GotchaColors.SuccessBg
+                                selected -> GotchaColors.WebAdminActive
                                 else -> Color.White
                             }
                             val border = when {
-                                selected -> GotchaColors.BrandPurple
-                                isFreeChip -> Color(0xFFA7F3D0)
-                                else -> GotchaColors.Border
+                                selected -> GotchaColors.WebAdminActive
+                                else -> Color(0xFFE2E8F0)
                             }
                             val fg = when {
                                 selected -> Color.White
-                                isFreeChip -> GotchaColors.SuccessBright
-                                else -> GotchaColors.TextMuted
+                                else -> Color(0xFF475569)
                             }
                             Text(
                                 chip,
@@ -1259,7 +994,7 @@ private fun AdminImportPricingScreen(
         else -> {
             val d = data!!
             LazyColumn(
-                modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+                modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
                 contentPadding = PaddingValues(
                     start = 24.dp,
                     end = 24.dp,
@@ -1272,58 +1007,58 @@ private fun AdminImportPricingScreen(
                 item {
                     Text(
                         "Import & Pricing",
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 24.sp,
-                        color = GotchaColors.Ink,
+                        fontFamily = Inter,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 26.sp,
+                        color = Color(0xFF0F172A),
+                    )
+                    Text(
+                        "Atmos import payments, free limits, and page tiers",
+                        fontFamily = Inter,
+                        fontSize = 14.sp,
+                        color = Color(0xFF64748B),
+                        modifier = Modifier.padding(top = 4.dp),
                     )
                 }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White)
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                "Revenue from Imports",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp,
-                                color = GotchaColors.TextMuted,
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AdminStatCard(
+                                label = "Revenue from Imports",
+                                value = formatUsdMicros(d.stats?.revenueFromImports),
+                                hint = if ((d.stats?.revenueGrowthPct ?: 0.0) != 0.0) {
+                                    val g = d.stats!!.revenueGrowthPct
+                                    val sign = if (g > 0) "+" else ""
+                                    "${sign}${formatPct(g)}% MoM"
+                                } else "Atmos payments",
+                                hintColor = Color(0xFF059669),
+                                icon = Icons.AutoMirrored.Outlined.TrendingUp,
+                                accentBg = Color(0xFFECFDF5),
+                                accentFg = Color(0xFF047857),
+                                modifier = Modifier.weight(1f),
                             )
-                            Text(
-                                formatUsdMicros(d.stats?.revenueFromImports),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp,
-                                color = GotchaColors.BrandPurple,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
+                            AdminStatCard(
+                                label = "Free Imports Used",
+                                value = formatInt(d.stats?.freeImportsUsed ?: 0),
+                                hint = "${formatInt(d.stats?.freeImportsPool ?: 0)} pool",
+                                modifier = Modifier.weight(1f),
                             )
                         }
-                        Column(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color.White)
-                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
-                                .padding(14.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            Text(
-                                "Free Imports Used",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 11.sp,
-                                color = GotchaColors.TextMuted,
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            AdminStatCard(
+                                label = "Imports Today",
+                                value = formatInt(d.stats?.totalImportsToday ?: 0),
+                                hint = if ((d.stats?.importsGrowthPct ?: 0.0) != 0.0) {
+                                    val g = d.stats!!.importsGrowthPct
+                                    val sign = if (g > 0) "+" else ""
+                                    "${sign}${formatPct(g)}%"
+                                } else null,
+                                modifier = Modifier.weight(1f),
                             )
-                            Text(
-                                formatInt(d.stats?.freeImportsUsed ?: 0),
-                                fontWeight = FontWeight.ExtraBold,
-                                fontSize = 18.sp,
-                                color = GotchaColors.Ink,
+                            AdminStatCard(
+                                label = "Conversion",
+                                value = "${formatPct(d.stats?.conversionPct ?: 0.0)}%",
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
@@ -1476,7 +1211,7 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
         loading && response == null -> LoadingBox(Modifier.fillMaxSize())
         error != null && response == null -> ErrorBox(error!!)
         else -> LazyColumn(
-            modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+            modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
             contentPadding = PaddingValues(top = topInset, bottom = bottomInset + 16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
@@ -1490,16 +1225,17 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             "Users",
-                            fontFamily = Manrope,
-                            fontWeight = FontWeight.ExtraBold,
-                            fontSize = 24.sp,
-                            color = GotchaColors.Ink,
+                            fontFamily = Inter,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            color = Color(0xFF0F172A),
                         )
-                        Spacer(Modifier.height(2.dp))
+                        Spacer(Modifier.height(4.dp))
                         Text(
                             "Total: ${formatInt(response?.stats?.total ?: rows.size)} users",
-                            color = GotchaColors.TextMuted,
-                            fontSize = 12.sp,
+                            fontFamily = Inter,
+                            color = Color(0xFF64748B),
+                            fontSize = 14.sp,
                         )
                     }
                     Icon(
@@ -1510,6 +1246,47 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                             .size(24.dp)
                             .clickable { showSearch = !showSearch },
                     )
+                }
+            }
+            item {
+                val stats = response?.stats
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AdminStatCard(
+                            label = "Total Users",
+                            value = formatInt(stats?.total ?: rows.size),
+                            icon = Icons.Outlined.Group,
+                            modifier = Modifier.weight(1f),
+                        )
+                        AdminStatCard(
+                            label = "Pay as you go",
+                            value = formatInt(stats?.payAsYouGo ?: 0),
+                            accentBg = Color(0xFFF5F3FF),
+                            accentFg = GotchaColors.WebAdminActive,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        AdminStatCard(
+                            label = "Free",
+                            value = formatInt(stats?.free ?: 0),
+                            accentBg = Color(0xFFF1F5F9),
+                            accentFg = Color(0xFF475569),
+                            modifier = Modifier.weight(1f),
+                        )
+                        AdminStatCard(
+                            label = "Suspended",
+                            value = formatInt(stats?.suspended ?: 0),
+                            hintColor = Color(0xFFE11D48),
+                            accentBg = Color(0xFFFFF1F2),
+                            accentFg = Color(0xFFE11D48),
+                            icon = Icons.Outlined.WarningAmber,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                 }
             }
             if (showSearch) {
@@ -1548,12 +1325,12 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                             else -> chip
                         }
                         val bg = when {
-                            selected -> GotchaColors.BrandPurple
+                            selected -> GotchaColors.WebAdminActive
                             isAlert -> Color(0xFFFEE2E2)
                             else -> Color.White
                         }
                         val border = when {
-                            selected -> GotchaColors.BrandPurple
+                            selected -> GotchaColors.WebAdminActive
                             isAlert -> Color(0xFFFCA5A5)
                             else -> GotchaColors.Border
                         }
@@ -1695,7 +1472,7 @@ private fun AdminMoreScreen(
     }
 
     LazyColumn(
-        modifier = Modifier.fillMaxSize().background(GotchaColors.Surface),
+        modifier = Modifier.fillMaxSize().background(GotchaColors.WebAdminCanvas),
         contentPadding = PaddingValues(
             start = 24.dp,
             end = 24.dp,
@@ -1707,11 +1484,11 @@ private fun AdminMoreScreen(
         item {
             // Figma 122:773 — title is "More Console Options"
             Text(
-                "More Console Options",
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 24.sp,
-                color = GotchaColors.Ink,
+                "More",
+                fontFamily = Inter,
+                fontWeight = FontWeight.Bold,
+                fontSize = 26.sp,
+                color = Color(0xFF0F172A),
             )
         }
         item {
@@ -1950,8 +1727,39 @@ internal fun EmptyState(message: String) {
 }
 
 @Composable
-internal fun AdminBackHeader(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null) {
-    // Figma SubScreenHeader (208:18 etc.) — circular bordered back + ExtraBold 20 title
+private fun DashboardChartHeader(title: String, badge: String, accent: Boolean = false) {
+    Row(
+        Modifier.fillMaxWidth().padding(bottom = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(title, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A))
+        AdminBadge(
+            badge,
+            bg = if (accent) Color(0xFFF0E7FF) else Color(0xFFF1F5F9),
+            fg = if (accent) Color(0xFF7008E7) else Color(0xFF475569),
+        )
+    }
+}
+
+private fun parseAdminHex(raw: String): Color = try {
+    val hex = if (raw.startsWith("#")) raw else "#$raw"
+    Color(android.graphics.Color.parseColor(hex))
+} catch (_: Exception) {
+    Color(0xFF6C1D95)
+}
+
+internal fun formatUzs(value: Double): String {
+    val n = NumberFormat.getIntegerInstance(Locale.US).format(kotlin.math.round(value).toLong())
+    return "$n UZS"
+}
+
+@Composable
+internal fun AdminBackHeader(title: String, onBack: () -> Unit, trailing: (@Composable () -> Unit)? = null, showBack: Boolean = true, subtitle: String? = null) {
+    if (!showBack) {
+        AdminPageHeader(title = title, subtitle = subtitle, actions = trailing)
+        return
+    }
     val topInset = LocalAdminTopInset.current
     Row(
         modifier = Modifier
@@ -1977,16 +1785,20 @@ internal fun AdminBackHeader(title: String, onBack: () -> Unit, trailing: (@Comp
                 tint = GotchaColors.Ink,
             )
         }
-        Text(
-            title,
-            fontFamily = Manrope,
-            fontWeight = FontWeight.ExtraBold,
-            fontSize = 20.sp,
-            color = GotchaColors.Ink,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f),
-        )
+        Column(Modifier.weight(1f)) {
+            Text(
+                title,
+                fontFamily = Inter,
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = Color(0xFF0F172A),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (!subtitle.isNullOrBlank()) {
+                Text(subtitle, fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF64748B))
+            }
+        }
         trailing?.invoke()
     }
 }

@@ -6,7 +6,7 @@ if "%DIRNAME%"=="" set DIRNAME=.
 set APP_BASE_NAME=%~n0
 set APP_HOME=%DIRNAME%
 
-set DEFAULT_JVM_OPTS="-Xmx64m" "-Xms64m"
+set DEFAULT_JVM_OPTS="-Xmx3072m" "-Xms512m" "-XX:MaxMetaspaceSize=512m" "-XX:+UseG1GC"
 
 if defined JAVA_HOME goto findJavaFromJavaHome
 set JAVA_EXE=java.exe

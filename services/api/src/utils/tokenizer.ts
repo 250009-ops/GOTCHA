@@ -1,12 +1,12 @@
 import type { TokenMapEntry, SentenceMapEntry } from '@gotcha/shared';
+import { restoreDialogueLayout, splitDialogueAwareUnits } from '../modules/imports/dialogue-layout';
 
 const WORD_RE = /[\p{L}\p{M}']+/u;
 
 /**
  * Import / reader pagination rule (product chooses shorter reader pages).
- * Figma Make had no hard word-limit constant (mock chapters ~150–220 words;
- * product prompt only ~65–75 char line length). Target ~100 words
- * (~600–700 chars) with max ~1.5× target; prefer paragraph, then sentence, boundaries.
+ * Target ~100 words, max ~150. Prefer paragraph, then sentence, boundaries.
+ * Spoken conversation stays line-by-line; pages break between complete turns.
  */
 export const TARGET_SEGMENT_WORDS = 100;
 export const MAX_SEGMENT_WORDS = 150;
@@ -20,13 +20,6 @@ export interface TextChunk {
 function countWords(text: string): number {
   const m = text.match(/[\p{L}\p{M}']+/gu);
   return m?.length ?? 0;
-}
-
-function splitParagraphs(text: string): string[] {
-  return text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
-    .filter((p) => p.length > 0);
 }
 
 function splitSentences(text: string): string[] {
@@ -45,8 +38,15 @@ function splitSentences(text: string): string[] {
   return parts.length > 0 ? parts : [text.trim()].filter(Boolean);
 }
 
-function flushChunk(chunks: TextChunk[], buffer: string[], index: number) {
-  const plainText = buffer.join('\n\n').trim();
+function flushChunk(
+  chunks: TextChunk[],
+  buffer: Array<{ text: string; join: '\n' | '\n\n' }>,
+  index: number,
+) {
+  if (!buffer.length) return;
+  const plainText = buffer
+    .reduce((acc, piece, i) => (i === 0 ? piece.text : acc + piece.join + piece.text), '')
+    .trim();
   if (!plainText) return;
   chunks.push({
     plainText,
@@ -58,14 +58,15 @@ function flushChunk(chunks: TextChunk[], buffer: string[], index: number) {
 /**
  * Split long import text into reader pages / ContentSegments.
  * Prefer paragraph breaks, then sentence ends; never exceed MAX_SEGMENT_WORDS
- * except when a single paragraph/sentence is longer (then hard-split by words).
+ * except when a single paragraph/sentence/turn is longer (then hard-split by words).
+ * Dialogue stays line-by-line; pages break between spoken turns, not mid-line.
  */
 export function paginateText(
   text: string,
   targetWords = TARGET_SEGMENT_WORDS,
   maxWords = MAX_SEGMENT_WORDS,
 ): TextChunk[] {
-  const normalized = text.replace(/\r\n/g, '\n').trim();
+  const normalized = restoreDialogueLayout(text.replace(/\r\n/g, '\n')).trim();
   if (!normalized) return [];
 
   const totalWords = countWords(normalized);
@@ -79,12 +80,31 @@ export function paginateText(
     ];
   }
 
-  const paragraphs = splitParagraphs(normalized);
   const chunks: TextChunk[] = [];
-  let buffer: string[] = [];
+  let buffer: Array<{ text: string; join: '\n' | '\n\n' }> = [];
   let bufferWords = 0;
+  let lastKind: 'prose' | 'dialogue' | null = null;
 
-  const pushUnit = (unit: string) => {
+  const hardSplitByWords = (unit: string) => {
+    const wordTokens = unit.match(/[\p{L}\p{M}']+[^\p{L}\p{M}']*/gu) ?? [unit];
+    let hard: string[] = [];
+    let hardWords = 0;
+    for (const tok of wordTokens) {
+      const w = countWords(tok);
+      if (hardWords > 0 && hardWords + w > targetWords) {
+        flushChunk(chunks, [{ text: hard.join('').trim(), join: '\n\n' }], chunks.length);
+        hard = [];
+        hardWords = 0;
+      }
+      hard.push(tok);
+      hardWords += w;
+    }
+    if (hard.length) {
+      flushChunk(chunks, [{ text: hard.join('').trim(), join: '\n\n' }], chunks.length);
+    }
+  };
+
+  const pushPiece = (unit: string, kind: 'prose' | 'dialogue') => {
     const words = countWords(unit);
     if (words === 0) return;
 
@@ -93,27 +113,12 @@ export function paginateText(
         flushChunk(chunks, buffer, chunks.length);
         buffer = [];
         bufferWords = 0;
+        lastKind = null;
       }
-      const wordTokens = unit.match(/[\p{L}\p{M}']+[^\p{L}\p{M}']*/gu) ?? [unit];
-      let hard: string[] = [];
-      let hardWords = 0;
-      for (const tok of wordTokens) {
-        const w = countWords(tok);
-        if (hardWords > 0 && hardWords + w > targetWords) {
-          flushChunk(chunks, [hard.join('').trim()], chunks.length);
-          hard = [];
-          hardWords = 0;
-        }
-        hard.push(tok);
-        hardWords += w;
-      }
-      if (hard.length) {
-        flushChunk(chunks, [hard.join('').trim()], chunks.length);
-      }
+      hardSplitByWords(unit);
       return;
     }
 
-    // Flush when adding this unit would pass the soft target (or hard max).
     if (
       bufferWords > 0 &&
       (bufferWords + words > maxWords || bufferWords + words > targetWords)
@@ -121,21 +126,31 @@ export function paginateText(
       flushChunk(chunks, buffer, chunks.length);
       buffer = [];
       bufferWords = 0;
+      lastKind = null;
     }
 
-    buffer.push(unit);
+    const join: '\n' | '\n\n' = kind === 'dialogue' && lastKind === 'dialogue' ? '\n' : '\n\n';
+    buffer.push({ text: unit, join });
     bufferWords += words;
+    lastKind = kind;
   };
 
-  for (const para of paragraphs) {
-    const paraWords = countWords(para);
-    // Split long paragraphs by sentence so pages stay near the target size.
+  for (const block of splitDialogueAwareUnits(normalized)) {
+    if (block.kind === 'dialogue') {
+      const turns = block.text.split('\n').map((l) => l.trimEnd()).filter((l) => l.trim());
+      for (const turn of turns) {
+        pushPiece(turn, 'dialogue');
+      }
+      continue;
+    }
+
+    const paraWords = countWords(block.text);
     if (paraWords > targetWords) {
-      for (const sentence of splitSentences(para)) {
-        pushUnit(sentence);
+      for (const sentence of splitSentences(block.text)) {
+        pushPiece(sentence, 'prose');
       }
     } else {
-      pushUnit(para);
+      pushPiece(block.text, 'prose');
     }
   }
 

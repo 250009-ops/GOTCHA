@@ -12,11 +12,16 @@
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
     "db:seed": "ts-node --transpile-only prisma/seed.ts",
+    "restore-admin": "node scripts/restore-admin-credentials.mjs",
     "db:studio": "prisma studio",
     "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts",
     "test:lookup": "ts-node --transpile-only src/modules/ai/lookup-normalize.test.ts",
     "test:pdf-pages": "ts-node --transpile-only src/modules/imports/pdf-page-count.test.ts",
-    "test:ocr": "ts-node --transpile-only src/modules/imports/ocr-pdf.test.ts"
+    "test:ocr": "ts-node --transpile-only src/modules/imports/ocr-pdf.test.ts",
+    "test:dialogue": "ts-node --transpile-only src/modules/imports/dialogue-layout.test.ts",
+    "test:paginate": "ts-node --transpile-only src/utils/tokenizer.test.ts",
+    "test:langs": "ts-node --transpile-only src/common/language-catalog.test.ts",
+    "test:streak": "ts-node --transpile-only src/services/streak.service.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",
@@ -59,6 +64,7 @@
     "@types/nodemailer": "^6.4.24",
     "@types/passport-jwt": "^4.0.1",
     "prisma": "^6.3.1",
+    "sharp": "^0.35.3",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   }

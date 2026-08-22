@@ -49,6 +49,16 @@ function prefersExpandedSidebar() {
   return window.matchMedia('(min-width: 1024px)').matches;
 }
 
+/** Header library search — never on Messages, Vocabulary, Browse, or other app pages. */
+function learnerAppPath(pathname: string) {
+  const raw = pathname.replace(/\/$/, '') || '/';
+  return raw.startsWith('/learn/') ? raw.slice('/learn'.length) || '/' : raw;
+}
+
+function shouldShowGlobalSearch(pathname: string) {
+  return learnerAppPath(pathname) === '/app';
+}
+
 export default function LearnerShell() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -66,13 +76,16 @@ export default function LearnerShell() {
     return location.pathname.startsWith(path);
   };
 
-  const todayMinutes = stats?.todayMinutes ?? 0;
-  const dailyGoal = Math.max(1, stats?.dailyGoalMinutes ?? 15);
-  const goalPct = Math.min(100, Math.round((todayMinutes / dailyGoal) * 100));
+  const showGlobalSearch = shouldShowGlobalSearch(location.pathname);
 
   useEffect(() => {
     document.documentElement.lang = user?.uiLanguage || 'en';
   }, [user?.uiLanguage]);
+
+  useEffect(() => {
+    document.body.classList.add('gotcha-has-topbar');
+    return () => document.body.classList.remove('gotcha-has-topbar');
+  }, []);
 
   useEffect(() => {
     const mq = window.matchMedia('(min-width: 1024px)');
@@ -127,7 +140,7 @@ export default function LearnerShell() {
         {item.path === '/app/notifications' && unreadNotifs > 0 && (
           <span className={cn(
             'min-w-5 h-5 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center',
-            collapsed ? 'absolute top-1 right-1' : 'ml-auto',
+            collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto',
           )}>
             {unreadNotifs > 9 ? '9+' : unreadNotifs}
           </span>
@@ -165,8 +178,8 @@ export default function LearnerShell() {
             expanded ? 'w-60' : 'w-14',
           )}
         >
-          <aside className="h-full w-full bg-[#0E0B2A] flex flex-col overflow-hidden">
-            <div className={cn('flex items-center border-b border-white/[0.06] shrink-0', expanded ? 'px-4 py-[14px] gap-3' : 'px-0 py-[14px] justify-center')}>
+          <aside className="h-full w-full bg-[#0E0B2A] flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]">
+            <div className={cn('flex items-center border-b border-white/[0.06] shrink-0', expanded ? 'px-4 py-[14px] gap-3' : 'px-2 py-[14px] justify-center')}>
               <div className="w-8 h-8 bg-[#2107aa] rounded-[10px] flex items-center justify-center shrink-0 shadow-[0_10px_7.5px_rgba(77,23,154,0.5),0_4px_3px_rgba(77,23,154,0.5)]">
                 <span className="font-brand text-white text-lg leading-none">G</span>
               </div>
@@ -178,7 +191,7 @@ export default function LearnerShell() {
               )}
             </div>
 
-            <nav className="flex-1 py-3 px-2 space-y-0.5 overflow-y-auto min-h-0">
+            <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
               {primaryNav.map((item) => (
                 <NavLink key={item.path} item={item} collapsed={!expanded} />
               ))}
@@ -237,30 +250,18 @@ export default function LearnerShell() {
 
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
           <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
-            <div className="w-full max-w-[400px] min-w-0">
-              <GlobalSearch />
-            </div>
+            {showGlobalSearch ? (
+              <div className="w-full max-w-[400px] min-w-0" data-global-search="library-only">
+                <GlobalSearch />
+              </div>
+            ) : (
+              <div className="min-w-0" data-global-search="hidden" />
+            )}
 
             <div className="flex items-center h-9 gap-2 sm:gap-2.5 shrink-0">
               <div className="h-9 flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5">
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />
                 <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-none">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
-              </div>
-
-              <div
-                className="hidden sm:flex h-9 items-center gap-1.5 bg-[#f0fdf4] border border-[#bbf7d0] rounded-full px-2.5"
-                title={`Daily reading goal: ${todayMinutes} / ${dailyGoal} min`}
-              >
-                <span className="relative size-3.5 shrink-0">
-                  <span className="absolute inset-0 rounded-full border-2 border-[#bbf7d0]" />
-                  <span
-                    className="absolute inset-0 rounded-full border-2 border-[#16a34a] border-l-transparent border-b-transparent"
-                    style={{ transform: `rotate(${Math.round((goalPct / 100) * 360)}deg)` }}
-                  />
-                </span>
-                <span className="text-xs font-bold text-[#15803d] tabular-nums leading-none">
-                  {todayMinutes}/{dailyGoal}m
-                </span>
               </div>
 
               <button
@@ -319,7 +320,7 @@ export default function LearnerShell() {
 
           <main
             className={cn(
-              'flex-1 min-h-0 min-w-0 relative z-0',
+              'flex-1 min-h-0 min-w-0 relative z-0 overflow-x-hidden',
               location.pathname.startsWith('/app/messages') ? 'overflow-hidden' : 'overflow-y-auto',
             )}
           >

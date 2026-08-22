@@ -76,7 +76,10 @@ export function notificationHref(href?: string | null) {
   if (path === 'library' || path === 'home') {
     return itemId ? `/app?item=${encodeURIComponent(itemId)}` : '/app';
   }
-  if (path.startsWith('chat/')) return '/app/messages';
+  if (path.startsWith('chat/')) {
+    const id = path.slice('chat/'.length).split('/')[0];
+    return id ? `/app/messages?c=${encodeURIComponent(id)}` : '/app/messages';
+  }
   if (path === 'messages') return '/app/messages';
   if (path.startsWith('content/')) {
     const id = path.slice('content/'.length).split('/')[0];

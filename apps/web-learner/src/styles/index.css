@@ -17,6 +17,13 @@
     box-sizing: border-box;
   }
 
+  html,
+  body,
+  #root {
+    min-width: 0;
+    max-width: 100%;
+  }
+
   body {
     margin: 0;
     font-family: var(--font-sans);
@@ -24,9 +31,23 @@
   }
 }
 
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+/* Sit toasts just under the learner topbar (h-14) with a small gap. */
+:root {
+  --gotcha-toast-top: 16px;
+}
+body.gotcha-has-topbar {
+  --gotcha-toast-top: calc(3.5rem + 12px);
+}
+
+.gotcha-import-panel {
+  min-width: 0;
+  max-width: 100%;
+}
+.gotcha-import-panel input,
+.gotcha-import-panel select,
+.gotcha-import-panel textarea {
+  min-width: 0;
+  max-width: 100%;
 }
 .scrollbar-hide::-webkit-scrollbar {
   display: none;

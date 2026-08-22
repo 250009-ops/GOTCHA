@@ -1,11 +1,19 @@
 import * as assert from 'node:assert/strict';
 import {
   extractContentsTitles,
+  extractPrintContents,
+  isDialogueLine,
+  looksLikeFirstPersonTitle,
   looksLikeTitleLine,
   splitAccurateChapters,
   splitByOutlineTitles,
   stripGutenbergBoilerplate,
 } from './chapter-split';
+import {
+  hasUsableLearnerText,
+  isOcrImageJunkLine,
+  stripOcrImageJunk,
+} from './import-text-cleaner';
 import {
   parseGutenbergId,
   gutenbergAlephPath,
@@ -368,5 +376,178 @@ assert.ok(thursdayOutlineWithToc);
 assert.doesNotMatch(thursdayOutlineWithToc![0].title, /Chapter XV/i);
 assert.match(thursdayOutlineWithToc![0].title, /Two Poets|Chapter I/i);
 assert.match(thursdayOutlineWithToc![thursdayOutlineWithToc!.length - 1].title, /Accuser|Chapter XV/i);
+
+assert.equal(isDialogueLine('‘I don’t care if he was your friend or not,’ said the policeman.'), true);
+assert.equal(isDialogueLine('"Quite so, my dear fellow," said Lord Caterham.'), true);
+assert.equal(isDialogueLine('A Visitor'), false);
+assert.equal(looksLikeFirstPersonTitle('I Find Elaine Garfield'), true);
+assert.equal(looksLikeFirstPersonTitle("I'm Sorry, Mr Samuel"), true);
+assert.equal(looksLikeFirstPersonTitle('I’m Sorry, Mr Samuel'), true);
+assert.equal(looksLikeFirstPersonTitle('I stuffed a shirt or two into my old carpet-bag'), false);
+
+const woman = splitAccurateChapters(
+  `18\n\nI Find Elaine Garfield\n\n‘I don’t care if he was your friend or not,’ said the policeman. ‘Tell me why you killed him.’ I didn’t kill him, I said calmly, and then enough extra story words follow so this chapter body is kept by the splitter.\n\n20\n\nI’m Sorry, Mr Samuel\n\nI walked back to the office the next morning with enough extra story words here to keep the last chapter intact for the splitter.`,
+  'Book',
+);
+assert.equal(woman.some((c) => /I Find Elaine Garfield/i.test(c.title) && !/^Chapter I\b/i.test(c.title)), true, woman.map((c) => c.title).join(' | '));
+assert.match(woman.find((c) => /Elaine/i.test(c.title))!.title, /18/);
+assert.match(woman.find((c) => /Elaine/i.test(c.title))!.text, /don’t care|don't care/i);
+assert.equal(woman.some((c) => /^Chapter I\b/i.test(c.title) && /Elaine/i.test(c.title)), false);
+assert.ok(woman.some((c) => /Sorry/i.test(c.title) && /20/.test(c.title)), woman.map((c) => c.title).join(' | '));
+
+const junkGrid = `BIN;/E]JR/}]V/O;/U;S|I]/ PIN
+AITNNAKE|/G/]RIE}S}A]RIR
+Find words in the square with the meanings below. The numbers in brackets show the number of letters.`;
+assert.equal(isOcrImageJunkLine('BIN;/E]JR/}]V/O;/U;S|I]/ PIN'), true);
+assert.equal(isOcrImageJunkLine('Find words in the square with the meanings below.'), false);
+assert.equal(isOcrImageJunkLine('‘I don’t care if he was your friend or not,’ said the policeman.'), false);
+assert.equal(hasUsableLearnerText(''), false);
+assert.equal(hasUsableLearnerText('18'), true);
+assert.equal(hasUsableLearnerText('‘I don’t care if he was your friend or not,’ said the policeman.'), true);
+
+const cleanedGrid = stripOcrImageJunk(
+  `‘I don’t care if he was your friend or not,’ said the policeman.\n${junkGrid}`,
+);
+assert.match(cleanedGrid, /don’t care|don't care/);
+assert.match(cleanedGrid, /Find words in the square/);
+assert.doesNotMatch(cleanedGrid, /BIN;/);
+
+const withJunk = splitAccurateChapters(
+  `Chapter 8. Arrested for Murder\n\n‘I don’t care if he was your friend or not,’ said the policeman, and then enough extra story words follow so this chapter body is kept by the splitter.\n\n${junkGrid}`,
+  'Book',
+);
+assert.equal(withJunk.some((c) => /Chapter DI|ITJAIM/i.test(c.title)), false, withJunk.map((c) => c.title).join(' | '));
+assert.match(withJunk[0].text, /don’t care|don't care/i);
+assert.doesNotMatch(withJunk.map((c) => c.text).join('\n'), /BIN;/);
+
+const filler = (tag: string) =>
+  Array.from({ length: 36 }, (_, i) => `${tag}${i}`).join(' ');
+
+const graded = splitAccurateChapters(
+  `Macmillan Readers Intermediate
+The Woman Who Disappeared by Philip Prowse
+enough cover blurb words here for the cover section to stay.
+
+Contents
+1 A Visitor 4
+2 Please Find My Sister 7
+18 I Find Elaine Garfield 53
+20 I’m Sorry, Mr Samuel 59
+
+1
+A Visitor
+There was a knock at the door. ${filler('vis')}
+
+2
+Please Find My Sister
+Please find my sister, she said to me. ${filler('sis')}
+
+18
+I Find Elaine Garfield
+‘I don’t care if he was your friend or not,’ said the policeman.
+‘Tell me why you killed him.’
+${filler('ela')}
+
+20
+I’m Sorry, Mr Samuel
+I walked back to the office the next morning. ${filler('sam')}
+
+Points for Understanding
+Tick the best answer. ${filler('quiz')}
+
+BIN;/E]JR/}]V/O;/U;S|I]/ PIN
+Find words in the square with the meanings below. The numbers in brackets show the number of letters. ${filler('act')}
+`,
+  'Book',
+);
+const gradedTitles = graded.map((c) => c.title).join(' | ');
+assert.ok(extractPrintContents(`Contents\n1 A Visitor 4\n2 Please Find My Sister 7\n18 I Find Elaine Garfield 53\n20 I’m Sorry, Mr Samuel 59\n`)?.entries.length === 4);
+assert.match(gradedTitles, /Cover/i, gradedTitles);
+assert.match(gradedTitles, /Contents/i, gradedTitles);
+assert.match(gradedTitles, /Chapter 1\. A Visitor/i, gradedTitles);
+assert.match(gradedTitles, /Chapter 2\. Please Find My Sister/i, gradedTitles);
+assert.match(gradedTitles, /Chapter 18\. I Find Elaine Garfield/i, gradedTitles);
+assert.match(gradedTitles, /Chapter 20\. I’m Sorry|Chapter 20\. I'm Sorry/i, gradedTitles);
+assert.equal(graded.some((c) => /^Chapter I\b/i.test(c.title) && /Elaine/i.test(c.title)), false, gradedTitles);
+assert.ok(graded.some((c) => /Points for Understanding|Multiple Choice|Activities/i.test(c.title)), gradedTitles);
+assert.match(graded.find((c) => /Elaine/i.test(c.title))!.text, /don’t care|don't care/);
+assert.doesNotMatch(graded.find((c) => /Elaine/i.test(c.title))!.text, /Tick the best/);
+assert.doesNotMatch(graded.map((c) => c.text).join('\n'), /BIN;/);
+
+const ocrToc = extractPrintContents(
+  `Macmillan Readers\n${filler('cov')}\n\nContents\nl A Visitor 4\n2 Please Find My Sister 7\n8 What Happened Next 22\n12 A Very Tidy Apartment 31\n`,
+);
+assert.ok(ocrToc && ocrToc.entries.length >= 4, JSON.stringify(ocrToc));
+assert.equal(ocrToc!.entries[0].ordinal, 1);
+
+const gluedToc = extractPrintContents(
+  `Contents\n1 A Visitor 4 2 Please Find My Sister 7 8 What Happened Next 22 12 A Very Tidy Apartment 31\n`,
+);
+assert.ok(gluedToc && gluedToc.entries.length >= 4, JSON.stringify(gluedToc));
+
+const screenshotLike = splitAccurateChapters(
+  `The Woman Who Disappeared ${filler('cover')}
+
+Contents
+1 A Visitor 4
+2 Please Find My Sister 7
+8 What Happened Next 22
+12 A Very Tidy Apartment 31
+15 The Police Station 40
+16 Tell Me the Truth 44
+20 I’m Sorry, Mr Samuel 59
+24 Arrested for Murder 70
+
+There was a knock at the door. ${filler('ch1body')}
+
+2 Please Find My Sister
+Please find my sister, she said to me. ${filler('ch2body')}
+
+8
+What Happened Next
+I ran down the street. ${filler('ch8body')}
+
+12 A Very Tidy Apartment
+The room was clean. ${filler('ch12body')}
+
+15 The Police Station
+The officer asked me to sit down. ${filler('ch15body')}
+
+16 Tell Me the Truth
+I told him everything I knew. ${filler('ch16body')}
+
+20 I’m Sorry, Mr Samuel
+I walked back to the office. ${filler('ch20body')}
+
+24 Arrested for Murder
+The policeman put the handcuffs on. ${filler('ch24body')}
+
+Chapter DI. ITJAIM/OJNID/] FI/D]1/E
+BIN;/E]JR/}]V/O;/U;S|I]/ PIN
+Find words in the square with the meanings below. ${filler('act')}
+`,
+  'Imported PDF',
+);
+const shotTitles = screenshotLike.map((c) => c.title).join(' | ');
+assert.equal(screenshotLike.some((c) => /Imported PDF/i.test(c.title)), false, shotTitles);
+assert.ok(screenshotLike.some((c) => /A Visitor/i.test(c.title)), shotTitles);
+assert.ok(screenshotLike.some((c) => /Please Find My Sister/i.test(c.title)), shotTitles);
+assert.ok(screenshotLike.some((c) => /What Happened Next/i.test(c.title)), shotTitles);
+assert.equal(screenshotLike.some((c) => /Chapter DI|ITJAIM/i.test(c.title)), false, shotTitles);
+
+const junkHeading = splitAccurateChapters(
+  `Chapter 2. Please Find My Sister\n\nPlease find my sister, she said to me, and ${filler('sis')}\n\nChapter DI. ITJAIM/OJNID/] FI/D]1/E\n\n${junkGrid}\nFind words in the square with the meanings below. ${filler('act')}`,
+  'Imported PDF',
+);
+assert.equal(junkHeading.some((c) => /Chapter DI|ITJAIM/i.test(c.title)), false, junkHeading.map((c) => c.title).join(' | '));
+assert.ok(junkHeading.some((c) => /Please Find My Sister/i.test(c.title)));
+
+const missingOpen = splitAccurateChapters(
+  `${filler('cover')} ${filler('blurb')} ${filler('front')} cover matter here.\n\nChapter 2. Please Find My Sister\n\nPlease find my sister, she said to me. ${filler('sis')}`,
+  'Imported PDF',
+);
+const missingOpenTitles = missingOpen.map((c) => c.title).join(' | ');
+assert.equal(missingOpen.some((c) => /Imported PDF/i.test(c.title)), false, missingOpenTitles);
+assert.ok(missingOpen.some((c) => /^Chapter 1$/i.test(c.title)), missingOpenTitles);
 
 console.log('chapter-split tests passed');

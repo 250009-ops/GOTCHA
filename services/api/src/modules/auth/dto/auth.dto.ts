@@ -1,4 +1,4 @@
-import { IsEmail, IsEnum, IsOptional, IsString, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
+import { IsEmail, IsEnum, IsIn, IsOptional, IsString, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class RegisterDto {
@@ -21,6 +21,11 @@ export class RegisterDto {
   @ArrayMinSize(1)
   @IsEnum(AppLanguage, { each: true })
   targetLanguages!: AppLanguage[];
+
+  /** When `android`, auth emails use `gotcha://` deep links that open the mobile app. */
+  @IsOptional()
+  @IsIn(['android', 'web'])
+  clientPlatform?: 'android' | 'web';
 }
 
 export class LoginDto {
@@ -47,6 +52,10 @@ export class RefreshDto {
 export class ResendEmailVerificationDto {
   @IsEmail()
   email!: string;
+
+  @IsOptional()
+  @IsIn(['android', 'web'])
+  clientPlatform?: 'android' | 'web';
 }
 
 export class VerifyEmailDto {
@@ -58,6 +67,10 @@ export class VerifyEmailDto {
 export class ForgotPasswordDto {
   @IsEmail()
   email!: string;
+
+  @IsOptional()
+  @IsIn(['android', 'web'])
+  clientPlatform?: 'android' | 'web';
 }
 
 export class ResetPasswordDto {

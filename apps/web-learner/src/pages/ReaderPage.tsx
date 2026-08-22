@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -25,8 +25,10 @@ import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatUzs } from '../lib/importBilling';
+import { speakText } from '../lib/tts';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
+import { useReaderStanzaBreaks } from '../lib/readingStanzas';
 
 function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
@@ -108,7 +110,6 @@ function DictionaryPanel({
   onIgnore,
   onPronounce,
   loading,
-  ttsEnabled,
   showVocabActions = true,
 }: {
   result: LookupResult | null;
@@ -119,7 +120,6 @@ function DictionaryPanel({
   onIgnore: () => void;
   onPronounce: () => void;
   loading: boolean;
-  ttsEnabled: boolean;
   showVocabActions?: boolean;
 }) {
   return (
@@ -163,15 +163,9 @@ function DictionaryPanel({
                 <button
                   type="button"
                   onClick={onPronounce}
-                  disabled={!ttsEnabled}
-                  className={cn(
-                    'p-1.5 rounded-lg transition-colors shrink-0',
-                    ttsEnabled
-                      ? 'hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]'
-                      : 'text-gray-300 cursor-not-allowed',
-                  )}
+                  className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]"
                   aria-label="Pronounce"
-                  title={ttsEnabled ? 'Pronounce word' : 'Enable TTS in Settings'}
+                  title="Pronounce word"
                 >
                   <Volume2 className="w-4 h-4" />
                 </button>
@@ -278,6 +272,7 @@ export default function ReaderPage() {
   const [accessNonce, setAccessNonce] = useState(0);
   const [paywallOpen, setPaywallOpen] = useState(false);
   const readingPaneRef = useRef<HTMLDivElement>(null);
+  const readerBodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
     pointerId: number;
     pointerType: string;
@@ -295,6 +290,11 @@ export default function ReaderPage() {
     content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
   const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
+  const tokens = segment?.tokenMap ?? [];
+  const stanzaBreaks = useReaderStanzaBreaks(
+    readerBodyRef,
+    `${segment?.id ?? ''}:${segmentIndex}:${fontScale}:${tokens.length}:${chaptersOpen}`,
+  );
   const literary =
     content?.contentType === 'book' ||
     content?.contentType === 'story' ||
@@ -338,20 +338,18 @@ export default function ReaderPage() {
   }, [outline, segmentIndex, currentChapter, pageCount]);
   const targetLang = user?.nativeLanguage ?? 'en';
   const sourceLang = content?.language ?? 'en';
-  const ttsEnabled = preferences?.ttsEnabled ?? false;
 
   const pronounceWord = useCallback(() => {
-    if (!activeWord || !ttsEnabled) return;
-    if (!('speechSynthesis' in window)) {
-      toast.error('Text-to-speech is not supported in this browser');
-      return;
-    }
-    const utterance = new SpeechSynthesisUtterance(activeWord);
-    utterance.lang = sourceLang;
-    utterance.rate = 0.9;
-    window.speechSynthesis.cancel();
-    window.speechSynthesis.speak(utterance);
-  }, [activeWord, sourceLang, ttsEnabled]);
+    const spoken = lookupHeadline(
+      activeWord ?? '',
+      activeLookup?.phrase,
+      activeLookup?.lemma,
+    );
+    if (!spoken.trim()) return;
+    void speakText(spoken, sourceLang).catch((err) => {
+      toast.error(err instanceof Error ? err.message : 'Pronunciation is unavailable');
+    });
+  }, [activeLookup, activeWord, sourceLang]);
 
   // Wall-clock time spent since the last progress save, so PATCH /content/:id/progress
   // gets a real `readSeconds` and content.service.ts's streak.recordActivity actually fires
@@ -735,7 +733,6 @@ export default function ReaderPage() {
     );
   }
 
-  const tokens = segment?.tokenMap ?? [];
   const currentChapterLabel = currentChapter?.title
     || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex);
   const zoomPct = Math.round(fontScale * 100);
@@ -955,7 +952,8 @@ export default function ReaderPage() {
             </div>
 
             <div
-              className="text-[#1e2939] leading-[1.9] font-serif select-none touch-pan-y"
+              ref={readerBodyRef}
+              className="text-[#1e2939] leading-[1.9] font-serif select-none touch-pan-y whitespace-pre-wrap"
               onPointerDown={(e) => {
                 if (e.button !== 0 || !segment) return;
                 const el = (e.target as HTMLElement | null)?.closest?.('[data-token-i]');
@@ -1052,8 +1050,21 @@ export default function ReaderPage() {
                   <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
                 </div>
               ) : tokens.map((token) => {
+                const stanzaBreak = stanzaBreaks.has(token.i) ? (
+                  <span
+                    key={`stanza-${token.i}`}
+                    data-stanza-break="1"
+                    className="block h-[1.9em]"
+                    aria-hidden
+                  />
+                ) : null;
                 if (!token.isWord) {
-                  return <span key={token.i}>{token.surface}</span>;
+                  return (
+                    <Fragment key={token.i}>
+                      {stanzaBreak}
+                      <span data-reader-token={token.i}>{token.surface}</span>
+                    </Fragment>
+                  );
                 }
                 const key = (token.lemma ?? token.surface).toLowerCase();
                 const status = lemmaStatus(key);
@@ -1069,33 +1080,36 @@ export default function ReaderPage() {
                 const selected = tokenInSpan(token.i, liveSpan ?? lockedSpan);
 
                 return (
-                  <span
-                    key={token.i}
-                    data-token-i={token.i}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        const words = segment.tokenMap.filter((item) => item.isWord);
-                        const span = { startI: token.i, endI: token.i };
-                        void handleWordClick(
-                          key,
-                          token.surface,
-                          extractSentenceAround(segment.plainText, token.start, token.end),
-                          span,
-                          words,
-                        );
-                      }
-                    }}
-                    className={cn(
-                      'px-px py-0.5',
-                      highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
-                      selected && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
-                    )}
-                  >
-                    {token.surface}
-                  </span>
+                  <Fragment key={token.i}>
+                    {stanzaBreak}
+                    <span
+                      data-token-i={token.i}
+                      data-reader-token={token.i}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          const words = segment.tokenMap.filter((item) => item.isWord);
+                          const span = { startI: token.i, endI: token.i };
+                          void handleWordClick(
+                            key,
+                            token.surface,
+                            extractSentenceAround(segment.plainText, token.start, token.end),
+                            span,
+                            words,
+                          );
+                        }
+                      }}
+                      className={cn(
+                        'px-px py-0.5',
+                        highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
+                        selected && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
+                      )}
+                    >
+                      {token.surface}
+                    </span>
+                  </Fragment>
                 );
               })}
             </div>
@@ -1170,7 +1184,6 @@ export default function ReaderPage() {
               onIgnore={() => void markStatus('ignored')}
               onPronounce={pronounceWord}
               loading={lookupLoading}
-              ttsEnabled={ttsEnabled}
               showVocabActions={vocabMarkable}
             />
           ) : (
@@ -1199,7 +1212,6 @@ export default function ReaderPage() {
             onIgnore={() => void markStatus('ignored')}
             onPronounce={pronounceWord}
             loading={lookupLoading}
-            ttsEnabled={ttsEnabled}
             showVocabActions={vocabMarkable}
           />
         </div>

@@ -1,12 +1,15 @@
 import {
   Injectable,
+  BadRequestException,
   ForbiddenException,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { mkdir, readFile, writeFile } from 'fs/promises';
+import { join } from 'path';
 import OpenAI from 'openai';
-import { languagePromptLabel } from '@gotcha/shared';
+import { languagePromptLabel, ttsLocale } from '@gotcha/shared';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -921,5 +924,53 @@ export class AiService {
       }`,
     );
     return null;
+  }
+
+  /** Word/phrase pronunciation for the reader speaker button. Cached on disk. */
+  async speak(text: string, lang: string): Promise<Buffer> {
+    const input = text.replace(/\s+/g, ' ').trim().slice(0, 400);
+    if (!input) throw new BadRequestException('Nothing to pronounce');
+    const locale = ttsLocale(lang);
+    const cacheKey = createHash('sha256').update(`${locale}|${input}`).digest('hex').slice(0, 40);
+    const dir = join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'tts');
+    const file = join(dir, `${cacheKey}.mp3`);
+    try {
+      const cached = await readFile(file);
+      if (cached.length > 0) return cached;
+    } catch {
+      // miss
+    }
+
+    const client = this.getClient();
+    if (!client) {
+      throw new ServiceUnavailableException(
+        'Text-to-speech is not configured. Set OPENAI_API_KEY to enable pronunciation.',
+      );
+    }
+
+    try {
+      const model = process.env.OPENAI_MODEL_TTS?.trim() || 'tts-1';
+      const response = await client.audio.speech.create({
+        model,
+        voice: 'nova',
+        input,
+        response_format: 'mp3',
+        ...(model.includes('gpt-4o')
+          ? {
+              instructions: `Speak clearly in ${languagePromptLabel(lang)}. Use native pronunciation for that language, not English.`,
+            }
+          : {}),
+      });
+      const buffer = Buffer.from(await response.arrayBuffer());
+      await mkdir(dir, { recursive: true });
+      await writeFile(file, buffer);
+      return buffer;
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`TTS failed (${locale}): ${detail}`);
+      throw new ServiceUnavailableException(
+        `Pronunciation failed for ${languagePromptLabel(lang)}.`,
+      );
+    }
   }
 }

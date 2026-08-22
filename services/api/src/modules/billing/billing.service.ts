@@ -1,6 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  AI_SETTING_KEYS,
+  coerceNonNegInt,
+  defaultAiPlatformSettings,
+  resolveLearnerDailyAiQuota,
+} from '../ai/ai-settings';
+import { ImportCommerceService } from './import-commerce.service';
 
 /**
  * Synthesize the `features`, `priceLabel`, `priceUnit`, and `popular` fields
@@ -34,7 +41,10 @@ function enrichPlan(plan: SubscriptionPlan) {
 
 @Injectable()
 export class BillingService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private importCommerce: ImportCommerceService,
+  ) {}
 
   async listPlans() {
     const plans = await this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } });
@@ -50,16 +60,26 @@ export class BillingService {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const usage = await this.prisma.aiUsageDaily.findUnique({
-      where: { userId_usageDate: { userId, usageDate: today } },
-    });
+    const [usage, quotaRow, importAllowance] = await Promise.all([
+      this.prisma.aiUsageDaily.findUnique({
+        where: { userId_usageDate: { userId, usageDate: today } },
+      }),
+      this.prisma.platformSetting.findUnique({ where: { key: AI_SETTING_KEYS.defaultUserQuota } }),
+      this.importCommerce.learnerAllowance(userId),
+    ]);
+    const platformDefault = coerceNonNegInt(
+      quotaRow?.value,
+      defaultAiPlatformSettings().defaultUserQuota,
+    );
+    const quota = resolveLearnerDailyAiQuota(sub?.plan.aiDailyQuota, platformDefault);
 
     return {
       subscription: sub ? { ...sub, plan: enrichPlan(sub.plan) } : null,
       usage: {
         lookupsToday: usage?.lookupCount ?? 0,
         quizzesToday: usage?.quizCount ?? 0,
-        quota: sub?.plan.aiDailyQuota ?? 50,
+        quota,
+        importAllowance,
       },
     };
   }

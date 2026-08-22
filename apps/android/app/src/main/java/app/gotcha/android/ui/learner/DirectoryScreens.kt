@@ -66,7 +66,7 @@ import app.gotcha.android.ui.components.LevelChip
 import app.gotcha.android.ui.components.LoadingBox
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -86,8 +86,8 @@ fun LearnerSubpage(
     Column(
         Modifier
             .fillMaxSize()
-            .background(GotchaColors.Surface)
-            .learnerDirectoryStatusPad()
+            .background(GotchaColors.WebCanvas)
+            .statusBarsPadding()
             .navigationBarsPadding(),
     ) {
         Row(
@@ -117,8 +117,8 @@ fun LearnerSubpage(
             Spacer(Modifier.width(12.dp))
             Text(
                 title,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
+                fontFamily = Inter,
+                fontWeight = FontWeight.Bold,
                 fontSize = 20.sp,
                 color = GotchaColors.Ink,
                 modifier = Modifier.weight(1f),
@@ -128,6 +128,24 @@ fun LearnerSubpage(
         }
         body()
     }
+}
+
+@Composable
+fun WebDirectoryFormPanel(
+    modifier: Modifier = Modifier,
+    content: @Composable androidx.compose.foundation.layout.ColumnScope.() -> Unit,
+) {
+    Column(
+        modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Color.White)
+            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .padding(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        content = content,
+    )
 }
 
 @Composable
@@ -147,7 +165,7 @@ private fun TopicResultRow(item: ContentItem, onClick: () -> Unit) {
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 item.title ?: "Untitled",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
                 color = GotchaColors.Ink,
@@ -156,7 +174,7 @@ private fun TopicResultRow(item: ContentItem, onClick: () -> Unit) {
             )
             Text(
                 item.authorName ?: item.genre ?: "",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 color = GotchaColors.TextMuted,
                 fontSize = 13.sp,
                 maxLines = 1,
@@ -296,7 +314,7 @@ fun ContentDetailScreen(
             )
             Text(
                 "Book Details",
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
                 color = GotchaColors.Ink,
@@ -354,7 +372,7 @@ fun ContentDetailScreen(
                                         "G",
                                         color = Color.White.copy(0.5f),
                                         fontWeight = FontWeight.Bold,
-                                        fontFamily = Manrope,
+                                        fontFamily = Inter,
                                         fontSize = 28.sp,
                                     )
                                 }
@@ -373,7 +391,7 @@ fun ContentDetailScreen(
                                                 .background(GotchaColors.BrandPurpleSoft)
                                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                                         ) {
-                                            Text(lang, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.BrandPurple)
+                                            Text(lang, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.BrandPurple)
                                         }
                                     }
                                     if (levelLabel != null) {
@@ -383,15 +401,15 @@ fun ContentDetailScreen(
                                                 .background(GotchaColors.WarningBg)
                                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                                         ) {
-                                            Text(levelLabel, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.WarningText)
+                                            Text(levelLabel, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 10.sp, color = GotchaColors.WarningText)
                                         }
                                     }
                                 }
                             }
                             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                                Text(title, fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GotchaColors.Ink)
+                                Text(title, fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GotchaColors.Ink)
                                 if (author != null) {
-                                    Text(author, fontFamily = Manrope, fontSize = 14.sp, color = GotchaColors.TextMuted)
+                                    Text(author, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted)
                                 }
                             }
                             if (chaptersLabel != null || readTime != null) {
@@ -404,7 +422,7 @@ fun ContentDetailScreen(
                                                 tint = GotchaColors.TextMuted,
                                                 modifier = Modifier.size(14.dp),
                                             )
-                                            Text(chaptersLabel, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                                            Text(chaptersLabel, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                                         }
                                     }
                                     if (readTime != null) {
@@ -415,7 +433,7 @@ fun ContentDetailScreen(
                                                 tint = GotchaColors.TextMuted,
                                                 modifier = Modifier.size(14.dp),
                                             )
-                                            Text(readTime, fontFamily = Manrope, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                                            Text(readTime, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                                         }
                                     }
                                 }
@@ -425,10 +443,10 @@ fun ContentDetailScreen(
 
                     if (description != null) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Description", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
+                            Text("Description", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
                             Text(
                                 description,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextMuted,
                                 lineHeight = 20.sp,
@@ -446,10 +464,10 @@ fun ContentDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Current Progress", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                            Text("Current Progress", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
                             Text(
                                 progressLabel,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.TextMuted,
                             )
@@ -482,7 +500,7 @@ fun ContentDetailScreen(
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Text(cta, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
+                        Text(cta, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = Color.White)
                     }
                 }
 
@@ -493,7 +511,7 @@ fun ContentDetailScreen(
                     ) {
                         Text(
                             "Similar Books",
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
                             color = GotchaColors.Ink,
@@ -556,9 +574,9 @@ private fun SimilarBookCard(
             }
         }
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GotchaColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 12.sp, color = GotchaColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (author.isNotBlank()) {
-                Text(author, fontFamily = Manrope, fontSize = 10.sp, color = GotchaColors.TextSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(author, fontFamily = Inter, fontSize = 10.sp, color = GotchaColors.TextSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (lang.isNotBlank() || level.isNotBlank()) {
                 Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -569,11 +587,11 @@ private fun SimilarBookCard(
                                 .background(GotchaColors.BrandPurpleSoft)
                                 .padding(horizontal = 4.dp, vertical = 1.dp),
                         ) {
-                            Text(lang, fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 8.sp, color = GotchaColors.BrandPurple)
+                            Text(lang, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 8.sp, color = GotchaColors.BrandPurple)
                         }
                     }
                     if (level.isNotBlank()) {
-                        Text(level, fontFamily = Manrope, fontWeight = FontWeight.SemiBold, fontSize = 9.sp, color = GotchaColors.WarningText)
+                        Text(level, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 9.sp, color = GotchaColors.WarningText)
                     }
                 }
             }
@@ -602,7 +620,7 @@ fun LibraryCategoryScreen(category: String, onBack: () -> Unit, onOpenReader: (S
         body = {
             LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
-                    Text("${results.size} items found", fontFamily = Manrope, color = GotchaColors.TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    Text("${results.size} items found", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
                 }
                 items(results, key = { it.id }) { item ->
                     TopicResultRow(item) { onOpenReader(item.id) }
@@ -625,7 +643,7 @@ fun TopicResultsScreen(topic: String, onBack: () -> Unit, onOpenReader: (String)
         body = {
             LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
-                    Text("${results.size} items found", fontFamily = Manrope, color = GotchaColors.TextMuted, fontSize = 13.sp)
+                    Text("${results.size} items found", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp)
                 }
                 items(results, key = { it.id }) { item ->
                     TopicResultRow(item) { onOpenReader(item.id) }
@@ -643,7 +661,7 @@ fun BookmarksScreen(onBack: () -> Unit) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
                     "Bookmarks you save in the reader will appear here.",
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     color = GotchaColors.TextMuted,
                     fontSize = 14.sp,
                     modifier = Modifier.padding(24.dp),
@@ -698,7 +716,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                     compact = true,
                 )
                 else -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Text size", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Text size", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0.9f to "S", 1.0f to "M", 1.2f to "L", 1.4f to "XL").forEach { (scale, label) ->
                             val on = kotlin.math.abs(fontScale - scale) < 0.05f
@@ -718,12 +736,12 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                                     }
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
                                 color = if (on) Color.White else GotchaColors.Ink,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
                     }
-                    Text("Theme", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text("Theme", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("light", "sepia", "dark").forEach { t ->
                             val on = theme == t
@@ -743,7 +761,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                                     }
                                     .padding(horizontal = 16.dp, vertical = 10.dp),
                                 color = if (on) Color.White else GotchaColors.Ink,
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                             )
                         }
@@ -762,8 +780,8 @@ fun LevelTestScreen(onBack: () -> Unit) {
         onBack = onBack,
         body = {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Quick CEFR placement", fontFamily = Manrope, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-                Text("Answer a short set of questions to refresh your level estimate.", fontFamily = Manrope, color = GotchaColors.TextMuted, fontSize = 14.sp)
+                Text("Quick CEFR placement", fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                Text("Answer a short set of questions to refresh your level estimate.", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 14.sp)
                 GotchaPrimaryButton(text = "Start test", onClick = onBack)
             }
         },
@@ -771,7 +789,7 @@ fun LevelTestScreen(onBack: () -> Unit) {
 }
 
 @Composable
-fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
+fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var url by remember { mutableStateOf("") }
@@ -779,6 +797,7 @@ fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var paymentStep by remember { mutableStateOf<String?>(null) }
+    var pendingQuote by remember { mutableStateOf<app.gotcha.android.data.model.ImportQuoteResponse?>(null) }
     var paymentId by remember { mutableStateOf<String?>(null) }
     var amountLabel by remember { mutableStateOf<String?>(null) }
     var cardNumber by remember { mutableStateOf("") }
@@ -788,6 +807,7 @@ fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
 
     fun resetPayment() {
         paymentStep = null
+        pendingQuote = null
         paymentId = null
         amountLabel = null
         cardNumber = ""
@@ -801,147 +821,203 @@ fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
         onImported()
     }
 
+    val formContent: @Composable () -> Unit = {
+        if (paymentStep == null) {
+            GotchaTextField(label = "Article URL", value = url, onValueChange = { url = it }, placeholder = "https://…")
+            GotchaTextField(label = "Title (optional)", value = title, onValueChange = { title = it })
+            if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
+            GotchaPrimaryButton(
+                text = if (loading) "Importing…" else "Import from URL",
+                onClick = {
+                    scope.launch {
+                        loading = true
+                        error = null
+                        try {
+                            container.importRepository.importLimitMessage()?.let {
+                                error = it
+                                return@launch
+                            }
+                            val quote = container.importRepository.quote(
+                                importType = "url",
+                                contentFormat = "article",
+                                textLength = 6000,
+                            )
+                            if (quote.gatewayEnabled && quote.requiresPayment) {
+                                pendingQuote = quote
+                                amountLabel = formatSom(quote.amountUzs)
+                                paymentStep = "price"
+                                return@launch
+                            }
+                            var payId: String? = null
+                            if (quote.gatewayEnabled) {
+                                payId = container.importRepository.checkout(
+                                    importType = "url",
+                                    contentFormat = "article",
+                                    textLength = 6000,
+                                ).paymentId
+                            }
+                            finishImport(payId)
+                        } catch (e: Exception) {
+                            error = e.apiErrorMessage("Import failed")
+                        } finally {
+                            loading = false
+                        }
+                    }
+                },
+                loading = loading,
+                enabled = url.isNotBlank(),
+            )
+        } else if (paymentStep == "price" && pendingQuote != null) {
+            ImportQuoteStepUi(
+                quote = pendingQuote!!,
+                displayTitle = title.ifBlank { url.trim() }.ifBlank { "Your Import" },
+                typeLabel = "URL",
+                loading = loading,
+                error = error,
+                onProceed = {
+                    scope.launch {
+                        loading = true
+                        error = null
+                        try {
+                            val quote = pendingQuote!!
+                            val checkout = container.importRepository.checkout(
+                                importType = "url",
+                                contentFormat = "article",
+                                pageCount = quote.estimatedPages,
+                            )
+                            if (checkout.isFree || checkout.step == "done") {
+                                resetPayment()
+                                finishImport(checkout.paymentId)
+                            } else {
+                                paymentId = checkout.paymentId
+                                paymentStep = "card"
+                            }
+                        } catch (e: Exception) {
+                            error = e.apiErrorMessage("Failed to start payment")
+                        } finally {
+                            loading = false
+                        }
+                    }
+                },
+                onCancel = {
+                    resetPayment()
+                    error = null
+                },
+            )
+        } else {
+            ImportPaymentStepUi(
+                step = paymentStep!!,
+                amountLabel = amountLabel,
+                cardNumber = cardNumber,
+                onCardNumberChange = { cardNumber = it },
+                cardExpiry = cardExpiry,
+                onCardExpiryChange = { cardExpiry = it },
+                otpCode = otpCode,
+                onOtpChange = { otpCode = it },
+                maskedPhone = maskedPhone,
+                loading = loading,
+                error = error,
+                onSubmitCard = {
+                    scope.launch {
+                        loading = true
+                        error = null
+                        try {
+                            val result = container.importRepository.preApply(
+                                paymentId!!,
+                                cardNumber.replace(" ", ""),
+                                cardExpiry.replace("/", ""),
+                            )
+                            maskedPhone = result.maskedPhone
+                            otpCode = ""
+                            paymentStep = "otp"
+                        } catch (e: Exception) {
+                            error = e.apiErrorMessage("Card verification failed")
+                        } finally {
+                            loading = false
+                        }
+                    }
+                },
+                onConfirmOtp = {
+                    scope.launch {
+                        loading = true
+                        error = null
+                        try {
+                            val result = container.importRepository.apply(paymentId!!, otpCode)
+                            when {
+                                result.step == "paid" || result.status == "paid" -> {
+                                    val confirmedId = paymentId
+                                    resetPayment()
+                                    finishImport(confirmedId)
+                                }
+                                result.step == "otp" -> {
+                                    otpCode = ""
+                                    error = "Check the SMS code and try again."
+                                }
+                                else -> {
+                                    error = "Payment failed. Please try again with a different card."
+                                    paymentStep = "card"
+                                    cardNumber = ""
+                                    cardExpiry = ""
+                                }
+                            }
+                        } catch (e: Exception) {
+                            error = e.apiErrorMessage("OTP verification failed")
+                        } finally {
+                            loading = false
+                        }
+                    }
+                },
+                onResendOtp = {
+                    scope.launch {
+                        try {
+                            container.importRepository.retryOtp(paymentId!!)
+                            error = null
+                        } catch (e: Exception) {
+                            error = e.apiErrorMessage("Could not resend OTP")
+                        }
+                    }
+                },
+                onCancel = {
+                    if (paymentStep == "otp") {
+                        paymentStep = "card"
+                        otpCode = ""
+                        error = null
+                    } else {
+                        scope.launch { paymentId?.let { runCatching { container.importRepository.cancel(it) } } }
+                        resetPayment()
+                        error = null
+                    }
+                },
+            )
+        }
+    }
+
+    if (embedded) {
+        formContent()
+    } else {
+        WebDirectoryFormPanel { formContent() }
+    }
+}
+
+@Composable
+fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
     LearnerSubpage(
         title = "Import from URL",
         onBack = onBack,
         body = {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (paymentStep == null) {
-                    GotchaTextField(label = "Article URL", value = url, onValueChange = { url = it }, placeholder = "https://…")
-                    GotchaTextField(label = "Title (optional)", value = title, onValueChange = { title = it })
-                    if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
-                    GotchaPrimaryButton(
-                        text = "Import",
-                        onClick = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    // Matches web-learner's handleUrlImport: a fixed 6000-char length
-                                    // is used to price the URL sight-unseen, since the article body
-                                    // isn't fetched client-side before import.
-                                    val quote = container.importRepository.quote(
-                                        importType = "url",
-                                        contentFormat = "article",
-                                        textLength = 6000,
-                                    )
-                                    if (quote.gatewayEnabled && quote.requiresPayment) {
-                                        val checkout = container.importRepository.checkout(
-                                            importType = "url",
-                                            contentFormat = "article",
-                                            textLength = 6000,
-                                        )
-                                        paymentId = checkout.paymentId
-                                        amountLabel = "Payment: ${formatSom(quote.amountUzs)}"
-                                        paymentStep = "card"
-                                        return@launch
-                                    }
-                                    var payId: String? = null
-                                    if (quote.gatewayEnabled) {
-                                        payId = container.importRepository.checkout(
-                                            importType = "url",
-                                            contentFormat = "article",
-                                            textLength = 6000,
-                                        ).paymentId
-                                    }
-                                    finishImport(payId)
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Import failed")
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        loading = loading,
-                        enabled = url.isNotBlank(),
-                    )
-                } else {
-                    ImportPaymentStepUi(
-                        step = paymentStep!!,
-                        amountLabel = amountLabel,
-                        cardNumber = cardNumber,
-                        onCardNumberChange = { cardNumber = it },
-                        cardExpiry = cardExpiry,
-                        onCardExpiryChange = { cardExpiry = it },
-                        otpCode = otpCode,
-                        onOtpChange = { otpCode = it },
-                        maskedPhone = maskedPhone,
-                        loading = loading,
-                        error = error,
-                        onSubmitCard = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val result = container.importRepository.preApply(
-                                        paymentId!!,
-                                        cardNumber.replace(" ", ""),
-                                        cardExpiry.replace("/", ""),
-                                    )
-                                    maskedPhone = result.maskedPhone
-                                    otpCode = ""
-                                    paymentStep = "otp"
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Card verification failed")
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        onConfirmOtp = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val result = container.importRepository.apply(paymentId!!, otpCode)
-                                    when {
-                                        result.step == "paid" || result.status == "paid" -> {
-                                            val confirmedId = paymentId
-                                            resetPayment()
-                                            finishImport(confirmedId)
-                                        }
-                                        result.step == "otp" -> {
-                                            otpCode = ""
-                                            error = "Check the SMS code and try again."
-                                        }
-                                        else -> {
-                                            error = "Payment failed. Please try again with a different card."
-                                            paymentStep = "card"
-                                            cardNumber = ""
-                                            cardExpiry = ""
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("OTP verification failed")
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        onResendOtp = {
-                            scope.launch {
-                                try {
-                                    container.importRepository.retryOtp(paymentId!!)
-                                    error = null
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Could not resend OTP")
-                                }
-                            }
-                        },
-                        onCancel = {
-                            scope.launch { runCatching { container.importRepository.cancel(paymentId!!) } }
-                            resetPayment()
-                            error = null
-                        },
-                    )
-                }
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ImportUrlForm(onImported = onImported)
             }
         },
     )
 }
 
 @Composable
-fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
+fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var title by remember { mutableStateOf("") }
@@ -949,6 +1025,7 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var paymentStep by remember { mutableStateOf<String?>(null) }
+    var pendingQuote by remember { mutableStateOf<app.gotcha.android.data.model.ImportQuoteResponse?>(null) }
     var paymentId by remember { mutableStateOf<String?>(null) }
     var amountLabel by remember { mutableStateOf<String?>(null) }
     var cardNumber by remember { mutableStateOf("") }
@@ -958,6 +1035,7 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
 
     fun resetPayment() {
         paymentStep = null
+        pendingQuote = null
         paymentId = null
         amountLabel = null
         cardNumber = ""
@@ -971,15 +1049,12 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
         onImported()
     }
 
-    LearnerSubpage(
-        title = "Paste text",
-        onBack = onBack,
-        body = {
-            val words = pasteWordCount(text)
-            val tooLong = text.length > MAX_PASTE_CHARS
-            val valid = words >= MIN_PASTE_WORDS && title.isNotBlank() && !tooLong
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                if (paymentStep == null) {
+    val words = pasteWordCount(text)
+    val tooLong = text.length > MAX_PASTE_CHARS
+    val valid = words >= MIN_PASTE_WORDS && title.isNotBlank() && !tooLong
+
+    val formContent: @Composable () -> Unit = {
+        if (paymentStep == null) {
                     GotchaTextField(label = "Title", value = title, onValueChange = { title = it }, placeholder = "My article")
                     GotchaMultilineTextField(
                         label = "Text",
@@ -990,7 +1065,7 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         labelTrailing = {
                             Text(
                                 text = "$words words",
-                                fontFamily = Manrope,
+                                fontFamily = Inter,
                                 fontWeight = if (words >= MIN_PASTE_WORDS && !tooLong) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 12.sp,
                                 color = if (words >= MIN_PASTE_WORDS && !tooLong) Color(0xFF059669) else GotchaColors.TextPlaceholder,
@@ -1001,7 +1076,7 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         Text(
                             "${MIN_PASTE_WORDS - words} more words needed",
                             color = Color(0xFFD97706),
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 12.sp,
                         )
                     }
@@ -1009,18 +1084,22 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         Text(
                             "Text exceeds the ${"%,d".format(MAX_PASTE_CHARS)}-character maximum. Split into multiple imports.",
                             color = GotchaColors.Danger,
-                            fontFamily = Manrope,
+                            fontFamily = Inter,
                             fontSize = 12.sp,
                         )
                     }
-                    if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
+                    if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                     GotchaPrimaryButton(
-                        text = "Import",
+                        text = if (loading) "Importing…" else "Import Text",
                         onClick = {
                             scope.launch {
                                 loading = true
                                 error = null
                                 try {
+                                    container.importRepository.importLimitMessage()?.let {
+                                        error = it
+                                        return@launch
+                                    }
                                     val quote = container.importRepository.quote(
                                         importType = "paste",
                                         contentFormat = "article",
@@ -1028,15 +1107,9 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                                         wordCount = words,
                                     )
                                     if (quote.gatewayEnabled && quote.requiresPayment) {
-                                        val checkout = container.importRepository.checkout(
-                                            importType = "paste",
-                                            contentFormat = "article",
-                                            textLength = text.length,
-                                            wordCount = words,
-                                        )
-                                        paymentId = checkout.paymentId
-                                        amountLabel = "Payment: ${formatSom(quote.amountUzs)}"
-                                        paymentStep = "card"
+                                        pendingQuote = quote
+                                        amountLabel = formatSom(quote.amountUzs)
+                                        paymentStep = "price"
                                         return@launch
                                     }
                                     var payId: String? = null
@@ -1059,6 +1132,43 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                         loading = loading,
                         enabled = valid,
                     )
+                } else if (paymentStep == "price" && pendingQuote != null) {
+                    ImportQuoteStepUi(
+                        quote = pendingQuote!!,
+                        displayTitle = title.ifBlank { "Your Import" },
+                        typeLabel = "Text",
+                        loading = loading,
+                        error = error,
+                        onProceed = {
+                            scope.launch {
+                                loading = true
+                                error = null
+                                try {
+                                    val quote = pendingQuote!!
+                                    val checkout = container.importRepository.checkout(
+                                        importType = "paste",
+                                        contentFormat = "article",
+                                        pageCount = quote.estimatedPages,
+                                    )
+                                    if (checkout.isFree || checkout.step == "done") {
+                                        resetPayment()
+                                        finishImport(checkout.paymentId)
+                                    } else {
+                                        paymentId = checkout.paymentId
+                                        paymentStep = "card"
+                                    }
+                                } catch (e: Exception) {
+                                    error = e.apiErrorMessage("Failed to start payment")
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                        onCancel = {
+                            resetPayment()
+                            error = null
+                        },
+                    )
                 } else {
                     ImportPaymentStepUi(
                         step = paymentStep!!,
@@ -1133,12 +1243,39 @@ fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
                             }
                         },
                         onCancel = {
-                            scope.launch { runCatching { container.importRepository.cancel(paymentId!!) } }
-                            resetPayment()
-                            error = null
+                            if (paymentStep == "otp") {
+                                paymentStep = "card"
+                                otpCode = ""
+                                error = null
+                            } else {
+                                scope.launch { paymentId?.let { runCatching { container.importRepository.cancel(it) } } }
+                                resetPayment()
+                                error = null
+                            }
                         },
                     )
                 }
+    }
+
+    if (embedded) {
+        formContent()
+    } else {
+        WebDirectoryFormPanel { formContent() }
+    }
+}
+
+@Composable
+fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
+    LearnerSubpage(
+        title = "Paste text",
+        onBack = onBack,
+        body = {
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState()),
+            ) {
+                ImportPasteForm(onImported = onImported)
             }
         },
     )

@@ -5,13 +5,20 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { api, clearTokens } from '../lib/api';
-import { MARKETING_URL } from '../lib/links';
+import { MARKETING_URL, isAllowedAdminReturnUrl } from '../lib/links';
+import { loginPathWithReturn } from '../lib/authRoutes';
+import {
+  isAndroidDevice,
+  tryOpenGotchaAuthApp,
+} from '../lib/mobileAppAuth';
 
 /** Set a new password from the emailed token (`?token=`). */
 export default function ResetPasswordPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token')?.trim() || '';
+  const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  const loginPath = loginPathWithReturn(searchParams);
 
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
@@ -20,10 +27,17 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [missingToken] = useState(!token);
+  const [useWebFlow, setUseWebFlow] = useState(false);
+  const androidHandoff = isAndroidDevice() && !!token && !useWebFlow;
 
   useEffect(() => {
     clearTokens();
   }, []);
+
+  useEffect(() => {
+    if (!token || useWebFlow || !isAndroidDevice()) return;
+    tryOpenGotchaAuthApp('reset-password', token, searchParams);
+  }, [token, useWebFlow, searchParams]);
 
   const goHome = () => {
     window.location.assign(MARKETING_URL);
@@ -58,6 +72,35 @@ export default function ResetPasswordPage() {
     }
   };
 
+  if (androidHandoff && !done && !missingToken) {
+    return (
+      <AuthShell>
+        <div className="w-full max-w-[448px] min-w-0">
+          <div className="bg-white border border-[#e5e7eb] rounded-2xl p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] text-center">
+            <h2 className="text-2xl font-extrabold text-[#101828] leading-8">Opening GOTCHA app</h2>
+            <p className="text-[#6b7280] text-sm leading-5">
+              Reset your password in the GOTCHA mobile app. If nothing happens, tap Open app below.
+            </p>
+            <Button
+              type="button"
+              onClick={() => tryOpenGotchaAuthApp('reset-password', token, searchParams)}
+              className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+            >
+              Open GOTCHA app
+            </Button>
+            <button
+              type="button"
+              onClick={() => setUseWebFlow(true)}
+              className="text-sm font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+            >
+              Continue on web instead
+            </button>
+          </div>
+        </div>
+      </AuthShell>
+    );
+  }
+
   return (
     <AuthShell>
       <div className="w-full max-w-[448px] min-w-0">
@@ -70,12 +113,14 @@ export default function ResetPasswordPage() {
                 </div>
                 <h2 className="text-2xl font-extrabold text-[#101828] leading-8">Password updated</h2>
                 <p className="text-[#6b7280] text-sm leading-5">
-                  Your password has been changed. Sign in with your new password to continue.
+                  {adminReturnUrl
+                    ? 'Your password has been changed. Sign in with your new password to return to the admin console.'
+                    : 'Your password has been changed. Sign in with your new password to continue.'}
                 </p>
               </div>
               <Button
                 type="button"
-                onClick={() => navigate('/login')}
+                onClick={() => navigate(loginPath)}
                 className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
               >
                 Sign in
@@ -99,7 +144,7 @@ export default function ResetPasswordPage() {
               </Button>
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">Already have an account?</span>
-                <Link to="/login" className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
                   Sign in
                 </Link>
               </div>
@@ -178,7 +223,7 @@ export default function ResetPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">Already have an account?</span>
-                <Link to="/login" className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
                   Sign in
                 </Link>
               </div>

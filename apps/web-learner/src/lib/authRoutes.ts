@@ -49,3 +49,25 @@ export function authSwitchSearch(
   }
   return next.toString();
 }
+
+/** Preserve returnUrl (and optional extra params) across auth sub-pages. */
+export function authFlowSearch(
+  params: URLSearchParams,
+  extra?: Record<string, string | undefined>,
+): string {
+  const next = new URLSearchParams();
+  const returnUrl = params.get('returnUrl');
+  if (returnUrl) next.set('returnUrl', returnUrl);
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) {
+      if (value) next.set(key, value);
+    }
+  }
+  return next.toString();
+}
+
+/** Login path with optional returnUrl preserved from current search params. */
+export function loginPathWithReturn(params: URLSearchParams): string {
+  const q = authFlowSearch(params);
+  return q ? `/login?${q}` : '/login';
+}

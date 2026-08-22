@@ -27,6 +27,13 @@ type AuthMarketing = {
   readerInitials: string[];
 };
 
+/** Fired after email verification so the sidebar count can increment immediately. */
+export const LEARNER_COUNT_CHANGED_EVENT = 'gotcha:learner-count-changed';
+
+export function notifyLearnerCountChanged() {
+  window.dispatchEvent(new Event(LEARNER_COUNT_CHANGED_EVENT));
+}
+
 function formatLanguageList(names: string[]): string | null {
   const unique = names.map((n) => n.trim()).filter(Boolean);
   if (unique.length === 0) return null;
@@ -44,32 +51,45 @@ function useAuthMarketing(): AuthMarketing {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${API_BASE}/marketing/landing`)
-      .then((res) => {
+
+    const load = () => {
+      const statsP = fetch(`${API_BASE}/marketing/stats`, { cache: 'no-store' }).then((res) => {
+        if (!res.ok) throw new Error(`stats ${res.status}`);
+        return res.json() as Promise<{ learnerCount?: number }>;
+      });
+      const landingP = fetch(`${API_BASE}/marketing/landing`).then((res) => {
         if (!res.ok) throw new Error(`landing ${res.status}`);
         return res.json() as Promise<{
           stats?: { learnerCount?: number };
           languages?: Array<{ name?: string }>;
           topReaders?: Array<{ initials?: string }>;
         }>;
-      })
-      .then((payload) => {
+      });
+
+      void Promise.allSettled([statsP, landingP]).then(([statsRes, landingRes]) => {
         if (cancelled) return;
-        const initials = (payload.topReaders ?? [])
+        const stats = statsRes.status === 'fulfilled' ? statsRes.value : null;
+        const landing = landingRes.status === 'fulfilled' ? landingRes.value : null;
+        const initials = (landing?.topReaders ?? [])
           .map((r) => r.initials?.trim())
           .filter((v): v is string => Boolean(v))
           .slice(0, 4);
-        setData({
-          learnerCount: Number(payload.stats?.learnerCount) || 0,
-          languageNames: (payload.languages ?? []).map((l) => l.name ?? '').filter(Boolean),
-          readerInitials: initials,
-        });
-      })
-      .catch(() => {
-        /* Keep the panel honest: never fall back to Figma sample counts or names. */
+        setData((prev) => ({
+          learnerCount:
+            Number(stats?.learnerCount ?? landing?.stats?.learnerCount) || prev.learnerCount,
+          languageNames: landing
+            ? (landing.languages ?? []).map((l) => l.name ?? '').filter(Boolean)
+            : prev.languageNames,
+          readerInitials: landing ? initials : prev.readerInitials,
+        }));
       });
+    };
+
+    load();
+    window.addEventListener(LEARNER_COUNT_CHANGED_EVENT, load);
     return () => {
       cancelled = true;
+      window.removeEventListener(LEARNER_COUNT_CHANGED_EVENT, load);
     };
   }, []);
 

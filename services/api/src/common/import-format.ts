@@ -82,3 +82,16 @@ export function describePageTierGaps(tiers: PageRange[]): string[] {
   }
   return gaps;
 }
+
+export function defaultPageTierLabel(minPages: number, maxPages: number | null): string {
+  if (maxPages == null) return `${minPages}+ pages`;
+  return `${minPages} - ${maxPages} pages`;
+}
+
+/** Next empty range after existing tiers (open-ended if the previous band has a max). */
+export function suggestNextPageRange(tiers: PageRange[]): { minPages: number; maxPages: number | null } {
+  if (!tiers.length) return { minPages: 1, maxPages: 10 };
+  const highs = tiers.map((t) => (t.maxPages != null ? t.maxPages : t.minPages));
+  const high = Math.max(0, ...highs);
+  return { minPages: Math.max(1, high + 1), maxPages: null };
+}

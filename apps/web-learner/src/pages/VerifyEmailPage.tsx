@@ -2,9 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
-import { AuthShell } from '../components/AuthShell';
+import { AuthShell, notifyLearnerCountChanged } from '../components/AuthShell';
 import { api, clearTokens } from '../lib/api';
 import { openEmailInbox } from '../lib/emailInbox';
+import { loginPathWithReturn } from '../lib/authRoutes';
+import { isAndroidDevice, tryOpenGotchaAuthApp } from '../lib/mobileAppAuth';
+import { isAllowedAdminReturnUrl } from '../lib/links';
 import { VerifyIcon, verifyAssets as a } from '../assets/verify';
 
 type Phase = 'sent' | 'verifying' | 'success' | 'error';
@@ -48,12 +51,16 @@ export default function VerifyEmailPage() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token')?.trim() || '';
   const emailParam = searchParams.get('email')?.trim() || '';
+  const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  const loginPath = loginPathWithReturn(searchParams);
 
   const initialPhase: Phase = token ? 'verifying' : 'sent';
   const [phase, setPhase] = useState<Phase>(initialPhase);
   const [email, setEmail] = useState(emailParam);
   const [error, setError] = useState<string | null>(null);
   const [resending, setResending] = useState(false);
+  const [useWebFlow, setUseWebFlow] = useState(false);
+  const androidHandoff = isAndroidDevice() && !!token && !useWebFlow;
 
   useEffect(() => {
     // Auth routes should not keep a stale learner session (avoids /users/me 401 spam).
@@ -68,7 +75,12 @@ export default function VerifyEmailPage() {
   }, [phase]);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || useWebFlow || !isAndroidDevice()) return;
+    tryOpenGotchaAuthApp('verify-email', token, searchParams);
+  }, [token, useWebFlow, searchParams]);
+
+  useEffect(() => {
+    if (!token || androidHandoff) return;
     let cancelled = false;
     (async () => {
       try {
@@ -78,6 +90,7 @@ export default function VerifyEmailPage() {
         if (cancelled) return;
         if (res.email) setEmail(res.email);
         setPhase('success');
+        notifyLearnerCountChanged();
         toast.success('Email verified — you can sign in now');
       } catch (err) {
         if (cancelled) return;
@@ -88,7 +101,7 @@ export default function VerifyEmailPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [token, androidHandoff]);
 
   const openEmailApp = () => {
     const opened = openEmailInbox(email);
@@ -106,7 +119,7 @@ export default function VerifyEmailPage() {
     try {
       await api('/auth/resend-verification', {
         method: 'POST',
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, clientPlatform: 'web' }),
       });
       toast.success('Verification email sent — check your inbox');
     } catch (err) {
@@ -118,12 +131,45 @@ export default function VerifyEmailPage() {
 
   const body =
     phase === 'success'
-      ? 'Your email is confirmed. Sign in to start your reading journey.'
+      ? adminReturnUrl
+        ? 'Your email is confirmed. Sign in to return to the admin console.'
+        : 'Your email is confirmed. Sign in to start your reading journey.'
       : phase === 'error'
         ? error || 'This verification link is invalid or has expired. Request a new one below.'
         : phase === 'verifying'
           ? 'Hang tight while we confirm your email address…'
-          : "We've sent a verification link to your email address. Please check your inbox and tap the link to confirm your account.";
+          : adminReturnUrl
+            ? "We've sent a verification link to your email. Confirm your address, then sign in to return to the admin console."
+            : "We've sent a verification link to your email address. Please check your inbox and tap the link to confirm your account.";
+
+  if (androidHandoff) {
+    return (
+      <AuthShell>
+        <div className="w-full max-w-[500px] min-w-0">
+          <div className="bg-white border border-[#e5e7eb] rounded-2xl p-8 flex flex-col items-center gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] text-center">
+            <h1 className="text-2xl font-extrabold text-[#101828] leading-8">Opening GOTCHA app</h1>
+            <p className="text-[15px] leading-[22px] text-[#6b7280]">
+              Verify your email in the GOTCHA mobile app. If nothing happens, tap Open app below.
+            </p>
+            <Button
+              type="button"
+              onClick={() => tryOpenGotchaAuthApp('verify-email', token, searchParams)}
+              className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)]"
+            >
+              Open GOTCHA app
+            </Button>
+            <button
+              type="button"
+              onClick={() => setUseWebFlow(true)}
+              className="text-sm font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+            >
+              Continue on web instead
+            </button>
+          </div>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell>
@@ -192,7 +238,7 @@ export default function VerifyEmailPage() {
           {phase === 'success' && (
             <Button
               type="button"
-              onClick={() => navigate('/login')}
+              onClick={() => navigate(loginPath)}
               className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
             >
               Sign in
@@ -210,7 +256,7 @@ export default function VerifyEmailPage() {
 
           <div className="flex items-center justify-center gap-1.5 text-sm">
             <span className="font-medium text-[#6b7280]">Already verified?</span>
-            <Link to="/login" className="font-bold text-[#6c1d95] underline underline-offset-2">
+            <Link to={loginPath} className="font-bold text-[#6c1d95] underline underline-offset-2">
               Sign in
             </Link>
           </div>

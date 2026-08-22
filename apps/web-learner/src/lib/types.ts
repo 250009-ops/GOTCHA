@@ -214,6 +214,17 @@ export interface SubscriptionInfo {
     lookupsToday: number;
     quizzesToday: number;
     quota: number;
+    importAllowance?: {
+      gatewayEnabled: boolean;
+      resetCycle: string;
+      allowedFormats: string[];
+      dailyFreeImportsPerUser: number;
+      dailyFreeUsed: number;
+      dailyFreeRemaining: number;
+      monthlyFreePageLimit: number;
+      monthlyPagesUsed: number;
+      monthlyPagesRemaining: number;
+    };
   };
 }
 

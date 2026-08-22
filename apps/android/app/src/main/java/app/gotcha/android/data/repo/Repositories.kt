@@ -53,6 +53,7 @@ import app.gotcha.android.data.model.MeResponse
 import app.gotcha.android.data.model.NotificationReadResponse
 import app.gotcha.android.data.model.NotificationsInboxResponse
 import app.gotcha.android.data.model.MessagingPeer
+import app.gotcha.android.data.model.RefreshRequest
 import app.gotcha.android.data.model.RegisterRequest
 import app.gotcha.android.data.model.ReviewVocabularyRequest
 import app.gotcha.android.data.model.SaveVocabularyRequest
@@ -105,6 +106,7 @@ class AuthRepository(
         nativeLanguage: String,
         targetLanguages: List<String>,
     ): RegisterResponse {
+        tokenStore.clear()
         val res = api.register(
             RegisterRequest(
                 email = email.trim().lowercase(),
@@ -112,6 +114,7 @@ class AuthRepository(
                 displayName = displayName,
                 nativeLanguage = nativeLanguage,
                 targetLanguages = targetLanguages,
+                clientPlatform = "android",
             ),
         )
         if (res.accessToken != null && res.refreshToken != null && res.user != null) {
@@ -126,10 +129,10 @@ class AuthRepository(
     }
 
     suspend fun forgotPassword(email: String): OkMessageResponse =
-        api.forgotPassword(ForgotPasswordRequest(email))
+        api.forgotPassword(ForgotPasswordRequest(email = email, clientPlatform = "android"))
 
     suspend fun resendVerification(email: String): OkMessageResponse =
-        api.resendVerification(ResendVerificationRequest(email))
+        api.resendVerification(ResendVerificationRequest(email = email, clientPlatform = "android"))
 
     suspend fun verifyEmail(token: String) = api.verifyEmail(token)
 
@@ -139,6 +142,40 @@ class AuthRepository(
         )
 
     suspend fun logout() = tokenStore.clear()
+
+    /** Validates stored tokens on cold start; clears stale sessions so users land on sign-in. */
+    suspend fun restoreSessionOnLaunch(): Pair<Boolean, Boolean> {
+        val refresh = tokenStore.refreshToken()?.trim().orEmpty()
+        val access = tokenStore.accessToken()?.trim().orEmpty()
+        if (refresh.isEmpty() && access.isEmpty()) return false to false
+        if (refresh.isEmpty()) {
+            tokenStore.clear()
+            return false to false
+        }
+        if (access.isEmpty()) {
+            return try {
+                val res = api.refresh(RefreshRequest(refresh))
+                persist(res)
+                true to res.isAdmin
+            } catch (_: Exception) {
+                tokenStore.clear()
+                false to false
+            }
+        }
+        return try {
+            api.me()
+            true to tokenStore.isAdmin()
+        } catch (_: Exception) {
+            try {
+                val res = api.refresh(RefreshRequest(refresh))
+                persist(res)
+                true to res.isAdmin
+            } catch (_: Exception) {
+                tokenStore.clear()
+                false to false
+            }
+        }
+    }
 
     suspend fun sessionUser(): AuthUser? =
         tokenStore.userJson()?.let { json.decodeFromString(AuthUser.serializer(), it) }
@@ -210,20 +247,31 @@ class ContentRepository(
         serializer = FeedResponse.serializer(),
     )
 
-    suspend fun list(q: String? = null, type: String? = null): ContentListResponse =
-        listFetch(q, type).data
+    suspend fun list(q: String? = null, type: String? = null, lang: String? = null): ContentListResponse =
+        listFetch(q, type, lang).data
 
     suspend fun listFetch(
         q: String? = null,
         type: String? = null,
+        lang: String? = null,
+        page: Int? = null,
+        pageSize: Int? = null,
     ): FetchResult<ContentListResponse> {
-        val cacheKey = "library|${q.orEmpty()}|${type.orEmpty()}"
+        val cacheKey = "library|${q.orEmpty()}|${type.orEmpty()}|${lang.orEmpty()}|${page ?: ""}|${pageSize ?: ""}"
         return fetchWithCache(
             json = json,
             cacheKey = cacheKey,
             readCache = cache::get,
             writeCache = cache::put,
-            fetch = { api.contentList(q = q, type = type, pageSize = 40) },
+            fetch = {
+                api.contentList(
+                    q = q,
+                    type = type,
+                    lang = lang,
+                    page = page,
+                    pageSize = pageSize ?: 40,
+                )
+            },
             serializer = ContentListResponse.serializer(),
         ).also { seedContentItems(it.data.items) }
     }
@@ -231,8 +279,11 @@ class ContentRepository(
     suspend fun listPeek(
         q: String? = null,
         type: String? = null,
+        lang: String? = null,
+        page: Int? = null,
+        pageSize: Int? = null,
     ): FetchResult<ContentListResponse>? {
-        val cacheKey = "library|${q.orEmpty()}|${type.orEmpty()}"
+        val cacheKey = "library|${q.orEmpty()}|${type.orEmpty()}|${lang.orEmpty()}|${page ?: ""}|${pageSize ?: ""}"
         return readCachedJson(
             json = json,
             cacheKey = cacheKey,
@@ -506,7 +557,8 @@ class VocabRepository(
 }
 
 class ImportRepository(private val api: GotchaApi) {
-    suspend fun list(): ImportsListResponse = api.imports()
+    suspend fun list(page: Int = 1, pageSize: Int = 20): ImportsListResponse =
+        api.imports(page = page, pageSize = pageSize)
     suspend fun delete(id: String) = api.deleteImport(id)
     suspend fun paste(title: String, text: String, language: String?, paymentId: String? = null): UserImport =
         api.importPaste(ImportPasteRequest(title, text, language, paymentId))

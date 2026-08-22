@@ -37,7 +37,7 @@ import androidx.compose.ui.unit.sp
 import app.gotcha.android.R
 import app.gotcha.android.ui.theme.GlassChrome
 import app.gotcha.android.ui.theme.GotchaColors
-import app.gotcha.android.ui.theme.Manrope
+import app.gotcha.android.ui.theme.Inter
 
 /** Bottom inset for messaging routes — system nav only (no tab chrome on these screens). */
 @Composable
@@ -106,7 +106,7 @@ fun MessagingDirectoryHeader(
             MessagingBackButton(onBack)
             Text(
                 title,
-                fontFamily = Manrope,
+                fontFamily = Inter,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 20.sp,
                 color = GotchaColors.Ink,
@@ -149,7 +149,7 @@ fun MessagingChatFab(
             ) {
                 Text(
                     text = if (unreadCount > 9) "9+" else unreadCount.toString(),
-                    fontFamily = Manrope,
+                    fontFamily = Inter,
                     fontWeight = FontWeight.ExtraBold,
                     fontSize = 10.sp,
                     color = Color.White,

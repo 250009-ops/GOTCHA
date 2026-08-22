@@ -136,3 +136,41 @@ export function passwordResetEmail(
 
   return { subject: title, text, html };
 }
+
+export function newMessageEmail(
+  recipientName: string,
+  senderName: string,
+  preview: string,
+  messagesUrl: string,
+): { subject: string; text: string; html: string } {
+  const title = `${senderName} sent you a message on GOTCHA`;
+  const snippet = preview.trim().slice(0, 180) || 'Open GOTCHA to read it.';
+  const text = [
+    `Hi ${recipientName},`,
+    '',
+    `${senderName} sent you a new message on GOTCHA:`,
+    '',
+    snippet,
+    '',
+    `Open messages: ${messagesUrl}`,
+    '',
+    'You can turn off message emails in Settings → Email notifications.',
+  ].join('\n');
+
+  const html = buildEmailHtml({
+    preheader: `${senderName}: ${snippet}`,
+    title,
+    bodyHtml: `
+      <p>Hi ${escapeHtml(recipientName)},</p>
+      <p><strong>${escapeHtml(senderName)}</strong> sent you a new message:</p>
+      <p style="margin:16px 0;padding:12px 14px;background:#f5f3ff;border-radius:12px;color:#111827;">${escapeHtml(snippet)}</p>
+      <p style="margin-top:12px;font-size:13px;color:#4b5563;">Open GOTCHA to reply. You can turn off these emails in Settings.</p>
+    `,
+    ctaLabel: 'Open messages',
+    ctaUrl: messagesUrl,
+    footerNote:
+      'If the button does not work, copy and paste this link into your browser: ' + messagesUrl,
+  });
+
+  return { subject: title, text, html };
+}

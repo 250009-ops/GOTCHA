@@ -8,6 +8,7 @@ import {
 import { ImportPaymentStatus, ImportType, Prisma, PurchaseStatus } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
 import { formatIsAllowed, normalizeAllowedFormats, normalizeImportFormat } from '../../common/import-format';
+import { MAX_BILLABLE_PAGES } from '../imports/pdf-page-count';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AtmosClient, validateCardForAtmos } from './atmos.client';
 import {
@@ -52,13 +53,19 @@ export type ImportQuoteResult = {
   minAmountUzs: number;
   /** True if amountUzs < minAmountUzs — payment will fail. */
   belowMinimum: boolean;
-  freeLimits: {
-    dailyFreeImportsPerUser: number;
-    monthlyFreePageLimit: number;
-    allowedFormats: string[];
-    dailyFreeUsed: number;
-    monthlyPagesUsed: number;
-  };
+  freeLimits: LearnerImportAllowance;
+};
+
+export type LearnerImportAllowance = {
+  gatewayEnabled: boolean;
+  resetCycle: string;
+  allowedFormats: string[];
+  dailyFreeImportsPerUser: number;
+  dailyFreeUsed: number;
+  dailyFreeRemaining: number;
+  monthlyFreePageLimit: number;
+  monthlyPagesUsed: number;
+  monthlyPagesRemaining: number;
 };
 
 export type CheckoutResult = {
@@ -102,13 +109,13 @@ export class ImportCommerceService {
 
   estimatePages(input: ImportQuoteInput): number {
     if (input.pageCount != null && input.pageCount > 0) {
-      return Math.max(1, Math.min(500, Math.floor(input.pageCount)));
+      return Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.floor(input.pageCount)));
     }
     if (input.wordCount != null && input.wordCount > 0) {
-      return Math.max(1, Math.min(500, Math.ceil(input.wordCount / WORDS_PER_PAGE)));
+      return Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.ceil(input.wordCount / WORDS_PER_PAGE)));
     }
     if (input.textLength != null && input.textLength > 0) {
-      return Math.max(1, Math.min(500, Math.ceil(input.textLength / CHARS_PER_PAGE)));
+      return Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.ceil(input.textLength / CHARS_PER_PAGE)));
     }
     return 1;
   }
@@ -150,9 +157,10 @@ export class ImportCommerceService {
     return this.startOfUtcMonth();
   }
 
-  async freeUsage(userId: string, resetCycle = 'monthly') {
+  async freeUsage(userId: string, resetCycle = 'monthly', excludePaymentId?: string) {
     const dayStart = this.startOfUtcDay();
     const pageStart = this.pageWindowStart(resetCycle);
+    const exclude = excludePaymentId ? { id: { not: excludePaymentId } } : {};
 
     const [dailyFreeUsed, monthFreePayments] = await Promise.all([
       this.prisma.importPayment.count({
@@ -161,6 +169,7 @@ export class ImportCommerceService {
           status: ImportPaymentStatus.paid,
           amountTiyins: 0,
           paidAt: { gte: dayStart },
+          ...exclude,
         },
       }),
       this.prisma.importPayment.findMany({
@@ -169,6 +178,7 @@ export class ImportCommerceService {
           status: ImportPaymentStatus.paid,
           amountTiyins: 0,
           paidAt: { gte: pageStart },
+          ...exclude,
         },
         select: { estimatedPages: true },
       }),
@@ -178,36 +188,60 @@ export class ImportCommerceService {
     return { dailyFreeUsed, monthlyPagesUsed };
   }
 
+  /** Live free-import pool for the student panel. Same numbers admin saves on Import & Pricing. */
+  async learnerAllowance(userId: string, excludePaymentId?: string): Promise<LearnerImportAllowance> {
+    const freeLimits = await this.getFreeLimits();
+    const usage = await this.freeUsage(userId, freeLimits.resetCycle, excludePaymentId);
+    const dailyCap = Math.max(0, Math.floor(Number(freeLimits.dailyFreeImportsPerUser) || 0));
+    const pageCap = Math.max(0, Math.floor(Number(freeLimits.monthlyFreePageLimit) || 0));
+    return {
+      gatewayEnabled: this.gatewayEnabled(),
+      resetCycle: freeLimits.resetCycle,
+      allowedFormats: freeLimits.allowedFormats,
+      dailyFreeImportsPerUser: dailyCap,
+      dailyFreeUsed: usage.dailyFreeUsed,
+      dailyFreeRemaining: Math.max(0, dailyCap - usage.dailyFreeUsed),
+      monthlyFreePageLimit: pageCap,
+      monthlyPagesUsed: usage.monthlyPagesUsed,
+      monthlyPagesRemaining: Math.max(0, pageCap - usage.monthlyPagesUsed),
+    };
+  }
+
   async findTier(pages: number) {
-    const tiers = await this.prisma.importPageTier.findMany({ orderBy: { sortOrder: 'asc' } });
+    const tiers = await this.prisma.importPageTier.findMany({
+      orderBy: [{ minPages: 'asc' }, { sortOrder: 'asc' }],
+    });
     return (
-      tiers.find((t) => pages >= t.minPages && (t.maxPages == null || pages <= t.maxPages)) ??
-      tiers[tiers.length - 1] ??
-      null
+      tiers.find((t) => pages >= t.minPages && (t.maxPages == null || pages <= t.maxPages)) ?? null
     );
   }
 
-  async quote(userId: string, input: ImportQuoteInput): Promise<ImportQuoteResult> {
+  async quote(
+    userId: string,
+    input: ImportQuoteInput,
+    opts?: { excludePaymentId?: string },
+  ): Promise<ImportQuoteResult> {
     const importType = input.importType;
     const contentFormat = this.mapImportTypeToFormat(importType, input.contentFormat);
     const estimatedPages = this.estimatePages(input);
-    const freeLimits = await this.getFreeLimits();
-    const usage = await this.freeUsage(userId, freeLimits.resetCycle);
+    const allowance = await this.learnerAllowance(userId, opts?.excludePaymentId);
     const tier = await this.findTier(estimatedPages);
     const priceUzs = tier ? Number(tier.priceUsd) : 0;
     const amountTiyins = Math.max(0, Math.round(priceUzs * 100));
 
-    const gatewayEnabled = this.gatewayEnabled();
+    const gatewayEnabled = allowance.gatewayEnabled;
     let isFree = !gatewayEnabled;
     let freeReason: string | null = gatewayEnabled ? null : 'Payment gateway disabled (unlimited imports)';
 
     if (gatewayEnabled) {
-      const formatOk = formatIsAllowed(freeLimits.allowedFormats, contentFormat);
-      const underDaily = usage.dailyFreeUsed < freeLimits.dailyFreeImportsPerUser;
-      const underMonthlyPages = usage.monthlyPagesUsed + estimatedPages <= freeLimits.monthlyFreePageLimit;
+      const formatOk = formatIsAllowed(allowance.allowedFormats, contentFormat);
+      const underDaily = allowance.dailyFreeUsed < allowance.dailyFreeImportsPerUser;
+      const underMonthlyPages = allowance.monthlyPagesUsed + estimatedPages <= allowance.monthlyFreePageLimit;
       if (formatOk && underDaily && underMonthlyPages) {
         isFree = true;
         freeReason = 'Within free import allowance';
+      } else if (!tier) {
+        freeReason = 'This length is not covered by a page tier';
       }
     }
 
@@ -239,13 +273,7 @@ export class ImportCommerceService {
       requiresPayment: gatewayEnabled && !isFree,
       minAmountUzs,
       belowMinimum,
-      freeLimits: {
-        dailyFreeImportsPerUser: freeLimits.dailyFreeImportsPerUser,
-        monthlyFreePageLimit: freeLimits.monthlyFreePageLimit,
-        allowedFormats: freeLimits.allowedFormats,
-        dailyFreeUsed: usage.dailyFreeUsed,
-        monthlyPagesUsed: usage.monthlyPagesUsed,
-      },
+      freeLimits: allowance,
     };
   }
 
@@ -289,7 +317,9 @@ export class ImportCommerceService {
       throw new ServiceUnavailableException('Atmos payment gateway is not configured');
     }
     if (quote.amountTiyins <= 0) {
-      throw new BadRequestException('Unable to price this import — configure page tiers in admin');
+      throw new BadRequestException(
+        'This import length is not priced yet. Try a shorter document or try again later.',
+      );
     }
 
     // Safety net: pricing should be validated in admin; never expose Atmos minimum details to learners.
@@ -571,6 +601,68 @@ export class ImportCommerceService {
       throw new BadRequestException('Payment import type does not match');
     }
     return payment;
+  }
+
+  /**
+   * After the real PDF/EPUB page count is known, refuse imports that were
+   * quoted too cheaply (file-size estimates used to under-count pages).
+   */
+  async assertPaymentCoversPages(
+    userId: string,
+    payment: { id: string; amountTiyins: number; estimatedPages: number; userImportId?: string | null } | null,
+    actualPages: number,
+    importType: ImportType,
+  ) {
+    if (!this.gatewayEnabled()) return;
+    if (!payment) {
+      throw new ForbiddenException('Payment required for this import. Get a quote and checkout first.');
+    }
+
+    const pages = Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.floor(actualPages)));
+    const needed = await this.quote(
+      userId,
+      { importType, contentFormat: this.mapImportTypeToFormat(importType), pageCount: pages },
+      { excludePaymentId: payment.id },
+    );
+
+    const covers =
+      !needed.requiresPayment ||
+      (payment.amountTiyins > 0 && payment.amountTiyins >= needed.amountTiyins);
+
+    if (!covers) {
+      await this.voidUnusedPayment(payment.id);
+      const remaining = needed.freeLimits.monthlyPagesRemaining;
+      throw new ForbiddenException(
+        `This document is ${pages} pages. You have ${remaining} free page${remaining === 1 ? '' : 's'} left, so it is not covered by the free allowance. Pay to import it.`,
+      );
+    }
+
+    if (payment.estimatedPages !== pages) {
+      await this.prisma.importPayment.update({
+        where: { id: payment.id },
+        data: { estimatedPages: pages },
+      });
+    }
+  }
+
+  private async voidUnusedPayment(paymentId: string) {
+    const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!payment || payment.userImportId) return;
+    if (payment.status === ImportPaymentStatus.paid && payment.providerPaymentId) {
+      const transactionId = Number(payment.providerPaymentId);
+      if (Number.isFinite(transactionId) && transactionId > 0) {
+        await this.atmos.reverseTransaction({ transactionId, reason: 'Page count mismatch' }).catch(() => undefined);
+      }
+      await this.prisma.importPayment.update({
+        where: { id: payment.id },
+        data: { status: ImportPaymentStatus.refunded },
+      });
+      return;
+    }
+    await this.prisma.importPayment.update({
+      where: { id: payment.id },
+      data: { status: ImportPaymentStatus.failed },
+    });
   }
 
   async attachUserImport(paymentId: string, userImportId: string) {

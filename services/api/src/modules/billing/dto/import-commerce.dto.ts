@@ -25,7 +25,7 @@ export class ImportQuoteDto {
   @IsOptional()
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(4000)
   pageCount?: number;
 }
 

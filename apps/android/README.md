@@ -39,7 +39,53 @@ Debug APK: `app/build/outputs/apk/debug/app-debug.apk`
 Debug applicationId: `app.gotcha.android.debug`  
 Release applicationId: `app.gotcha.android`
 
-Release builds require a production keystore (`signingConfig`) before Play Console upload. Do not invent or commit keystore secrets.
+## Release signing (Play Console)
+
+Upload keystore (local only, gitignored):
+
+- File: `apps/android/keystore/gotcha-upload.jks`
+- Alias: `gotcha-upload`
+- Credentials: `apps/android/local.properties` (`release.storePassword`, `release.keyPassword`)
+
+Release SHA-256 fingerprint (upload key):
+
+```
+26:1A:18:56:EE:39:27:12:33:7E:8B:A9:28:1C:95:16:A9:33:B3:0B:51:E9:F3:37:70:BA:A6:E2:86:26:08:43
+```
+
+After Play App Signing enrollment, also add Google’s **app signing certificate** SHA-256 to:
+
+- `apps/web/public/.well-known/assetlinks.json`
+- `apps/web-learner/public/.well-known/assetlinks.json`
+
+Then redeploy frontends (`npm run deploy:frontends`).
+
+## Build release AAB
+
+**Recommended:** Android Studio → **Build → Generate Signed Bundle / APK** → **Android App Bundle** → select `keystore/gotcha-upload.jks`.
+
+CLI (needs ~16 GB RAM; 8 GB machines may OOM during R8/dex merge):
+
+```bash
+cd apps/android
+build-release-aab.bat
+```
+
+Output: `app/build/outputs/bundle/release/app-release.aab`
+
+CI alternative: GitHub Actions workflow `.github/workflows/android-release.yml` (requires repository secrets for the upload keystore).
+
+## Mobile smoke test
+
+From repo root:
+
+```bash
+npm run smoke:mobile
+# with AAB artifact check:
+node scripts/smoke-mobile.mjs --aab apps/android/app/build/outputs/bundle/release/app-release.aab
+```
+
+Validates production API routes, App Links, billing gateway, and optional connected-device checks.
 
 ## Figma
 

@@ -7,7 +7,7 @@ import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
-import { authSwitchSearch } from '../lib/authRoutes';
+import { authSwitchSearch, authFlowSearch } from '../lib/authRoutes';
 import { AuthIcon, authAssets as a } from '../assets/auth';
 import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
@@ -55,6 +55,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  const authQuery = authFlowSearch(searchParams);
+  const forgotPasswordTo = authQuery ? `/forgot-password?${authQuery}` : '/forgot-password';
   const seededEmail = (location.state as { email?: string } | null)?.email?.trim() || '';
   const seededName = (location.state as { name?: string } | null)?.name?.trim() || '';
 
@@ -71,12 +73,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [loading, setLoading] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
-  // Prefill target from the landing `lang` query — never hardcode a sample language.
-  // If they chose English on the homepage, default native to Uzbek so the two don't collide.
+  // Prefill target from the landing `lang` query only. Native starts empty so the
+  // learner chooses it themselves — do not default to English (or any other language).
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
-  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(
-    landingLang === 'en' ? 'uz' : 'en',
-  );
+  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage | null>(null);
   const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(
     landingLang ? [landingLang] : [],
   );
@@ -93,8 +93,16 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   }, [mode]);
 
   useEffect(() => {
+    if (!nativeLanguage) return;
     setTargetLanguages((prev) => prev.filter((l) => l !== nativeLanguage));
   }, [nativeLanguage]);
+
+  useEffect(() => {
+    if (!catalogLangs.length) return;
+    const codes = catalogLangs.map((l) => l.code);
+    setNativeLanguage((prev) => (prev && codes.includes(prev) ? prev : null));
+    setTargetLanguages((prev) => prev.filter((l) => codes.includes(l)));
+  }, [catalogLangs]);
 
   const goToLanguageStep = (e: React.FormEvent) => {
     e.preventDefault();
@@ -113,6 +121,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     e.preventDefault();
     if (!email || !password) {
       toast.error('Please fill in all fields');
+      return;
+    }
+    if (!isLogin && !nativeLanguage) {
+      toast.error('Pick your native language');
       return;
     }
     if (!isLogin && targetLanguages.length === 0) {
@@ -150,6 +162,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         }
         navigate('/app', { replace: true });
       } else {
+        if (!nativeLanguage) {
+          toast.error('Pick your native language');
+          return;
+        }
         const result = await register({
           email,
           password,
@@ -169,7 +185,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
       const e = err as Error & { code?: string; email?: string; status?: number };
       if (e.code === 'EMAIL_NOT_VERIFIED' || /verify your email/i.test(e.message || '')) {
         toast.message('Please verify your email before signing in');
-        navigate(`/verify-email?email=${encodeURIComponent(e.email || email)}`);
+        const verifyQ = authFlowSearch(searchParams, { email: e.email || email });
+        navigate(verifyQ ? `/verify-email?${verifyQ}` : `/verify-email?email=${encodeURIComponent(e.email || email)}`);
         return;
       }
       if (
@@ -177,7 +194,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         (e.status === 409 && /not verified/i.test(e.message || ''))
       ) {
         toast.message('Account already exists — check your inbox or resend verification');
-        navigate(`/verify-email?email=${encodeURIComponent(e.email || email)}`);
+        const verifyQ = authFlowSearch(searchParams, { email: e.email || email });
+        navigate(verifyQ ? `/verify-email?${verifyQ}` : `/verify-email?email=${encodeURIComponent(e.email || email)}`);
         return;
       }
       if (
@@ -222,7 +240,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             </h2>
             <p className="text-[#6b7280] text-sm leading-5">
               {isLogin
-                ? 'Sign in to continue your reading journey.'
+                ? adminReturnUrl
+                  ? 'Sign in with your admin account to open the admin console.'
+                  : 'Sign in to continue your reading journey.'
                 : showLanguageStep
                   ? 'Search and add the language you want to learn. You can add more later in Settings.'
                   : plan === 'pay-per-import'
@@ -249,11 +269,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 <label className="text-xs font-semibold text-[#4a5565]">Your native language</label>
                 <LanguageSearchInput
                   options={catalogLangs}
-                  value={[nativeLanguage]}
-                  onChange={(codes) => {
-                    const next = (codes[0] ?? catalogLangs[0]?.code ?? 'en') as AppLanguage;
-                    setNativeLanguage(next);
-                  }}
+                  value={nativeLanguage ? [nativeLanguage] : []}
+                  onChange={(codes) => setNativeLanguage((codes[0] as AppLanguage) ?? null)}
                   multiple={false}
                   placeholder="Search your native language..."
                 />
@@ -267,7 +284,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   options={catalogLangs}
                   value={targetLanguages}
                   onChange={(codes) => setTargetLanguages(codes as AppLanguage[])}
-                  exclude={[nativeLanguage]}
+                  exclude={nativeLanguage ? [nativeLanguage] : []}
                   placeholder="Search a language to add..."
                 />
               </div>
@@ -282,7 +299,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || targetLanguages.length === 0}
+                  disabled={loading || !nativeLanguage || targetLanguages.length === 0}
                   className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
                 >
                   {loading ? (
@@ -356,7 +373,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               {isLogin && (
                 <div className="flex items-center justify-end">
                   <Link
-                    to="/forgot-password"
+                    to={forgotPasswordTo}
                     className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
                   >
                     Forgot password?

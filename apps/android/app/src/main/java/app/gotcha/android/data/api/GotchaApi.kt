@@ -100,6 +100,7 @@ import app.gotcha.android.data.model.UpdateProfileRequest
 import app.gotcha.android.data.model.UpdateProgressRequest
 import app.gotcha.android.data.model.UserImport
 import app.gotcha.android.data.model.UserPreferences
+import app.gotcha.android.data.model.SubscriptionInfo
 import app.gotcha.android.data.model.UserStats
 import app.gotcha.android.data.model.VocabItem
 import okhttp3.MultipartBody
@@ -264,6 +265,9 @@ interface GotchaApi {
 
     @POST("billing/imports/payments/{id}/cancel")
     suspend fun importCancel(@Path("id") id: String, @Body body: ImportCancelRequest): ImportCancelResponse
+
+    @GET("billing/subscription")
+    suspend fun subscription(): SubscriptionInfo
 
     @POST("practice/sessions")
     suspend fun startPractice(@Body body: StartPracticeRequest): PracticeSession

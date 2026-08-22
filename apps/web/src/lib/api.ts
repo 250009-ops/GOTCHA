@@ -84,7 +84,7 @@ export async function fetchMarketingPlans(): Promise<MarketingPlan[]> {
 }
 
 export async function fetchMarketingStats(): Promise<MarketingStats> {
-  const res = await fetch(`${API_BASE}/marketing/stats`);
+  const res = await fetch(`${API_BASE}/marketing/stats`, { cache: 'no-store' });
   if (!res.ok) throw new Error(`Stats query failed (${res.status})`);
   return res.json();
 }

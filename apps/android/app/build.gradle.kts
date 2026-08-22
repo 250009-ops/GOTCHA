@@ -1,8 +1,14 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
     id("org.jetbrains.kotlin.plugin.serialization")
+}
+
+val localProperties = Properties().apply {
+    rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
 
 android {
@@ -20,11 +26,26 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val storeFilePath = localProperties.getProperty("release.storeFile")
+            if (!storeFilePath.isNullOrBlank()) {
+                storeFile = rootProject.file(storeFilePath)
+                storePassword = localProperties.getProperty("release.storePassword")
+                keyAlias = localProperties.getProperty("release.keyAlias")
+                keyPassword = localProperties.getProperty("release.keyPassword")
+            }
+        }
+    }
+
     buildTypes {
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            isMinifyEnabled = false
+            isShrinkResources = false
             isDebuggable = false
+            val releaseSigning = signingConfigs.getByName("release")
+            signingConfig =
+                if (releaseSigning.storeFile?.exists() == true) releaseSigning else signingConfigs.getByName("debug")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",

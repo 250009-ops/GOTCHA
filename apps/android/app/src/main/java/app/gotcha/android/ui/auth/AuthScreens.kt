@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.TextStyle
@@ -64,6 +66,9 @@ import app.gotcha.android.ui.components.GotchaTextField
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaSystemBars
 import app.gotcha.android.ui.theme.Manrope
+import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.net.Uri
 import android.util.Log
 import java.io.IOException
 import kotlinx.coroutines.launch
@@ -230,7 +235,74 @@ fun SignUpScreen(
         AuthScaffold(
             title = "What do you want to learn?",
             subtitle = "Search and add the language you want to learn. You can add more later in Settings.",
-            footer = {},
+            footer = {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    GotchaPrimaryButton(
+                        text = "Back",
+                        containerColor = Color(0xFFF2F4F7),
+                        contentColor = GotchaColors.BrandNavy,
+                        shapeRadius = 14,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            error = null
+                            accountAlreadyExists = false
+                            step = "credentials"
+                        },
+                    )
+                    GotchaPrimaryButton(
+                        text = "Sign up",
+                        loading = loading,
+                        enabled = nativeLanguage != null && targetLanguages.isNotEmpty(),
+                        containerColor = GotchaColors.BrandPurpleDeep,
+                        shapeRadius = 14,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            val native = nativeLanguage
+                            if (native.isNullOrBlank()) {
+                                error = "Pick your native language"
+                                return@GotchaPrimaryButton
+                            }
+                            if (targetLanguages.isEmpty()) {
+                                error = "Pick at least one language to learn"
+                                return@GotchaPrimaryButton
+                            }
+                            scope.launch {
+                                loading = true
+                                error = null
+                                accountAlreadyExists = false
+                                try {
+                                    container.endSession()
+                                    val res = container.authRepository.register(
+                                        email = email.trim(),
+                                        password = password,
+                                        displayName = name.trim().ifBlank { null },
+                                        nativeLanguage = native,
+                                        targetLanguages = targetLanguages.toList(),
+                                    )
+                                if (res.requiresEmailVerification || (res.accessToken.isNullOrBlank() && !res.email.isNullOrBlank())) {
+                                    pendingVerificationEmail = res.email ?: email.trim()
+                                    } else if (res.isAdmin || res.user != null) {
+                                        onSignedUp(res.isAdmin)
+                                    } else {
+                                        pendingVerificationEmail = email.trim()
+                                    }
+                                } catch (e: Exception) {
+                                    when (e.apiErrorCode()) {
+                                        "EMAIL_EXISTS_UNVERIFIED" -> pendingVerificationEmail = e.apiErrorEmail() ?: email.trim()
+                                        "EMAIL_ALREADY_REGISTERED" -> {
+                                            accountAlreadyExists = true
+                                            error = e.apiErrorMessage("Account already exists")
+                                        }
+                                        else -> error = e.apiErrorMessage("Registration failed")
+                                    }
+                                } finally {
+                                    loading = false
+                                }
+                            }
+                        },
+                    )
+                }
+            },
         ) {
             Text(
                 "Your native language",
@@ -283,72 +355,6 @@ fun SignUpScreen(
                         modifier = Modifier.clickable(onClick = onGoSignIn),
                     )
                 }
-            }
-            Spacer(Modifier.height(24.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                GotchaPrimaryButton(
-                    text = "Back",
-                    containerColor = Color(0xFFF2F4F7),
-                    shapeRadius = 14,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        error = null
-                        accountAlreadyExists = false
-                        step = "credentials"
-                    },
-                )
-                GotchaPrimaryButton(
-                    text = "Create Account",
-                    loading = loading,
-                    enabled = nativeLanguage != null && targetLanguages.isNotEmpty(),
-                    containerColor = GotchaColors.BrandPurpleDeep,
-                    shapeRadius = 14,
-                    modifier = Modifier.weight(1f),
-                    onClick = {
-                        val native = nativeLanguage
-                        if (native.isNullOrBlank()) {
-                            error = "Pick your native language"
-                            return@GotchaPrimaryButton
-                        }
-                        if (targetLanguages.isEmpty()) {
-                            error = "Pick at least one language to learn"
-                            return@GotchaPrimaryButton
-                        }
-                        scope.launch {
-                            loading = true
-                            error = null
-                            accountAlreadyExists = false
-                            try {
-                                val res = container.authRepository.register(
-                                    email = email.trim(),
-                                    password = password,
-                                    displayName = name.trim().ifBlank { null },
-                                    nativeLanguage = native,
-                                    targetLanguages = targetLanguages.toList(),
-                                )
-                                if (res.requiresEmailVerification) {
-                                    pendingVerificationEmail = res.email ?: email.trim()
-                                } else if (res.isAdmin || res.user != null) {
-                                    onSignedUp(res.isAdmin)
-                                } else {
-                                    // Defensive fallback — treat as pending verification.
-                                    pendingVerificationEmail = email.trim()
-                                }
-                            } catch (e: Exception) {
-                                when (e.apiErrorCode()) {
-                                    "EMAIL_EXISTS_UNVERIFIED" -> pendingVerificationEmail = e.apiErrorEmail() ?: email.trim()
-                                    "EMAIL_ALREADY_REGISTERED" -> {
-                                        accountAlreadyExists = true
-                                        error = e.apiErrorMessage("Account already exists")
-                                    }
-                                    else -> error = e.apiErrorMessage("Registration failed")
-                                }
-                            } finally {
-                                loading = false
-                            }
-                        }
-                    },
-                )
             }
         }
         return
@@ -430,6 +436,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
     GotchaSystemBars(darkIcons = true)
 
     if (sent) {
+        val context = LocalContext.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -452,14 +459,27 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "If an account exists for $email, we sent a link to reset your password.",
+                "If an account exists for $email, we sent a link to reset your password. Tap the link in your email to open GOTCHA and choose a new password.",
                 fontFamily = Manrope,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(28.dp))
-            GotchaPrimaryButton(text = "Back to Sign In", onClick = onBack)
+            GotchaPrimaryButton(
+                text = "Open Email App",
+                containerColor = GotchaColors.BrandPurpleDeep,
+                shapeRadius = 14,
+                onClick = { openEmailApp(context) },
+            )
+            Spacer(Modifier.height(12.dp))
+            GotchaPrimaryButton(
+                text = "Back to Sign In",
+                containerColor = Color(0xFFF2F4F7),
+                contentColor = GotchaColors.BrandNavy,
+                shapeRadius = 14,
+                onClick = onBack,
+            )
         }
         return
     }
@@ -562,6 +582,7 @@ fun VerifyEmailFromLinkScreen(
             return@LaunchedEffect
         }
         try {
+            container.endSession()
             val res = container.authRepository.verifyEmail(token)
             email = res.email
             phase = "success"
@@ -775,6 +796,7 @@ private fun EmailVerificationPending(
 ) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
@@ -785,10 +807,11 @@ private fun EmailVerificationPending(
             .background(Color.White)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 24.dp),
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 24.dp, vertical = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
     ) {
+        Spacer(Modifier.height(16.dp))
         EmailPendingIcon()
         Spacer(Modifier.height(20.dp))
         Text(
@@ -801,7 +824,7 @@ private fun EmailVerificationPending(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "We sent a verification link to $email. Open it, then come back and sign in.",
+            "We sent a verification link to $email. Open your email, tap the link, and you'll return here in GOTCHA to finish.",
             fontFamily = Manrope,
             fontSize = 14.sp,
             color = GotchaColors.TextMuted,
@@ -812,7 +835,20 @@ private fun EmailVerificationPending(
             Text(message!!, color = GotchaColors.SuccessText, fontFamily = Manrope, fontSize = 13.sp, textAlign = TextAlign.Center)
         }
         Spacer(Modifier.height(28.dp))
-        GotchaPrimaryButton(text = "I've verified — Sign In", onClick = onBackToSignIn)
+        GotchaPrimaryButton(
+            text = "Open Email App",
+            containerColor = GotchaColors.BrandPurpleDeep,
+            shapeRadius = 14,
+            onClick = { openEmailApp(context) },
+        )
+        Spacer(Modifier.height(12.dp))
+        GotchaPrimaryButton(
+            text = "I've verified — Sign In",
+            containerColor = Color(0xFFF2F4F7),
+            contentColor = GotchaColors.BrandNavy,
+            shapeRadius = 14,
+            onClick = onBackToSignIn,
+        )
         Spacer(Modifier.height(12.dp))
         Text(
             if (loading) "Sending…" else "Resend verification email",
@@ -835,6 +871,17 @@ private fun EmailVerificationPending(
                 }
             },
         )
+        Spacer(Modifier.height(24.dp))
+    }
+}
+
+private fun openEmailApp(context: android.content.Context) {
+    val emailIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_APP_EMAIL)
+    try {
+        context.startActivity(emailIntent)
+    } catch (_: ActivityNotFoundException) {
+        val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("mailto:"))
+        context.startActivity(Intent.createChooser(fallback, "Open email"))
     }
 }
 
@@ -864,6 +911,7 @@ private fun AppLanguageOption.matchesQuery(query: String): Boolean {
         nativeLabel.contains(q, ignoreCase = true)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AuthLanguageSearchField(
     options: List<AppLanguageOption>,

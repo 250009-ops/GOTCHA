@@ -62,6 +62,17 @@ class MainActivity : ComponentActivity() {
 
     private fun consumeAuthDeepLink(data: Uri?) {
         if (data == null) return
+        val scheme = data.scheme?.lowercase().orEmpty()
+        if (scheme == "gotcha") {
+            val host = data.host.orEmpty()
+            val token = data.getQueryParameter("token")?.trim().orEmpty()
+            if (token.isEmpty()) return
+            when (host) {
+                "verify-email" -> PendingAuthDeepLink.value = AuthDeepLink.VerifyEmail(token)
+                "reset-password" -> PendingAuthDeepLink.value = AuthDeepLink.ResetPassword(token)
+            }
+            return
+        }
         val host = data.host.orEmpty()
         if (!host.equals("gotchaa.uz", ignoreCase = true) &&
             !host.equals("www.gotchaa.uz", ignoreCase = true)

@@ -127,3 +127,40 @@ export async function api<T>(
   if (res.status === 204) return undefined as T;
   return res.json();
 }
+
+/** Binary POST helper for TTS audio (and similar). */
+export async function apiAudio(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<Blob> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  const accessToken = getAccessToken();
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+
+  let res = await fetch(`${API_BASE}${path}`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(body),
+  });
+
+  if (res.status === 401 && accessToken) {
+    const newToken = await refreshAccessToken();
+    if (newToken) {
+      headers.Authorization = `Bearer ${newToken}`;
+      res = await fetch(`${API_BASE}${path}`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+      });
+    }
+  }
+
+  if (!res.ok) {
+    const err = (await res.json().catch(() => ({ message: res.statusText }))) as {
+      message?: string | string[];
+    };
+    const message = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Audio failed');
+    throw new Error(message);
+  }
+  return res.blob();
+}

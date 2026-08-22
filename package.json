@@ -22,7 +22,12 @@
     "db:generate": "npm run db:generate --workspace=services/api",
     "deploy:vps:env": "node scripts/generate-vps-env.mjs",
     "deploy:vps": "node scripts/deploy-vps.mjs",
-    "deploy:frontends": "node scripts/redeploy-frontends.mjs"
+    "deploy:frontends": "node scripts/redeploy-frontends.mjs",
+    "deploy:api": "node scripts/deploy-api-src.mjs",
+    "deploy:learner-auth": "node scripts/deploy-learner-auth.mjs",
+    "smoke:production": "node scripts/smoke-production.mjs",
+    "smoke:mobile": "node scripts/smoke-mobile.mjs",
+    "deploy:assetlinks": "node scripts/deploy-assetlinks.mjs"
   },
   "engines": {
     "node": ">=22"

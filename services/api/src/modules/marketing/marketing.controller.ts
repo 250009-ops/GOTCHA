@@ -9,6 +9,7 @@ export class MarketingController {
   constructor(private marketing: MarketingService) {}
 
   @Public()
+  @Header('Cache-Control', 'no-store')
   @Get('stats')
   stats() {
     return this.marketing.stats();
@@ -21,7 +22,7 @@ export class MarketingController {
   }
 
   @Public()
-  @Header('Cache-Control', 'public, max-age=30, stale-while-revalidate=120')
+  @Header('Cache-Control', 'public, max-age=15')
   @Get('landing')
   landing() {
     return this.marketing.landing();

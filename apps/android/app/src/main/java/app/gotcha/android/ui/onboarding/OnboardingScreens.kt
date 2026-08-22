@@ -55,8 +55,7 @@ fun SplashScreen(onFinished: (loggedIn: Boolean, isAdmin: Boolean, onboardingDon
     GotchaSystemBars(darkIcons = false)
     LaunchedEffect(Unit) {
         delay(900)
-        val loggedIn = container.authRepository.isLoggedIn()
-        val isAdmin = container.authRepository.isAdmin()
+        val (loggedIn, isAdmin) = container.authRepository.restoreSessionOnLaunch()
         val onboardingDone = container.tokenStore.onboardingDone()
         onFinished(loggedIn, isAdmin, onboardingDone)
     }

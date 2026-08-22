@@ -42,6 +42,28 @@ export class ImportsController {
     return this.imports.importUrl(user.sub, dto);
   }
 
+  @Post('inspect')
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+      required: ['file'],
+    },
+  })
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_FILE_BYTES },
+    }),
+  )
+  inspect(@UploadedFile() file: Express.Multer.File | undefined) {
+    if (!file) throw new BadRequestException('File is required');
+    return this.imports.inspectFile(file);
+  }
+
   @Post('file')
   @ApiConsumes('multipart/form-data')
   @ApiBody({
