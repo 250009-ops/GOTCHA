@@ -6,9 +6,15 @@ interface LanguagePickerProps {
   className?: string;
   compact?: boolean;
   variant?: 'default' | 'light';
+  menuPlacement?: 'bottom' | 'top';
 }
 
-export function LanguagePicker({ className, compact = false, variant = 'default' }: LanguagePickerProps) {
+export function LanguagePicker({
+  className,
+  compact = false,
+  variant = 'default',
+  menuPlacement = 'top',
+}: LanguagePickerProps) {
   const { locale, copy, setLocale } = useLearnerLocale();
 
   return (
@@ -19,6 +25,7 @@ export function LanguagePicker({ className, compact = false, variant = 'default'
       className={className}
       variant={variant}
       compact={compact}
+      menuPlacement={menuPlacement}
     />
   );
 }

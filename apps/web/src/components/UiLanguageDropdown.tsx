@@ -9,6 +9,8 @@ export interface UiLanguageDropdownProps {
   onChange: (code: PickerLanguage) => void;
   ariaLabel: string;
   className?: string;
+  /** Open upward from sticky headers so the menu does not cover page content below. */
+  menuPlacement?: 'bottom' | 'top';
 }
 
 export function UiLanguageDropdown({
@@ -16,6 +18,7 @@ export function UiLanguageDropdown({
   onChange,
   ariaLabel,
   className = '',
+  menuPlacement = 'bottom',
 }: UiLanguageDropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -70,7 +73,9 @@ export function UiLanguageDropdown({
         <ul
           role="listbox"
           aria-label={ariaLabel}
-          className="absolute right-0 z-[120] mt-1.5 min-w-[10.5rem] overflow-hidden rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg shadow-slate-900/10"
+          className={`absolute right-0 z-[120] min-w-[10.5rem] overflow-hidden rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg shadow-slate-900/10 ${
+            menuPlacement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+          }`}
         >
           {UI_LANGUAGES.map((code) => {
             const item = UI_LANGUAGE_PICKER[code];

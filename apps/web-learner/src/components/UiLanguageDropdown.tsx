@@ -12,6 +12,8 @@ export interface UiLanguageDropdownProps {
   /** Purple auth panel — light text on translucent background */
   variant?: 'default' | 'light';
   compact?: boolean;
+  /** Open upward from sticky headers so the menu does not cover page content below. */
+  menuPlacement?: 'bottom' | 'top';
 }
 
 export function UiLanguageDropdown({
@@ -21,6 +23,7 @@ export function UiLanguageDropdown({
   className,
   variant = 'default',
   compact = false,
+  menuPlacement = 'bottom',
 }: UiLanguageDropdownProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -80,7 +83,8 @@ export function UiLanguageDropdown({
           role="listbox"
           aria-label={ariaLabel}
           className={cn(
-            'absolute right-0 z-[120] mt-1.5 min-w-[10.5rem] overflow-hidden rounded-xl border bg-white py-1 shadow-lg shadow-slate-900/10',
+            'absolute right-0 z-[120] min-w-[10.5rem] overflow-hidden rounded-xl border bg-white py-1 shadow-lg shadow-slate-900/10',
+            menuPlacement === 'top' ? 'bottom-full mb-1.5' : 'top-full mt-1.5',
             isLight ? 'border-white/20' : 'border-[#e5e7eb]',
           )}
         >
