@@ -15,6 +15,16 @@ export type LiveLanguage = (typeof LIVE_LANGUAGES)[number];
 export const UI_LANGUAGES = ['en', 'ru', 'uz'] as const;
 export type UiLanguage = (typeof UI_LANGUAGES)[number];
 
+/** Short codes + flags for the UI language picker (EN/RU/UZ only). */
+export const UI_LANGUAGE_PICKER: Record<
+  UiLanguage,
+  { shortCode: string; flag: string; nativeName: string }
+> = {
+  en: { shortCode: 'GB', flag: '🇬🇧', nativeName: 'English' },
+  ru: { shortCode: 'RU', flag: '🇷🇺', nativeName: 'Русский' },
+  uz: { shortCode: 'UZ', flag: '🇺🇿', nativeName: "O'zbekcha" },
+};
+
 export function isLiveLanguage(code?: string | null): code is LiveLanguage {
   return !!code && (LIVE_LANGUAGES as readonly string[]).includes(code);
 }

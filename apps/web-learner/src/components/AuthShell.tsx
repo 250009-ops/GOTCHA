@@ -128,7 +128,7 @@ function MarketingPanel() {
 
       <div className="relative z-10 flex items-center justify-between gap-3">
         <AuthBrandMark light />
-        <LanguagePicker className="[&_select]:border-white/20 [&_select]:bg-white/10 [&_select]:text-white [&_select]:max-w-[8rem]" />
+        <LanguagePicker variant="light" compact />
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col gap-6">
@@ -200,7 +200,7 @@ export function AuthShell({ children }: { children: ReactNode }) {
       <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
         <div className="flex items-center justify-between gap-3">
           <AuthBrandMark light />
-          <LanguagePicker className="[&_select]:border-white/20 [&_select]:bg-white/10 [&_select]:text-white" />
+          <LanguagePicker variant="light" compact />
         </div>
         <p className="text-[#ddd6ff] text-sm leading-5">
           {copy.auth.readYourWay} {copy.auth.readYourWayBold}

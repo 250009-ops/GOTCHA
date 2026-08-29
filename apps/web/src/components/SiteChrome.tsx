@@ -1,39 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LANGUAGE_META } from '@gotcha/shared';
 import { Brand } from './Brand';
+import { UiLanguageDropdown } from './UiLanguageDropdown';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
-import { isWebLocale } from '../lib/webLocale';
+import { isWebLocale, type WebLocale } from '../lib/webLocale';
 
 function LanguagePicker({ className }: { className?: string }) {
-  const { locale, copyLocale, setLocale, localeOptions } = useWebLocale();
+  const { copyLocale, setLocale } = useWebLocale();
   const copy = useMarketingCopy();
 
   return (
-    <label className={`inline-flex items-center gap-1.5 ${className ?? ''}`}>
-      <span className="sr-only">{copy.nav.language}</span>
-      <select
-        value={copyLocale}
-        onChange={(e) => {
-          const code = e.target.value;
-          if (isWebLocale(code)) setLocale(code);
-        }}
-        aria-label={copy.nav.language}
-        className="h-9 min-w-0 max-w-[9.5rem] truncate rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-xs font-semibold text-[#4a5565] outline-none focus:border-[#2107aa] focus:ring-2 focus:ring-[#2107aa]/15 touch-manipulation sm:max-w-[10rem]"
-      >
-        {localeOptions.map((opt) => (
-          <option key={opt.code} value={opt.code}>
-            {LANGUAGE_META[opt.code].flag} {opt.nativeName}
-          </option>
-        ))}
-      </select>
-      {locale !== copyLocale && (
-        <span className="hidden text-[10px] text-[#99a1af] lg:inline" title={locale}>
-          auto
-        </span>
-      )}
-    </label>
+    <UiLanguageDropdown
+      value={copyLocale as 'en' | 'ru' | 'uz'}
+      onChange={(code) => {
+        if (isWebLocale(code)) setLocale(code as WebLocale);
+      }}
+      ariaLabel={copy.nav.language}
+      className={className}
+    />
   );
 }
 
@@ -153,7 +138,7 @@ export function SiteNav() {
 
       {open && (
         <div className="flex flex-col gap-5 border-b border-[#e2e8f0] bg-white px-5 py-6 shadow-[0_12px_24px_rgba(15,23,42,0.08)] lg:hidden">
-          <LanguagePicker className="inline-flex w-full sm:w-auto [&_select]:w-full sm:[&_select]:w-auto" />
+          <LanguagePicker className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto" />
           <div className="flex flex-col gap-1">
             <NavLinks
               onNavigate={() => setOpen(false)}
