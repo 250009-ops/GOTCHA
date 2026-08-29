@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { UI_LANGUAGE_PICKER, UI_LANGUAGES, type UiLanguage } from '@gotcha/shared';
+import { UiLanguageFlag } from './UiLanguageFlag';
 import { cn } from './ui/utils';
 
 export interface UiLanguageDropdownProps {
@@ -49,33 +50,21 @@ export function UiLanguageDropdown({
     <div ref={rootRef} className={cn('relative shrink-0', className)}>
       <button
         type="button"
-        aria-label={ariaLabel}
+        aria-label={`${ariaLabel}: ${current.nativeName}`}
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'inline-flex items-center gap-1.5 rounded-full border font-semibold transition-colors touch-manipulation',
+          'inline-flex items-center gap-2 rounded-full border font-semibold transition-colors touch-manipulation',
           compact ? 'h-8 px-2.5 text-xs' : 'h-9 px-3 text-sm',
           isLight
             ? 'border-white/25 bg-white/10 text-white hover:bg-white/15'
             : 'border-[#c7d2fe] bg-white text-[#364153] hover:border-[#a5b4fc] hover:bg-[#fafaff]',
         )}
       >
-        <span className={cn('leading-none', compact ? 'text-sm' : 'text-base')} aria-hidden>
-          {current.flag}
-        </span>
-        <span
-          className={cn(
-            'font-bold tracking-wide',
-            compact ? 'text-[10px]' : 'text-[11px]',
-            isLight ? 'text-white/85' : 'text-[#6366f1]',
-          )}
-        >
-          {current.shortCode}
-        </span>
-        <span className={cn('truncate', compact ? 'max-w-[4.5rem]' : 'max-w-[5.75rem]')}>
-          {current.nativeName}
-        </span>
+        <UiLanguageFlag lang={value} />
+        <span className="truncate sm:hidden">{current.shortName}</span>
+        <span className="hidden max-w-[5.75rem] truncate sm:inline">{current.nativeName}</span>
         <ChevronDown
           className={cn(
             'shrink-0 opacity-60 transition-transform',
@@ -91,7 +80,7 @@ export function UiLanguageDropdown({
           role="listbox"
           aria-label={ariaLabel}
           className={cn(
-            'absolute right-0 z-[120] mt-1.5 min-w-[11rem] overflow-hidden rounded-xl border bg-white py-1 shadow-lg shadow-slate-900/10',
+            'absolute right-0 z-[120] mt-1.5 min-w-[10.5rem] overflow-hidden rounded-xl border bg-white py-1 shadow-lg shadow-slate-900/10',
             isLight ? 'border-white/20' : 'border-[#e5e7eb]',
           )}
         >
@@ -104,29 +93,21 @@ export function UiLanguageDropdown({
                   type="button"
                   role="option"
                   aria-selected={selected}
+                  aria-label={item.nativeName}
                   onClick={() => {
                     onChange(code);
                     setOpen(false);
                   }}
                   className={cn(
-                    'flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium transition-colors',
+                    'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
                     selected
                       ? 'bg-[#155dfc] text-white'
                       : 'text-[#101828] hover:bg-[#eff6ff]',
                   )}
                 >
-                  <span className="text-base leading-none" aria-hidden>
-                    {item.flag}
-                  </span>
-                  <span
-                    className={cn(
-                      'min-w-[1.75rem] text-[11px] font-bold tracking-wide',
-                      selected ? 'text-white/90' : 'text-[#6366f1]',
-                    )}
-                  >
-                    {item.shortCode}
-                  </span>
-                  <span className="truncate">{item.nativeName}</span>
+                  <UiLanguageFlag lang={code} />
+                  <span className="truncate font-medium sm:hidden">{item.shortName}</span>
+                  <span className="hidden truncate font-medium sm:inline">{item.nativeName}</span>
                 </button>
               </li>
             );
