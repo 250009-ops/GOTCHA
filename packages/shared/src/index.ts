@@ -196,3 +196,6 @@ export interface CatalogLanguage {
   flagEmoji: string;
   isEnabled: boolean;
 }
+
+/** Type-only re-exports — runtime import via `@gotcha/shared/learner-copy`. */
+export type { LearnerCopy, FullLearnerCopy, LearnerCopyExt, UiLanguage as LearnerUiLanguage } from './learnerCopy';

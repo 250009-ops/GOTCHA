@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from './ui/utils';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { languageFlag, languageLabel } from '../lib/types';
 
 export type LanguageOption = {
@@ -33,7 +34,7 @@ export function LanguageSearchInput({
   onChange,
   exclude = [],
   multiple = true,
-  placeholder = 'Search languages...',
+  placeholder,
   id,
 }: {
   options: LanguageOption[];
@@ -44,6 +45,8 @@ export function LanguageSearchInput({
   placeholder?: string;
   id?: string;
 }) {
+  const copy = useLearnerCopy();
+  const resolvedPlaceholder = placeholder ?? copy.languageInput.searchPlaceholder;
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
@@ -133,7 +136,7 @@ export function LanguageSearchInput({
               <button
                 type="button"
                 className="size-5 grid place-items-center rounded-md text-[#7f22fe] hover:bg-white/80"
-                aria-label={`Remove ${name}`}
+                aria-label={copy.languageInput.remove(name)}
                 onClick={(e) => {
                   e.stopPropagation();
                   remove(lang.code);
@@ -152,7 +155,13 @@ export function LanguageSearchInput({
             value={query}
             autoComplete="off"
             spellCheck={false}
-            placeholder={selected.length === 0 ? placeholder : multiple ? 'Add another…' : placeholder}
+            placeholder={
+              selected.length === 0
+                ? resolvedPlaceholder
+                : multiple
+                  ? copy.languageInput.addAnother
+                  : resolvedPlaceholder
+            }
             className="w-full min-w-0 h-8 bg-transparent text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none"
             onChange={(e) => {
               setQuery(e.target.value);
@@ -166,7 +175,7 @@ export function LanguageSearchInput({
       {open && (
         <div className="absolute z-20 mt-1.5 w-full max-h-56 overflow-y-auto rounded-[14px] border border-[#e5e7eb] bg-white shadow-[0_12px_24px_rgba(15,23,42,0.12)]">
           {suggestions.length === 0 ? (
-            <div className="px-3 py-2.5 text-sm text-[#9ca3af]">No matching language</div>
+            <div className="px-3 py-2.5 text-sm text-[#9ca3af]">{copy.languageInput.noMatch}</div>
           ) : (
             suggestions.map((lang, idx) => {
               const { flag, name } = display(lang, lang.code);

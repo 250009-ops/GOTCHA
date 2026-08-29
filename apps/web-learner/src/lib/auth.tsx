@@ -10,7 +10,13 @@ import {
 import { useLocation } from 'react-router-dom';
 import { api, clearTokens, setTokens } from './api';
 import { isPublicAuthPath } from './authRoutes';
+import { detectLearnerLocale } from './learnerLocale';
+import { learnerCopyFor } from '@gotcha/shared/learner-copy';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
+
+function learnerErrors() {
+  return learnerCopyFor(detectLearnerLocale()).errors;
+}
 
 interface AuthContextValue {
   user: UserProfile | null;
@@ -28,6 +34,7 @@ interface AuthContextValue {
     displayName?: string;
     nativeLanguage: string;
     targetLanguages: string[];
+    uiLanguage?: string;
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
@@ -96,7 +103,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })),
       );
     } catch (e) {
-      setVocabError(e instanceof Error ? e.message : 'Failed to load vocabulary');
+      setVocabError(e instanceof Error ? e.message : learnerErrors().failedLoadVocab);
       throw e;
     } finally {
       setVocabLoading(false);
@@ -196,6 +203,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName?: string;
       nativeLanguage: string;
       targetLanguages: string[];
+      uiLanguage?: string;
     }) => {
       const res = await api<{
         accessToken?: string;
@@ -217,7 +225,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!res.accessToken || !res.refreshToken || !res.user) {
-        throw new Error(res.message || 'Registration failed');
+        throw new Error(res.message || learnerErrors().registrationFailed);
       }
 
       setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });

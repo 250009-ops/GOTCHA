@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { BookOpen, Brain, MessageSquare } from 'lucide-react';
 import { api } from '../lib/api';
 import { chatLangName, normalizeChatLang } from '../lib/chatLang';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { resolveMediaUrl } from '../lib/media';
 import { Dialog, DialogContent, DialogHeader } from './ui/dialog';
 import { UserAvatar } from './UserAvatar';
@@ -38,19 +39,20 @@ export type MessagingPeerProfile = {
   sharedReadingsNote?: string | null;
 };
 
-function formatMemberSince(iso?: string | null) {
+function formatMemberSince(iso: string | undefined | null, memberSince: (date: string) => string) {
   if (!iso) return null;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  const formatted = date.toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
+  return memberSince(formatted);
 }
 
-function cefrDisplay(level: string) {
-  if (level.toLowerCase() === 'native') return 'Native';
+function cefrDisplay(level: string, copy: ReturnType<typeof useLearnerCopy>['peerProfile']) {
+  if (level.toLowerCase() === 'native') return copy.native;
   const code = level.toUpperCase().slice(0, 2);
-  if (code.startsWith('C')) return `${code} Proficient`;
-  if (code.startsWith('B')) return `${code} Intermediate`;
-  if (code.startsWith('A')) return `${code} Basic`;
+  if (code.startsWith('C')) return `${code} ${copy.proficient}`;
+  if (code.startsWith('B')) return `${code} ${copy.intermediate}`;
+  if (code.startsWith('A')) return `${code} ${copy.basic}`;
   return level;
 }
 
@@ -77,6 +79,8 @@ export function PeerProfileModal({
   onClose: () => void;
   onMessage: (peer: MessagingPeerProfile) => void | Promise<void>;
 }) {
+  const copy = useLearnerCopy();
+  const pp = copy.peerProfile;
   const [peer, setPeer] = useState<MessagingPeerProfile | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +100,7 @@ export function PeerProfileModal({
         if (!cancelled) setPeer(data);
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load profile');
+        if (!cancelled) setError(e instanceof Error ? e.message : copy.commonExt.error);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -104,11 +108,11 @@ export function PeerProfileModal({
     return () => {
       cancelled = true;
     };
-  }, [peerId]);
+  }, [peerId, copy.commonExt.error]);
 
   const firstName = peer?.displayName?.split(' ')[0] || 'learner';
   const langs = [
-    ...(peer?.nativeLanguage ? [[peer.nativeLanguage, 'Native'] as const] : []),
+    ...(peer?.nativeLanguage ? [[peer.nativeLanguage, pp.native] as const] : []),
     ...(peer?.targetLanguages ?? []).map(
       (t) => [t.language ?? 'en', (t.cefrLevel ?? 'A1').toUpperCase()] as const,
     ),
@@ -116,12 +120,14 @@ export function PeerProfileModal({
     .filter((row, i, all) => all.findIndex((other) => other[0] === row[0]) === i)
     .slice(0, 3);
 
+  const memberSince = formatMemberSince(peer?.createdAt, pp.memberSince);
+
   return (
     <Dialog open={!!peerId} onOpenChange={(open) => { if (!open) onClose(); }}>
-      <DialogHeader onClose={onClose}>Profile</DialogHeader>
+      <DialogHeader onClose={onClose}>{pp.title}</DialogHeader>
       <DialogContent className="pt-4">
         {loading && !peer ? (
-          <p className="text-sm text-[#99a1af] text-center py-8">Loading profile…</p>
+          <p className="text-sm text-[#99a1af] text-center py-8">{pp.loading}</p>
         ) : error && !peer ? (
           <p className="text-sm text-red-500 text-center py-8">{error}</p>
         ) : peer ? (
@@ -132,10 +138,8 @@ export function PeerProfileModal({
             <div className="text-center">
               <div className="text-xl font-extrabold text-gray-900">{peer.displayName}</div>
               <div className="text-sm text-[#6a7282]">{peer.handle}</div>
-              {formatMemberSince(peer.createdAt) && (
-                <div className="text-xs text-[#99a1af] mt-1">
-                  Member since {formatMemberSince(peer.createdAt)}
-                </div>
+              {memberSince && (
+                <div className="text-xs text-[#99a1af] mt-1">{memberSince}</div>
               )}
             </div>
 
@@ -149,14 +153,14 @@ export function PeerProfileModal({
               className="w-full h-11 rounded-xl bg-[#7008e7] text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#5b07c4] disabled:opacity-50"
             >
               <MessageSquare className="w-4 h-4" />
-              Message {firstName}
+              {pp.message(firstName)}
             </button>
 
             <div className="grid grid-cols-3 gap-2 w-full">
               {[
-                { value: peer.stats?.booksRead ?? 0, label: 'Books read', Icon: BookOpen },
-                { value: peer.stats?.wordsLearned ?? 0, label: 'Words learned', Icon: Brain },
-                { value: peer.stats?.chats ?? 0, label: 'Chats', Icon: MessageSquare },
+                { value: peer.stats?.booksRead ?? 0, label: pp.booksRead, Icon: BookOpen },
+                { value: peer.stats?.wordsLearned ?? 0, label: pp.wordsLearned, Icon: Brain },
+                { value: peer.stats?.chats ?? 0, label: pp.chats, Icon: MessageSquare },
               ].map((stat) => (
                 <div
                   key={stat.label}
@@ -171,13 +175,13 @@ export function PeerProfileModal({
 
             {langs.length > 0 && (
               <div className="w-full">
-                <div className="text-sm font-bold text-gray-900 mb-2">Languages</div>
+                <div className="text-sm font-bold text-gray-900 mb-2">{pp.languages}</div>
                 <div className="grid grid-cols-3 gap-2">
                   {langs.map(([code, level]) => (
                     <div key={code} className="rounded-xl border border-[#e5e7eb] bg-white p-3">
                       {langChip(code)}
                       <div className="text-sm font-bold text-gray-900 mt-2">{chatLangName(code)}</div>
-                      <div className="text-[11px] text-[#6a7282]">{cefrDisplay(level)}</div>
+                      <div className="text-[11px] text-[#6a7282]">{cefrDisplay(level, pp)}</div>
                     </div>
                   ))}
                 </div>
@@ -186,7 +190,7 @@ export function PeerProfileModal({
 
             {peer.currentlyReading && (
               <div className="w-full">
-                <div className="text-sm font-bold text-gray-900 mb-2">Currently Reading</div>
+                <div className="text-sm font-bold text-gray-900 mb-2">{pp.currentlyReading}</div>
                 <div className="rounded-2xl border border-[#e5e7eb] bg-white p-3">
                   <div className="flex gap-3 items-center">
                     {resolveMediaUrl(peer.currentlyReading.coverImageKey) ? (
@@ -204,7 +208,7 @@ export function PeerProfileModal({
                       <div className="flex items-center justify-between gap-2">
                         {langChip(peer.currentlyReading.language)}
                         <span className="text-xs text-[#99a1af]">
-                          {Math.round(peer.currentlyReading.progressPct ?? 0)}% read
+                          {pp.percentRead(Math.round(peer.currentlyReading.progressPct ?? 0))}
                         </span>
                       </div>
                       <div className="text-sm font-bold text-gray-900 mt-1 truncate">

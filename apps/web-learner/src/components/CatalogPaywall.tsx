@@ -7,6 +7,7 @@ import {
   preApplyPayment,
   retryOtp,
 } from '../lib/importBilling';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
 type PayStep = 'price' | 'card' | 'otp' | 'celebrate';
 
@@ -59,6 +60,7 @@ export function CatalogPaywall({
   priceUzs: number;
   onUnlocked: () => void;
 }) {
+  const copy = useLearnerCopy();
   const [step, setStep] = useState<PayStep>('price');
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [cardNumber, setCardNumber] = useState('');
@@ -116,12 +118,12 @@ export function CatalogPaywall({
         return;
       }
       if (!checkout.paymentId) {
-        throw new Error('Payment could not be started for this book.');
+        throw new Error(copy.paywall.paymentNotStartedBook);
       }
       setPaymentId(checkout.paymentId);
       setStep('card');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start payment');
+      setError(err instanceof Error ? err.message : copy.paywall.failedPayment);
     } finally {
       setLoading(false);
     }
@@ -135,13 +137,13 @@ export function CatalogPaywall({
       const expiryFormatted = expiry.replace(/\//g, '');
       const result = await preApplyPayment(paymentId, cardNumber.replace(/\s/g, ''), expiryFormatted);
       if (result.step !== 'otp') {
-        throw new Error('Unexpected payment state after card verification.');
+        throw new Error(copy.errors.unexpectedPaymentState);
       }
       setMaskedPhone(result.maskedPhone);
       setStep('otp');
       setOtp('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Card verification failed');
+      setError(err instanceof Error ? err.message : copy.paywall.cardVerificationFailed);
     } finally {
       setLoading(false);
     }
@@ -156,17 +158,17 @@ export function CatalogPaywall({
       if (result.step === 'paid') {
         setStep('celebrate');
       } else if (result.step === 'otp') {
-        setError('Payment not confirmed yet. Check the SMS code and try again.');
+        setError(copy.errors.paymentNotConfirmedOtp);
         setOtp('');
       } else {
-        setError('Payment not confirmed. Please try again with a different card.');
+        setError(copy.errors.paymentNotConfirmedCard);
         setStep('card');
         setCardNumber('');
         setExpiry('');
         setOtp('');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'OTP verification failed');
+      setError(err instanceof Error ? err.message : copy.errors.otpVerificationFailed);
     } finally {
       setLoading(false);
     }
@@ -181,7 +183,7 @@ export function CatalogPaywall({
       setCanResendOtp(false);
       setTimeout(() => setCanResendOtp(true), 30000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend OTP');
+      setError(err instanceof Error ? err.message : copy.errors.couldNotResendOtp);
     } finally {
       setLoading(false);
     }
@@ -195,7 +197,7 @@ export function CatalogPaywall({
           <PartyPopper className="w-8 h-8 text-[#7008e7]" />
         </div>
         <div className="relative z-10 text-center space-y-1">
-          <h2 className="text-[#101828] text-2xl font-bold">Congratulations!</h2>
+          <h2 className="text-[#101828] text-2xl font-bold">{copy.paywall.congratulations}</h2>
           <p className="text-[#6a7282] text-sm">{title} is yours. Opening the book…</p>
         </div>
         <button
@@ -204,7 +206,7 @@ export function CatalogPaywall({
           className="relative z-10 w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] text-white text-base font-bold flex items-center justify-center gap-2"
         >
           <BookOpen className="w-5 h-5" />
-          Start reading
+          {copy.paywall.startReading}
         </button>
       </div>
     );
@@ -219,7 +221,7 @@ export function CatalogPaywall({
           </div>
           <div className="text-center space-y-1">
             <h2 className="text-[#101828] text-xl font-bold leading-tight">{title}</h2>
-            <p className="text-[#6a7282] text-sm">Pay once to unlock this book in your library.</p>
+            <p className="text-[#6a7282] text-sm">{copy.paywall.unlockBook}</p>
           </div>
           <div className="w-full border border-[#e4e7ec] rounded-xl p-4 bg-[#f9fafb]">
             <div className="flex justify-between items-center">
@@ -232,7 +234,7 @@ export function CatalogPaywall({
 
       {step === 'card' && (
         <>
-          <h2 className="text-[#101828] text-xl font-bold text-center">Enter Card Details</h2>
+          <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterCardDetails}</h2>
           <p className="text-[#6a7282] text-sm text-center -mt-3">UzCard, Humo, Visa, or Mastercard</p>
           <div className="w-full space-y-4">
             <div>
@@ -267,7 +269,7 @@ export function CatalogPaywall({
 
       {step === 'otp' && (
         <>
-          <h2 className="text-[#101828] text-xl font-bold text-center">Enter SMS Code</h2>
+          <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterSmsCode}</h2>
           <p className="text-[#6a7282] text-sm text-center -mt-3">
             Code sent to {maskedPhone || 'your phone'}
           </p>
@@ -301,7 +303,7 @@ export function CatalogPaywall({
           className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <BookOpen className="w-5 h-5" />}
-          {loading ? 'Processing…' : `Unlock for ${formatUzs(priceUzs)}`}
+          {loading ? copy.common.loading : copy.paywall.unlockFor(formatUzs(priceUzs))}
         </button>
       )}
 
@@ -313,7 +315,7 @@ export function CatalogPaywall({
           className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-          {loading ? 'Verifying…' : 'Continue'}
+          {loading ? copy.common.saving : copy.common.continue}
         </button>
       )}
 
@@ -325,7 +327,7 @@ export function CatalogPaywall({
           className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-          {loading ? 'Confirming…' : 'Confirm Payment'}
+          {loading ? copy.common.saving : copy.importPage.confirmPayment}
         </button>
       )}
 
@@ -344,7 +346,7 @@ export function CatalogPaywall({
           disabled={loading}
           className="text-[#6a7282] text-sm font-medium disabled:opacity-50"
         >
-          Back
+          {copy.common.back}
         </button>
       )}
 
@@ -355,7 +357,7 @@ export function CatalogPaywall({
           disabled={loading}
           className="text-[#7008e7] text-sm font-medium disabled:opacity-50"
         >
-          Resend Code
+          {copy.importPage.resendCode}
         </button>
       )}
 

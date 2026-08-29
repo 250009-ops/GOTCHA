@@ -10,6 +10,8 @@ import { useAuth } from '../lib/auth';
 import { resolveMediaUrl } from '../lib/media';
 import { formatUzs } from '../lib/importBilling';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
+import { openReader } from '../lib/readerReturn';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { type ContentItem, gradientForId } from '../lib/types';
 
 const cefrStyle: Record<string, string> = {
@@ -20,9 +22,30 @@ const cefrStyle: Record<string, string> = {
   c1: 'bg-violet-100 text-[#7008e7]',
   c2: 'bg-pink-100 text-pink-700',
 };
-const staticFilterTabs = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
-type StaticFilterTab = (typeof staticFilterTabs)[number];
-type FilterTab = 'All' | StaticFilterTab | string;
+const staticFilterIds = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
+type StaticFilterId = (typeof staticFilterIds)[number];
+type FilterTab = 'All' | StaticFilterId | string;
+
+function filterLabel(filter: FilterTab, copy: ReturnType<typeof useLearnerCopy>): string {
+  switch (filter) {
+    case 'All':
+      return copy.library.filterAll;
+    case 'Fiction':
+      return copy.library.filterFiction;
+    case 'News':
+      return copy.library.filterNews;
+    case 'Imports':
+      return copy.library.filterImports;
+    case 'A1–A2':
+      return copy.library.filterA1A2;
+    case 'B1–B2':
+      return copy.library.filterB1B2;
+    case 'C1–C2':
+      return copy.library.filterC1C2;
+    default:
+      return filter;
+  }
+}
 
 function SectionHeading({
   title,
@@ -33,6 +56,7 @@ function SectionHeading({
   subtitle?: string;
   onSeeAll?: () => void;
 }) {
+  const copy = useLearnerCopy();
   return (
     <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
       <div className="min-w-0 flex-1">
@@ -45,16 +69,11 @@ function SectionHeading({
           onClick={onSeeAll}
           className="flex items-center gap-0.5 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
         >
-          See all <ChevronRight className="w-3.5 h-3.5" />
+          {copy.common.seeAll} <ChevronRight className="w-3.5 h-3.5" />
         </button>
       ) : null}
     </div>
   );
-}
-
-function formatWordCount(count: number) {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
-  return `${count} words`;
 }
 
 function itemSubtitle(item: ContentItem) {
@@ -97,14 +116,19 @@ function ContentCard({
   view = 'grid',
   highlighted = false,
   langFlags = {},
+  libraryReturn,
 }: {
   item: ContentItem;
   view?: 'grid' | 'list';
   compact?: boolean;
   highlighted?: boolean;
   langFlags?: Record<string, string>;
+  /** When set (e.g. Browse Library), reader back returns here instead of library home. */
+  libraryReturn?: string | null;
 }) {
   const navigate = useNavigate();
+  const copy = useLearnerCopy();
+  const open = () => openReader(navigate, item.id, libraryReturn);
   const isProg = (item.progressPct ?? 0) > 0;
   const subtitle = itemSubtitle(item);
   const highlightClass = highlighted ? 'ring-2 ring-[#7008e7] ring-offset-2' : '';
@@ -114,7 +138,7 @@ function ContentCard({
       <button
         type="button"
         id={`catalog-item-${item.id}`}
-        onClick={() => navigate(`/app/read/${item.id}`)}
+        onClick={open}
         className={cn(
           'w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 hover:border-violet-200 hover:shadow-sm hover:shadow-violet-100 transition-all text-left group',
           highlightClass,
@@ -135,13 +159,13 @@ function ContentCard({
           <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
             <span className="flex items-center gap-1">
               <BookOpen className="w-3 h-3" />
-              {formatWordCount(item.wordCount)}
+              {copy.common.words(item.wordCount)}
             </span>
             <span className="capitalize">{item.contentType.replace('_', ' ')}</span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
               <span className="text-[#7008e7] font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
             )}
-            {isProg && <span className="text-[#7f22fe] font-medium">{Math.round(item.progressPct ?? 0)}% read</span>}
+            {isProg && <span className="text-[#7f22fe] font-medium">{copy.libraryPage.percentRead(Math.round(item.progressPct ?? 0))}</span>}
           </div>
           {isProg && (
             <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -158,7 +182,7 @@ function ContentCard({
     <button
       type="button"
       id={`catalog-item-${item.id}`}
-      onClick={() => navigate(`/app/read/${item.id}`)}
+      onClick={open}
       className={cn(
         'bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full',
         highlightClass,
@@ -192,16 +216,16 @@ function ContentCard({
         <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-50 text-xs text-gray-400">
           <span className="flex items-center gap-1 truncate">
             <BookOpen className="w-3 h-3 shrink-0" />
-            {formatWordCount(item.wordCount)}
+            {copy.common.words(item.wordCount)}
           </span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
-              <span className="text-violet-500/70 shrink-0 font-medium">Try sample</span>
+              <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.trySample}</span>
             ) : isProg ? (
               <span className="font-semibold text-[#7f22fe] shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
             ) : item.knownWordRatio != null && item.knownWordRatio > 0 ? (
-              <span className="text-gray-400 shrink-0">{Math.round(item.knownWordRatio * 100)}% known</span>
+              <span className="text-gray-400 shrink-0">{copy.libraryPage.percentKnown(Math.round(item.knownWordRatio * 100))}</span>
             ) : (
-              <span className="text-violet-500/70 shrink-0 font-medium">New</span>
+              <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.newBadge}</span>
             )}
         </div>
         {isProg && (
@@ -216,19 +240,21 @@ function ContentCard({
 
 function ContinueReadingCard({ item }: { item: ContentItem }) {
   const navigate = useNavigate();
+  const copy = useLearnerCopy();
+  const open = () => openReader(navigate, item.id);
   const cover = resolveMediaUrl(item.coverImageUrl);
   return (
     <div
       className="relative overflow-hidden rounded-2xl cursor-pointer group h-full min-h-[11rem]"
       style={cover ? undefined : { backgroundImage: gradientForId(item.id) }}
-      onClick={() => navigate(`/app/read/${item.id}`)}
+      onClick={open}
     >
       {cover && (
         <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
       )}
       <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
       <div className="relative p-5 sm:p-6 min-h-[11rem] h-full flex flex-col justify-end">
-        <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">Continue reading</span>
+        <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">{copy.libraryPage.continueReading}</span>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div className="flex-1 min-w-0">
             <div className="text-white font-bold text-lg sm:text-xl leading-tight line-clamp-2 mb-0.5">{item.title}</div>
@@ -243,9 +269,9 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
             <Button
               size="sm"
               className="bg-white text-gray-900 hover:bg-white/90 rounded-xl h-8 px-4 text-xs font-semibold shadow-lg"
-              onClick={(e) => { e.stopPropagation(); navigate(`/app/read/${item.id}`); }}
+              onClick={(e) => { e.stopPropagation(); open(); }}
             >
-              Resume <ArrowRight className="w-3 h-3 ml-1" />
+              {copy.libraryPage.resume} <ArrowRight className="w-3 h-3 ml-1" />
             </Button>
           </div>
         </div>
@@ -314,7 +340,7 @@ function parseFilterParam(
   if (aliases[normalized]) return aliases[normalized];
   const langTab = languageTabs.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
   if (langTab) return langTab;
-  const staticMatch = (['All', ...staticFilterTabs] as const).find((t) => t.toLowerCase() === raw.trim().toLowerCase());
+  const staticMatch = (['All', ...staticFilterIds] as const).find((t) => t.toLowerCase() === raw.trim().toLowerCase());
   return staticMatch ?? 'All';
 }
 
@@ -391,6 +417,7 @@ export default function LibraryPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, stats } = useAuth();
+  const copy = useLearnerCopy();
   const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [catalogItems, setCatalogItems] = useState<ContentItem[]>([]);
@@ -414,7 +441,7 @@ export default function LibraryPage() {
     [learnableLangCodes],
   );
   const filterTabs = useMemo(
-    () => ['All', ...languageTabs, ...staticFilterTabs] as FilterTab[],
+    () => ['All', ...languageTabs, ...staticFilterIds] as FilterTab[],
     [languageTabs],
   );
   const langFlags = useMemo(
@@ -461,7 +488,7 @@ export default function LibraryPage() {
 
   useEffect(() => {
     const isStatic =
-      activeFilter === 'All' || (staticFilterTabs as readonly string[]).includes(activeFilter as StaticFilterTab);
+      activeFilter === 'All' || (staticFilterIds as readonly string[]).includes(activeFilter as StaticFilterId);
     const isNativeChip = Boolean(nativeCode && activeFilter.toLowerCase() === nativeCode);
     const isOrphanLang =
       /^[a-z]{2}$/i.test(activeFilter) && languageTabs.length > 0 && !languageTabs.includes(activeFilter);
@@ -579,8 +606,9 @@ export default function LibraryPage() {
       .slice(0, 3);
   }, [feed]);
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-  const firstName = (user?.displayName ?? 'Learner').split(' ')[0];
+  const greetingText =
+    hour < 12 ? copy.libraryPage.goodMorning : hour < 18 ? copy.libraryPage.goodAfternoon : copy.libraryPage.goodEvening;
+  const firstName = (user?.displayName ?? copy.libraryPage.learnerFallback).split(' ')[0];
   const libraryEmpty =
     isBrowse
       ? !loading && !catalogLoading && browseBaseItems.length === 0
@@ -610,6 +638,7 @@ export default function LibraryPage() {
   }
 
   if (isBrowse) {
+    const browseReturnPath = `${location.pathname}${location.search}`;
     return (
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-6 min-w-0">
         <div className="space-y-3">
@@ -619,11 +648,11 @@ export default function LibraryPage() {
               onClick={() => navigate('/app')}
               className="hover:text-[#7f22fe] transition-colors font-medium"
             >
-              Library
+              {copy.library.title}
             </button>
             <ChevronRight className="w-3.5 h-3.5 shrink-0" />
             <span className="text-gray-600 font-medium truncate">
-              {activeCollection?.title ?? 'Browse Library'}
+              {activeCollection?.title ?? copy.libraryPage.browseTitle}
             </span>
           </nav>
 
@@ -633,11 +662,11 @@ export default function LibraryPage() {
                 type="button"
                 onClick={() => navigate('/app')}
                 className="sm:hidden p-2 -ml-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
-                aria-label="Back to Library"
+                aria-label={copy.library.backToLibrary}
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900 truncate">Browse Library</h1>
+              <h1 className="text-2xl font-bold text-gray-900 truncate">{copy.libraryPage.browseTitle}</h1>
             </div>
             <div className="relative flex-1 sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -645,15 +674,15 @@ export default function LibraryPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setBrowseSearch(e.target.value)}
-                placeholder="Search…"
+                placeholder={copy.library.searchPlaceholder}
                 className="w-full pl-8 pr-4 h-9 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300"
               />
             </div>
             <div className="hidden sm:flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-              <button type="button" onClick={() => setView('grid')} className={cn('p-1.5 rounded-lg transition-colors', view === 'grid' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label="Grid view">
+              <button type="button" onClick={() => setView('grid')} className={cn('p-1.5 rounded-lg transition-colors', view === 'grid' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label={copy.library.gridView}>
                 <Grid3X3 className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => setView('list')} className={cn('p-1.5 rounded-lg transition-colors', view === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label="List view">
+              <button type="button" onClick={() => setView('list')} className={cn('p-1.5 rounded-lg transition-colors', view === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label={copy.library.listView}>
                 <List className="w-4 h-4" />
               </button>
             </div>
@@ -676,7 +705,7 @@ export default function LibraryPage() {
                   activeFilter === f ? 'bg-[#7f22fe] text-white border-[#7f22fe] shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
                 )}
               >
-                {f}
+                {filterLabel(f, copy)}
               </button>
             ))}
           </div>
@@ -685,28 +714,28 @@ export default function LibraryPage() {
         {libraryEmpty ? (
           <EmptyState
             icon={BookOpen}
-            title="Your library is empty"
-            description="Import your own text or explore featured collections once content is available."
-            actionLabel="Import content"
+            title={copy.libraryPage.yourLibraryEmpty}
+            description={copy.library.emptyDescription}
+            actionLabel={copy.library.importAction}
             onAction={() => navigate('/app/import')}
           />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Search}
-            title="No content found"
-            description="Try a different search or filter to find something to read."
+            title={copy.libraryPage.noContentFound}
+            description={copy.library.noResults}
             compact
           />
         ) : view === 'grid' ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} langFlags={langFlags} />
+              <ContentCard key={item.id} item={item} langFlags={langFlags} libraryReturn={browseReturnPath} />
             ))}
           </div>
         ) : (
           <div className="space-y-2">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} view="list" langFlags={langFlags} />
+              <ContentCard key={item.id} item={item} view="list" langFlags={langFlags} libraryReturn={browseReturnPath} />
             ))}
           </div>
         )}
@@ -715,26 +744,27 @@ export default function LibraryPage() {
   }
 
   const streakCount = stats?.streakCount ?? 0;
+  const dailyGoalMinutes = stats?.dailyGoalMinutes ?? 15;
   // Don't claim a streak that doesn't exist — see docs/E2E_AUDIT_REPORT.md's
   // always-positive-streak-greeting finding.
   const streakSubtitle =
     streakCount === 0
-      ? 'Start reading today to begin a streak.'
+      ? copy.libraryPage.streakStartToday(dailyGoalMinutes)
       : streakCount === 1
-        ? "You're on day 1 — keep it going tomorrow!"
-        : "Keep your streak alive — you're on a roll.";
+        ? copy.libraryPage.streakDayOne
+        : copy.libraryPage.streakKeepAlive;
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-8 min-w-0">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 lg:gap-6 min-w-0">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {firstName} 👋</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{greetingText}, {firstName} 👋</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{streakSubtitle}</p>
         </div>
         <div className="flex gap-3 min-w-0 w-full lg:w-auto">
           {[
-            { icon: Flame, value: `${streakCount} days`, label: 'Streak', color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
-            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: 'Words', color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
+            { icon: Flame, value: copy.libraryPage.days(streakCount), label: copy.libraryPage.streak, color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
+            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: copy.libraryPage.words, color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
           ].map((s) => (
             <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3 py-2.5 min-w-0 flex-1 lg:flex-none lg:min-w-[7.5rem]', s.color)}>
               <s.icon className="w-4 h-4 shrink-0" />
@@ -750,9 +780,9 @@ export default function LibraryPage() {
       {highlightedItem && (
         <section className="space-y-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#7008e7]">New material</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-[#7008e7]">{copy.libraryPage.newMaterialLabel}</p>
             <h2 className="text-gray-900 font-bold mt-0.5">{highlightedItem.title}</h2>
-            <p className="text-gray-400 text-sm">On your library dashboard — open it when you want to read or purchase.</p>
+            <p className="text-gray-400 text-sm">{copy.libraryPage.newMaterialHint}</p>
           </div>
           <div className="max-w-[10.5rem] sm:max-w-[12rem]">
             <ContentCard item={highlightedItem} highlighted langFlags={langFlags} />
@@ -790,8 +820,7 @@ export default function LibraryPage() {
       {(feed?.recentlyPublished?.length ?? 0) > 0 && (
         <section>
           <SectionHeading
-            title="New in the library"
-            subtitle="Admin catalog — A4 covers, not your personal imports"
+            title={copy.libraryPage.newInLibrary}
             onSeeAll={() => navigate('/app/browse')}
           />
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
@@ -808,8 +837,7 @@ export default function LibraryPage() {
       {(feed?.myImports?.length ?? 0) > 0 && (
         <section>
           <SectionHeading
-            title="Your imports"
-            subtitle="Files and URLs you brought in — kept separate from the store"
+            title={copy.libraryPage.yourImports}
             onSeeAll={() => navigate('/app/browse?filter=Imports')}
           />
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
@@ -849,9 +877,9 @@ export default function LibraryPage() {
         <div className="space-y-4">
           <EmptyState
             icon={BookOpen}
-            title="Your library is empty"
-            description="Import your own text or explore featured collections once content is available."
-            actionLabel="Import content"
+            title={copy.libraryPage.yourLibraryEmpty}
+            description={copy.library.emptyDescription}
+            actionLabel={copy.library.importAction}
             onAction={() => navigate('/app/import')}
           />
           <div className="flex justify-center">
@@ -861,7 +889,7 @@ export default function LibraryPage() {
               className="inline-flex items-center gap-2 text-sm text-[#7f22fe] hover:text-violet-800 font-medium"
             >
               <Upload className="w-4 h-4" />
-              Or import your first article
+              {copy.library.importAction}
             </button>
           </div>
         </div>
@@ -870,8 +898,8 @@ export default function LibraryPage() {
       {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
         <section>
           <SectionHeading
-            title="Browse Library"
-            subtitle="Explore all available reading content"
+            title={copy.libraryPage.browseTitle}
+            subtitle={copy.library.allContent}
             onSeeAll={() => navigate('/app/browse')}
           />
         </section>

@@ -8,6 +8,7 @@ import { openEmailInbox } from '../lib/emailInbox';
 import { loginPathWithReturn } from '../lib/authRoutes';
 import { isAndroidDevice, tryOpenGotchaAuthApp } from '../lib/mobileAppAuth';
 import { isAllowedAdminReturnUrl } from '../lib/links';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { VerifyIcon, verifyAssets as a } from '../assets/verify';
 
 type Phase = 'sent' | 'verifying' | 'success' | 'error';
@@ -48,6 +49,7 @@ function EnvelopeIllustration() {
 
 export default function VerifyEmailPage() {
   const navigate = useNavigate();
+  const copy = useLearnerCopy();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token')?.trim() || '';
   const emailParam = searchParams.get('email')?.trim() || '';
@@ -63,16 +65,15 @@ export default function VerifyEmailPage() {
   const androidHandoff = isAndroidDevice() && !!token && !useWebFlow;
 
   useEffect(() => {
-    // Auth routes should not keep a stale learner session (avoids /users/me 401 spam).
     clearTokens();
   }, []);
 
   const title = useMemo(() => {
-    if (phase === 'success') return 'Email verified';
-    if (phase === 'error') return 'Link expired';
-    if (phase === 'verifying') return 'Verifying…';
-    return 'Verify your email';
-  }, [phase]);
+    if (phase === 'success') return copy.authPages.verifySuccessTitle;
+    if (phase === 'error') return copy.authPages.verifyErrorTitle;
+    if (phase === 'verifying') return copy.authPages.verifyingTitle;
+    return copy.authPages.verifyTitle;
+  }, [phase, copy.authPages]);
 
   useEffect(() => {
     if (!token || useWebFlow || !isAndroidDevice()) return;
@@ -91,28 +92,28 @@ export default function VerifyEmailPage() {
         if (res.email) setEmail(res.email);
         setPhase('success');
         notifyLearnerCountChanged();
-        toast.success('Email verified — you can sign in now');
+        toast.success(copy.authPages.verifiedToast);
       } catch (err) {
         if (cancelled) return;
-        setError(err instanceof Error ? err.message : 'Invalid or expired verification link');
+        setError(err instanceof Error ? err.message : copy.authPages.verifyErrorBody);
         setPhase('error');
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [token, androidHandoff]);
+  }, [token, androidHandoff, copy.authPages]);
 
   const openEmailApp = () => {
     const opened = openEmailInbox(email);
     if (!opened) {
-      toast.message(`Open the inbox for ${email || 'your email'} and tap the verification link.`);
+      toast.message(copy.authPages.openInboxHint(email));
     }
   };
 
   const resend = async () => {
     if (!email) {
-      toast.error('Enter the email you registered with');
+      toast.error(copy.authPages.enterRegisteredEmail);
       return;
     }
     setResending(true);
@@ -121,9 +122,9 @@ export default function VerifyEmailPage() {
         method: 'POST',
         body: JSON.stringify({ email, clientPlatform: 'web' }),
       });
-      toast.success('Verification email sent — check your inbox');
+      toast.success(copy.authPages.verificationSent);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not resend email');
+      toast.error(err instanceof Error ? err.message : copy.authPages.couldNotResend);
     } finally {
       setResending(false);
     }
@@ -132,38 +133,36 @@ export default function VerifyEmailPage() {
   const body =
     phase === 'success'
       ? adminReturnUrl
-        ? 'Your email is confirmed. Sign in to return to the admin console.'
-        : 'Your email is confirmed. Sign in to start your reading journey.'
+        ? copy.authPages.verifySuccessAdminBody
+        : copy.authPages.verifySuccessBody
       : phase === 'error'
-        ? error || 'This verification link is invalid or has expired. Request a new one below.'
+        ? error || copy.authPages.verifyErrorBody
         : phase === 'verifying'
-          ? 'Hang tight while we confirm your email address…'
+          ? copy.authPages.verifyingBody
           : adminReturnUrl
-            ? "We've sent a verification link to your email. Confirm your address, then sign in to return to the admin console."
-            : "We've sent a verification link to your email address. Please check your inbox and tap the link to confirm your account.";
+            ? copy.authPages.verifySentAdminBody
+            : copy.authPages.verifySentBody;
 
   if (androidHandoff) {
     return (
       <AuthShell>
         <div className="w-full max-w-[500px] min-w-0">
           <div className="bg-white border border-[#e5e7eb] rounded-2xl p-8 flex flex-col items-center gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] text-center">
-            <h1 className="text-2xl font-extrabold text-[#101828] leading-8">Opening GOTCHA app</h1>
-            <p className="text-[15px] leading-[22px] text-[#6b7280]">
-              Verify your email in the GOTCHA mobile app. If nothing happens, tap Open app below.
-            </p>
+            <h1 className="text-2xl font-extrabold text-[#101828] leading-8">{copy.authPages.openAppTitle}</h1>
+            <p className="text-[15px] leading-[22px] text-[#6b7280]">{copy.authPages.openAppBody}</p>
             <Button
               type="button"
               onClick={() => tryOpenGotchaAuthApp('verify-email', token, searchParams)}
               className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)]"
             >
-              Open GOTCHA app
+              {copy.authPages.openGotchaApp}
             </Button>
             <button
               type="button"
               onClick={() => setUseWebFlow(true)}
               className="text-sm font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
             >
-              Continue on web instead
+              {copy.authPages.continueOnWeb}
             </button>
           </div>
         </div>
@@ -199,17 +198,17 @@ export default function VerifyEmailPage() {
                 className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)] gap-2.5"
               >
                 <VerifyIcon src={a.externalLink} size={20} />
-                Open Email App
+                {copy.authPages.openEmailApp}
               </Button>
               <p className="text-sm font-semibold text-[#6b7280]">
-                Didn&apos;t receive it?{' '}
+                {copy.authPages.didntReceive}{' '}
                 <button
                   type="button"
                   onClick={() => void resend()}
                   disabled={resending}
                   className="text-[#6c1d95] underline underline-offset-2 disabled:opacity-60"
                 >
-                  {resending ? 'Sending…' : 'Resend email'}
+                  {resending ? copy.authPages.sending : copy.authPages.resendEmail}
                 </button>
               </p>
             </div>
@@ -230,7 +229,7 @@ export default function VerifyEmailPage() {
                 disabled={resending || !email}
                 className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
               >
-                {resending ? 'Sending…' : 'Resend verification email'}
+                {resending ? copy.authPages.sending : copy.authPages.resendVerification}
               </Button>
             </div>
           )}
@@ -241,23 +240,23 @@ export default function VerifyEmailPage() {
               onClick={() => navigate(loginPath)}
               className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
             >
-              Sign in
+              {copy.auth.signIn}
             </Button>
           )}
 
           {phase === 'verifying' && (
             <div className="flex items-center gap-2 text-sm text-[#6b7280]">
               <span className="w-4 h-4 border-2 border-[#6c1d95]/30 border-t-[#6c1d95] rounded-full animate-spin" />
-              Confirming your email…
+              {copy.authPages.confirmEmail}
             </div>
           )}
 
           <div className="h-px w-full bg-[#e5e7eb]" />
 
           <div className="flex items-center justify-center gap-1.5 text-sm">
-            <span className="font-medium text-[#6b7280]">Already verified?</span>
+            <span className="font-medium text-[#6b7280]">{copy.authPages.alreadyVerified}</span>
             <Link to={loginPath} className="font-bold text-[#6c1d95] underline underline-offset-2">
-              Sign in
+              {copy.auth.signIn}
             </Link>
           </div>
         </div>

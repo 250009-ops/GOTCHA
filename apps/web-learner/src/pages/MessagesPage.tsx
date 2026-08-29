@@ -27,6 +27,7 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
@@ -121,7 +122,7 @@ function langBadge(_code?: string | null) {
   return 'bg-[#f3f4f6] text-[#4a5565]';
 }
 
-function inboxTimestamp(iso?: string | null) {
+function inboxTimestamp(iso: string | undefined | null, yesterdayLabel: string) {
   if (!iso) return '';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '';
@@ -132,7 +133,7 @@ function inboxTimestamp(iso?: string | null) {
   if (diffDays === 0) {
     return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   }
-  if (diffDays === 1) return 'Yesterday';
+  if (diffDays === 1) return yesterdayLabel;
   return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
@@ -161,8 +162,12 @@ function canEditMessage(m: ChatMessage) {
   return Date.now() - new Date(m.createdAt).getTime() < EDIT_WINDOW_MS;
 }
 
-function messageSnippet(m: Pick<ChatMessage, 'body' | 'deleted'> | MessageReplyTo, fallback = 'Message') {
-  if (m.deleted) return 'Message deleted';
+function messageSnippet(
+  m: Pick<ChatMessage, 'body' | 'deleted'> | MessageReplyTo,
+  deletedLabel: string,
+  fallback = '',
+) {
+  if (m.deleted) return deletedLabel;
   const text = m.body.trim();
   if (!text) return fallback;
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
@@ -178,19 +183,23 @@ function applyReadReceipts(messages: ChatMessage[], peerLastReadAt?: string | nu
   });
 }
 
-function presenceLabel(peer?: Peer | null) {
+function presenceLabel(
+  peer: Peer | null | undefined,
+  mp: ReturnType<typeof useLearnerCopy>['messagesPage'],
+  ce: ReturnType<typeof useLearnerCopy>['commonExt'],
+) {
   if (!peer) return '';
-  if (peer.typing) return 'typing…';
-  if (peer.online) return 'online';
-  if (!peer.lastSeenAt) return 'last seen recently';
+  if (peer.typing) return mp.typing;
+  if (peer.online) return mp.online;
+  if (!peer.lastSeenAt) return mp.lastSeen(ce.today);
   const ms = Date.now() - new Date(peer.lastSeenAt).getTime();
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'last seen just now';
-  if (mins < 60) return `last seen ${mins}m ago`;
+  if (mins < 1) return mp.lastSeen(`1${ce.minutes}`);
+  if (mins < 60) return mp.lastSeen(`${mins}${ce.minutes}`);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `last seen ${hours}h ago`;
+  if (hours < 24) return mp.lastSeen(`${hours}${ce.hours}`);
   const days = Math.floor(hours / 24);
-  return `last seen ${days}d ago`;
+  return mp.lastSeen(`${days}${ce.days}`);
 }
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -203,12 +212,14 @@ function TappableMessageText({
   onWordTap,
   className,
   mine = false,
+  chatTipTitle,
 }: {
   text: string;
   selectedWord: string | null;
   onWordTap: (word: string) => void;
   className?: string;
   mine?: boolean;
+  chatTipTitle: string;
 }) {
   const parts = useMemo(() => tokenizeChatText(text), [text]);
   const wordParts = useMemo(
@@ -326,7 +337,7 @@ function TappableMessageText({
             data-chat-token-i={i}
             role="button"
             tabIndex={0}
-            title="Tap a word, or hold and drag a phrase"
+            title={chatTipTitle}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -428,6 +439,7 @@ function WordMeaningPanel({
   onSave,
   onKnown,
   onIgnore,
+  copy,
 }: {
   word: string;
   lookup: LookupResult | null;
@@ -438,7 +450,10 @@ function WordMeaningPanel({
   onSave: () => void;
   onKnown: () => void;
   onIgnore: () => void;
+  copy: ReturnType<typeof useLearnerCopy>;
 }) {
+  const mp = copy.messagesPage;
+  const reader = copy.reader;
   const lemma = lookup?.lemma || word;
   const phonetic = lookup?.phonetic?.trim();
   const canAct = !loading && !!lookup?.translation;
@@ -455,11 +470,11 @@ function WordMeaningPanel({
           type="button"
           onClick={onBack}
           className="size-8 rounded-lg bg-[#f2f5f5] border border-[#e4e7ec] grid place-items-center text-[#6b7382] hover:text-gray-800"
-          aria-label="Close word meaning"
+          aria-label={copy.commonExt.close}
         >
           <ArrowLeft className="w-4 h-4" />
         </button>
-        <h2 className="text-base font-semibold text-[#0f1729]">Word Meaning</h2>
+        <h2 className="text-base font-semibold text-[#0f1729]">{mp.wordMeaning}</h2>
       </div>
       <div className="h-px bg-[#e5e8eb] shrink-0" />
       <div className="flex-1 overflow-y-auto min-h-0 px-5 py-5 space-y-5">
@@ -473,7 +488,7 @@ function WordMeaningPanel({
           {phonetic ? (
             <p className="text-sm text-[#6b7382]">[{phonetic}]</p>
           ) : loading ? (
-            <p className="text-sm text-[#6b7382]">Looking up…</p>
+            <p className="text-sm text-[#6b7382]">{reader.lookingUp}</p>
           ) : null}
           <div className="flex flex-wrap gap-1.5 pt-1">
             {lookup?.partOfSpeech ? (
@@ -489,16 +504,16 @@ function WordMeaningPanel({
 
         {!sentenceLike && (naturalMeaning || loading) ? (
           <section className="rounded-xl bg-[#f5f3ff] p-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Natural meaning</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">{reader.naturalMeaning}</h3>
             <p className="text-sm text-[#0f1729] leading-6">
-              {loading ? '…' : (naturalMeaning || lookup?.translation || 'No meaning yet.')}
+              {loading ? '…' : (naturalMeaning || lookup?.translation || reader.lookupError)}
             </p>
           </section>
         ) : null}
 
         {lookup?.translation && (sentenceLike || lookup.translation.trim() !== naturalMeaning) ? (
           <section className={sentenceLike ? 'rounded-xl bg-[#f5f3ff] p-3' : undefined}>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Translation</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">{reader.translation}</h3>
             <p className="text-sm text-[#0f1729] leading-6 whitespace-pre-wrap break-words">{lookup.translation}</p>
           </section>
         ) : null}
@@ -519,7 +534,7 @@ function WordMeaningPanel({
           onClick={onSave}
           className="h-10 rounded-xl bg-[#7f22fe] text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
         >
-          Save
+          {reader.save}
         </button>
         <button
           type="button"
@@ -528,7 +543,7 @@ function WordMeaningPanel({
           className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#0f1729] disabled:opacity-40 hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
         >
           <Check className="w-4 h-4 text-[#16a34a]" />
-          Known
+          {reader.known}
         </button>
         <button
           type="button"
@@ -536,7 +551,7 @@ function WordMeaningPanel({
           className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#6b7382] hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
         >
           <X className="w-4 h-4" />
-          Ignore
+          {reader.ignore}
         </button>
       </div>
       ) : null}
@@ -545,6 +560,9 @@ function WordMeaningPanel({
 }
 
 export default function MessagesPage() {
+  const copy = useLearnerCopy();
+  const msg = copy.messages;
+  const mp = copy.messagesPage;
   const { user, refreshVocab, vocabItems, markVocabMastered } = useAuth();
   const [searchParams] = useSearchParams();
   const requestedChat = searchParams.get('c')?.trim() || null;
@@ -615,7 +633,7 @@ export default function MessagesPage() {
       setConversations(inbox.filter((c) => !isTemplatePeerName(c.peer?.displayName)));
       setSuggestions(suggested.filter((s) => !isTemplatePeerName(s.displayName)));
     } catch (e) {
-      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load messages');
+      if (!silent) setError(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       if (!silent) setLoadingList(false);
     }
@@ -671,7 +689,7 @@ export default function MessagesPage() {
           prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)),
         );
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to open chat');
+        if (!cancelled) setError(e instanceof Error ? e.message : copy.commonExt.error);
       } finally {
         if (!cancelled) setLoadingThread(false);
       }
@@ -770,7 +788,7 @@ export default function MessagesPage() {
       setProfilePeerId(null);
       await loadInbox(search.trim() || undefined);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start chat');
+      setError(e instanceof Error ? e.message : copy.commonExt.error);
     }
   };
 
@@ -819,7 +837,7 @@ export default function MessagesPage() {
               ...c,
               lastMessage: {
                 id: msg.id,
-                body: msg.deleted ? 'Message deleted' : msg.body,
+                body: msg.deleted ? mp.messageDeleted : msg.body,
                 translation: msg.deleted ? null : msg.translation,
                 senderId: msg.senderId,
                 createdAt: msg.createdAt,
@@ -848,7 +866,7 @@ export default function MessagesPage() {
               ...c,
               lastMessage: {
                 id: msg.id,
-                body: msg.deleted ? 'Message deleted' : msg.body,
+                body: msg.deleted ? mp.messageDeleted : msg.body,
                 translation: msg.deleted ? null : msg.translation,
                 senderId: msg.senderId,
                 createdAt: c.lastMessage.createdAt,
@@ -884,7 +902,7 @@ export default function MessagesPage() {
   const deleteMessage = async (m: ChatMessage) => {
     if (!selectedId || !m.mine || m.deleted) return;
     setMenuId(null);
-    if (!window.confirm('Delete this message for everyone?')) return;
+    if (!window.confirm(mp.deleteForEveryone)) return;
     try {
       const updated = await api<ChatMessage>(
         `/messaging/conversations/${selectedId}/messages/${m.id}`,
@@ -892,7 +910,7 @@ export default function MessagesPage() {
       );
       replaceMessage(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete');
+      setError(e instanceof Error ? e.message : copy.commonExt.error);
     }
   };
 
@@ -1046,7 +1064,7 @@ export default function MessagesPage() {
         setDraft(text);
         setEditing(editingMsg);
       }
-      setError(e instanceof Error ? e.message : editingMsg ? 'Failed to edit' : 'Failed to send');
+      setError(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setSending(false);
     }
@@ -1154,7 +1172,7 @@ export default function MessagesPage() {
           });
         }
       } catch (e) {
-        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
@@ -1175,7 +1193,7 @@ export default function MessagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang]);
+  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang, copy.errors.lookupFailed]);
 
   const saveWord = async (mastered = false) => {
     if (!selectedWord || !lookup?.translation) return;
@@ -1198,15 +1216,15 @@ export default function MessagesPage() {
       }
       if (mastered && vocabId) {
         await markVocabMastered(vocabId, true);
-        setSavedMsg('Marked as known');
-        toast.success(`"${lemma}" marked as known`);
+        setSavedMsg(copy.reader.known);
+        toast.success(`"${lemma}" ${copy.reader.markedAs(copy.reader.known)}`);
       } else {
-        setSavedMsg('Saved to vocabulary');
-        toast.success(`"${lemma}" saved to vocabulary`);
+        setSavedMsg(copy.reader.savedToVocab);
+        toast.success(`"${lemma}" ${copy.reader.savedToVocab}`);
       }
       void refreshVocab().catch(() => undefined);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Save failed';
+      const message = e instanceof Error ? e.message : copy.errors.saveFailed;
       setSavedMsg(message);
       toast.error(message);
     }
@@ -1230,6 +1248,7 @@ export default function MessagesPage() {
       onSave={() => void saveWord(false)}
       onKnown={() => void saveWord(true)}
       onIgnore={closeLookup}
+      copy={copy}
     />
   ) : null;
   const showList = isDesktop || !selectedId;
@@ -1244,13 +1263,13 @@ export default function MessagesPage() {
         )}
       >
         <div className="px-4 pt-4 pb-3 border-b border-[#e5e7eb]">
-          <h1 className="text-lg font-bold text-gray-900 mb-3">Messages</h1>
+          <h1 className="text-lg font-bold text-gray-900 mb-3">{msg.title}</h1>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#99a1af]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search conversations..."
+              placeholder={msg.searchPlaceholder}
               className="w-full h-9 pl-9 pr-3 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] text-sm outline-none focus:border-[#7008e7] focus:ring-1 focus:ring-[#7008e7]/40"
             />
           </div>
@@ -1291,15 +1310,15 @@ export default function MessagesPage() {
         )}
 
         <div className="px-4 pt-2 pb-1 text-[11px] font-bold tracking-wide text-[#99a1af]">
-          RECENT CHATS
+          {mp.recentChats}
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           {loadingList && conversations.length === 0 ? (
-            <div className="p-6 text-sm text-[#99a1af]">Loading conversations…</div>
+            <div className="p-6 text-sm text-[#99a1af]">{copy.common.loading}</div>
           ) : conversations.length === 0 ? (
             <div className="p-6 text-sm text-[#99a1af] flex flex-col items-center gap-2 text-center">
               <MessageSquare className="w-8 h-8 text-[#c4b4ff]" />
-              <p>No conversations yet. Search for learners or pick someone from Suggested from Readings.</p>
+              <p>{mp.noConversationsHint}</p>
             </div>
           ) : (
             conversations.map((c) => {
@@ -1336,7 +1355,7 @@ export default function MessagesPage() {
                         </span>
                       </div>
                       <span className="text-[11px] text-[#99a1af] shrink-0">
-                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt)}
+                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt, mp.yesterday)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
@@ -1346,7 +1365,7 @@ export default function MessagesPage() {
                             ? <CheckCheck className="w-3.5 h-3.5 text-[#7008e7] shrink-0" />
                             : <Check className="w-3 h-3 text-[#99a1af] shrink-0" />
                         )}
-                        <span className="truncate">{c.lastMessage?.body ?? 'No messages yet'}</span>
+                        <span className="truncate">{c.lastMessage?.body ?? msg.noConversations}</span>
                       </p>
                       {c.unreadCount > 0 && (
                         <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#7008e7] text-white text-[10px] font-extrabold flex items-center justify-center">
@@ -1372,15 +1391,13 @@ export default function MessagesPage() {
         {!selectedId ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3">
             <div className="size-16 rounded-full bg-[#f4efff] grid place-items-center text-[28px]">💬</div>
-            <p className="text-base font-semibold text-[#0f1729]">Select a conversation</p>
-            <p className="text-sm text-[#6b7382] max-w-sm">
-              Choose a chat from the list or search for learners to start messaging.
-            </p>
+            <p className="text-base font-semibold text-[#0f1729]">{mp.selectConversation}</p>
+            <p className="text-sm text-[#6b7382] max-w-sm">{msg.subtitle}</p>
             {error && <p className="text-xs text-red-500">{error}</p>}
           </div>
         ) : !detail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
-            <p className="text-sm">{loadingThread ? 'Loading conversation…' : (error || 'Could not open this chat.')}</p>
+            <p className="text-sm">{loadingThread ? mp.loadingConversation : (error || copy.commonExt.error)}</p>
           </div>
         ) : (
           <>
@@ -1389,7 +1406,7 @@ export default function MessagesPage() {
                 <button
                   type="button"
                   className="lg:hidden size-9 rounded-lg grid place-items-center text-[#6b7382] hover:bg-[#f4efff] shrink-0"
-                  aria-label="Back to chats"
+                  aria-label={copy.common.back}
                   onClick={() => setSelectedId(null)}
                 >
                   <ArrowLeft className="w-5 h-5" />
@@ -1408,7 +1425,7 @@ export default function MessagesPage() {
                     'text-[11px] truncate',
                     detail.peer?.typing ? 'text-[#7008e7] font-semibold' : detail.peer?.online ? 'text-[#16a34a]' : 'text-[#99a1af]',
                   )}>
-                    {presenceLabel(detail.peer) || detail.peer?.handle}
+                    {presenceLabel(detail.peer, mp, copy.commonExt) || detail.peer?.handle}
                   </div>
                   </div>
                 </button>
@@ -1418,14 +1435,12 @@ export default function MessagesPage() {
 
             {!tipDismissed && (
               <div className="bg-[#f4efff] border-b border-[#d3c2ff] px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0">
-                <p className="text-[12px] text-[#5b21b6] leading-5">
-                  Tips: Tap underlined words to save them to your vocabulary.
-                </p>
+                <p className="text-[12px] text-[#5b21b6] leading-5">{mp.chatTip}</p>
                 <button
                   type="button"
                   className="text-[#7c3aed] hover:text-[#5b21b6] text-sm leading-none px-1"
                   onClick={() => setTipDismissed(true)}
-                  aria-label="Dismiss tip"
+                  aria-label={copy.commonExt.close}
                 >
                   ×
                 </button>
@@ -1434,7 +1449,7 @@ export default function MessagesPage() {
 
             <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-3 bg-[#f5f3ff]">
               {loadingThread && detail.messages.length === 0 ? (
-                <p className="text-sm text-[#99a1af]">Loading messages…</p>
+                <p className="text-sm text-[#99a1af]">{copy.common.loading}</p>
               ) : (
                 detail.messages.map((m) => {
                   const mine = Boolean(m.mine || (user?.id && m.senderId === user.id));
@@ -1464,8 +1479,8 @@ export default function MessagesPage() {
                     : null;
                   const replyName = m.replyTo
                     ? m.replyTo.senderId === user?.id
-                      ? 'You'
-                      : (detail.peer?.displayName ?? 'Learner')
+                      ? mp.you
+                      : (detail.peer?.displayName ?? copy.nav.library)
                     : null;
                   return (
                     <div
@@ -1505,13 +1520,13 @@ export default function MessagesPage() {
                               </div>
                               <div className="line-clamp-2 break-words">
                                 {replyPresented
-                                  ? (replyPresented.primary || messageSnippet(m.replyTo))
-                                  : messageSnippet(m.replyTo)}
+                                  ? (replyPresented.primary || messageSnippet(m.replyTo, mp.messageDeleted))
+                                  : messageSnippet(m.replyTo, mp.messageDeleted)}
                               </div>
                             </div>
                           )}
                           {m.deleted ? (
-                            <span className="text-[14px]">This message was deleted</span>
+                            <span className="text-[14px]">{mp.messageDeleted}</span>
                           ) : (
                             <>
                               {primary ? (
@@ -1519,6 +1534,7 @@ export default function MessagesPage() {
                                   text={primary}
                                   selectedWord={lookup?.phrase?.trim() || selectedWord}
                                   mine={mine}
+                                  chatTipTitle={mp.chatTipTitle}
                                   onWordTap={(word) => {
                                     setSelectedWord(word);
                                     setSelectedSentence(sentenceAroundPhrase(primary, word));
@@ -1537,6 +1553,7 @@ export default function MessagesPage() {
                                   text={secondary}
                                   selectedWord={lookup?.phrase?.trim() || selectedWord}
                                   mine={mine}
+                                  chatTipTitle={mp.chatTipTitle}
                                   onWordTap={(word) => {
                                     setSelectedWord(word);
                                     setSelectedSentence(sentenceAroundPhrase(secondary, word));
@@ -1560,7 +1577,7 @@ export default function MessagesPage() {
                                 'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] bg-white/80 border border-[#e5e7eb] shadow-sm hover:bg-white hover:text-[#4a5565] cursor-pointer',
                                 menuId === m.id && 'bg-white text-[#4a5565] border-[#c4b4ff]',
                               )}
-                              aria-label="Message actions"
+                              aria-label={copy.commonExt.confirm}
                               onClick={() => setMenuId((id) => (id === m.id ? null : m.id))}
                             >
                               <MoreHorizontal className="w-4 h-4" />
@@ -1570,7 +1587,7 @@ export default function MessagesPage() {
                                 <button
                                   type="button"
                                   className="fixed inset-0 z-20 cursor-default"
-                                  aria-label="Close menu"
+                                  aria-label={copy.commonExt.close}
                                   onClick={() => setMenuId(null)}
                                 />
                                 <div
@@ -1585,7 +1602,7 @@ export default function MessagesPage() {
                                     onClick={() => startReply(m)}
                                   >
                                     <CornerUpLeft className="w-3.5 h-3.5 text-[#7008e7]" />
-                                    Reply
+                                    {mp.reply}
                                   </button>
                                   {canEditMessage(m) && (
                                     <button
@@ -1594,7 +1611,7 @@ export default function MessagesPage() {
                                       onClick={() => startEdit(m)}
                                     >
                                       <Pencil className="w-3.5 h-3.5 text-[#6a7282]" />
-                                      Edit
+                                      {mp.edit}
                                     </button>
                                   )}
                                   {mine && (
@@ -1604,7 +1621,7 @@ export default function MessagesPage() {
                                       onClick={() => void deleteMessage(m)}
                                     >
                                       <Trash2 className="w-3.5 h-3.5" />
-                                      Delete
+                                      {mp.delete}
                                     </button>
                                   )}
                                 </div>
@@ -1635,7 +1652,7 @@ export default function MessagesPage() {
               {detail.peer?.typing && (
                 <div className="flex justify-start">
                   <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold shadow-sm">
-                    typing…
+                    {mp.typing}
                   </div>
                 </div>
               )}
@@ -1644,7 +1661,7 @@ export default function MessagesPage() {
 
             {selectedWord && !isXl ? (
               <div className="absolute inset-0 z-40 flex justify-end bg-black/30">
-                <button type="button" className="flex-1 h-full cursor-default" aria-label="Close word meaning" onClick={closeLookup} />
+                <button type="button" className="flex-1 h-full cursor-default" aria-label={copy.commonExt.close} onClick={closeLookup} />
                 <div className="h-full w-full max-w-[380px] bg-white shadow-2xl">
                   {wordPanel}
                 </div>
@@ -1656,17 +1673,17 @@ export default function MessagesPage() {
                 <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#f5f3ff] px-3 py-2">
                   <div className="min-w-0 flex-1 border-l-2 border-[#7008e7] pl-2">
                     <p className="text-[11px] font-bold text-[#7008e7]">
-                      {editing ? 'Editing message' : `Reply to ${replyTo?.mine ? 'yourself' : (detail.peer?.displayName ?? 'learner')}`}
+                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (detail.peer?.displayName ?? mp.you))}
                     </p>
                     <p className="text-xs text-[#6a7282] truncate">
-                      {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false })}
+                      {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false }, mp.messageDeleted)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={cancelComposerMode}
                     className="text-[#99a1af] hover:text-gray-700"
-                    aria-label="Cancel"
+                    aria-label={copy.common.cancel}
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -1686,7 +1703,7 @@ export default function MessagesPage() {
                         void send();
                       }
                     }}
-                    placeholder={editing ? 'Edit message...' : 'Type a message...'}
+                    placeholder={editing ? mp.editingMessage : msg.typeMessage}
                     className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder:text-[#99a1af]"
                   />
                   <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#f3f4f6] text-[#4a5565]">
@@ -1698,7 +1715,7 @@ export default function MessagesPage() {
                   disabled={sending || !draft.trim()}
                   onClick={() => void send()}
                   className="w-10 h-10 rounded-full bg-[#7008e7] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
-                  aria-label={editing ? 'Save edit' : 'Send'}
+                  aria-label={editing ? copy.common.saveChanges : msg.send}
                 >
                   <Send className="w-4 h-4" />
                 </button>

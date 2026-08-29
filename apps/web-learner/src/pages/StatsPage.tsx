@@ -5,6 +5,7 @@ import { AreaLineChart, BarChart, DotLineChart, formatShortDate, HeatmapCalendar
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { buildLanguageProgress } from '../lib/languageProgress';
 import type { UserStatsResponse } from '../lib/types';
 
@@ -74,8 +75,13 @@ function ChartCard({
   );
 }
 
+function formatStreakCount(value: number) {
+  return value > 999 ? '999+' : String(value);
+}
+
 export default function StatsPage() {
   const { user, stats, vocabItems } = useAuth();
+  const copy = useLearnerCopy();
   const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
   const [range, setRange] = useState<'7d' | '30d'>('30d');
 
@@ -84,7 +90,12 @@ export default function StatsPage() {
   }, []);
 
   const masteredCount = vocabItems.filter((v) => v.mastered).length;
-  const todayMinutes = stats?.todayMinutes ?? 0;
+  const dailyGoalMinutes = stats?.dailyGoalMinutes ?? 15;
+  const todayMinutes = apiStats?.todayReadMinutes ?? stats?.todayMinutes ?? 0;
+  const streakGoalSub =
+    todayMinutes >= dailyGoalMinutes
+      ? copy.stats.goalProgress(100)
+      : `${Math.max(0, dailyGoalMinutes - todayMinutes)}${copy.commonExt.minutes} · ${copy.stats.dailyGoal}`;
   const totalReadMinutes = apiStats?.totalReadMinutes ?? 0;
   const rangeDays = range === '7d' ? 7 : 30;
   const avgMinPerDay = Math.round(totalReadMinutes / rangeDays);
@@ -133,7 +144,9 @@ export default function StatsPage() {
       return { label: formatShortDate(localIsoDate(d)), value: 0 };
     });
   }, [apiStats]);
+  const readingInPeriod = dailySlice.reduce((s, d) => s + d.minutes, 0);
   const wordsInPeriod = dailySlice.reduce((s, d) => s + d.wordsSaved, 0);
+  const avgReadingInPeriod = rangeDays > 0 ? Math.round(readingInPeriod / rangeDays) : 0;
   const heatmap = apiStats?.history?.heatmap ?? [];
   const currentStreak = apiStats?.streakCount ?? stats?.streakCount ?? 0;
   const bestStreak = apiStats?.bestStreak ?? currentStreak;
@@ -152,8 +165,8 @@ export default function StatsPage() {
     <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center gap-4">
         <div className="flex-1">
-          <h1 className="text-2xl font-bold text-gray-900">Statistics</h1>
-          <p className="text-[#99a1af] text-sm mt-0.5">Track your learning progress over time.</p>
+          <h1 className="text-2xl font-bold text-gray-900">{copy.stats.title}</h1>
+          <p className="text-[#99a1af] text-sm mt-0.5">{copy.stats.subtitle}</p>
         </div>
         <div className="flex gap-2 bg-[#f3f4f6] p-1 rounded-[14px]">
           {(['7d', '30d'] as const).map((r) => (
@@ -166,39 +179,38 @@ export default function StatsPage() {
                 range === r ? 'bg-white text-[#1e2939] shadow-sm' : 'text-[#99a1af] hover:text-gray-600',
               )}
             >
-              {r === '7d' ? 'Last 7 days' : 'Last 30 days'}
+              {r === '7d' ? copy.statsPage.last7Days : copy.statsPage.last30Days}
             </button>
           ))}
         </div>
       </div>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <KpiCard value={`${currentStreak} days`} label="Current streak" color="text-[#bb4d00] bg-[#fffbeb] border-[#fee685]" />
+        <KpiCard value={`${formatStreakCount(currentStreak)} ${copy.commonExt.days}`} label={copy.statsPage.currentStreak} color="text-[#bb4d00] bg-[#fffbeb] border-[#fee685]" />
         <KpiCard
-          value={`${Math.floor(totalReadMinutes / 60)}h ${totalReadMinutes % 60}m`}
-          label="Total reading"
-          sub={hasActivity ? `avg ${avgMinPerDay}m/day` : undefined}
+          value={`${Math.floor(totalReadMinutes / 60)}${copy.commonExt.hours} ${totalReadMinutes % 60}${copy.commonExt.minutes}`}
+          label={copy.statsPage.readingTime}
+          sub={hasActivity ? `${copy.statsPage.dailyAverage} ${avgMinPerDay}${copy.commonExt.minutes}` : undefined}
           color="text-[#7008e7] bg-[#f5f3ff] border-[#ddd6ff]"
         />
         <KpiCard
           value={`${totalVocab}`}
-          label="Words saved"
-          sub={`${mastered} mastered`}
+          label={copy.statsPage.wordsAdded}
+          sub={`${mastered} ${copy.vocabulary.mastered.toLowerCase()}`}
           color="text-[#1447e6] bg-[#eff6ff] border-[#bedbff]"
         />
         <KpiCard
-          value={`${todayMinutes}m`}
-          label="Read today"
+          value={`${todayMinutes}${copy.commonExt.minutes}`}
+          label={copy.stats.todayReading}
+          sub={streakGoalSub}
           color="text-[#364153] bg-[#f9fafb] border-[#e5e7eb]"
         />
       </div>
 
       <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5 space-y-3">
-        <h3 className="font-bold text-gray-900 text-lg">Language Progress</h3>
+        <h3 className="font-bold text-gray-900 text-lg">{copy.stats.wordsLearned}</h3>
         {languageProgress.length === 0 ? (
-          <p className="text-sm text-[#99a1af]">
-            Language progress appears as you save words while reading.
-          </p>
+          <p className="text-sm text-[#99a1af]">{copy.statsPage.noDataYet}</p>
         ) : (
           languageProgress.map((lang) => (
             <div key={lang.code} className="rounded-2xl border border-[#e5e7eb] p-4">
@@ -222,8 +234,8 @@ export default function StatsPage() {
                 />
               </div>
               <div className="flex items-center justify-between mt-2.5 text-xs">
-                <span className="text-[#99a1af]">Words saved</span>
-                <span className="font-bold text-gray-900">{lang.wordCount} words</span>
+                <span className="text-[#99a1af]">{copy.statsPage.wordsAdded}</span>
+                <span className="font-bold text-gray-900">{copy.common.words(lang.wordCount)}</span>
               </div>
             </div>
           ))
@@ -233,67 +245,74 @@ export default function StatsPage() {
       {!hasActivity ? (
         <EmptyState
           icon={BarChart3}
-          title="No activity yet"
-          description="Your reading time, word saves, and streak charts will appear here once you start learning."
+          title={copy.statsPage.noDataYet}
+          description={copy.stats.subtitle}
         />
       ) : (
         <>
           <div className="grid lg:grid-cols-2 gap-5">
-            <ChartCard title="Reading Time" subtitle={`${totalReadMinutes} min total · avg ${avgMinPerDay} min/day`} icon={<GLogo size={32} />}>
+            <ChartCard title={copy.statsPage.readingTime} subtitle={`${readingInPeriod} ${copy.stats.minutes} · ${copy.statsPage.dailyAverage} ${avgReadingInPeriod} ${copy.stats.minutes}`} icon={<GLogo size={32} />}>
               <AreaLineChart
                 data={readingSeries}
                 color="#8e51ff"
-                valueSuffix="min"
-                emptyMessage="No reading time in this range"
+                valueSuffix={copy.commonExt.minutes}
+                emptyMessage={copy.statsPage.noDataYet}
               />
             </ChartCard>
 
-            <ChartCard title="New Words" subtitle={`${wordsInPeriod} words in this period`} icon={<GLogo size={32} />}>
+            <ChartCard title={copy.statsPage.wordsAdded} subtitle={copy.common.words(wordsInPeriod)} icon={<GLogo size={32} />}>
               <BarChart
                 data={wordsSeries}
                 color="#51a2ff"
-                valueSuffix="words"
-                emptyMessage="No words saved in this range"
+                valueSuffix=""
+                emptyMessage={copy.statsPage.noDataYet}
               />
             </ChartCard>
           </div>
 
           <div className="grid lg:grid-cols-[minmax(0,1.45fr)_minmax(0,1fr)] gap-5">
-            <ChartCard title="Weekly Word Saves" subtitle="New vocabulary per week" icon={<TrendingUp className="w-4 h-4 text-[#00966b]" />}>
+            <ChartCard title={copy.statsPage.wordsAdded} subtitle={copy.stats.thisWeek} icon={<TrendingUp className="w-4 h-4 text-[#00966b]" />}>
               <DotLineChart
                 data={weeklySeries}
                 color="#00966b"
-                valueSuffix="words"
-                emptyMessage="No weekly word saves yet"
+                valueSuffix=""
+                emptyMessage={copy.statsPage.noDataYet}
               />
             </ChartCard>
 
             <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="font-bold text-gray-900 text-lg">Activity</h3>
-                <span className="text-[#99a1af] text-xs">Last 10 weeks</span>
+                <h3 className="font-bold text-gray-900 text-lg">{copy.stats.streak}</h3>
+                <span className="text-[#99a1af] text-xs">{copy.stats.thisWeek}</span>
               </div>
-              <HeatmapCalendar data={heatmap} />
+              <HeatmapCalendar
+                data={heatmap}
+                labels={{
+                  noBooksRead: copy.charts.noBooksRead,
+                  booksRead: copy.charts.booksRead,
+                  booksReadFinished: copy.charts.booksReadFinished,
+                }}
+              />
               <div className="grid grid-cols-2 gap-3 mt-4 pt-4 border-t border-[#f9fafb]">
                 <div className="text-center">
-                  <div className="font-bold text-lg text-gray-900">{currentStreak}</div>
-                  <div className="text-xs text-[#99a1af]">Current streak</div>
+                  <div className="font-bold text-lg text-gray-900">{formatStreakCount(currentStreak)}</div>
+                  <div className="text-xs text-[#99a1af]">{copy.statsPage.currentStreak}</div>
                 </div>
                 <div className="text-center">
-                  <div className="font-bold text-lg text-gray-900">{bestStreak}</div>
-                  <div className="text-xs text-[#99a1af]">Best streak</div>
+                  <div className="font-bold text-lg text-gray-900">{formatStreakCount(bestStreak)}</div>
+                  <div className="text-xs text-[#99a1af]">{copy.stats.streak}</div>
                 </div>
               </div>
             </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-[#f3f4f6] p-5">
-            <h3 className="font-bold text-gray-900 text-lg mb-4">Vocabulary Breakdown</h3>
+            <h3 className="font-bold text-gray-900 text-lg mb-4">{copy.statsPage.vocabularyBreakdown}</h3>
             <div className="grid sm:grid-cols-3 gap-4">
               {[
-                { label: 'Total saved', value: totalVocab, dot: 'bg-[#e5e7eb]', text: 'text-[#364153]' },
-                { label: 'Still learning', value: learning, dot: 'bg-[#51a2ff]', text: 'text-[#1447e6]' },
-                { label: 'Mastered', value: mastered, dot: 'bg-[#00d492]', text: 'text-[#007a55]' },
+                { label: copy.statsPage.wordsAdded, value: totalVocab, dot: 'bg-[#e5e7eb]', text: 'text-[#364153]' },
+                { label: copy.vocabulary.learning, value: learning, dot: 'bg-[#51a2ff]', text: 'text-[#1447e6]' },
+                { label: copy.vocabulary.mastered, value: mastered, dot: 'bg-[#00d492]', text: 'text-[#007a55]' },
               ].map((s) => (
                 <div key={s.label} className="flex items-center gap-3 p-3 bg-[#f9fafb] rounded-[14px]">
                   <div className={cn('w-3 h-3 rounded-[6px] shrink-0', s.dot)} />
@@ -310,8 +329,8 @@ export default function StatsPage() {
                 <div className="h-full bg-[#51a2ff] transition-all" style={{ width: `${learningPct}%` }} />
               </div>
               <div className="flex justify-between mt-1.5 text-xs text-[#99a1af]">
-                <span>{masteredPct}% mastered</span>
-                <span>{learningPct}% in progress</span>
+                <span>{masteredPct}% {copy.vocabulary.mastered.toLowerCase()}</span>
+                <span>{learningPct}% {copy.vocabulary.learning.toLowerCase()}</span>
               </div>
             </div>
           </div>

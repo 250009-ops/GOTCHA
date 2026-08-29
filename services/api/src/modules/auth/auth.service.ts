@@ -219,7 +219,7 @@ export class AuthService {
         passwordHash,
         displayName: dto.displayName ?? email.split('@')[0],
         nativeLanguage: dto.nativeLanguage,
-        uiLanguage: 'en',
+        uiLanguage: dto.uiLanguage && (['en', 'ru', 'uz'] as const).includes(dto.uiLanguage) ? dto.uiLanguage : 'uz',
         emailVerifiedAt: null,
         preferences: { create: { dailyGoalMinutes: 15 } },
         targetLanguages: {

@@ -24,6 +24,9 @@ import { formatUzs, formatFreeAllowance, inspectImportFile, type ImportQuote, ty
 import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
+
+type LearnerCopy = ReturnType<typeof useLearnerCopy>;
 
 interface ImportItem {
   id: string;
@@ -61,8 +64,8 @@ const ACCEPTED_EXT = ['.pdf', '.epub'];
 
 type ImportTab = 'url' | 'paste' | 'pdf';
 
-function formatWordCount(count: number) {
-  return `${count.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ' ')} words`;
+function formatWordCount(count: number, copy: LearnerCopy) {
+  return copy.common.words(count);
 }
 
 function isPendingStatus(status: string) {
@@ -73,31 +76,31 @@ function pendingForMs(iso: string) {
   return Date.now() - new Date(iso).getTime();
 }
 
-function statusBadge(status: string) {
+function statusBadge(status: string, copy: LearnerCopy) {
   switch (status) {
     case 'ready':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#007a55] bg-[#ecfdf5] border border-[#a4f4cf] rounded-full px-2 py-0.5 shrink-0">
-          <CheckCircle2 className="w-3 h-3" />Ready
+          <CheckCircle2 className="w-3 h-3" />{copy.importPage.statusReady}
         </span>
       );
     case 'processing':
     case 'tokenizing':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#1447e6] bg-[#eff6ff] border border-[#bedbff] rounded-full px-2 py-0.5 shrink-0">
-          <Loader2 className="w-3 h-3 animate-spin" />Processing
+          <Loader2 className="w-3 h-3 animate-spin" />{copy.importPage.statusProcessing}
         </span>
       );
     case 'queued':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#bb4d00] bg-[#fffbeb] border border-[#fee685] rounded-full px-2 py-0.5 shrink-0">
-          <Clock className="w-3 h-3" />Queued
+          <Clock className="w-3 h-3" />{copy.importPage.statusQueued}
         </span>
       );
     case 'failed':
       return (
         <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#c10007] bg-[#fef2f2] border border-[#ffc9c9] rounded-full px-2 py-0.5 shrink-0">
-          <AlertCircle className="w-3 h-3" />Failed
+          <AlertCircle className="w-3 h-3" />{copy.importPage.statusFailed}
         </span>
       );
     default:
@@ -105,23 +108,24 @@ function statusBadge(status: string) {
   }
 }
 
-function relativeTime(iso: string) {
+function relativeTime(iso: string, copy: LearnerCopy) {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return copy.timeAgo.justNow;
+  if (mins < 60) return copy.timeAgo.minutesAgo(mins);
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+  if (hrs < 24) return copy.timeAgo.hoursAgo(hrs);
+  return copy.timeAgo.daysAgo(Math.floor(hrs / 24));
 }
 
 function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v: string) => void; disabled?: boolean }) {
+  const copy = useLearnerCopy();
   const { langs } = useCatalogLanguages();
   const { user } = useAuth();
   const options = langs.filter((l) => l.code !== user?.nativeLanguage);
   return (
     <div className="py-4 min-w-0 max-w-full">
-      <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Language</label>
+      <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.importPage.language}</label>
       <div className="relative min-w-0 max-w-full">
         <select
           value={value}
@@ -166,6 +170,7 @@ function SubmitButton({
 }
 
 function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { url: string; title: string; lang: string }) => void }) {
+  const copy = useLearnerCopy();
   const [url, setUrl] = useState('');
   const [title, setTitle] = useState('');
   const [lang, setLang] = useState('en');
@@ -174,7 +179,7 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
   return (
     <div className="min-w-0 max-w-full">
       <div className="min-w-0">
-        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">URL</label>
+        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.import.urlTab}</label>
         <div className="relative min-w-0 max-w-full">
           <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
@@ -182,37 +187,33 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
             value={url}
             disabled={loading}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="https://example.com/article"
+            placeholder={copy.import.urlPlaceholder}
             className="block w-full min-w-0 max-w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
           />
         </div>
-        <p className="text-xs text-[#99a1af] mt-1 leading-relaxed [overflow-wrap:anywhere]">Works with Gutenberg, Wikipedia, public articles, and .txt URLs. Novels are split into printed chapters. Paywalled pages will fail with a clear error.</p>
+        <p className="text-xs text-[#99a1af] mt-1 leading-relaxed [overflow-wrap:anywhere]">{copy.importPage.urlHelp}</p>
       </div>
       <div className="pt-4 min-w-0">
-        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
+        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.importPage.titleOptional}</label>
         <input
           type="text"
           value={title}
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Auto-detected from page"
+          placeholder={copy.importPage.autoFromPage}
           className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
       <SubmitButton icon={Link} disabled={!valid} loading={loading} onClick={() => onSubmit({ url: url.trim(), title, lang })}>
-        {loading ? 'Importing…' : (
-          <>
-            <span className="sm:hidden">Import URL</span>
-            <span className="hidden sm:inline">Import from URL</span>
-          </>
-        )}
+        {loading ? copy.import.importing : copy.importPage.importFromUrl}
       </SubmitButton>
     </div>
   );
 }
 
 function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { text: string; title: string; lang: string }) => void }) {
+  const copy = useLearnerCopy();
   const [text, setText] = useState('');
   const [title, setTitle] = useState('');
   const [lang, setLang] = useState('en');
@@ -223,49 +224,50 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
   return (
     <div className="min-w-0 max-w-full">
       <div className="min-w-0">
-        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title</label>
+        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.importPage.titleLabel}</label>
         <input
           type="text"
           value={title}
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="My text"
+          placeholder={copy.importPage.titlePlaceholder}
           className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
       <div className="pt-4 min-w-0">
         <div className="flex items-center justify-between mb-1.5">
-          <label className="block text-xs font-semibold text-[#4a5565]">Text</label>
+          <label className="block text-xs font-semibold text-[#4a5565]">{copy.importPage.textLabel}</label>
           <span className={cn('text-xs tabular-nums', words < MIN_PASTE_WORDS || tooLong ? 'text-[#99a1af]' : 'text-emerald-600 font-medium')}>
-            {words.toLocaleString()} words
+            {copy.common.words(words)}
           </span>
         </div>
         <textarea
           value={text}
           disabled={loading}
           onChange={(e) => setText(e.target.value)}
-          placeholder={`Paste your text here… (minimum ${MIN_PASTE_WORDS} words). Books are split into printed chapters, then pages.`}
+          placeholder={copy.importPage.pastePlaceholder}
           rows={8}
           className="block w-full min-w-0 max-w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
         {words > 0 && words < MIN_PASTE_WORDS && (
-          <p className="text-xs text-amber-600 mt-1">{MIN_PASTE_WORDS - words} more words needed</p>
+          <p className="text-xs text-amber-600 mt-1">{MIN_PASTE_WORDS - words} {copy.importPage.wordsNeeded}</p>
         )}
         {tooLong && (
           <p className="text-xs text-[#c10007] mt-1">
-            Text exceeds the {MAX_PASTE_CHARS.toLocaleString()}-character maximum. Split into multiple imports.
+            {copy.importPage.textTooLong(MAX_PASTE_CHARS)}
           </p>
         )}
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
       <SubmitButton icon={Clipboard} disabled={!valid} loading={loading} onClick={() => onSubmit({ text, title, lang })}>
-        {loading ? 'Importing…' : 'Import Text'}
+        {loading ? copy.import.importing : copy.importPage.importText}
       </SubmitButton>
     </div>
   );
 }
 
 function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { file: File; title: string; lang: string }) => void }) {
+  const copy = useLearnerCopy();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [lang, setLang] = useState('en');
@@ -283,7 +285,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
     const okExt = ACCEPTED_EXT.some((ext) => lower.endsWith(ext));
     if (!okExt) {
       setFile(null);
-      setFileError('Only PDF and EPUB files are supported');
+      setFileError(copy.importPage.onlyPdfEpub);
       return;
     }
     if (next.size > MAX_FILE_BYTES) {
@@ -334,7 +336,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
         ) : (
           <>
             <Upload className="w-8 h-8 text-gray-300 mb-2 shrink-0" />
-            <div className="text-sm text-[#6a7282] px-1 leading-snug [overflow-wrap:anywhere]">Drop a PDF or ePub here, or <span className="text-[#7f22fe] font-medium">browse</span></div>
+            <div className="text-sm text-[#6a7282] px-1 leading-snug [overflow-wrap:anywhere]">{copy.importPage.dropFile}</div>
             <div className="text-xs text-[#99a1af] mt-1 px-1 leading-snug [overflow-wrap:anywhere]">Max {MAX_FILE_MB} MB · PDF and EPUB · books split into printed chapters</div>
           </>
         )}
@@ -345,13 +347,13 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
         </p>
       )}
       <div className="pt-4">
-        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Title <span className="font-normal text-[#99a1af]">(optional)</span></label>
+        <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.importPage.titleOptional}</label>
         <input
           type="text"
           value={title}
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
-          placeholder="Auto from filename"
+          placeholder={copy.importPage.autoFromFilename}
           className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
         />
       </div>
@@ -362,7 +364,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
         loading={loading}
         onClick={() => file && onSubmit({ file, title, lang })}
       >
-        {loading ? 'Uploading…' : 'Upload File'}
+        {loading ? copy.import.importing : copy.importPage.uploadFile}
       </SubmitButton>
     </div>
   );
@@ -395,6 +397,7 @@ function PaymentConfirmModal({
   onClose: () => void;
   loading: boolean;
 }) {
+  const copy = useLearnerCopy();
   const [step, setStep] = useState<PaymentStep>('price');
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const [cardNumber, setCardNumber] = useState('');
@@ -476,7 +479,7 @@ function PaymentConfirmModal({
         setStep('card');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to start payment');
+      setError(err instanceof Error ? err.message : copy.errors.failedStartPayment);
     } finally {
       setLoading(false);
     }
@@ -491,13 +494,13 @@ function PaymentConfirmModal({
       const expiryFormatted = expiry.replace(/\//g, '');
       const result = await preApplyPayment(paymentId, cardNumber.replace(/\s/g, ''), expiryFormatted);
       if (result.step !== 'otp') {
-        throw new Error('Unexpected payment state after card verification.');
+        throw new Error(copy.errors.unexpectedPaymentState);
       }
       setMaskedPhone(result.maskedPhone);
       setStep('otp');
       setOtp('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Card verification failed');
+      setError(err instanceof Error ? err.message : copy.errors.cardVerificationFailed);
     } finally {
       setLoading(false);
     }
@@ -515,17 +518,17 @@ function PaymentConfirmModal({
         onPaid?.(paymentId);
         onClose();
       } else if (result.step === 'otp') {
-        setError('Payment not confirmed yet. Check the SMS code and try again.');
+        setError(copy.errors.paymentNotConfirmedOtp);
         setOtp('');
       } else {
-        setError('Payment not confirmed. Please try again with a different card.');
+        setError(copy.errors.paymentNotConfirmedCard);
         setStep('card');
         setCardNumber('');
         setExpiry('');
         setOtp('');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'OTP verification failed');
+      setError(err instanceof Error ? err.message : copy.errors.otpVerificationFailed);
     } finally {
       setLoading(false);
     }
@@ -542,7 +545,7 @@ function PaymentConfirmModal({
       setTimeout(() => setCanResendOtp(true), 30000);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend OTP');
+      setError(err instanceof Error ? err.message : copy.errors.couldNotResendOtp);
     } finally {
       setLoading(false);
     }
@@ -596,27 +599,27 @@ function PaymentConfirmModal({
             <div className="w-full border border-[#e4e7ec] rounded-xl p-4 flex flex-col gap-3 bg-white">
               {quote.tier && (
                 <div className="flex justify-between items-center text-sm">
-                  <span className="text-[#6a7282]">Page tier ({quote.tier.label})</span>
+                  <span className="text-[#6a7282]">{copy.importPage.pageTier(quote.tier.label)}</span>
                   <span className="text-[#101828] font-medium">{formatUzs(quote.tier.priceUzs)}</span>
                 </div>
               )}
               <div className="flex justify-between items-center text-sm">
-                <span className="text-[#6a7282]">Estimated pages</span>
+                <span className="text-[#6a7282]">{copy.importPage.estimatedPages}</span>
                 <span className="text-[#101828] font-medium">~{quote.estimatedPages}</span>
               </div>
               <div className="h-px bg-[#e4e7ec]" />
               <div className="flex justify-between items-center">
-                <span className="text-[#101828] text-sm font-semibold">Total</span>
+                <span className="text-[#101828] text-sm font-semibold">{copy.importPage.total}</span>
                 <span className="text-[#7008e7] text-base font-bold">{formatUzs(quote.amountUzs)}</span>
               </div>
             </div>
             {quote.freeLimits && (
               <p className="text-[11px] text-[#6a7282] text-center leading-relaxed">
                 {quote.freeReason === 'Within free import allowance'
-                  ? 'Covered by your free import allowance.'
+                  ? copy.importPage.freeAllowanceCovered
                   : quote.requiresPayment && !quote.tier
-                    ? 'This length is not priced yet. Try a shorter document or try again later.'
-                    : formatFreeAllowance(quote.freeLimits)}
+                    ? copy.importPage.lengthNotPriced
+                    : formatFreeAllowance(quote.freeLimits, copy.billing)}
               </p>
             )}
 
@@ -636,10 +639,10 @@ function PaymentConfirmModal({
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing…
+                  {copy.importPage.statusProcessing}
                 </>
               ) : (
-                <>Purchase for {formatUzs(quote.amountUzs)}</>
+                <>{copy.importPage.purchaseFor(formatUzs(quote.amountUzs))}</>
               )}
             </button>
 
@@ -649,14 +652,14 @@ function PaymentConfirmModal({
               disabled={loading}
               className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
             >
-              Cancel
+              {copy.common.cancel}
             </button>
           </>
         )}
 
         {step === 'card' && (
           <>
-            <h2 className="text-[#101828] text-xl font-bold text-center">Enter Card Details</h2>
+            <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterCardDetails}</h2>
             <p className="text-[#6a7282] text-sm text-center -mt-2">UzCard, Humo, Visa, or Mastercard</p>
 
             <div className="w-full space-y-4">
@@ -704,10 +707,10 @@ function PaymentConfirmModal({
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Verifying…
+                  {copy.common.saving}
                 </>
               ) : (
-                <>Continue</>
+                <>{copy.common.continue}</>
               )}
             </button>
 
@@ -717,7 +720,7 @@ function PaymentConfirmModal({
               disabled={loading}
               className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
             >
-              Back
+              {copy.common.back}
             </button>
 
             <p className="text-[#6a7282] text-[11px] text-center leading-relaxed">
@@ -728,7 +731,7 @@ function PaymentConfirmModal({
 
         {step === 'otp' && (
           <>
-            <h2 className="text-[#101828] text-xl font-bold text-center">Enter SMS Code</h2>
+            <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterSmsCode}</h2>
             <p className="text-[#6a7282] text-sm text-center -mt-2">
               Code sent to {maskedPhone || 'your phone'}
             </p>
@@ -763,10 +766,10 @@ function PaymentConfirmModal({
               {loading ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin" />
-                  Confirming…
+                  {copy.common.saving}
                 </>
               ) : (
-                <>Confirm Payment</>
+                <>{copy.importPage.confirmPayment}</>
               )}
             </button>
 
@@ -777,7 +780,7 @@ function PaymentConfirmModal({
                 disabled={loading}
                 className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
               >
-                Back
+                {copy.common.back}
               </button>
               {canResendOtp && (
                 <button
@@ -786,7 +789,7 @@ function PaymentConfirmModal({
                   disabled={loading}
                   className="text-[#7008e7] text-sm font-medium hover:text-[#5c06c0] transition-colors disabled:opacity-50"
                 >
-                  Resend Code
+                  {copy.importPage.resendCode}
                 </button>
               )}
             </div>
@@ -798,6 +801,7 @@ function PaymentConfirmModal({
 }
 
 export default function ImportPage() {
+  const copy = useLearnerCopy();
   const navigate = useNavigate();
   const [tab, setTab] = useState<ImportTab>('url');
   const [imports, setImports] = useState<ImportItem[]>([]);
@@ -869,28 +873,24 @@ export default function ImportPage() {
   const toastReady = (item: ImportItem) => {
     const contentId = item.content?.id;
     if (item.ingestionStatus === 'ready' && contentId) {
-      toast.success('Import ready to read', {
+      toast.success(copy.importPage.importReady, {
         action: {
-          label: 'Read',
+          label: copy.importPage.read,
           onClick: () => navigate(`/app/read/${contentId}`),
         },
       });
       return;
     }
     if (item.ingestionStatus === 'failed') {
-      toast.error(item.errorMessage || 'Import failed');
+      toast.error(item.errorMessage || copy.importPage.statusFailed);
       return;
     }
-    toast.success('Import submitted');
+    toast.success(copy.import.importButton);
   };
 
   const guardLimit = () => {
     if (!atImportLimit) return true;
-    toast.error(
-      importLimit
-        ? `Import limit reached (${importLimit}). Delete an import or pay for a new import.`
-        : 'Import limit reached. Delete an import or pay for a new import.',
-    );
+    toast.error(copy.importPage.importLimitReached);
     return false;
   };
 
@@ -928,7 +928,7 @@ export default function ImportPage() {
               toastReady(item);
               await load(1);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Import failed');
+              toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
             } finally {
               setLoading(false);
             }
@@ -949,7 +949,7 @@ export default function ImportPage() {
       toastReady(item);
       await load(1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed');
+      toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
     } finally {
       if (!paymentModal.open) setLoading(false);
     }
@@ -980,7 +980,7 @@ export default function ImportPage() {
               toastReady(item);
               await load(1);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Import failed');
+              toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
             } finally {
               setLoading(false);
             }
@@ -1001,7 +1001,7 @@ export default function ImportPage() {
       toastReady(item);
       await load(1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Import failed');
+      toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
     } finally {
       if (!paymentModal.open) setLoading(false);
     }
@@ -1039,7 +1039,7 @@ export default function ImportPage() {
               toastReady(item);
               await load(1);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : 'Upload failed');
+              toast.error(err instanceof Error ? err.message : copy.errors.uploadFailed);
             } finally {
               setLoading(false);
             }
@@ -1062,7 +1062,7 @@ export default function ImportPage() {
       toastReady(item);
       await load(1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Upload failed');
+      toast.error(err instanceof Error ? err.message : copy.errors.uploadFailed);
     } finally {
       if (!paymentModal.open) setLoading(false);
     }
@@ -1072,27 +1072,27 @@ export default function ImportPage() {
     setDeletingId(item.id);
     try {
       await api(`/imports/${item.id}`, { method: 'DELETE' });
-      toast.success('Import removed from history');
+      toast.success(copy.importPage.importRemoved);
       const nextPage = imports.length === 1 && page > 1 ? page - 1 : page;
       await load(nextPage);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : 'Could not delete import');
+      toast.error(err instanceof Error ? err.message : copy.errors.couldNotDeleteImport);
     } finally {
       setDeletingId(null);
     }
   };
 
   const tabs: { key: ImportTab; label: string; short: string; icon: React.ElementType }[] = [
-    { key: 'url', label: 'URL', short: 'URL', icon: Link },
-    { key: 'paste', label: 'Paste text', short: 'Paste', icon: Clipboard },
-    { key: 'pdf', label: 'PDF / EPUB', short: 'File', icon: FileText },
+    { key: 'url', label: copy.import.urlTab, short: copy.import.urlTab, icon: Link },
+    { key: 'paste', label: copy.import.pasteTab, short: copy.import.pasteTab, icon: Clipboard },
+    { key: 'pdf', label: copy.import.fileTab, short: copy.import.fileTab, icon: FileText },
   ];
 
   return (
     <div className="w-full max-w-6xl mx-auto px-3 sm:px-6 py-6 lg:py-8 min-w-0 overflow-x-clip">
       <div className="mb-6 min-w-0 max-w-full">
-        <h1 className="text-2xl font-bold text-gray-900">Import Content</h1>
-        <p className="text-[#99a1af] text-sm mt-0.5 [overflow-wrap:anywhere]">Add your own texts — articles, books, or any text you want to read and learn from.</p>
+        <h1 className="text-2xl font-bold text-gray-900">{copy.importPage.pageTitle}</h1>
+        <p className="text-[#99a1af] text-sm mt-0.5 [overflow-wrap:anywhere]">{copy.importPage.pageSubtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 w-full min-w-0 lg:grid-cols-[minmax(0,420px)_minmax(0,1fr)] gap-6 lg:gap-8 items-start">
@@ -1121,20 +1121,20 @@ export default function ImportPage() {
                 <AlertCircle className="w-4 h-4 text-[#bb4d00] shrink-0 mt-0.5" />
                 <p className="text-xs text-[#bb4d00] break-words">
                   {gatewayEnabled
-                    ? 'Import allowance reached. Delete an old import or pay per material size via Atmos.'
-                    : 'Import allowance reached. Delete an old import to free up space — paid imports are not available right now.'}
+                    ? copy.importPage.allowanceReachedPaid
+                    : copy.importPage.allowanceReachedFree}
                 </p>
               </div>
             )}
             {freeAllowance && (
               <div className="flex items-start gap-2 p-3 mb-4 bg-[#f5f3ff] border border-[#ddd6ff] rounded-[14px]">
-                <p className="text-xs text-[#5b21b6] leading-relaxed break-words">{formatFreeAllowance(freeAllowance)}</p>
+                <p className="text-xs text-[#5b21b6] leading-relaxed break-words">{formatFreeAllowance(freeAllowance, copy.billing)}</p>
               </div>
             )}
             <p className="text-[11px] text-[#99a1af] mb-3 leading-relaxed break-words">
               {gatewayEnabled
-                ? 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first.'
-                : 'Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled.'}
+                ? copy.importPage.paidImportsHint
+                : copy.importPage.freeImportsHint}
             </p>
             {tab === 'url' && <URLForm loading={loading || atImportLimit} onSubmit={handleUrlImport} />}
             {tab === 'paste' && <PasteForm loading={loading || atImportLimit} onSubmit={handlePasteImport} />}
@@ -1144,26 +1144,26 @@ export default function ImportPage() {
 
         <div className="min-w-0 w-full max-w-full">
           <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
-            <h2 className="font-bold text-gray-900 text-xl min-w-0">Import History</h2>
+            <h2 className="font-bold text-gray-900 text-xl min-w-0">{copy.importPage.importHistory}</h2>
             <span className="text-xs text-[#99a1af] text-right shrink-0 max-w-[55%] leading-snug">
               {freeAllowance
-                ? `${freeAllowance.dailyFreeRemaining} free left today · ${total} import${total !== 1 ? 's' : ''}`
+                ? copy.importPage.freeLeftToday(freeAllowance.dailyFreeRemaining, total)
                 : importsUnlimited || importLimit == null
-                  ? `${total} import${total !== 1 ? 's' : ''}`
-                  : `${total} / ${importLimit} imports`}
+                  ? copy.importPage.importsCount(total)
+                  : copy.importPage.importsCountLimit(total, importLimit)}
             </span>
           </div>
 
           {historyLoading ? (
             <div className="py-16 text-center text-gray-400 text-sm flex flex-col items-center gap-2">
               <Loader2 className="w-5 h-5 animate-spin" />
-              Loading history…
+              {copy.common.loading}
             </div>
           ) : imports.length === 0 ? (
             <EmptyState
               icon={Upload}
-              title="No imports yet"
-              description="Paste text, import from a URL, or upload a PDF/EPUB to build your personal reading library."
+              title={copy.import.noImports}
+              description={copy.importPage.pageSubtitle}
               compact
             />
           ) : (
@@ -1181,19 +1181,21 @@ export default function ImportPage() {
                             {item.sourceUrl && <div className="text-xs text-[#99a1af] truncate mt-0.5">{item.sourceUrl}</div>}
                             <div className="text-[11px] text-[#99a1af] mt-0.5 capitalize">{item.importType.replace('_', ' ')}</div>
                           </div>
-                          {statusBadge(item.ingestionStatus)}
+                          {statusBadge(item.ingestionStatus, copy)}
                         </div>
                         <div className="flex items-center gap-3 mt-2 flex-wrap">
-                          <span className="text-xs text-[#99a1af]">{relativeTime(item.createdAt)}</span>
+                          <span className="text-xs text-[#99a1af]">{relativeTime(item.createdAt, copy)}</span>
                           {!!item.content?.wordCount && item.content.wordCount > 0 && (
-                            <span className="text-xs text-[#99a1af]">{formatWordCount(item.content.wordCount)}</span>
+                            <span className="text-xs text-[#99a1af]">{formatWordCount(item.content.wordCount, copy)}</span>
                           )}
                           {isPendingStatus(item.ingestionStatus) &&
                             item.progressPagesTotal != null &&
                             item.progressPagesTotal > 0 && (
                               <span className="text-xs text-[#1447e6] tabular-nums">
-                                {Math.min(item.progressPagesDone ?? 0, item.progressPagesTotal)} /{' '}
-                                {item.progressPagesTotal} pages
+                                {copy.importPage.pagesProgress(
+                                  Math.min(item.progressPagesDone ?? 0, item.progressPagesTotal),
+                                  item.progressPagesTotal,
+                                )}
                               </span>
                             )}
                           {isPendingStatus(item.ingestionStatus) && item.progressPhase === 'ocr' && (
@@ -1230,7 +1232,7 @@ export default function ImportPage() {
                             onClick={() => navigate(`/app/read/${item.content!.id}`)}
                             className="inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[14px] border border-black/10 bg-white text-[#0a0a0a] text-xs font-medium hover:bg-gray-50"
                           >
-                            <ExternalLink className="w-3.5 h-3.5" />Read
+                            <ExternalLink className="w-3.5 h-3.5" />{copy.importPage.read}
                           </button>
                         )}
                         <button
@@ -1238,9 +1240,10 @@ export default function ImportPage() {
                           disabled={deletingId === item.id}
                           onClick={() => void handleDelete(item)}
                           className="ml-auto inline-flex items-center gap-1.5 h-7 px-2.5 rounded-[14px] text-[#ff6467] hover:bg-red-50 text-xs font-medium disabled:opacity-50"
+                          title={copy.importPage.deleteImport}
                         >
                           {deletingId === item.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
-                          Delete
+                          {copy.importPage.delete}
                         </button>
                       </div>
                     )}
@@ -1257,7 +1260,7 @@ export default function ImportPage() {
                     disabled={page <= 1 || loading}
                     onClick={() => void load(page - 1)}
                   >
-                    Previous
+                    {copy.importPage.previous}
                   </Button>
                   <span className="text-xs text-gray-400">Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
                   <Button
@@ -1267,7 +1270,7 @@ export default function ImportPage() {
                     disabled={!hasMore || loading}
                     onClick={() => void load(page + 1)}
                   >
-                    Next
+                    {copy.importPage.next}
                   </Button>
                 </div>
               )}

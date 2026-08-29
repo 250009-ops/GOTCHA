@@ -22,26 +22,28 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../lib/auth';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { UserAvatar } from '../components/UserAvatar';
+import { LanguagePicker } from '../components/LanguagePicker';
 
 interface NavItem {
   path: string;
-  label: string;
+  labelKey: keyof ReturnType<typeof useLearnerCopy>['nav'];
   icon: React.ElementType;
   exact?: boolean;
 }
 
 const primaryNav: NavItem[] = [
-  { path: '/app', label: 'Library', icon: Home, exact: true },
-  { path: '/app/vocabulary', label: 'Vocabulary', icon: Brain },
-  { path: '/app/practice', label: 'Practice', icon: GraduationCap },
-  { path: '/app/import', label: 'Import', icon: Upload },
+  { path: '/app', labelKey: 'library', icon: Home, exact: true },
+  { path: '/app/vocabulary', labelKey: 'vocabulary', icon: Brain },
+  { path: '/app/practice', labelKey: 'practice', icon: GraduationCap },
+  { path: '/app/import', labelKey: 'import', icon: Upload },
 ];
 
 const secondaryNav: NavItem[] = [
-  { path: '/app/stats', label: 'Statistics', icon: BarChart3 },
-  { path: '/app/notifications', label: 'Notifications', icon: Bell },
-  { path: '/app/messages', label: 'Messages', icon: MessageSquare },
+  { path: '/app/stats', labelKey: 'statistics', icon: BarChart3 },
+  { path: '/app/notifications', labelKey: 'notifications', icon: Bell },
+  { path: '/app/messages', labelKey: 'messages', icon: MessageSquare },
 ];
 
 function prefersExpandedSidebar() {
@@ -63,6 +65,7 @@ export default function LearnerShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, stats, logout } = useAuth();
+  const copy = useLearnerCopy();
   useCatalogLanguages();
   const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -77,10 +80,6 @@ export default function LearnerShell() {
   };
 
   const showGlobalSearch = shouldShowGlobalSearch(location.pathname);
-
-  useEffect(() => {
-    document.documentElement.lang = user?.uiLanguage || 'en';
-  }, [user?.uiLanguage]);
 
   useEffect(() => {
     document.body.classList.add('gotcha-has-topbar');
@@ -122,6 +121,7 @@ export default function LearnerShell() {
   }, [user, location.pathname]);
 
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {
+    const label = copy.nav[item.labelKey];
     const active = isActive(item.path, item.exact);
     const btn = (
       <button
@@ -136,7 +136,7 @@ export default function LearnerShell() {
         )}
       >
         <item.icon className={cn('w-[18px] h-[18px] shrink-0', active ? 'text-white' : 'text-white/50 group-hover:text-white/80')} />
-        {!collapsed && <span className="truncate">{item.label}</span>}
+        {!collapsed && <span className="truncate">{label}</span>}
         {item.path === '/app/notifications' && unreadNotifs > 0 && (
           <span className={cn(
             'min-w-5 h-5 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center',
@@ -153,7 +153,7 @@ export default function LearnerShell() {
         <Tooltip>
           <TooltipTrigger asChild>{btn}</TooltipTrigger>
           <TooltipContent side="right" sideOffset={8} className="bg-gray-900 text-white border-white/10 text-xs">
-            {item.label}
+            {label}
           </TooltipContent>
         </Tooltip>
       );
@@ -186,7 +186,7 @@ export default function LearnerShell() {
               {expanded && (
                 <div>
                   <div className="font-brand text-white text-lg tracking-tight leading-none">GOTCHA</div>
-                  <div className="text-white/30 text-[10px] leading-none mt-0.5">Language Learning</div>
+                  <div className="text-white/30 text-[10px] leading-none mt-0.5">{copy.shell.tagline}</div>
                 </div>
               )}
             </div>
@@ -210,9 +210,9 @@ export default function LearnerShell() {
                 >
                   <div className="flex items-center gap-2 mb-0.5">
                     <Wallet className="w-3.5 h-3.5 text-amber-300" />
-                    <span className="text-white text-xs font-semibold">Pay as you go</span>
+                    <span className="text-white text-xs font-semibold">{copy.shell.payAsYouGo}</span>
                   </div>
-                  <p className="text-[#c4b4ff] text-[11px]">Import books · Pay per file</p>
+                  <p className="text-[#c4b4ff] text-[11px]">{copy.shell.payAsYouGoHint}</p>
                 </button>
               ) : (
                 <Tooltip>
@@ -226,13 +226,13 @@ export default function LearnerShell() {
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8} className="bg-gray-900 text-white border-white/10 text-xs">
-                    Pay as you go
+                    {copy.shell.payAsYouGo}
                   </TooltipContent>
                 </Tooltip>
               )}
 
               <NavLink
-                item={{ path: '/app/settings', label: 'Settings', icon: Settings }}
+                item={{ path: '/app/settings', labelKey: 'settings', icon: Settings }}
                 collapsed={!expanded}
               />
             </div>
@@ -240,7 +240,7 @@ export default function LearnerShell() {
 
           <button
             type="button"
-            aria-label={expanded ? 'Collapse sidebar' : 'Expand sidebar'}
+            aria-label={expanded ? copy.shell.collapseSidebar : copy.shell.expandSidebar}
             className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-[#7f22fe] shadow-sm z-30 hidden lg:flex"
             onClick={() => setExpanded((e) => !e)}
           >
@@ -259,6 +259,8 @@ export default function LearnerShell() {
             )}
 
             <div className="flex items-center h-9 gap-2 sm:gap-2.5 shrink-0">
+              <LanguagePicker compact className="inline-flex shrink-0" />
+
               <div className="h-9 flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5">
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />
                 <span className="text-xs font-bold text-[#bb4d00] tabular-nums leading-none">{stats?.streakCount ?? user?.streakCount ?? 0}</span>
@@ -266,7 +268,7 @@ export default function LearnerShell() {
 
               <button
                 type="button"
-                aria-label="Notifications"
+                aria-label={copy.shell.notificationsAria}
                 onClick={() => navigate('/app/notifications')}
                 className="relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-[#7f22fe] hover:border-violet-200"
               >
@@ -282,7 +284,7 @@ export default function LearnerShell() {
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    aria-label="Account menu"
+                    aria-label={copy.shell.accountMenuAria}
                     className="size-9 rounded-full grid place-items-center shadow-[0_1px_3px_rgba(0,0,0,0.1),0_1px_2px_rgba(0,0,0,0.1)]"
                   >
                     <UserAvatar
@@ -311,7 +313,7 @@ export default function LearnerShell() {
                     className="w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] text-sm font-medium text-[#6b7280] hover:bg-gray-100 hover:text-gray-800 transition-colors"
                   >
                     <LogOut className="w-[18px] h-[18px]" />
-                    Log out
+                    {copy.shell.logOut}
                   </button>
                 </PopoverContent>
               </Popover>

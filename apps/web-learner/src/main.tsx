@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import App from './App';
 import { AuthProvider } from './lib/auth';
+import { LearnerLocaleProvider } from './lib/learnerLocaleContext';
 import { DocumentTitle } from './components/DocumentTitle';
 import './styles/index.css';
 
@@ -13,8 +14,10 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter basename={basename}>
       <AuthProvider>
-        <DocumentTitle />
-        <App />
+        <LearnerLocaleProvider>
+          <DocumentTitle />
+          <App />
+        </LearnerLocaleProvider>
         <Toaster
           position="top-right"
           richColors

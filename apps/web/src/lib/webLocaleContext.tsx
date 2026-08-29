@@ -19,7 +19,7 @@ interface WebLocaleContextValue {
 
 const WebLocaleContext = createContext<WebLocaleContextValue | null>(null);
 
-const PICKER_LOCALES: AppLanguage[] = ['en', 'ru', 'uz', 'tr', 'de', 'fr', 'es', 'ko', 'ar', 'zh'];
+const PICKER_LOCALES: AppLanguage[] = ['en', 'ru', 'uz'];
 
 export function WebLocaleProvider({ children }: { children: ReactNode }) {
   const [searchParams] = useSearchParams();

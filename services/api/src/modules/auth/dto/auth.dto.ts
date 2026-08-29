@@ -1,5 +1,6 @@
 import { IsEmail, IsEnum, IsIn, IsOptional, IsString, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
+import { UI_LANGUAGES } from '@gotcha/shared';
 
 export class RegisterDto {
   @IsEmail()
@@ -21,6 +22,10 @@ export class RegisterDto {
   @ArrayMinSize(1)
   @IsEnum(AppLanguage, { each: true })
   targetLanguages!: AppLanguage[];
+
+  @IsOptional()
+  @IsIn([...UI_LANGUAGES])
+  uiLanguage?: (typeof UI_LANGUAGES)[number];
 
   /** When `android`, auth emails use `gotcha://` deep links that open the mobile app. */
   @IsOptional()

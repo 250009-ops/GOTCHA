@@ -20,7 +20,7 @@ function LanguagePicker({ className }: { className?: string }) {
           if (isWebLocale(code)) setLocale(code);
         }}
         aria-label={copy.nav.language}
-        className="h-9 max-w-[9.5rem] truncate rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-xs font-semibold text-[#4a5565] outline-none focus:border-[#2107aa] focus:ring-2 focus:ring-[#2107aa]/15"
+        className="h-9 min-w-0 max-w-[9.5rem] truncate rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-xs font-semibold text-[#4a5565] outline-none focus:border-[#2107aa] focus:ring-2 focus:ring-[#2107aa]/15 touch-manipulation sm:max-w-[10rem]"
       >
         {localeOptions.map((opt) => (
           <option key={opt.code} value={opt.code}>
@@ -112,7 +112,7 @@ export function SiteNav() {
         </div>
 
         <div className="flex items-center gap-3 sm:gap-4">
-          <LanguagePicker className="hidden md:inline-flex" />
+          <LanguagePicker className="inline-flex shrink-0 max-[359px]:hidden" />
           <a
             className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
             href={loginUrl()}
@@ -153,7 +153,7 @@ export function SiteNav() {
 
       {open && (
         <div className="flex flex-col gap-5 border-b border-[#e2e8f0] bg-white px-5 py-6 shadow-[0_12px_24px_rgba(15,23,42,0.08)] lg:hidden">
-          <LanguagePicker />
+          <LanguagePicker className="inline-flex w-full sm:w-auto [&_select]:w-full sm:[&_select]:w-auto" />
           <div className="flex flex-col gap-1">
             <NavLinks
               onNavigate={() => setOpen(false)}

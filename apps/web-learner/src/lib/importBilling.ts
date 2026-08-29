@@ -1,5 +1,15 @@
 import { api } from './api';
 
+export type BillingCopy = {
+  today: string;
+  thisMonth: string;
+  thisYear: string;
+  importsFree: string;
+  freeImportsLeft: (remaining: number, total: number, cycle: string) => string;
+  freePagesLeft: (remaining: number, total: number, cycle: string) => string;
+  configuredPool: (dailyImports: number, pageLimit: number, cycle: string) => string;
+};
+
 export type ImportType = 'paste' | 'url' | 'pdf' | 'epub';
 
 export type ImportFreeAllowance = {
@@ -203,18 +213,30 @@ export function wordCountOf(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export function pageWindowLabel(resetCycle?: string | null) {
-  if (resetCycle === 'daily') return 'today';
-  if (resetCycle === 'yearly') return 'this year';
-  return 'this month';
+export function pageWindowLabel(resetCycle: string | null | undefined, billing: BillingCopy) {
+  if (resetCycle === 'daily') return billing.today;
+  if (resetCycle === 'yearly') return billing.thisYear;
+  return billing.thisMonth;
 }
 
-export function formatFreeAllowance(allowance: ImportFreeAllowance) {
-  const pagesWindow = pageWindowLabel(allowance.resetCycle);
+export function formatFreeAllowance(allowance: ImportFreeAllowance, billing: BillingCopy) {
+  const pagesWindow = pageWindowLabel(allowance.resetCycle, billing);
   if (!allowance.gatewayEnabled) {
-    return `Imports are currently free (payments paused). Configured pool: ${allowance.dailyFreeImportsPerUser} imports/day · ${allowance.monthlyFreePageLimit} pages ${pagesWindow}.`;
+    return `${billing.importsFree} ${billing.configuredPool(
+      allowance.dailyFreeImportsPerUser,
+      allowance.monthlyFreePageLimit,
+      pagesWindow,
+    )}`;
   }
-  return `${allowance.dailyFreeRemaining} of ${allowance.dailyFreeImportsPerUser} free imports left today · ${allowance.monthlyPagesRemaining} of ${allowance.monthlyFreePageLimit} free pages left ${pagesWindow}.`;
+  return `${billing.freeImportsLeft(
+    allowance.dailyFreeRemaining,
+    allowance.dailyFreeImportsPerUser,
+    billing.today,
+  )} · ${billing.freePagesLeft(
+    allowance.monthlyPagesRemaining,
+    allowance.monthlyFreePageLimit,
+    pagesWindow,
+  )}.`;
 }
 
 export function isValidCardNumber(cardNumber: string) {

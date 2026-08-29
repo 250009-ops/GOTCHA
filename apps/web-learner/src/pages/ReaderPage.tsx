@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BookmarkPlus,
@@ -24,7 +24,9 @@ import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { formatUzs } from '../lib/importBilling';
+import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
@@ -122,11 +124,20 @@ function DictionaryPanel({
   loading: boolean;
   showVocabActions?: boolean;
 }) {
+  const copy = useLearnerCopy();
+  const statusLabel =
+    status === 'unknown'
+      ? copy.reader.unknown
+      : status === 'learning'
+        ? copy.reader.learning
+        : status === 'known'
+          ? copy.reader.known
+          : copy.reader.ignore;
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#f3f4f6] shrink-0">
-        <span className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">Dictionary</span>
-        <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-gray-600 transition-colors" aria-label="Close dictionary">
+        <span className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">{copy.reader.dictionary}</span>
+        <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-gray-600 transition-colors" aria-label={copy.commonExt.close}>
           <X className="w-4 h-4" />
         </button>
       </div>
@@ -134,7 +145,7 @@ function DictionaryPanel({
         {loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
             <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
-            <span className="text-sm text-[#99a1af]">Looking up…</span>
+            <span className="text-sm text-[#99a1af]">{copy.reader.lookingUp}</span>
           </div>
         )}
         {!loading && result && (
@@ -164,8 +175,8 @@ function DictionaryPanel({
                   type="button"
                   onClick={onPronounce}
                   className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]"
-                  aria-label="Pronounce"
-                  title="Pronounce word"
+                  aria-label={copy.reader.pronounceWord}
+                  title={copy.reader.pronounceWord}
                 >
                   <Volume2 className="w-4 h-4" />
                 </button>
@@ -173,12 +184,12 @@ function DictionaryPanel({
             </div>
             {result.kind !== 'sentence' && result.contextualMeaning?.trim() ? (
               <div className="bg-[#f5f3ff] rounded-xl p-3">
-                <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Natural meaning</div>
+                <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">{copy.reader.naturalMeaning}</div>
                 <div className="text-[#1e2939] leading-relaxed">{result.contextualMeaning}</div>
               </div>
             ) : null}
             <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-[#f5f3ff] rounded-xl p-3'}>
-              <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Translation</div>
+              <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">{copy.reader.translation}</div>
               <div className="text-[#1e2939] leading-relaxed whitespace-pre-wrap break-words">{result.translation}</div>
             </div>
             {showVocabActions ? (
@@ -190,7 +201,7 @@ function DictionaryPanel({
                 'bg-emerald-100 text-emerald-700': status === 'known',
                 'bg-gray-100 text-gray-500': status === 'ignored',
               })}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {statusLabel}
               </div>
               <span className="text-[#99a1af]">→ Mark as:</span>
             </div>
@@ -205,7 +216,7 @@ function DictionaryPanel({
                 )}
               >
                 <BookmarkPlus className="w-4 h-4" />
-                <span>Save</span>
+                <span>{copy.reader.save}</span>
               </button>
               <button
                 type="button"
@@ -217,7 +228,7 @@ function DictionaryPanel({
                 )}
               >
                 <Check className="w-4 h-4" />
-                <span>Known</span>
+                <span>{copy.reader.known}</span>
               </button>
               <button
                 type="button"
@@ -229,7 +240,7 @@ function DictionaryPanel({
                 )}
               >
                 <EyeOff className="w-4 h-4" />
-                <span>Ignore</span>
+                <span>{copy.reader.ignore}</span>
               </button>
             </div>
               </>
@@ -248,9 +259,14 @@ function DictionaryPanel({
 }
 
 export default function ReaderPage() {
+  const copy = useLearnerCopy();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, preferences, updatePreferences, refreshVocab } = useAuth();
+  const goToLibrary = useCallback(() => {
+    navigate(resolveReaderLibraryReturn(location.state));
+  }, [navigate, location.state]);
 
   const [content, setContent] = useState<ContentItem | null>(null);
   const [outline, setOutline] = useState<ContentOutlineSegment[]>([]);
@@ -347,9 +363,9 @@ export default function ReaderPage() {
     );
     if (!spoken.trim()) return;
     void speakText(spoken, sourceLang).catch((err) => {
-      toast.error(err instanceof Error ? err.message : 'Pronunciation is unavailable');
+      toast.error(err instanceof Error ? err.message : copy.errors.pronunciationUnavailable);
     });
-  }, [activeLookup, activeWord, sourceLang]);
+  }, [activeLookup, activeWord, sourceLang, copy.errors.pronunciationUnavailable]);
 
   // Wall-clock time spent since the last progress save, so PATCH /content/:id/progress
   // gets a real `readSeconds` and content.service.ts's streak.recordActivity actually fires
@@ -505,7 +521,7 @@ export default function ReaderPage() {
         setVocabMarkable(isVocabMarkableSelection(surface, tokenCount, res.kind ?? (sentenceLike ? 'sentence' : undefined)));
         if (head) setActiveWord(head);
       } catch (e) {
-        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
@@ -523,7 +539,7 @@ export default function ReaderPage() {
         setLookupLoading(false);
       }
     },
-    [sourceLang, targetLang],
+    [sourceLang, targetLang, copy.errors.lookupFailed],
   );
 
   const markStatus = async (status: WordStatus) => {
@@ -534,9 +550,17 @@ export default function ReaderPage() {
         body: JSON.stringify({ lemma: activeWord, sourceLang, status }),
       });
       setWordStatuses((p) => ({ ...p, [activeWord]: status }));
-      toast.success(`"${activeWord}" marked as ${status}`);
+      const statusText =
+        status === 'unknown'
+          ? copy.reader.unknown
+          : status === 'learning'
+            ? copy.reader.learning
+            : status === 'known'
+              ? copy.reader.known
+              : copy.reader.ignore;
+      toast.success(`"${activeWord}" ${copy.reader.markedAs(statusText)}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Update failed');
+      toast.error(e instanceof Error ? e.message : copy.errors.updateFailed);
     }
   };
 
@@ -556,10 +580,10 @@ export default function ReaderPage() {
         }),
       });
       setWordStatuses((p) => ({ ...p, [activeWord]: 'learning' }));
-      toast.success(`"${activeWord}" saved to vocabulary`);
+      toast.success(`"${activeWord}" ${copy.reader.savedToVocab}`);
       void refreshVocab().catch(() => undefined);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
+      toast.error(e instanceof Error ? e.message : copy.errors.saveFailed);
     }
   };
 
@@ -679,12 +703,12 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
-        <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">Content not found</div>
+        <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">{copy.reader.contentNotFound}</div>
       </div>
     );
   }
@@ -693,9 +717,9 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
@@ -717,15 +741,15 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center text-[#99a1af]">
             <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <div className="text-[#4a5565] font-medium">No content segments available</div>
+            <div className="text-[#4a5565] font-medium">{copy.reader.noSegments}</div>
             <div className="text-sm mt-1">This item may still be processing.</div>
           </div>
         </div>
@@ -750,11 +774,11 @@ export default function ReaderPage() {
       <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shrink-0 min-w-0">
         <button
           type="button"
-          onClick={() => navigate('/app')}
+          onClick={goToLibrary}
           className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium shrink-0"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">Library</span>
+          <span className="hidden sm:inline">{copy.nav.library}</span>
         </button>
         <div className="w-px h-4 bg-[#e5e7eb] shrink-0" />
         <div className="flex-1 min-w-0 flex items-baseline gap-2 overflow-hidden">
@@ -765,11 +789,11 @@ export default function ReaderPage() {
         <div className="hidden lg:flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">
             <span className="size-2 rounded bg-[#ffb900]" />
-            <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} unknown</span>
+            <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} {copy.reader.unknown}</span>
           </div>
           <div className="flex items-center gap-1.5 bg-[#eff6ff] border border-[#bedbff] rounded-full px-2.5 py-1">
             <span className="size-2 rounded bg-[#51a2ff]" />
-            <span className="text-xs font-medium text-[#1447e6] whitespace-nowrap">{learningCount} learning</span>
+            <span className="text-xs font-medium text-[#1447e6] whitespace-nowrap">{learningCount} {copy.reader.learning}</span>
           </div>
           <span className="bg-[#dbeafe] text-[#1447e6] text-[10px] font-semibold rounded-lg px-1.5 py-0.5 leading-[15px]">
             {content.cefrLevel.toUpperCase()}
@@ -781,7 +805,7 @@ export default function ReaderPage() {
             type="button"
             onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))}
             className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
-            aria-label="Zoom out"
+            aria-label={copy.reader.zoomOut}
           >
             <Minus className="w-3.5 h-3.5" />
           </button>
@@ -790,7 +814,7 @@ export default function ReaderPage() {
             type="button"
             onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))}
             className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
-            aria-label="Zoom in"
+            aria-label={copy.reader.zoomIn}
           >
             <Plus className="w-3.5 h-3.5" />
           </button>
@@ -803,20 +827,20 @@ export default function ReaderPage() {
               showUnknownOnly ? 'bg-[#f5f3ff] text-[#7008e7]' : 'hover:bg-gray-100 text-[#6a7282]',
             )}
             aria-pressed={showUnknownOnly}
-            title="Show only unknown-word highlights"
+            title={copy.reader.unknownOnlyTitle}
           >
             <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Unknown only</span>
+            <span className="hidden sm:inline">{copy.reader.unknownOnly}</span>
           </button>
           <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
           <button
             type="button"
             onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment?.id ?? outline[segmentIndex]?.id ?? ''}`)}
             className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
-            title="Quiz yourself on this chapter"
+            title={copy.reader.practiceTitle}
           >
             <GraduationCap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Practice</span>
+            <span className="hidden sm:inline">{copy.reader.practice}</span>
           </button>
         </div>
       </header>
@@ -832,7 +856,7 @@ export default function ReaderPage() {
           {chaptersOpen ? (
             <>
               <div className="px-4 py-3 border-b border-[#f3f4f6]">
-                <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">Chapters</div>
+                <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">{copy.reader.chapters}</div>
               </div>
               <div className="flex-1 overflow-y-auto py-2">
                 {chapterGroups
@@ -873,7 +897,7 @@ export default function ReaderPage() {
                           )}
                         >
                           <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                            {pageCount > 1 ? `Page ${i + 1}` : 'Content'}
+                            {pageCount > 1 ? copy.reader.page(i + 1) : copy.reader.content}
                           </div>
                           <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
                             {displayChapterTitle(seg.chapterTitle || seg.title, i)}
@@ -888,7 +912,7 @@ export default function ReaderPage() {
                 className="h-8 border-t border-[#f3f4f6] flex items-center justify-center gap-1 text-xs font-medium text-[#99a1af] hover:text-[#4a5565] hover:bg-gray-50 transition-colors"
               >
                 <PanelLeftClose className="w-3.5 h-3.5" />
-                Collapse
+                {copy.reader.collapse}
               </button>
             </>
           ) : (
@@ -896,10 +920,10 @@ export default function ReaderPage() {
               type="button"
               onClick={() => setChaptersOpen(true)}
               className="flex-1 flex flex-col items-center justify-center gap-2 text-[#99a1af] hover:text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
-              title="Expand chapters"
+              title={copy.reader.chapters}
             >
               <PanelLeftOpen className="w-4 h-4" />
-              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180">Chapters</span>
+              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180">{copy.reader.chapters}</span>
             </button>
           )}
         </aside>
@@ -937,7 +961,7 @@ export default function ReaderPage() {
           >
             {isTrial ? (
               <div className="mb-6 rounded-xl border border-violet-200 bg-[#f5f3ff] px-4 py-3 text-sm text-[#4d179a]">
-                Free sample of this book. Unlock the rest for {formatUzs(content.priceUzs ?? 0)}.
+                {copy.reader.trialBanner(formatUzs(content.priceUzs ?? 0))}
               </div>
             ) : null}
             <div className="mb-8">
@@ -1120,7 +1144,7 @@ export default function ReaderPage() {
             <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
               <Button variant="outline" onClick={goPrev} disabled={segmentIndex === 0} className="rounded-xl gap-1.5">
                 <ChevronLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Previous</span>
+                <span className="hidden sm:inline">{copy.reader.previous}</span>
               </Button>
               <form
                 className="flex items-center gap-1.5 text-xs text-[#99a1af]"
@@ -1136,31 +1160,31 @@ export default function ReaderPage() {
                   value={pageDraft}
                   onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
                   onBlur={commitPageJump}
-                  aria-label="Go to page in this chapter"
+                  aria-label={copy.reader.goToPage}
                   className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#8e51ff]/40 focus:border-[#7f22fe]"
                 />
                 <span className="tabular-nums">/ {pageInChapter.total}</span>
               </form>
               {isTrial && segmentIndex >= trialLimit - 1 ? (
                 <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
-                  Unlock full book
+                  {copy.reader.unlockFullBook}
                 </Button>
               ) : segmentIndex < pageCount - 1 ? (
                 <Button onClick={goNext} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
-                  <span className="hidden sm:inline">Next</span>
+                  <span className="hidden sm:inline">{copy.reader.next}</span>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               ) : (
                 <Button
                   onClick={() => {
                     void saveProgress(segmentIndex, true);
-                    toast.success('Reading complete!');
-                    navigate('/app');
+                    toast.success(copy.reader.readingComplete);
+                    goToLibrary();
                   }}
                   className="rounded-xl gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                 >
                   <Check className="w-4 h-4" />
-                  Finish
+                  {copy.reader.finish}
                 </Button>
               )}
             </div>
@@ -1191,10 +1215,10 @@ export default function ReaderPage() {
               type="button"
               onClick={() => setDictOpen(true)}
               className="h-full flex flex-col items-center justify-center gap-1.5 text-[#99a1af] hover:text-[#4a5565] hover:bg-gray-50 transition-colors"
-              title="Dictionary"
+              title={copy.reader.dictionary}
             >
               <BookOpen className="w-4 h-4" />
-              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180 mt-1">Dictionary</span>
+              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180 mt-1">{copy.reader.dictionary}</span>
             </button>
           )}
         </aside>
@@ -1224,7 +1248,7 @@ export default function ReaderPage() {
               type="button"
               className="absolute top-3 right-3 z-10 size-8 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] grid place-items-center text-gray-500"
               onClick={() => setPaywallOpen(false)}
-              aria-label="Keep reading the sample"
+              aria-label={copy.reader.keepReadingSample}
             >
               <X className="w-4 h-4" />
             </button>

@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import {
   clearPendingImport,
   getImportPayment,
@@ -17,7 +18,7 @@ type ImportItem = {
   content?: { id: string } | null;
 };
 
-async function runPendingImport(pending: PendingImport): Promise<ImportItem> {
+async function runPendingImport(pending: PendingImport, reselectFileMsg: string): Promise<ImportItem> {
   if (pending.kind === 'url') {
     return api<ImportItem>('/imports/url', {
       method: 'POST',
@@ -42,7 +43,7 @@ async function runPendingImport(pending: PendingImport): Promise<ImportItem> {
   }
   // file
   if (pending.needsReupload || !pending.fileBase64) {
-    throw new Error('Payment received. Please re-select your PDF/EPUB on the Import page to finish.');
+    throw new Error(reselectFileMsg);
   }
   const bin = atob(pending.fileBase64);
   const bytes = new Uint8Array(bin.length);
@@ -59,12 +60,13 @@ async function runPendingImport(pending: PendingImport): Promise<ImportItem> {
 export default function ImportPaymentReturnPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
-  const [message, setMessage] = useState('Confirming payment…');
+  const copy = useLearnerCopy();
+  const [message, setMessage] = useState(copy.importReturn.confirming);
 
   useEffect(() => {
     const paymentId = params.get('paymentId');
     if (!paymentId) {
-      toast.error('Missing payment reference');
+      toast.error(copy.importReturn.missingReference);
       navigate('/app/import', { replace: true });
       return;
     }
@@ -80,11 +82,11 @@ export default function ImportPaymentReturnPage() {
             paid = true;
             break;
           }
-          setMessage('Waiting for Atmos confirmation…');
+          setMessage(copy.importReturn.waitingAtmos);
           await new Promise((r) => setTimeout(r, 1500));
         }
         if (!paid) {
-          toast.error('Payment not confirmed yet. If you were charged, open Import and try again in a moment.');
+          toast.error(copy.importReturn.paymentNotConfirmedToast);
           navigate('/app/import', { replace: true });
           return;
         }
@@ -93,23 +95,23 @@ export default function ImportPaymentReturnPage() {
         if (!pending || pending.paymentId !== paymentId) {
           // Paid but no pending payload — user can import with this paymentId from Import page.
           sessionStorage.setItem('gotcha_paid_payment_id', paymentId);
-          toast.success('Payment confirmed. Finish your import.');
+          toast.success(copy.importReturn.paymentConfirmed);
           navigate('/app/import', { replace: true });
           return;
         }
 
-        setMessage('Payment confirmed — importing…');
-        const item = await runPendingImport(pending);
+        setMessage(copy.importReturn.importing);
+        const item = await runPendingImport(pending, copy.importReturn.reselectFile);
         clearPendingImport();
         if (item.ingestionStatus === 'ready' && item.content?.id) {
-          toast.success('Import ready');
+          toast.success(copy.importReturn.importReady);
           navigate(`/app/read/${item.content.id}`, { replace: true });
           return;
         }
-        toast.success('Import submitted');
+        toast.success(copy.importReturn.importSubmitted);
         navigate('/app/import', { replace: true });
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : 'Could not finish import after payment');
+        toast.error(err instanceof Error ? err.message : copy.importReturn.couldNotFinishImport);
         navigate('/app/import', { replace: true });
       }
     })();
@@ -117,7 +119,7 @@ export default function ImportPaymentReturnPage() {
     return () => {
       cancelled = true;
     };
-  }, [params, navigate]);
+  }, [params, navigate, copy]);
 
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-sm text-slate-600">

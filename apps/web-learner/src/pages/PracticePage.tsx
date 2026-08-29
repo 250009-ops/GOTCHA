@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Check, GraduationCap, Loader2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import type { ContentItem } from '../lib/types';
 
 type PracticeType = 'comprehension' | 'cloze' | 'writing';
@@ -36,17 +37,23 @@ interface AnswerResult {
   explanation?: string | null;
 }
 
-const TYPE_LABELS: Record<PracticeType, { label: string; desc: string }> = {
-  comprehension: { label: 'Comprehension', desc: 'Multiple-choice questions about the passage' },
-  cloze: { label: 'Fill in the blank', desc: 'Complete the missing word from context' },
-  writing: { label: 'Short answer', desc: 'Answer in your own words' },
-};
-
 export default function PracticePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
+  const copy = useLearnerCopy();
+  const pp = copy.practicePage;
+  const p = copy.practice;
   const contentId = searchParams.get('contentId');
   const segmentId = searchParams.get('segmentId');
+
+  const typeLabels = useMemo(
+    (): Record<PracticeType, string> => ({
+      comprehension: pp.comprehension,
+      cloze: pp.fillBlank,
+      writing: pp.shortAnswer,
+    }),
+    [pp],
+  );
 
   const [content, setContent] = useState<ContentItem | null>(null);
   const [contentLoading, setContentLoading] = useState(Boolean(contentId));
@@ -75,7 +82,7 @@ export default function PracticePage() {
 
   const startSession = async () => {
     if (!segmentId) {
-      toast.error('Open a chapter in the Reader first, then tap Practice.');
+      toast.error(pp.openChapterFirst);
       return;
     }
     setStarting(true);
@@ -85,7 +92,7 @@ export default function PracticePage() {
         body: JSON.stringify({ contentId: contentId ?? undefined, segmentId, practiceType }),
       });
       if (!started.questions?.length) {
-        toast.error('No quiz questions could be generated for this chapter. Try another one.');
+        toast.error(p.noWordsDescription);
         return;
       }
       setSession(started);
@@ -94,7 +101,7 @@ export default function PracticePage() {
       setFreeText('');
       setResults(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not start practice session');
+      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setStarting(false);
     }
@@ -110,12 +117,12 @@ export default function PracticePage() {
     const hasOptions = Boolean(currentQuestion.options?.length);
     if (!hasOptions) {
       if (!freeText.trim()) {
-        toast.error('Type an answer before continuing');
+        toast.error(pp.typeAnswer);
         return;
       }
       selectAnswer(freeText.trim());
     } else if (!answers[currentQuestion.id]) {
-      toast.error('Pick an answer before continuing');
+      toast.error(pp.pickAnswer);
       return;
     }
     if (isLastQuestion) {
@@ -145,7 +152,7 @@ export default function PracticePage() {
       );
       setResults(res);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not submit answers');
+      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setSubmitting(false);
     }
@@ -167,32 +174,27 @@ export default function PracticePage() {
         className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium"
       >
         <ArrowLeft className="w-4 h-4" />
-        {contentId ? 'Back to reading' : 'Library'}
+        {contentId ? pp.backToReading : copy.nav.library}
       </button>
       <div className="w-px h-4 bg-[#e5e7eb]" />
       <span className="font-semibold text-[#1e2939] text-sm truncate">{title}</span>
     </header>
   );
 
-  // No content/segment context — prompt the user to launch practice from a chapter in the Reader.
   if (!contentId || !segmentId) {
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
-        <HeaderBar title="Practice" />
+        <HeaderBar title={p.title} />
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center max-w-sm">
             <div className="w-14 h-14 rounded-2xl bg-[#f5f3ff] flex items-center justify-center mx-auto mb-4">
               <GraduationCap className="w-7 h-7 text-[#7f22fe]" />
             </div>
-            <h1 className="text-lg font-bold text-[#101828] mb-1.5">Practice what you read</h1>
-            <p className="text-sm text-[#6b7280] mb-5">
-              Open any chapter in the Reader and tap <span className="font-semibold">Practice</span> to quiz
-              yourself on it — comprehension, fill-in-the-blank, and short-answer questions generated from
-              that exact passage.
-            </p>
+            <h1 className="text-lg font-bold text-[#101828] mb-1.5">{pp.practiceWhatYouRead}</h1>
+            <p className="text-sm text-[#6b7280] mb-5">{pp.readerHint}</p>
             <Button onClick={() => navigate('/app')} className="rounded-xl bg-[#7f22fe] hover:bg-[#6b1fd8]">
               <BookOpen className="w-4 h-4 mr-1.5" />
-              Go to Library
+              {pp.goToLibrary}
             </Button>
           </div>
         </div>
@@ -208,12 +210,12 @@ export default function PracticePage() {
     );
   }
 
-  // Results screen
   if (results && session) {
     const pct = Math.round(results.score * 100);
+    const correctCount = results.results.filter((r) => r.isCorrect).length;
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
-        <HeaderBar title={content?.title ?? 'Practice results'} />
+        <HeaderBar title={content?.title ?? p.title} />
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-2xl mx-auto flex flex-col gap-5">
             <div className="bg-white border border-[#e5e7eb] rounded-2xl p-6 text-center">
@@ -226,10 +228,10 @@ export default function PracticePage() {
                 {pct}%
               </div>
               <h2 className="text-lg font-bold text-[#101828]">
-                {results.results.filter((r) => r.isCorrect).length} / {results.results.length} correct
+                {p.score(correctCount, results.results.length)}
               </h2>
               <p className="text-sm text-[#6b7280] mt-1">
-                {pct >= 70 ? 'Great work — keep it up!' : pct >= 40 ? 'Good effort — review the explanations below.' : 'Keep practicing — review the explanations below.'}
+                {pct >= 70 ? pp.greatWork : p.subtitle}
               </p>
             </div>
 
@@ -251,13 +253,13 @@ export default function PracticePage() {
                         <p className="text-sm font-semibold text-[#101828]">
                           {i + 1}. {q.prompt}
                         </p>
-                        <p className="text-xs text-[#6b7280] mt-1">
-                          Your answer: <span className="font-medium text-[#374151]">{r?.userAnswer || '—'}</span>
-                        </p>
-                        {!r?.isCorrect && (
-                          <p className="text-xs text-[#6b7280] mt-0.5">
-                            Correct answer: <span className="font-medium text-emerald-700">{q.correctAnswer}</span>
+                        {r?.userAnswer ? (
+                          <p className="text-xs text-[#6b7280] mt-1">
+                            <span className="font-medium text-[#374151]">{r.userAnswer}</span>
                           </p>
+                        ) : null}
+                        {!r?.isCorrect && (
+                          <p className="text-xs text-emerald-700 mt-0.5 font-medium">{q.correctAnswer}</p>
                         )}
                         {q.explanation && <p className="text-xs text-[#9ca3af] mt-1.5">{q.explanation}</p>}
                       </div>
@@ -270,13 +272,13 @@ export default function PracticePage() {
             <div className="flex gap-3">
               <Button variant="outline" onClick={restart} className="flex-1 rounded-xl gap-1.5">
                 <RotateCcw className="w-4 h-4" />
-                Try another quiz
+                {pp.tryAnother}
               </Button>
               <Button
                 onClick={() => navigate(`/app/read/${contentId}`)}
                 className="flex-1 rounded-xl bg-[#7f22fe] hover:bg-[#6b1fd8]"
               >
-                Back to reading
+                {pp.backToReading}
               </Button>
             </div>
           </div>
@@ -285,13 +287,12 @@ export default function PracticePage() {
     );
   }
 
-  // Active quiz screen
   if (session && currentQuestion) {
     const hasOptions = Boolean(currentQuestion.options?.length);
     const selected = answers[currentQuestion.id];
     return (
       <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
-        <HeaderBar title={content?.title ?? 'Practice'} />
+        <HeaderBar title={content?.title ?? p.title} />
         <div className="flex-1 overflow-y-auto p-4 sm:p-6">
           <div className="max-w-2xl mx-auto flex flex-col gap-5">
             <div className="flex items-center gap-3">
@@ -332,7 +333,7 @@ export default function PracticePage() {
                   type="text"
                   value={freeText}
                   onChange={(e) => setFreeText(e.target.value)}
-                  placeholder="Type your answer…"
+                  placeholder={pp.typeAnswer}
                   className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
                   autoFocus
                 />
@@ -347,12 +348,12 @@ export default function PracticePage() {
               {submitting ? (
                 <span className="flex items-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Submitting…
+                  {pp.submitting}
                 </span>
               ) : isLastQuestion ? (
-                'Finish quiz'
+                pp.finishQuiz
               ) : (
-                'Next question'
+                pp.nextQuestion
               )}
             </Button>
           </div>
@@ -361,21 +362,18 @@ export default function PracticePage() {
     );
   }
 
-  // Setup screen — choose a practice type and start.
   return (
     <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
-      <HeaderBar title={content?.title ?? 'Practice'} />
+      <HeaderBar title={content?.title ?? p.title} />
       <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
         <div className="w-full max-w-md bg-white border border-[#e5e7eb] rounded-2xl p-6 flex flex-col gap-5">
           <div>
-            <h1 className="text-lg font-bold text-[#101828]">Quiz yourself</h1>
-            <p className="text-sm text-[#6b7280] mt-1">
-              Generated from the chapter you were just reading{content ? ` in “${content.title}”` : ''}.
-            </p>
+            <h1 className="text-lg font-bold text-[#101828]">{pp.quizYourself}</h1>
+            <p className="text-sm text-[#6b7280] mt-1">{p.subtitle}</p>
           </div>
 
           <div className="flex flex-col gap-2">
-            {(Object.keys(TYPE_LABELS) as PracticeType[]).map((t) => (
+            {(Object.keys(typeLabels) as PracticeType[]).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -388,9 +386,8 @@ export default function PracticePage() {
                 )}
               >
                 <div className={cn('text-sm font-semibold', practiceType === t ? 'text-[#7008e7]' : 'text-[#101828]')}>
-                  {TYPE_LABELS[t].label}
+                  {typeLabels[t]}
                 </div>
-                <div className="text-xs text-[#6b7280] mt-0.5">{TYPE_LABELS[t].desc}</div>
               </button>
             ))}
           </div>
@@ -403,10 +400,10 @@ export default function PracticePage() {
             {starting ? (
               <span className="flex items-center gap-2">
                 <Loader2 className="w-4 h-4 animate-spin" />
-                Generating quiz…
+                {pp.generatingQuiz}
               </span>
             ) : (
-              'Start quiz'
+              p.startQuiz
             )}
           </Button>
         </div>

@@ -23,6 +23,7 @@ import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import {
   CEFR_LEVELS,
   LANGUAGE_META,
@@ -37,11 +38,6 @@ import {
   type UserTargetLanguage,
 } from '../lib/types';
 
-const READER_THEMES = [
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'sepia', label: 'Sepia', icon: BookOpen },
-  { value: 'dark', label: 'Dark', icon: Moon },
-] as const;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -112,7 +108,9 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
+
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const copy = useLearnerCopy();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -121,15 +119,15 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
 
   const submit = async () => {
     if (!currentPassword || !newPassword) {
-      toast.error('Fill in both password fields');
+      toast.error(copy.settings.fillPasswordFields);
       return;
     }
     if (newPassword.length < 8) {
-      toast.error('New password must be at least 8 characters');
+      toast.error(copy.settings.newPasswordMinLength);
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error('Passwords do not match');
+      toast.error(copy.settings.passwordsMismatch);
       return;
     }
     setSaving(true);
@@ -138,23 +136,23 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
         method: 'PATCH',
         body: JSON.stringify({ currentPassword, newPassword }),
       });
-      toast.success('Password updated. Please sign in again.');
+      toast.success(copy.settings.passwordUpdated);
       onClose();
       // Backend revokes all refresh tokens on password change — force a fresh login.
       clearTokens();
       window.location.assign(withAppBase('/login'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not change password');
+      toast.error(e instanceof Error ? e.message : copy.settings.passwordChangeFailed);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <ModalShell title="Change password" onClose={onClose}>
+    <ModalShell title={copy.settings.changePassword} onClose={onClose}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">Current password</label>
+          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.currentPassword}</label>
           <input
             type={show ? 'text' : 'password'}
             value={currentPassword}
@@ -163,13 +161,13 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           />
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">New password</label>
+          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.newPassword}</label>
           <div className="relative">
             <input
               type={show ? 'text' : 'password'}
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="At least 8 characters"
+              placeholder={copy.auth.passwordPlaceholderRegister}
               className="w-full h-9 pl-3 pr-9 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
             />
             <button
@@ -182,7 +180,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           </div>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">Confirm new password</label>
+          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.confirmPassword}</label>
           <input
             type={show ? 'text' : 'password'}
             value={confirmPassword}
@@ -197,7 +195,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Update password
+          {copy.settings.updatePassword}
         </button>
       </div>
     </ModalShell>
@@ -221,6 +219,7 @@ function TargetLanguageModal({
   onClose: () => void;
   onSaved: () => Promise<void>;
 }) {
+  const copy = useLearnerCopy();
   const available = languageOptions.filter(
     (l) => l.code !== nativeLanguage && (mode === 'edit' || !usedCodes.includes(l.code)),
   );
@@ -233,7 +232,7 @@ function TargetLanguageModal({
 
   const submit = async () => {
     if (mode === 'add' && targetLanguage === nativeLanguage) {
-      toast.error('Target language cannot be the same as your native language');
+      toast.error(copy.settings.targetSameAsNative);
       return;
     }
     setSaving(true);
@@ -243,35 +242,35 @@ function TargetLanguageModal({
           method: 'POST',
           body: JSON.stringify({ targetLanguage, cefrLevel, isPrimary }),
         });
-        toast.success('Language added');
+        toast.success(copy.settings.languageAdded);
       } else if (existing) {
         await api(`/users/me/target-languages/${existing.targetLanguage}`, {
           method: 'PATCH',
           body: JSON.stringify({ cefrLevel, isPrimary }),
         });
-        toast.success('Language updated');
+        toast.success(copy.settings.languageUpdated);
       }
       await onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not save language');
+      toast.error(e instanceof Error ? e.message : copy.settings.languageSaveFailed);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <ModalShell title={mode === 'add' ? 'Add target language' : 'Edit target language'} onClose={onClose}>
+    <ModalShell title={mode === 'add' ? copy.settings.addTargetLanguage : copy.settings.editTargetLanguage} onClose={onClose}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">Language</label>
+          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.languageLabel}</label>
           {mode === 'add' ? (
             <LanguageSearchInput
               options={available}
               value={targetLanguage ? [targetLanguage] : []}
               onChange={(codes) => setTargetLanguage(codes[0] ?? '')}
               multiple={false}
-              placeholder="Search a language to add..."
+              placeholder={copy.auth.targetLanguagesPlaceholder}
             />
           ) : (
             <div className="h-9 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
@@ -280,7 +279,7 @@ function TargetLanguageModal({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">CEFR level</label>
+          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.cefrLevel}</label>
           <select
             value={cefrLevel}
             onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
@@ -295,7 +294,7 @@ function TargetLanguageModal({
         </div>
         <label className="flex items-center gap-2 text-sm text-[#364153] cursor-pointer">
           <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} className="rounded" />
-          Set as primary target language
+          {copy.settings.setPrimary}
         </label>
         <button
           type="button"
@@ -304,7 +303,7 @@ function TargetLanguageModal({
           className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {mode === 'add' ? 'Add language' : 'Save changes'}
+          {mode === 'add' ? copy.settings.addLanguage : copy.settings.saveLanguage}
         </button>
       </div>
     </ModalShell>
@@ -314,6 +313,13 @@ function TargetLanguageModal({
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
+  const copy = useLearnerCopy();
+
+  const readerThemes = [
+    { value: 'light' as const, label: copy.settings.themeLight, icon: Sun },
+    { value: 'sepia' as const, label: copy.settings.themeSepia, icon: BookOpen },
+    { value: 'dark' as const, label: copy.settings.themeDark, icon: Moon },
+  ];
 
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
@@ -400,9 +406,9 @@ export default function SettingsPage() {
         }),
       ]);
       await refreshProfile();
-      toast.success('Settings saved');
+      toast.success(copy.settings.saved);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
     } finally {
       setSaving(false);
     }
@@ -421,16 +427,16 @@ export default function SettingsPage() {
 
   const handleRemoveLanguage = async (lang: string) => {
     if (visibleTargetLanguages.length <= 1) {
-      toast.error('You must keep at least one target language');
+      toast.error(copy.settings.keepOneTarget);
       return;
     }
     setLangBusy(lang);
     try {
       await api(`/users/me/target-languages/${lang}`, { method: 'DELETE' });
       await refreshProfile();
-      toast.success('Language removed');
+      toast.success(copy.settings.languageRemoved);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Could not remove language');
+      toast.error(e instanceof Error ? e.message : copy.settings.languageRemoveFailed);
     } finally {
       setLangBusy(null);
     }
@@ -452,8 +458,8 @@ export default function SettingsPage() {
       )}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">Settings</h1>
-          <p className="text-[#99a1af] text-sm mt-0.5">Manage your account and learning preferences.</p>
+          <h1 className="text-2xl font-bold text-gray-900">{copy.settings.title}</h1>
+          <p className="text-[#99a1af] text-sm mt-0.5">{copy.settings.subtitle}</p>
         </div>
         <button
           type="button"
@@ -462,16 +468,16 @@ export default function SettingsPage() {
           className="h-9 px-4 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Save changes
+          {copy.common.saveChanges}
         </button>
       </div>
 
-      <Section title="Account">
-        <Row label="Photo" description="Used on Home, Profile, and chat. JPG, PNG, or WebP up to 2 MB.">
+      <Section title={copy.settings.account}>
+        <Row label={copy.settings.photo} description={copy.settings.photoHint}>
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
             <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
-              {avatarBusy ? 'Uploading…' : 'Change photo'}
+              {avatarBusy ? copy.settings.uploading : copy.settings.changePhoto}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
@@ -483,24 +489,24 @@ export default function SettingsPage() {
                   if (!file) return;
                   setAvatarBusy(true);
                   void uploadAvatar(file)
-                    .then(() => toast.success('Photo updated'))
-                    .catch((err) => toast.error(err instanceof Error ? err.message : 'Upload failed'))
+                    .then(() => toast.success(copy.settings.photoUpdated))
+                    .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.uploadFailed))
                     .finally(() => setAvatarBusy(false));
                 }}
               />
             </label>
           </div>
         </Row>
-        <Row label="Display name" description="Shown on your profile and leaderboard">
+        <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
           <input
             type="text"
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            placeholder="Your name"
+            placeholder={copy.settings.displayNamePlaceholder}
             className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
           />
         </Row>
-        <Row label="Native language" description="Used for translations and lookups">
+        <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
           <select
             value={nativeLanguage}
             onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
@@ -513,7 +519,7 @@ export default function SettingsPage() {
             ))}
           </select>
         </Row>
-        <Row label="App language" description="Interface language on web and mobile. Same account value.">
+        <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
           <select
             value={uiLanguage}
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
@@ -526,29 +532,29 @@ export default function SettingsPage() {
             ))}
           </select>
         </Row>
-        <Row label="Email" description="Used for login and notifications">
+        <Row label={copy.settings.email} description={copy.settings.emailHint}>
           <div className="flex items-center gap-2 min-w-0 max-w-full">
             <span className="text-sm text-[#6a7282] truncate">{user?.email}</span>
-            <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">Verified</span>
+            <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">{copy.common.verified}</span>
           </div>
         </Row>
-        <Row label="Password">
+        <Row label={copy.settings.password}>
           <button
             type="button"
             onClick={() => setPwModalOpen(true)}
             className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 w-full sm:w-auto"
           >
-            Change password
+            {copy.settings.changePassword}
           </button>
         </Row>
       </Section>
 
-      <Section title="Target Languages">
+      <Section title={copy.settings.targetLanguages}>
         {visibleTargetLanguages.length === 0 ? (
           <div className="px-5 py-6 text-center text-sm text-gray-400">
             {targetLanguages.some((tl) => tl.targetLanguage === nativeLanguage)
-              ? 'Your native language cannot be a target. Save settings or add a language to learn.'
-              : 'No target languages set yet.'}
+              ? copy.settings.nativeCannotBeTarget
+              : copy.settings.noTargetLanguages}
           </div>
         ) : (
           visibleTargetLanguages.map((tl) => {
@@ -559,12 +565,12 @@ export default function SettingsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? languageLabel(tl.targetLanguage)}</div>
                   <div className="text-xs text-[#99a1af] mt-0.5">
-                    Level: {tl.cefrLevel.toUpperCase()}
-                    {tl.placementScore != null ? ` · Score: ${tl.placementScore}/100` : ''}
+                    {copy.common.level(tl.cefrLevel)}
+                    {tl.placementScore != null ? ` · ${copy.common.score(tl.placementScore)}` : ''}
                   </div>
                 </div>
                 {tl.isPrimary && (
-                  <span className="text-[11px] font-semibold text-[#7008e7] bg-[#ede9fe] rounded-full px-2 py-0.5 shrink-0">Primary</span>
+                  <span className="text-[11px] font-semibold text-[#7008e7] bg-[#ede9fe] rounded-full px-2 py-0.5 shrink-0">{copy.common.primary}</span>
                 )}
                 {visibleTargetLanguages.length > 1 && (
                   <button
@@ -572,7 +578,7 @@ export default function SettingsPage() {
                     disabled={langBusy === tl.targetLanguage}
                     onClick={() => void handleRemoveLanguage(tl.targetLanguage)}
                     className="p-1.5 rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
-                    title="Remove language"
+                    title={copy.settings.removeLanguage}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -594,14 +600,14 @@ export default function SettingsPage() {
             onClick={() => setLangModal({ mode: 'add' })}
             className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[14px] border border-black/10 bg-white text-xs font-medium text-[#0a0a0a] hover:bg-gray-50"
           >
-            <Plus className="w-4 h-4" />Add language
+            <Plus className="w-4 h-4" />{copy.settings.addLanguage}
           </button>
         </div>
       </Section>
 
-      <Section title="Reading Preferences">
+      <Section title={copy.settings.readingPreferences}>
         <div className="px-5 py-4">
-          <div className="text-[11px] font-semibold text-[#99a1af] uppercase tracking-[0.6px] mb-3">Preview</div>
+          <div className="text-[11px] font-semibold text-[#99a1af] uppercase tracking-[0.6px] mb-3">{copy.settings.preview}</div>
           <div
             className="font-serif text-[#1e2939] bg-white rounded-[14px] p-4"
             style={{ fontSize: `${14 * fontScale}px`, lineHeight: lineSpacing }}
@@ -612,19 +618,19 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <Row label="Font size" description={`${Math.round(fontScale * 100)}% — base size`}>
+        <Row label={copy.settings.fontSize} description={copy.settings.fontSizeHint(Math.round(fontScale * 100))}>
           <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
             <span className="text-xs text-[#99a1af] shrink-0">A</span>
             <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={setFontScale} />
             <span className="text-sm font-semibold text-[#0a0a0a] shrink-0">A</span>
           </div>
         </Row>
-        <Row label="Line spacing" description={`${lineSpacing.toFixed(1)}× line height`}>
+        <Row label={copy.settings.lineSpacing} description={copy.settings.lineSpacingHint(lineSpacing.toFixed(1))}>
           <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={setLineSpacing} />
         </Row>
-        <Row label="Reader theme">
+        <Row label={copy.settings.readerTheme}>
           <div className="flex flex-wrap gap-2">
-            {READER_THEMES.map((t) => (
+            {readerThemes.map((t) => (
               <button
                 key={t.value}
                 type="button"
@@ -640,27 +646,27 @@ export default function SettingsPage() {
             ))}
           </div>
         </Row>
-        <Row label="Show known words" description="When off, known words show without any highlight">
+        <Row label={copy.settings.showKnownWords} description={copy.settings.showKnownWordsHint}>
           <Toggle checked={showKnownWords} onChange={setShowKnownWords} />
         </Row>
-        <Row label="Text-to-speech" description="Read text aloud while you follow along">
+        <Row label={copy.settings.tts} description={copy.settings.ttsHint}>
           <Toggle checked={ttsEnabled} onChange={setTtsEnabled} />
         </Row>
       </Section>
 
-      <Section title="Learning Goals">
+      <Section title={copy.settings.learningGoals}>
         <Row
-          label="Email notifications"
-          description="Get an email for new messages, plus reminders before your streak breaks"
+          label={copy.settings.emailNotifications}
+          description={copy.settings.emailNotificationsHint}
         >
           <Toggle checked={notificationsEnabled} onChange={setNotificationsEnabled} />
         </Row>
       </Section>
 
-      <Section title="Usage & Imports">
+      <Section title={copy.settings.usageImports}>
         <div className="p-4 sm:p-5 min-w-0">
           {subLoading ? (
-            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">Loading usage…</div>
+            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">{copy.settings.loadingUsage}</div>
           ) : (
             <>
               {/* GOTCHA has no recurring subscription — every account gets a free daily/monthly
@@ -673,23 +679,31 @@ export default function SettingsPage() {
                 <div className="rounded-[14px] text-white min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[#ddd6ff]">Free allowance</div>
-                      <div className="text-xl sm:text-2xl font-bold mt-1">Pay per import</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[#ddd6ff]">{copy.settings.freeAllowance}</div>
+                      <div className="text-xl sm:text-2xl font-bold mt-1">{copy.settings.payPerImport}</div>
                     </div>
                     <Zap className="w-6 h-6 text-white shrink-0" />
                   </div>
                   <div className="space-y-1.5 py-4">
                     {[
-                      `AI lookups: ${lookupsToday}/${quota === 0 || quota >= 1_000_000 ? '∞' : quota} today`,
+                      copy.settings.aiLookupsLine(lookupsToday, quota === 0 || quota >= 1_000_000 ? '∞' : String(quota)),
                       importAllowance
-                        ? `${importAllowance.dailyFreeRemaining} of ${importAllowance.dailyFreeImportsPerUser} free imports left today`
+                        ? copy.settings.freeImportsLine(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                         : plan?.importLimit && plan.importLimit < 1_000_000
-                          ? `Up to ${plan.importLimit} free imports per day`
-                          : 'Free import allowance from admin Import & Pricing',
+                          ? copy.settings.importLimitLine(plan.importLimit)
+                          : null,
                       importAllowance
-                        ? `${importAllowance.monthlyPagesRemaining} of ${importAllowance.monthlyFreePageLimit} free pages left ${importAllowance.resetCycle === 'daily' ? 'today' : importAllowance.resetCycle === 'yearly' ? 'this year' : 'this month'}`
+                        ? copy.settings.freePagesLine(
+                            importAllowance.monthlyPagesRemaining,
+                            importAllowance.monthlyFreePageLimit,
+                            importAllowance.resetCycle === 'daily'
+                              ? copy.billing.today
+                              : importAllowance.resetCycle === 'yearly'
+                                ? copy.billing.thisYear
+                                : copy.billing.thisMonth,
+                          )
                         : null,
-                      'Access to the public library',
+                      copy.settings.publicLibraryAccess,
                     ].filter(Boolean).map((f) => (
                       <div key={f as string} className="flex items-start gap-2 text-sm">
                         <Check className="w-3.5 h-3.5 shrink-0 text-[#ddd6ff] mt-0.5" />
@@ -702,7 +716,7 @@ export default function SettingsPage() {
                     onClick={() => navigate('/app/import')}
                     className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
                   >
-                    <Zap className="w-4 h-4 shrink-0" />Import more content
+                    <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
                   </button>
                 </div>
               </div>
@@ -710,7 +724,7 @@ export default function SettingsPage() {
               <div className="pt-4 space-y-3">
                 <div>
                   <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                    <span>AI lookups today</span>
+                    <span>{copy.settings.aiLookupsToday}</span>
                     <span>{lookupsToday}/{quota === 0 || quota >= 1_000_000 ? '∞' : quota}</span>
                   </div>
                   <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
@@ -720,7 +734,7 @@ export default function SettingsPage() {
                 {importAllowance ? (
                   <div>
                     <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                      <span>Free imports today</span>
+                      <span>{copy.settings.freeImportsToday}</span>
                       <span>{importAllowance.dailyFreeUsed}/{importAllowance.dailyFreeImportsPerUser}</span>
                     </div>
                     <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
@@ -747,7 +761,7 @@ export default function SettingsPage() {
         <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
           <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
           <span className="min-w-0 truncate">
-            Signed in as{' '}
+            {copy.settings.signedInAs}{' '}
             <span className="font-medium text-gray-600">
               {user?.displayName ?? user?.email}
             </span>
@@ -759,7 +773,7 @@ export default function SettingsPage() {
           className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2 w-full sm:w-auto shrink-0"
         >
           <LogOut className="w-4 h-4" />
-          Sign out
+          {copy.settings.signOut}
         </Button>
       </div>
     </div>

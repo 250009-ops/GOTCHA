@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
 type LearnerNotification = {
   id: string;
@@ -31,17 +32,21 @@ type Inbox = {
 const filters = ['all', 'unread', 'library', 'system'] as const;
 type Filter = (typeof filters)[number];
 
-function relativeTime(iso?: string) {
+function relativeTime(
+  iso: string | undefined,
+  np: ReturnType<typeof useLearnerCopy>['notificationsPage'],
+  ce: ReturnType<typeof useLearnerCopy>['commonExt'],
+) {
   if (!iso) return '';
   const ms = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'just now';
-  if (mins < 60) return `${mins}m ago`;
+  if (mins < 1) return np.justNow;
+  if (mins < 60) return np.minutesAgo(mins);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
+  if (hours < 24) return np.hoursAgo(hours);
   const days = Math.floor(hours / 24);
-  if (days === 1) return 'Yesterday';
-  return `${days}d ago`;
+  if (days === 1) return ce.yesterday;
+  return np.daysAgo(days);
 }
 
 function visual(kind: string) {
@@ -90,6 +95,8 @@ export function notificationHref(href?: string | null) {
 
 export default function NotificationsPage() {
   const navigate = useNavigate();
+  const copy = useLearnerCopy();
+  const np = copy.notificationsPage;
   const [inbox, setInbox] = useState<Inbox>({ items: [], unreadCount: 0 });
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<Filter>('all');
@@ -136,8 +143,8 @@ export default function NotificationsPage() {
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 lg:py-8 space-y-5">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Notifications</h1>
-          <p className="text-sm text-gray-500 mt-0.5">New books, messages, and learning reminders</p>
+          <h1 className="text-2xl font-bold text-gray-900">{copy.notifications.title}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{copy.notifications.subtitle}</p>
         </div>
         <button
           type="button"
@@ -145,7 +152,7 @@ export default function NotificationsPage() {
           onClick={() => void markAll()}
           className="text-sm font-semibold text-[#7f22fe] disabled:text-gray-400"
         >
-          {inbox.unreadCount > 0 ? 'Mark all as read' : 'All caught up'}
+          {inbox.unreadCount > 0 ? copy.notifications.markAllRead : copy.notifications.emptyDescription}
         </button>
       </div>
 
@@ -160,7 +167,13 @@ export default function NotificationsPage() {
                   ? inbox.items.filter((i) => i.kind === 'content').length
                   : inbox.items.filter((i) => i.kind === 'system').length;
           const label =
-            key === 'all' ? `All (${count})` : key === 'unread' ? `Unread (${count})` : key === 'library' ? `Library (${count})` : `System (${count})`;
+            key === 'all'
+              ? np.filterAll(count)
+              : key === 'unread'
+                ? np.filterUnread(count)
+                : key === 'library'
+                  ? np.filterLibrary(count)
+                  : np.filterSystem(count);
           return (
             <button
               key={key}
@@ -189,9 +202,13 @@ export default function NotificationsPage() {
         <div className="bg-white border border-gray-100 rounded-2xl px-6 py-16 text-center">
           <Bell className="w-8 h-8 text-gray-300 mx-auto mb-3" />
           <div className="font-semibold text-gray-900">
-            {filter === 'unread' ? 'No unread notifications' : filter === 'library' ? 'No new library alerts' : "You're all caught up"}
+            {filter === 'unread'
+              ? np.emptyUnread
+              : filter === 'library'
+                ? np.emptyLibrary
+                : copy.notifications.emptyDescription}
           </div>
-          <p className="text-sm text-gray-500 mt-1">New catalog books will show up here when they are published.</p>
+          <p className="text-sm text-gray-500 mt-1">{np.catalogHint}</p>
         </div>
       ) : (
         <div className="space-y-3">
@@ -218,7 +235,7 @@ export default function NotificationsPage() {
                     <div className={cn('text-sm truncate', item.unread ? 'font-bold text-gray-900' : 'font-semibold text-gray-800')}>
                       {item.title}
                     </div>
-                    <div className="text-[11px] text-gray-400 shrink-0">{relativeTime(item.createdAt)}</div>
+                    <div className="text-[11px] text-gray-400 shrink-0">{relativeTime(item.createdAt, np, copy.commonExt)}</div>
                   </div>
                   <p className="text-sm text-gray-500 mt-1 line-clamp-2">{item.body}</p>
                 </div>

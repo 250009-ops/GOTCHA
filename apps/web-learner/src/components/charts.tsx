@@ -297,23 +297,42 @@ const HEATMAP_LEVELS = [
   'bg-[#7008e7]',
 ];
 
-function heatmapLevel(count: number, max: number) {
+function heatmapLevelAbsolute(count: number) {
   if (count <= 0) return 0;
-  if (max <= 0) return 1;
-  const pct = count / max;
-  if (pct > 0.75) return 4;
-  if (pct > 0.5) return 3;
-  if (pct > 0.25) return 2;
-  return 1;
+  if (count === 1) return 1;
+  if (count === 2) return 2;
+  if (count === 3) return 3;
+  return 4;
 }
 
-export function HeatmapCalendar({ data }: { data: { date: string; count: number }[] }) {
-  const [hover, setHover] = useState<{ date: string; count: number; x: number; y: number } | null>(null);
+function heatmapActivityLabel(
+  count: number,
+  finished = 0,
+  labels: { noBooksRead: string; booksRead: (n: number) => string; booksReadFinished: (c: number, f: number) => string },
+) {
+  if (count <= 0) return labels.noBooksRead;
+  if (finished > 0) return labels.booksReadFinished(count, finished);
+  return labels.booksRead(count);
+}
 
-  const { weeks, max, monthLabels } = useMemo(() => {
-    const weeks: { date: string; count: number }[][] = [];
+export function HeatmapCalendar({
+  data,
+  labels,
+}: {
+  data: { date: string; count: number; finished?: number }[];
+  labels?: { noBooksRead: string; booksRead: (n: number) => string; booksReadFinished: (c: number, f: number) => string };
+}) {
+  const activityLabels = labels ?? {
+    noBooksRead: 'No books read',
+    booksRead: (count: number) => `${count} book${count === 1 ? '' : 's'} read`,
+    booksReadFinished: (count: number, finished: number) =>
+      `${count} book${count === 1 ? '' : 's'} read · ${finished} finished`,
+  };
+  const [hover, setHover] = useState<{ date: string; count: number; finished: number; x: number; y: number } | null>(null);
+
+  const { weeks, monthLabels } = useMemo(() => {
+    const weeks: { date: string; count: number; finished?: number }[][] = [];
     for (let i = 0; i < data.length; i += 7) weeks.push(data.slice(i, i + 7));
-    const max = Math.max(...data.map((d) => d.count), 0);
     const monthLabels: { week: number; label: string }[] = [];
     let lastMonth = -1;
     weeks.forEach((week, wi) => {
@@ -328,7 +347,7 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
         lastMonth = month;
       }
     });
-    return { weeks, max, monthLabels };
+    return { weeks, monthLabels };
   }, [data]);
 
   if (!data.length) {
@@ -358,12 +377,13 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
             {weeks.map((week, wi) => (
               <div key={wi} className="flex flex-col gap-[3px] shrink-0">
                 {week.map((d) => {
-                  const level = heatmapLevel(d.count, max || 1);
+                  const level = heatmapLevelAbsolute(d.count);
+                  const finished = d.finished ?? 0;
                   return (
                     <button
                       key={d.date}
                       type="button"
-                      aria-label={`${formatShortDate(d.date)}: ${d.count} session${d.count === 1 ? '' : 's'}`}
+                      aria-label={`${formatShortDate(d.date)}: ${heatmapActivityLabel(d.count, finished, activityLabels)}`}
                       className={cn(
                         'h-3 w-3 rounded-[5px] transition-transform duration-150 hover:scale-125 hover:ring-2 hover:ring-[#8e51ff]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8e51ff]',
                         HEATMAP_LEVELS[level],
@@ -374,6 +394,7 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
                         setHover({
                           date: d.date,
                           count: d.count,
+                          finished,
                           x: rect.left - (parent?.left ?? 0) + rect.width / 2,
                           y: rect.top - (parent?.top ?? 0),
                         });
@@ -385,6 +406,7 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
                         setHover({
                           date: d.date,
                           count: d.count,
+                          finished,
                           x: rect.left - (parent?.left ?? 0) + rect.width / 2,
                           y: rect.top - (parent?.top ?? 0),
                         });
@@ -406,17 +428,17 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
         >
           <div className="text-[11px] font-medium text-[#99a1af]">{formatShortDate(hover.date)}</div>
           <div className="text-xs font-semibold text-gray-900">
-            {hover.count} session{hover.count === 1 ? '' : 's'}
+            {heatmapActivityLabel(hover.count, hover.finished, activityLabels)}
           </div>
         </div>
       ) : null}
 
       <div className="flex items-center justify-end gap-1.5 text-[11px] text-[#99a1af]">
-        <span>Less</span>
+        <span>Fewer books</span>
         {HEATMAP_LEVELS.map((c) => (
           <div key={c} className={cn('h-2.5 w-2.5 rounded-[5px]', c)} />
         ))}
-        <span>More</span>
+        <span>More books/day</span>
       </div>
     </div>
   );

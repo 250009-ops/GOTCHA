@@ -42,8 +42,9 @@ export function isWebLocale(code?: string | null): code is WebLocale {
 }
 
 export function marketingLocaleFor(detected: WebLocale): MarketingLocale {
-  if (detected === 'ru' || detected === 'uz') return detected;
-  return 'en';
+  if (detected === 'ru') return 'ru';
+  if (detected === 'en') return 'en';
+  return 'uz';
 }
 
 /** gotcha.uz and other Uzbekistan domains default to Uzbek. */
@@ -67,10 +68,23 @@ export function resolveWebLocale(candidates?: (string | null | undefined)[]): We
     const hinted = REGION_HINTS[region];
     if (hinted) return hinted;
   }
-  return 'en';
+  return 'uz';
 }
 
-/** Detect locale: explicit ?lang= → saved choice → domain → browser languages. */
+/** Browser hint only for Russian/Uzbek — fresh visitors default to Uzbek, not English from browser. */
+function browserRuUzHint(): WebLocale | null {
+  if (typeof navigator === 'undefined') return null;
+  for (const raw of [...(navigator.languages ?? []), navigator.language]) {
+    if (!raw?.trim()) continue;
+    const tag = raw.trim().toLowerCase().replace(/_/g, '-');
+    const primary = tag.split('-')[0] ?? '';
+    if (primary === 'ru' || tag.includes('-ru')) return 'ru';
+    if (primary === 'uz' || tag.includes('-uz')) return 'uz';
+  }
+  return null;
+}
+
+/** Detect locale: explicit ?lang= → saved choice → domain → RU/UZ browser hint → Uzbek default. */
 export function detectWebLocale(searchParams?: URLSearchParams): WebLocale {
   const fromQuery = searchParams?.get('lang')?.trim().toLowerCase();
   if (fromQuery && isWebLocale(fromQuery)) return fromQuery;
@@ -85,10 +99,10 @@ export function detectWebLocale(searchParams?: URLSearchParams): WebLocale {
   const fromDomain = domainDefaultLocale();
   if (fromDomain) return fromDomain;
 
-  if (typeof navigator !== 'undefined') {
-    return resolveWebLocale([...(navigator.languages ?? []), navigator.language]);
-  }
-  return 'en';
+  const fromBrowser = browserRuUzHint();
+  if (fromBrowser) return fromBrowser;
+
+  return 'uz';
 }
 
 export function persistWebLocale(code: WebLocale) {

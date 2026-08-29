@@ -1,24 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { LanguagePicker } from './LanguagePicker';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
 export const AUTH_FEATURES = [
-  {
-    title: 'Read real content',
-    desc: 'Books, articles, and news in the languages you want to learn',
-  },
-  {
-    title: 'Build vocabulary',
-    desc: 'AI-powered word lookup with spaced repetition',
-  },
-  {
-    title: 'Track your progress',
-    desc: 'CEFR level tracking, streaks, and reading stats',
-  },
-  {
-    title: 'Learn in context',
-    desc: 'Words stick when you learn them from real sentences',
-  },
+  { key: 'readRealContent' as const },
+  { key: 'buildVocabulary' as const },
+  { key: 'trackProgress' as const },
+  { key: 'learnInContext' as const },
 ] as const;
 
 type AuthMarketing = {
@@ -121,6 +111,7 @@ export function AuthBrandMark({ light }: { light?: boolean }) {
 }
 
 function MarketingPanel() {
+  const copy = useLearnerCopy();
   const { learnerCount, languageNames, readerInitials } = useAuthMarketing();
   const languageLine = formatLanguageList(languageNames);
 
@@ -135,24 +126,23 @@ function MarketingPanel() {
         className="pointer-events-none absolute left-[260px] top-[420px] size-[260px] rounded-full bg-white/[0.05] blur-[40px]"
       />
 
-      <div className="relative z-10">
+      <div className="relative z-10 flex items-center justify-between gap-3">
         <AuthBrandMark light />
+        <LanguagePicker className="[&_select]:border-white/20 [&_select]:bg-white/10 [&_select]:text-white [&_select]:max-w-[8rem]" />
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col gap-6">
         <div className="flex flex-col gap-3">
           <h1 className="text-[36px] leading-[44px] font-extrabold text-white">
-            Read your way
+            {copy.auth.readYourWay}
             <br />
-            <span className="font-bold">to fluency.</span>
+            <span className="font-bold">{copy.auth.readYourWayBold}</span>
           </h1>
-          <p className="text-[16px] leading-6 text-[#ddd6ff]">
-            The reading-first language app that makes every page a lesson.
-          </p>
+          <p className="text-[16px] leading-6 text-[#ddd6ff]">{copy.auth.authTagline}</p>
         </div>
 
         <div className="flex flex-col gap-3">
-          {AUTH_FEATURES.map((f) => (
+          {copy.auth.authFeatures.map((f, idx) => (
             <div
               key={f.title}
               className="flex items-center gap-3 rounded-[16px] border border-white/10 bg-white/[0.07] p-3.5"
@@ -161,9 +151,7 @@ function MarketingPanel() {
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm leading-5">{f.title}</div>
                 <div className="text-[#c4b4ff] text-[13px] leading-[18px]">
-                  {f.title === 'Read real content' && languageLine
-                    ? `Books, articles, news in ${languageLine}`
-                    : f.desc}
+                  {idx === 0 && languageLine ? copy.auth.booksInLanguages(languageLine) : f.desc}
                 </div>
               </div>
             </div>
@@ -176,9 +164,9 @@ function MarketingPanel() {
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between whitespace-nowrap gap-3">
               <p className="text-white text-[13px] font-semibold">
-                {learnerCount.toLocaleString('en-US')} learners
+                {copy.auth.learnersCount(learnerCount.toLocaleString('en-US'))}
               </p>
-              <p className="text-[#c4b4ff] text-xs">already reading on GOTCHA</p>
+              <p className="text-[#c4b4ff] text-xs">{copy.auth.alreadyReading}</p>
             </div>
             {readerInitials.length > 0 && (
               <div className="flex items-center">
@@ -203,13 +191,20 @@ function MarketingPanel() {
 
 /** Split marketing + form shell used by login, register, and verify-email. */
 export function AuthShell({ children }: { children: ReactNode }) {
+  const copy = useLearnerCopy();
+
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb] overflow-x-hidden">
       <MarketingPanel />
 
       <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
-        <AuthBrandMark light />
-        <p className="text-[#ddd6ff] text-sm leading-5">Read your way to fluency.</p>
+        <div className="flex items-center justify-between gap-3">
+          <AuthBrandMark light />
+          <LanguagePicker className="[&_select]:border-white/20 [&_select]:bg-white/10 [&_select]:text-white" />
+        </div>
+        <p className="text-[#ddd6ff] text-sm leading-5">
+          {copy.auth.readYourWay} {copy.auth.readYourWayBold}
+        </p>
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col items-center justify-center p-4 sm:p-6 min-w-0 bg-[#f9fafb]">
