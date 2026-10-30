@@ -33,3 +33,16 @@ assert.equal(units[1]?.text.split('\n').length, 3);
 assert.equal(units[2]?.kind, 'prose');
 
 console.log('dialogue-layout tests passed');
+
+// UI-24: reflowProse
+{
+  const { reflowProse } = require('./import-text-cleaner') as typeof import('./import-text-cleaner');
+  assert.equal(reflowProse('He spoke Eng-\nlish well.'), 'He spoke English well.');
+  assert.equal(reflowProse('an Anglo-\nSaxon king'), 'an Anglo-\nSaxon king');
+  assert.equal(reflowProse('The night was\ncold and dark.\n\nNext paragraph.'), 'The night was cold and dark.\n\nNext paragraph.');
+  assert.equal(reflowProse('He stopped.\nThen he ran.'), 'He stopped.\nThen he ran.');
+  assert.equal(reflowProse('she said\n— not now'), 'she said\n— not now');
+  const once = reflowProse('a hard-\nworking man\nwent home');
+  assert.equal(once, 'a hardworking man went home');
+  assert.equal(reflowProse(once), once);
+}

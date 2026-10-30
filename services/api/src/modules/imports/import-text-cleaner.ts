@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import { restoreDialogueLayout } from './dialogue-layout';
+import { isDialogueLine, restoreDialogueLayout } from './dialogue-layout';
 
 /** Chrome / chrome-adjacent selectors stripped before article text extraction. */
 const CHROME_SELECTORS = [
@@ -569,4 +569,38 @@ export function preparePastedText(raw: string): string {
     return htmlToCleanText(trimmed);
   }
   return cleanImportPlainText(trimmed);
+}
+
+/**
+ * UI-24: reflow hard-wrapped prose from PDF/OCR/plain-text extraction.
+ * - Joins words hyphenated across a line break: "Eng-\nlish" → "English" (lowercase continuation only,
+ *   so "Anglo-\nSaxon" keeps its hyphen).
+ * - Unwraps a single line break inside a paragraph when the line does not end a sentence and the
+ *   next line continues in lowercase. Blank-line paragraph breaks and dialogue lines are kept.
+ * Idempotent: running it again on reflowed text is a no-op.
+ */
+export function reflowProse(text: string): string {
+  const normalized = text.replace(/\r\n?/g, '\n');
+  return normalized
+    .split(/\n{2,}/)
+    .map((para) => {
+      const lines = para.split('\n');
+      let out = lines[0] ?? '';
+      for (let i = 1; i < lines.length; i++) {
+        const next = lines[i];
+        const nextTrim = next.trimStart();
+        const prevTrim = out.trimEnd();
+        if (/\p{L}-$/u.test(prevTrim) && /^\p{Ll}/u.test(nextTrim)) {
+          out = prevTrim.slice(0, -1) + nextTrim;
+          continue;
+        }
+        const continues =
+          /^\p{Ll}/u.test(nextTrim) &&
+          !/[.!?:;…»"”’)\]]$/u.test(prevTrim) &&
+          !isDialogueLine(nextTrim);
+        out = continues ? `${prevTrim} ${nextTrim}` : `${out}\n${next}`;
+      }
+      return out;
+    })
+    .join('\n\n');
 }

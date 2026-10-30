@@ -1,5 +1,30 @@
 ﻿package app.gotcha.android.ui.auth
 
+import android.content.Context
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.CubicBezierEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import app.gotcha.android.ui.components.AuthFooterLink
+import app.gotcha.android.ui.components.AuthTextLink
+import app.gotcha.android.ui.components.FormErrorBanner
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -74,6 +99,17 @@ import java.io.IOException
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
+private val EMAIL_RE = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]{2,}$")
+
+internal fun String.isValidEmail(): Boolean = EMAIL_RE.matches(trim())
+
+/** Field-level email error (§B #25/#26), or null when valid. */
+private fun emailError(ctx: Context, email: String): String? = when {
+    email.isBlank() -> ctx.getString(R.string.auth_err_email_required)
+    !email.isValidEmail() -> ctx.getString(R.string.auth_err_email_invalid)
+    else -> null
+}
+
 @Composable
 fun SignInScreen(
     onSignedIn: (isAdmin: Boolean) -> Unit,
@@ -81,11 +117,14 @@ fun SignInScreen(
     onForgotPassword: () -> Unit = {},
 ) {
     val container = LocalAppContainer.current
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var emailErr by remember { mutableStateOf<String?>(null) }
     var unverifiedEmail by remember { mutableStateOf<String?>(null) }
 
     if (unverifiedEmail != null) {
@@ -96,89 +135,87 @@ fun SignInScreen(
         return
     }
 
-    AuthScaffold(
-        title = "Welcome back",
-        subtitle = "Sign in to continue learning",
-        footer = {
-            Row {
-                Text(
-                    "Don't have an account? ",
-                    color = GotchaColors.TextPlaceholder,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Medium,
-                    fontSize = 14.sp,
+    val canSubmit = email.isValidEmail() && password.isNotEmpty() && !loading
+    val submit: () -> Unit = submit@{
+        emailErr = emailError(ctx, email)
+        if (emailErr != null || password.isEmpty()) return@submit
+        focusManager.clearFocus()
+        scope.launch {
+            loading = true
+            error = null
+            try {
+                val res = container.authRepository.login(email.trim(), password)
+                onSignedIn(res.isAdmin)
+            } catch (e: Exception) {
+                Log.w(
+                    "GotchaAuth",
+                    "login failed status=${(e as? HttpException)?.code()} code=${e.apiErrorCode()}",
                 )
-                Text(
-                    "Sign up",
-                    color = GotchaColors.BrandPurpleDeep,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable(onClick = onGoSignUp),
-                )
+                if (e.apiErrorCode() == "EMAIL_NOT_VERIFIED") {
+                    unverifiedEmail = e.apiErrorEmail() ?: email.trim()
+                } else {
+                    error = e.toSignInMessage(ctx)
+                }
+            } finally {
+                loading = false
             }
+        }
+    }
+
+    AuthScaffold(
+        title = stringResource(R.string.auth_welcome_back),
+        subtitle = stringResource(R.string.auth_sign_in_sub),
+        footer = {
+            AuthFooterLink(
+                prompt = stringResource(R.string.auth_no_account),
+                action = stringResource(R.string.auth_sign_up_link),
+                onClick = onGoSignUp,
+                enabled = !loading,
+            )
         },
     ) {
+        FormErrorBanner(error, Modifier.padding(bottom = 16.dp))
         GotchaTextField(
-            label = "Email Address",
+            label = stringResource(R.string.auth_email_label),
             value = email,
-            onValueChange = { email = it },
-            placeholder = "sarah@example.com",
+            onValueChange = { email = it; if (emailErr != null) emailErr = null },
+            placeholder = stringResource(R.string.auth_email_placeholder),
             keyboardType = KeyboardType.Email,
+            error = emailErr,
+            enabled = !loading,
+            imeAction = ImeAction.Next,
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+            autofill = ContentType.EmailAddress,
+            onFocusLost = { if (email.isNotBlank()) emailErr = emailError(ctx, email) },
         )
         Spacer(Modifier.height(16.dp))
         GotchaTextField(
-            label = "Password",
+            label = stringResource(R.string.auth_password_label),
             value = password,
             onValueChange = { password = it },
-            placeholder = "Minimum 8 characters",
+            placeholder = stringResource(R.string.auth_password_placeholder_signin),
             isPassword = true,
+            enabled = !loading,
+            imeAction = ImeAction.Done,
+            keyboardActions = KeyboardActions(onDone = { if (canSubmit) submit() }),
+            autofill = ContentType.Password,
+        )
+        Spacer(Modifier.height(4.dp))
+        AuthTextLink(
+            text = stringResource(R.string.auth_forgot_password),
+            onClick = onForgotPassword,
+            enabled = !loading,
+            fontSize = 13.sp,
+            modifier = Modifier.align(Alignment.End),
         )
         Spacer(Modifier.height(8.dp))
-        Text(
-            "Forgot password?",
-            color = GotchaColors.BrandPurpleDeep,
-            fontFamily = Manrope,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 13.sp,
-            modifier = Modifier
-                .align(Alignment.End)
-                .padding(bottom = 4.dp)
-                .clickable(onClick = onForgotPassword),
-        )
-        if (error != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(error!!, color = Color(0xFFDC2626), fontFamily = Manrope, fontSize = 13.sp)
-        }
-        Spacer(Modifier.height(20.dp))
         GotchaPrimaryButton(
-            text = "Sign In",
+            text = stringResource(R.string.auth_sign_in),
             loading = loading,
-            containerColor = GotchaColors.BrandPurpleDeep,
+            enabled = canSubmit,
             shapeRadius = 14,
-            modifier = Modifier.testTag("sign_in_button"),
-            onClick = {
-                scope.launch {
-                    loading = true
-                    error = null
-                    try {
-                        val res = container.authRepository.login(email.trim(), password)
-                        onSignedIn(res.isAdmin)
-                    } catch (e: Exception) {
-                        Log.w(
-                            "GotchaAuth",
-                            "login failed status=${(e as? HttpException)?.code()} code=${e.apiErrorCode()}",
-                        )
-                        if (e.apiErrorCode() == "EMAIL_NOT_VERIFIED") {
-                            unverifiedEmail = e.apiErrorEmail() ?: email.trim()
-                        } else {
-                            error = e.toSignInMessage()
-                        }
-                    } finally {
-                        loading = false
-                    }
-                }
-            },
+            modifier = Modifier.fillMaxWidth().testTag("sign_in_button"),
+            onClick = submit,
         )
     }
 }
@@ -189,12 +226,17 @@ fun SignUpScreen(
     onGoSignIn: () -> Unit,
 ) {
     val container = LocalAppContainer.current
+    val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
     var name by remember { mutableStateOf("") }
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var nameErr by remember { mutableStateOf<String?>(null) }
+    var emailErr by remember { mutableStateOf<String?>(null) }
+    var passwordErr by remember { mutableStateOf<String?>(null) }
 
     // Registration is a 2-step wizard, matching web-learner's AuthPage: credentials first, then
     // native + target language(s). Native starts empty — do not default to English. Target is
@@ -231,17 +273,45 @@ fun SignUpScreen(
         return
     }
 
-    if (step == "languages") {
+    val continueToLanguages: () -> Unit = go@{
+        nameErr = if (name.isBlank()) ctx.getString(R.string.auth_err_name_required) else null
+        emailErr = emailError(ctx, email)
+        passwordErr = when {
+            password.isEmpty() -> ctx.getString(R.string.auth_err_password_required)
+            password.length < 8 -> ctx.getString(R.string.auth_err_password_short)
+            else -> null
+        }
+        if (nameErr != null || emailErr != null || passwordErr != null) return@go
+        focusManager.clearFocus()
+        error = null
+        step = "languages"
+    }
+
+    // §B #37: shared-axis X between the two steps (300 ms, emphasized easing, 30 dp slide + fade).
+    val emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+    val slidePx = with(LocalDensity.current) { 30.dp.roundToPx() }
+    AnimatedContent(
+        targetState = step,
+        transitionSpec = {
+            val dir = if (targetState == "languages") 1 else -1
+            (slideInHorizontally(tween(300, easing = emphasized)) { dir * slidePx } + fadeIn(tween(300, easing = emphasized)))
+                .togetherWith(slideOutHorizontally(tween(300, easing = emphasized)) { -dir * slidePx } + fadeOut(tween(150)))
+        },
+        label = "signup-step",
+    ) { current ->
+    if (current == "languages") {
         AuthScaffold(
-            title = "What do you want to learn?",
-            subtitle = "Search and add the language you want to learn. You can add more later in Settings.",
+            title = stringResource(R.string.auth_learn_title),
+            subtitle = stringResource(R.string.auth_learn_sub),
+            caption = stringResource(R.string.auth_step_of, 2, 2),
             footer = {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GotchaPrimaryButton(
-                        text = "Back",
-                        containerColor = Color(0xFFF2F4F7),
+                        text = stringResource(R.string.auth_back),
+                        containerColor = GotchaColors.SurfaceMuted,
                         contentColor = GotchaColors.BrandNavy,
                         shapeRadius = 14,
+                        enabled = !loading,
                         modifier = Modifier.weight(1f),
                         onClick = {
                             error = null
@@ -250,20 +320,19 @@ fun SignUpScreen(
                         },
                     )
                     GotchaPrimaryButton(
-                        text = "Sign up",
+                        text = stringResource(R.string.auth_sign_up_link),
                         loading = loading,
                         enabled = nativeLanguage != null && targetLanguages.isNotEmpty(),
-                        containerColor = GotchaColors.BrandPurpleDeep,
                         shapeRadius = 14,
                         modifier = Modifier.weight(1f),
                         onClick = {
                             val native = nativeLanguage
                             if (native.isNullOrBlank()) {
-                                error = "Pick your native language"
+                                error = ctx.getString(R.string.auth_err_pick_native)
                                 return@GotchaPrimaryButton
                             }
                             if (targetLanguages.isEmpty()) {
-                                error = "Pick at least one language to learn"
+                                error = ctx.getString(R.string.auth_err_pick_learning)
                                 return@GotchaPrimaryButton
                             }
                             scope.launch {
@@ -279,8 +348,8 @@ fun SignUpScreen(
                                         nativeLanguage = native,
                                         targetLanguages = targetLanguages.toList(),
                                     )
-                                if (res.requiresEmailVerification || (res.accessToken.isNullOrBlank() && !res.email.isNullOrBlank())) {
-                                    pendingVerificationEmail = res.email ?: email.trim()
+                                    if (res.requiresEmailVerification || (res.accessToken.isNullOrBlank() && !res.email.isNullOrBlank())) {
+                                        pendingVerificationEmail = res.email ?: email.trim()
                                     } else if (res.isAdmin || res.user != null) {
                                         onSignedUp(res.isAdmin)
                                     } else {
@@ -291,9 +360,13 @@ fun SignUpScreen(
                                         "EMAIL_EXISTS_UNVERIFIED" -> pendingVerificationEmail = e.apiErrorEmail() ?: email.trim()
                                         "EMAIL_ALREADY_REGISTERED" -> {
                                             accountAlreadyExists = true
-                                            error = e.apiErrorMessage("Account already exists")
+                                            error = ctx.getString(R.string.auth_err_account_exists)
                                         }
-                                        else -> error = e.apiErrorMessage("Registration failed")
+                                        else -> error = if (e is IOException) {
+                                            ctx.getString(R.string.auth_err_network)
+                                        } else {
+                                            e.apiErrorMessage(ctx.getString(R.string.auth_err_registration_failed))
+                                        }
                                     }
                                 } finally {
                                     loading = false
@@ -304,8 +377,17 @@ fun SignUpScreen(
                 }
             },
         ) {
+            FormErrorBanner(error, Modifier.padding(bottom = if (accountAlreadyExists) 4.dp else 16.dp))
+            if (error != null && accountAlreadyExists) {
+                AuthTextLink(
+                    text = stringResource(R.string.auth_sign_in_instead),
+                    onClick = onGoSignIn,
+                    fontSize = 13.sp,
+                )
+                Spacer(Modifier.height(8.dp))
+            }
             Text(
-                "Your native language",
+                stringResource(R.string.auth_native_language),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -321,11 +403,11 @@ fun SignUpScreen(
                 },
                 onRemove = { nativeLanguage = null },
                 multiple = false,
-                placeholder = "Search your native language...",
+                placeholder = stringResource(R.string.auth_search_native),
             )
             Spacer(Modifier.height(20.dp))
             Text(
-                "Languages you want to learn (search and add at least one)",
+                stringResource(R.string.auth_learn_label),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
@@ -339,93 +421,77 @@ fun SignUpScreen(
                 onAdd = { targetLanguages = targetLanguages + it },
                 onRemove = { targetLanguages = targetLanguages - it },
                 multiple = true,
-                placeholder = "Search a language to add...",
+                placeholder = stringResource(R.string.auth_search_learn),
             )
-            if (error != null) {
-                Spacer(Modifier.height(12.dp))
-                Text(error!!, color = Color(0xFFDC2626), fontFamily = Manrope, fontSize = 13.sp)
-                if (accountAlreadyExists) {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Sign in instead",
-                        color = GotchaColors.BrandPurpleDeep,
-                        fontFamily = Manrope,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp,
-                        modifier = Modifier.clickable(onClick = onGoSignIn),
-                    )
-                }
-            }
         }
-        return
-    }
-
+    } else {
     AuthScaffold(
-        title = "Create your account",
-        subtitle = "Start your reading journey today",
+        title = stringResource(R.string.auth_create_account),
+        subtitle = stringResource(R.string.auth_sign_up_sub),
+        caption = stringResource(R.string.auth_step_of, 1, 2),
         footer = {
-            Row {
-                Text("Already have an account? ", color = GotchaColors.TextPlaceholder, fontSize = 14.sp)
-                Text(
-                    "Sign in",
-                    color = GotchaColors.BrandPurpleDeep,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable(onClick = onGoSignIn),
-                )
-            }
+            AuthFooterLink(
+                prompt = stringResource(R.string.auth_have_account),
+                action = stringResource(R.string.auth_sign_in_link),
+                onClick = onGoSignIn,
+                enabled = !loading,
+            )
         },
     ) {
         GotchaTextField(
-            label = "Full Name",
+            label = stringResource(R.string.auth_name_label),
             value = name,
-            onValueChange = { name = it },
-            placeholder = "e.g. Sarah Connor",
+            onValueChange = { name = it; if (nameErr != null) nameErr = null },
+            placeholder = stringResource(R.string.auth_name_placeholder),
+            error = nameErr,
+            imeAction = ImeAction.Next,
+            capitalization = KeyboardCapitalization.Words,
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+            autofill = ContentType.PersonFullName,
         )
         Spacer(Modifier.height(16.dp))
         GotchaTextField(
-            label = "Email Address",
+            label = stringResource(R.string.auth_email_label),
             value = email,
-            onValueChange = { email = it },
-            placeholder = "sarah@example.com",
+            onValueChange = { email = it; if (emailErr != null) emailErr = null },
+            placeholder = stringResource(R.string.auth_email_placeholder),
             keyboardType = KeyboardType.Email,
+            error = emailErr,
+            imeAction = ImeAction.Next,
+            keyboardActions = KeyboardActions(onNext = { focusManager.moveFocus(FocusDirection.Down) }),
+            autofill = ContentType.EmailAddress,
+            onFocusLost = { if (email.isNotBlank()) emailErr = emailError(ctx, email) },
         )
         Spacer(Modifier.height(16.dp))
         GotchaTextField(
-            label = "Password",
+            label = stringResource(R.string.auth_password_label),
             value = password,
-            onValueChange = { password = it },
-            placeholder = "Minimum 8 characters",
+            onValueChange = { password = it; if (passwordErr != null) passwordErr = null },
+            placeholder = stringResource(R.string.auth_password_placeholder_new),
             isPassword = true,
+            error = passwordErr,
+            imeAction = ImeAction.Next,
+            keyboardActions = KeyboardActions(onNext = { continueToLanguages() }),
+            autofill = ContentType.NewPassword,
         )
-        if (error != null) {
-            Spacer(Modifier.height(12.dp))
-            Text(error!!, color = Color(0xFFDC2626), fontSize = 13.sp)
-        }
         Spacer(Modifier.height(20.dp))
         GotchaPrimaryButton(
-            text = "Continue",
-            containerColor = GotchaColors.BrandPurpleDeep,
+            text = stringResource(R.string.auth_continue),
+            enabled = name.isNotBlank() && email.isNotBlank() && password.isNotEmpty(),
             shapeRadius = 14,
-            onClick = {
-                if (name.isBlank() || email.isBlank() || password.isBlank()) {
-                    error = "Please fill in all fields"
-                    return@GotchaPrimaryButton
-                }
-                if (password.length < 8) {
-                    error = "Password must be at least 8 characters"
-                    return@GotchaPrimaryButton
-                }
-                error = null
-                step = "languages"
-            },
+            modifier = Modifier.fillMaxWidth(),
+            onClick = continueToLanguages,
         )
     }
+    }
+    }
 }
+
 
 /** Figma 41:847 — request a password-reset email; the actual reset happens via the emailed link. */
 @Composable
 fun ForgotPasswordScreen(onBack: () -> Unit) {
+    val ctx = LocalContext.current
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var email by remember { mutableStateOf("") }
@@ -433,14 +499,14 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
     var error by remember { mutableStateOf<String?>(null) }
     var sent by remember { mutableStateOf(false) }
 
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
 
     if (sent) {
         val context = LocalContext.current
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp),
@@ -450,7 +516,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             EmailPendingIcon()
             Spacer(Modifier.height(20.dp))
             Text(
-                "Check your inbox",
+                stringResource(R.string.auth_check_inbox),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 22.sp,
@@ -459,7 +525,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "If an account exists for $email, we sent a link to reset your password. Tap the link in your email to open GOTCHA and choose a new password.",
+                stringResource(R.string.auth_reset_sent, email),
                 fontFamily = Manrope,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
@@ -467,15 +533,15 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(28.dp))
             GotchaPrimaryButton(
-                text = "Open Email App",
-                containerColor = GotchaColors.BrandPurpleDeep,
+                text = stringResource(R.string.auth_open_email),
+                containerColor = GotchaColors.BrandPurple,
                 shapeRadius = 14,
                 onClick = { openEmailApp(context) },
             )
             Spacer(Modifier.height(12.dp))
             GotchaPrimaryButton(
-                text = "Back to Sign In",
-                containerColor = Color(0xFFF2F4F7),
+                text = stringResource(R.string.auth_back_to_sign_in),
+                containerColor = GotchaColors.SurfaceMuted,
                 contentColor = GotchaColors.BrandNavy,
                 shapeRadius = 14,
                 onClick = onBack,
@@ -487,7 +553,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -496,8 +562,8 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
     ) {
         Spacer(Modifier.height(16.dp))
         Text(
-            "Back",
-            color = GotchaColors.BrandPurpleDeep,
+            stringResource(R.string.auth_back),
+            color = GotchaColors.BrandPurple,
             fontFamily = Manrope,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
@@ -508,7 +574,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             BrandMark(size = 56)
             Spacer(Modifier.height(16.dp))
             Text(
-                "Forgot password?",
+                stringResource(R.string.auth_forgot_password),
                 color = GotchaColors.BrandNavy,
                 fontFamily = Manrope,
                 fontWeight = FontWeight.ExtraBold,
@@ -517,7 +583,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                "Enter your email and we'll send you a link to reset your password.",
+                stringResource(R.string.auth_forgot_sub),
                 color = GotchaColors.TextPlaceholder,
                 fontFamily = Manrope,
                 fontSize = 14.sp,
@@ -526,7 +592,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(28.dp))
         GotchaTextField(
-            label = "Email Address",
+            label = stringResource(R.string.auth_email_label),
             value = email,
             onValueChange = { email = it },
             placeholder = "sarah@example.com",
@@ -534,17 +600,17 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
         )
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error!!, color = Color(0xFFDC2626), fontFamily = Manrope, fontSize = 13.sp)
+            Text(error!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
         }
         Spacer(Modifier.height(20.dp))
         GotchaPrimaryButton(
-            text = "Send Reset Link",
+            text = stringResource(R.string.auth_send_reset_link),
             loading = loading,
-            containerColor = GotchaColors.BrandPurpleDeep,
+            containerColor = GotchaColors.BrandPurple,
             shapeRadius = 14,
             onClick = {
                 if (email.isBlank()) {
-                    error = "Enter your email address"
+                    error = ctx.getString(R.string.auth_err_email_required)
                     return@GotchaPrimaryButton
                 }
                 scope.launch {
@@ -554,7 +620,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
                         container.authRepository.forgotPassword(email.trim())
                         sent = true
                     } catch (e: Exception) {
-                        error = e.apiErrorMessage("Could not send reset link")
+                        error = e.apiErrorMessage(ctx.getString(R.string.auth_reset_failed_send))
                     } finally {
                         loading = false
                     }
@@ -570,6 +636,7 @@ fun VerifyEmailFromLinkScreen(
     token: String,
     onDone: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     val container = LocalAppContainer.current
     var phase by remember { mutableStateOf(if (token.isBlank()) "error" else "verifying") }
     var message by remember { mutableStateOf<String?>(null) }
@@ -578,7 +645,7 @@ fun VerifyEmailFromLinkScreen(
     LaunchedEffect(token) {
         if (token.isBlank()) {
             phase = "error"
-            message = "This verification link is missing or incomplete."
+            message = ctx.getString(R.string.auth_link_missing)
             return@LaunchedEffect
         }
         try {
@@ -588,15 +655,15 @@ fun VerifyEmailFromLinkScreen(
             phase = "success"
         } catch (e: Exception) {
             phase = "error"
-            message = e.apiErrorMessage("Invalid or expired verification link")
+            message = e.apiErrorMessage(ctx.getString(R.string.auth_link_invalid))
         }
     }
 
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .statusBarsPadding()
             .navigationBarsPadding()
             .padding(horizontal = 24.dp),
@@ -607,9 +674,9 @@ fun VerifyEmailFromLinkScreen(
         Spacer(Modifier.height(20.dp))
         Text(
             when (phase) {
-                "success" -> "Email verified"
-                "error" -> "Link expired"
-                else -> "Verifying…"
+                "success" -> stringResource(R.string.auth_email_verified)
+                "error" -> stringResource(R.string.auth_link_expired)
+                else -> stringResource(R.string.auth_verifying)
             },
             fontFamily = Manrope,
             fontWeight = FontWeight.ExtraBold,
@@ -620,9 +687,9 @@ fun VerifyEmailFromLinkScreen(
         Spacer(Modifier.height(8.dp))
         Text(
             when (phase) {
-                "success" -> "Your email${email?.let { " ($it)" } ?: ""} is confirmed. Sign in to continue."
-                "error" -> message ?: "This verification link is invalid or has expired."
-                else -> "Hang tight while we confirm your email address…"
+                "success" -> email?.let { stringResource(R.string.auth_email_confirmed, it) } ?: stringResource(R.string.auth_email_confirmed_plain)
+                "error" -> message ?: stringResource(R.string.auth_link_invalid)
+                else -> stringResource(R.string.auth_verifying_sub)
             },
             fontFamily = Manrope,
             fontSize = 14.sp,
@@ -632,8 +699,8 @@ fun VerifyEmailFromLinkScreen(
         if (phase != "verifying") {
             Spacer(Modifier.height(28.dp))
             GotchaPrimaryButton(
-                text = if (phase == "success") "Sign In" else "Back to Sign In",
-                containerColor = GotchaColors.BrandPurpleDeep,
+                text = if (phase == "success") stringResource(R.string.auth_sign_in) else stringResource(R.string.auth_back_to_sign_in),
+                containerColor = GotchaColors.BrandPurple,
                 shapeRadius = 14,
                 onClick = onDone,
             )
@@ -646,6 +713,7 @@ fun ResetPasswordFromLinkScreen(
     token: String,
     onDone: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var password by remember { mutableStateOf("") }
@@ -658,7 +726,7 @@ fun ResetPasswordFromLinkScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .padding(horizontal = 24.dp),
@@ -668,7 +736,7 @@ fun ResetPasswordFromLinkScreen(
             EmailPendingIcon()
             Spacer(Modifier.height(20.dp))
             Text(
-                "Password updated",
+                stringResource(R.string.auth_password_updated),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.ExtraBold,
                 fontSize = 22.sp,
@@ -677,7 +745,7 @@ fun ResetPasswordFromLinkScreen(
             )
             Spacer(Modifier.height(8.dp))
             Text(
-                "Sign in with your new password to continue.",
+                stringResource(R.string.auth_password_updated_sub),
                 fontFamily = Manrope,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
@@ -685,8 +753,8 @@ fun ResetPasswordFromLinkScreen(
             )
             Spacer(Modifier.height(28.dp))
             GotchaPrimaryButton(
-                text = "Sign In",
-                containerColor = GotchaColors.BrandPurpleDeep,
+                text = stringResource(R.string.auth_sign_in),
+                containerColor = GotchaColors.BrandPurple,
                 shapeRadius = 14,
                 onClick = onDone,
             )
@@ -697,7 +765,7 @@ fun ResetPasswordFromLinkScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding()
@@ -706,8 +774,8 @@ fun ResetPasswordFromLinkScreen(
     ) {
         Spacer(Modifier.height(16.dp))
         Text(
-            "Back",
-            color = GotchaColors.BrandPurpleDeep,
+            stringResource(R.string.auth_back),
+            color = GotchaColors.BrandPurple,
             fontFamily = Manrope,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
@@ -715,7 +783,7 @@ fun ResetPasswordFromLinkScreen(
         )
         Spacer(Modifier.height(24.dp))
         Text(
-            "Choose a new password",
+            stringResource(R.string.auth_new_password_title),
             color = GotchaColors.BrandNavy,
             fontFamily = Manrope,
             fontWeight = FontWeight.ExtraBold,
@@ -723,7 +791,7 @@ fun ResetPasswordFromLinkScreen(
         )
         Spacer(Modifier.height(6.dp))
         Text(
-            "Enter a new password for your GOTCHA account. Use at least 8 characters.",
+            stringResource(R.string.auth_new_password_sub),
             color = GotchaColors.TextPlaceholder,
             fontFamily = Manrope,
             fontSize = 14.sp,
@@ -731,44 +799,44 @@ fun ResetPasswordFromLinkScreen(
         Spacer(Modifier.height(28.dp))
         if (token.isBlank()) {
             Text(
-                "This reset link is missing or incomplete. Request a new one from Forgot password.",
-                color = Color(0xFFDC2626),
+                stringResource(R.string.auth_reset_link_missing),
+                color = GotchaColors.Danger,
                 fontFamily = Manrope,
                 fontSize = 13.sp,
             )
             Spacer(Modifier.height(20.dp))
-            GotchaPrimaryButton(text = "Back to Sign In", onClick = onDone)
+            GotchaPrimaryButton(text = stringResource(R.string.auth_back_to_sign_in), onClick = onDone)
             return
         }
         GotchaTextField(
-            label = "New password",
+            label = stringResource(R.string.auth_new_password),
             value = password,
             onValueChange = { password = it },
-            placeholder = "At least 8 characters",
+            placeholder = stringResource(R.string.auth_password_placeholder_new),
             isPassword = true,
         )
         Spacer(Modifier.height(16.dp))
         GotchaTextField(
-            label = "Confirm password",
+            label = stringResource(R.string.auth_confirm_password),
             value = confirm,
             onValueChange = { confirm = it },
-            placeholder = "Repeat your new password",
+            placeholder = stringResource(R.string.auth_repeat_password),
             isPassword = true,
         )
         if (error != null) {
             Spacer(Modifier.height(12.dp))
-            Text(error!!, color = Color(0xFFDC2626), fontFamily = Manrope, fontSize = 13.sp)
+            Text(error!!, color = GotchaColors.Danger, fontFamily = Manrope, fontSize = 13.sp)
         }
         Spacer(Modifier.height(20.dp))
         GotchaPrimaryButton(
-            text = "Update password",
+            text = stringResource(R.string.auth_update_password),
             loading = loading,
-            containerColor = GotchaColors.BrandPurpleDeep,
+            containerColor = GotchaColors.BrandPurple,
             shapeRadius = 14,
             onClick = {
                 when {
-                    password.length < 8 -> error = "Password must be at least 8 characters"
-                    password != confirm -> error = "Passwords do not match"
+                    password.length < 8 -> error = ctx.getString(R.string.auth_err_password_short)
+                    password != confirm -> error = ctx.getString(R.string.auth_err_password_mismatch)
                     else -> scope.launch {
                         loading = true
                         error = null
@@ -776,7 +844,7 @@ fun ResetPasswordFromLinkScreen(
                             container.authRepository.resetPassword(token, password)
                             done = true
                         } catch (e: Exception) {
-                            error = e.apiErrorMessage("Could not reset password")
+                            error = e.apiErrorMessage(ctx.getString(R.string.auth_reset_failed))
                         } finally {
                             loading = false
                         }
@@ -794,17 +862,18 @@ private fun EmailVerificationPending(
     email: String,
     onBackToSignIn: () -> Unit,
 ) {
+    val ctx = LocalContext.current
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     var loading by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
 
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
@@ -815,7 +884,7 @@ private fun EmailVerificationPending(
         EmailPendingIcon()
         Spacer(Modifier.height(20.dp))
         Text(
-            "Verify your email",
+            stringResource(R.string.auth_verify_title),
             fontFamily = Manrope,
             fontWeight = FontWeight.ExtraBold,
             fontSize = 22.sp,
@@ -824,7 +893,7 @@ private fun EmailVerificationPending(
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "We sent a verification link to $email. Open your email, tap the link, and you'll return here in GOTCHA to finish.",
+            stringResource(R.string.auth_verify_sent, email),
             fontFamily = Manrope,
             fontSize = 14.sp,
             color = GotchaColors.TextMuted,
@@ -836,23 +905,23 @@ private fun EmailVerificationPending(
         }
         Spacer(Modifier.height(28.dp))
         GotchaPrimaryButton(
-            text = "Open Email App",
-            containerColor = GotchaColors.BrandPurpleDeep,
+            text = stringResource(R.string.auth_open_email),
+            containerColor = GotchaColors.BrandPurple,
             shapeRadius = 14,
             onClick = { openEmailApp(context) },
         )
         Spacer(Modifier.height(12.dp))
         GotchaPrimaryButton(
-            text = "I've verified — Sign In",
-            containerColor = Color(0xFFF2F4F7),
+            text = stringResource(R.string.auth_verified_sign_in),
+            containerColor = GotchaColors.SurfaceMuted,
             contentColor = GotchaColors.BrandNavy,
             shapeRadius = 14,
             onClick = onBackToSignIn,
         )
         Spacer(Modifier.height(12.dp))
         Text(
-            if (loading) "Sending…" else "Resend verification email",
-            color = GotchaColors.BrandPurpleDeep,
+            if (loading) stringResource(R.string.auth_sending) else stringResource(R.string.auth_resend_verification),
+            color = GotchaColors.BrandPurple,
             fontFamily = Manrope,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
@@ -862,9 +931,9 @@ private fun EmailVerificationPending(
                     message = null
                     try {
                         container.authRepository.resendVerification(email)
-                        message = "Verification email sent"
+                        message = ctx.getString(R.string.auth_verification_sent)
                     } catch (e: Exception) {
-                        message = e.apiErrorMessage("Could not resend email")
+                        message = e.apiErrorMessage(ctx.getString(R.string.auth_resend_failed))
                     } finally {
                         loading = false
                     }
@@ -881,7 +950,7 @@ private fun openEmailApp(context: android.content.Context) {
         context.startActivity(emailIntent)
     } catch (_: ActivityNotFoundException) {
         val fallback = Intent(Intent.ACTION_VIEW, Uri.parse("mailto:"))
-        context.startActivity(Intent.createChooser(fallback, "Open email"))
+        context.startActivity(Intent.createChooser(fallback, context.getString(R.string.auth_open_email_chooser)))
     }
 }
 
@@ -934,7 +1003,7 @@ private fun AuthLanguageSearchField(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFF9FAFB))
+                .background(GotchaColors.Surface)
                 .border(1.dp, GotchaColors.BorderInput, RoundedCornerShape(14.dp))
                 .padding(horizontal = 10.dp, vertical = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -956,12 +1025,12 @@ private fun AuthLanguageSearchField(
                                 fontFamily = Manrope,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 12.sp,
-                                color = GotchaColors.BrandPurpleDeep,
+                                color = GotchaColors.BrandPurple,
                             )
                             Icon(
                                 Icons.Outlined.Close,
-                                contentDescription = "Remove ${opt.englishLabel}",
-                                tint = GotchaColors.BrandPurpleDeep,
+                                contentDescription = stringResource(R.string.auth_remove_language, opt.englishLabel),
+                                tint = GotchaColors.BrandPurple,
                                 modifier = Modifier
                                     .size(16.dp)
                                     .clickable { onRemove(opt.code) },
@@ -1000,7 +1069,7 @@ private fun AuthLanguageSearchField(
                         Box {
                             if (query.isEmpty()) {
                                 Text(
-                                    if (selected.isEmpty()) placeholder else if (multiple) "Add another…" else placeholder,
+                                    if (selected.isEmpty()) placeholder else if (multiple) stringResource(R.string.auth_add_another) else placeholder,
                                     fontFamily = Manrope,
                                     fontSize = 15.sp,
                                     color = GotchaColors.TextPlaceholder,
@@ -1017,7 +1086,7 @@ private fun AuthLanguageSearchField(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp)),
             ) {
                 suggestions.forEach { opt ->
@@ -1056,7 +1125,7 @@ private fun AuthLanguageSearchField(
             }
         } else if (open && query.isNotBlank() && suggestions.isEmpty()) {
             Text(
-                "No matching language",
+                stringResource(R.string.auth_no_matching_language),
                 fontFamily = Manrope,
                 fontSize = 13.sp,
                 color = GotchaColors.TextMuted,
@@ -1071,70 +1140,91 @@ private fun AuthScaffold(
     title: String,
     subtitle: String,
     footer: @Composable () -> Unit,
+    caption: String? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    GotchaSystemBars(darkIcons = true)
-    // Figma 41:797: brand + form + CTA, then flexible gap, then signup footer.
-    // Single scroll keeps the Sign In button measurable with IME open on S21+.
-    Column(
+    GotchaSystemBars()
+    // Figma 41:797: brand + form + CTA, then flexible gap, then footer pinned to the bottom (§B #1).
+    // Single scroll keeps the CTA measurable with the IME open on S21+; heightIn(min = maxHeight)
+    // lets the weighted spacer push the footer down on tall phones.
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(MaterialTheme.colorScheme.surface)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .imePadding()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 24.dp),
+            .imePadding(),
     ) {
-        Spacer(Modifier.height(16.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            BrandMark(size = 56)
-            BrandWordmark(fontSize = 28)
-        }
-        Spacer(Modifier.height(24.dp))
-        Column(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            Text(
-                title,
-                color = GotchaColors.BrandNavy,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 24.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                subtitle,
-                color = GotchaColors.TextPlaceholder,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.Medium,
-                fontSize = 15.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-        Spacer(Modifier.height(28.dp))
-        content()
-        Spacer(Modifier.height(48.dp))
+        val minHeight = maxHeight
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(bottom = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+                .verticalScroll(rememberScrollState())
+                .heightIn(min = minHeight)
+                .padding(horizontal = 24.dp),
         ) {
-            footer()
+            Spacer(Modifier.height(16.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                BrandMark(size = 56)
+                // §B #36: the mark already announces GOTCHA.
+                BrandWordmark(fontSize = 28, contentDescription = null)
+            }
+            Spacer(Modifier.height(24.dp))
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Text(
+                    title,
+                    color = GotchaColors.BrandNavy,
+                    fontFamily = Manrope,
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 24.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().semantics { heading() },
+                )
+                Text(
+                    subtitle,
+                    color = GotchaColors.TextPlaceholder,
+                    fontFamily = Manrope,
+                    fontWeight = FontWeight.Medium,
+                    fontSize = 15.sp,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(28.dp))
+            if (caption != null) {
+                // §B #24: "Step 1 of 2" caption above the fields.
+                Text(
+                    caption,
+                    fontFamily = Manrope,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    color = GotchaColors.TextPlaceholder,
+                )
+                Spacer(Modifier.height(12.dp))
+            }
+            content()
+            Spacer(Modifier.weight(1f).heightIn(min = 48.dp))
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                footer()
+            }
         }
     }
 }
 
-private fun Exception.toSignInMessage(): String = when (this) {
-    is IOException -> "Can't reach GOTCHA. Check your internet connection."
-    else -> apiErrorMessage("Couldn't sign in")
+private fun Exception.toSignInMessage(ctx: Context): String = when (this) {
+    is IOException -> ctx.getString(R.string.auth_err_network)
+    else -> apiErrorMessage(ctx.getString(R.string.auth_err_sign_in_failed))
 }

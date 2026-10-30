@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaColors
+
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.compose.foundation.Canvas
@@ -63,12 +65,11 @@ private enum class StatsChartKind { Area, Bar, DotLine }
 
 private const val CHART_HEIGHT_DP = 200
 private val YAxisWidth = 32.dp
-private val AxisTickColor = Color(0xFF99A1AF)
-private val GridStroke = Color(0xFFF3F4F6)
-private val AxisStroke = Color(0xFFE5E7EB)
-
+private val AxisTickColor: Color get() = GotchaColors.TextSubtle
+private val GridStroke: Color get() = GotchaColors.SurfaceMuted
+private val AxisStroke: Color get() = GotchaColors.Border
 private val heatmapLevelColors = listOf(
-    Color(0xFFF3F4F6),
+    GotchaColors.SurfaceMuted,
     GotchaBlue.B50,
     GotchaBlue.B200,
     GotchaBlue.B500,
@@ -124,8 +125,8 @@ fun StatsChartCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(20.dp),
     ) {
         Row(
@@ -134,8 +135,8 @@ fun StatsChartCard(
             verticalAlignment = Alignment.Top,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
-                Text(subtitle, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF), modifier = Modifier.padding(top = 2.dp))
+                Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+                Text(subtitle, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle, modifier = Modifier.padding(top = 2.dp))
             }
             trailing?.invoke()
         }
@@ -155,15 +156,15 @@ fun StatsEmptyState(title: String, description: String, modifier: Modifier = Mod
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(Icons.Outlined.BarChart, null, tint = Color(0xFF99A1AF), modifier = Modifier.size(40.dp))
-        Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
-        Text(description, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF), textAlign = TextAlign.Center)
+        Icon(Icons.Outlined.BarChart, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(40.dp))
+        Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+        Text(description, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle, textAlign = TextAlign.Center)
     }
 }
 
@@ -293,11 +294,11 @@ private fun StatsAxisChart(
                         modifier = Modifier
                             .align(Alignment.Center)
                             .clip(RoundedCornerShape(999.dp))
-                            .background(Color.White.copy(alpha = 0.8f))
-                            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(999.dp))
+                            .background(GotchaColors.SurfaceCard.copy(alpha = 0.8f))
+                            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(999.dp))
                             .padding(horizontal = 12.dp, vertical = 4.dp),
                     ) {
-                        Text(emptyMessage, fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                        Text(emptyMessage, fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                     }
                 }
             }
@@ -345,11 +346,11 @@ fun StatsHeatmapCalendar(data: List<StatsHeatmapDay>) {
                 .fillMaxWidth()
                 .height(120.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFFF9FAFB))
-                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp)),
+                .background(GotchaColors.Surface)
+                .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text("Activity heatmap will appear as you learn", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_activity_heatmap_will_appear_as_you_lear), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
         }
         return
     }
@@ -379,7 +380,7 @@ fun StatsHeatmapCalendar(data: List<StatsHeatmapDay>) {
                             fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 10.sp,
-                            color = Color(0xFF99A1AF),
+                            color = GotchaColors.TextSubtle,
                             modifier = Modifier.padding(start = (week * 15).dp),
                         )
                     }
@@ -395,7 +396,7 @@ fun StatsHeatmapCalendar(data: List<StatsHeatmapDay>) {
                                         .clip(RoundedCornerShape(5.dp))
                                         .background(heatmapLevelColors[level])
                                         .then(
-                                            if (level == 0) Modifier.border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(5.dp))
+                                            if (level == 0) Modifier.border(1.dp, GotchaColors.Border, RoundedCornerShape(5.dp))
                                             else Modifier,
                                         ),
                                 )
@@ -406,13 +407,13 @@ fun StatsHeatmapCalendar(data: List<StatsHeatmapDay>) {
             }
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-            Text("Fewer books", fontFamily = Inter, fontSize = 11.sp, color = Color(0xFF99A1AF))
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_fewer_books), fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextSubtle)
             Spacer(Modifier.width(6.dp))
             heatmapLevelColors.forEach { c ->
                 Box(Modifier.padding(horizontal = 1.5.dp).size(10.dp).clip(RoundedCornerShape(5.dp)).background(c))
             }
             Spacer(Modifier.width(6.dp))
-            Text("More books/day", fontFamily = Inter, fontSize = 11.sp, color = Color(0xFF99A1AF))
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_more_books_day), fontFamily = Inter, fontSize = 11.sp, color = GotchaColors.TextSubtle)
         }
     }
 }
@@ -429,25 +430,25 @@ fun StatsActivityCard(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(20.dp),
     ) {
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-            Text("Activity", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
-            Text("Last 10 weeks", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_activity), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_last_10_weeks), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
         }
         Spacer(Modifier.height(16.dp))
         StatsHeatmapCalendar(heatmap)
-        HorizontalDivider(modifier = Modifier.padding(top = 16.dp), color = Color(0xFFF9FAFB))
+        HorizontalDivider(modifier = Modifier.padding(top = 16.dp), color = GotchaColors.Surface)
         Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(formatStreak(currentStreak), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
-                Text("Current streak", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                Text(formatStreak(currentStreak), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_current_streak), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
             }
             Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(formatStreak(bestStreak), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
-                Text("Best streak", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                Text(formatStreak(bestStreak), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_best_streak), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
             }
         }
     }

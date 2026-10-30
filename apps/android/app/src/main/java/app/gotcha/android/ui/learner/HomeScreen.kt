@@ -242,7 +242,7 @@ fun HomeScreen(
                         modifier = Modifier
                             .size(40.dp)
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.13f)),
+                            .background(GotchaColors.SurfaceCard.copy(alpha = 0.13f)),
                         contentAlignment = Alignment.Center,
                     ) {
                         Icon(
@@ -391,7 +391,7 @@ private fun ContinueCard(item: ContentItem, onClick: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
@@ -514,7 +514,7 @@ private fun RecommendCard(item: ContentItem, highlighted: Boolean = false, onCli
         modifier = Modifier
             .width(160.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(
                 if (highlighted) 2.dp else 1.dp,
                 if (highlighted) GotchaColors.BrandPurple else GotchaColors.Border,

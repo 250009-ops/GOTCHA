@@ -135,10 +135,10 @@ private fun messagingInitials(name: String?): String {
 private fun langChipColors(code: String): Pair<Color, Color> = when (code.uppercase(Locale.getDefault())) {
     "RU" -> GotchaBlue.B100 to GotchaBlue.B700
     "EN" -> GotchaBlue.InfoBg to GotchaBlue.InfoText
-    "UZ" -> Color(0xFFECFDF5) to Color(0xFF047857)
-    "FR" -> Color(0xFFFEF3C7) to Color(0xFFB45309)
+    "UZ" -> GotchaColors.SuccessBg to GotchaColors.SuccessText
+    "FR" -> GotchaColors.WarningBg to GotchaColors.WarningText
     "JA" -> Color(0xFFFFE4E6) to Color(0xFFBE123C)
-    else -> Color(0xFFF3F4F6) to Color(0xFF4A5565)
+    else -> GotchaColors.SurfaceMuted to GotchaColors.TextMuted
 }
 
 @Composable
@@ -190,7 +190,7 @@ private fun ToLangPicker(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             Text(
-                "To",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_to),
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 11.sp,
@@ -205,7 +205,7 @@ private fun ToLangPicker(
             )
             Icon(
                 painter = painterResource(R.drawable.ic_chevron_down),
-                contentDescription = "Choose To language",
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_choose_to_language),
                 tint = fg,
                 modifier = Modifier.size(12.dp),
             )
@@ -216,7 +216,7 @@ private fun ToLangPicker(
             offset = DpOffset(0.dp, 8.dp),
             modifier = Modifier.width(menuWidth),
             shape = RoundedCornerShape(12.dp),
-            containerColor = Color.White,
+            containerColor = GotchaColors.SurfaceCard,
             shadowElevation = 8.dp,
             tonalElevation = 0.dp,
         ) {
@@ -356,7 +356,7 @@ private fun AvatarCircle(name: String?, url: String?, size: androidx.compose.ui.
                     .align(Alignment.BottomEnd)
                     .size((size.value * 0.28f).dp)
                     .clip(CircleShape)
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .padding(1.5.dp),
             ) {
                 Box(
@@ -432,11 +432,11 @@ fun MessagesInboxScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .then(if (!embedded) Modifier.messagingDirectoryStatusPad() else Modifier),
     ) {
         if (!embedded) {
-            MessagingDirectoryHeader(title = "Messages", onBack = onBack)
+            MessagingDirectoryHeader(title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_messages), onBack = onBack)
         }
 
         val filteredConversations = remember(conversations, searchQuery) {
@@ -467,11 +467,11 @@ fun MessagesInboxScreen(
                             .padding(top = 16.dp, bottom = 12.dp),
                     ) {
                         Text(
-                            "Messages",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_messages),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 18.sp,
-                            color = Color(0xFF111827),
+                            color = GotchaColors.Ink,
                         )
                     }
                 }
@@ -483,13 +483,13 @@ fun MessagesInboxScreen(
                         .padding(horizontal = 16.dp)
                         .height(36.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF9FAFB))
-                        .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                        .background(GotchaColors.Surface)
+                        .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
-                    Icon(Icons.Outlined.Search, null, tint = Color(0xFF99A1AF), modifier = Modifier.size(14.dp))
+                    Icon(Icons.Outlined.Search, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(14.dp))
                     BasicTextField(
                         value = searchQuery,
                         onValueChange = { searchQuery = it },
@@ -500,9 +500,9 @@ fun MessagesInboxScreen(
                         decorationBox = { inner ->
                             if (searchQuery.isBlank()) {
                                 Text(
-                                    "Search conversations...",
+                                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_search_conversations),
                                     fontFamily = Inter,
-                                    color = Color(0xFF99A1AF),
+                                    color = GotchaColors.TextSubtle,
                                     fontSize = 14.sp,
                                 )
                             }
@@ -526,7 +526,7 @@ fun MessagesInboxScreen(
             if (error != null && conversations.isEmpty() && suggestions.isEmpty() && !loading) {
                 item {
                     OfflineEmptyState(
-                        subtitle = "Connect to the internet to load your conversations.",
+                        subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_your_con),
                         onRetry = { reload() },
                         compact = true,
                     )
@@ -543,15 +543,15 @@ fun MessagesInboxScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            "SUGGESTED FROM READINGS",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_suggested_from_readings),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
-                            color = Color(0xFF99A1AF),
+                            color = GotchaColors.TextSubtle,
                             letterSpacing = 0.4.sp,
                         )
                         Text(
-                            "Find more",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_find_more),
                             fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 13.sp,
@@ -590,11 +590,11 @@ fun MessagesInboxScreen(
 
             item {
                 Text(
-                    "RECENT CHATS",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_recent_chats),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 11.sp,
-                    color = Color(0xFF99A1AF),
+                    color = GotchaColors.TextSubtle,
                     letterSpacing = 0.4.sp,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
                 )
@@ -609,7 +609,7 @@ fun MessagesInboxScreen(
             } else if (conversations.isEmpty()) {
                 item {
                     Text(
-                        "No conversations yet. Find learners from shared readings.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_conversations_yet_find_learners_from),
                         fontFamily = Inter,
                         color = GotchaColors.TextMuted,
                         fontSize = 14.sp,
@@ -619,7 +619,7 @@ fun MessagesInboxScreen(
             } else if (filteredConversations.isEmpty()) {
                 item {
                     Text(
-                        "No conversations match your search.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_conversations_match_your_search),
                         fontFamily = Inter,
                         color = GotchaColors.TextMuted,
                         fontSize = 14.sp,
@@ -653,8 +653,8 @@ private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
         modifier = Modifier
             .width(130.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -667,7 +667,7 @@ private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
-                color = Color(0xFF111827),
+                color = GotchaColors.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.widthIn(max = 70.dp),
@@ -678,7 +678,7 @@ private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
             peer.reading?.title ?: "Learner",
             fontFamily = Inter,
             fontSize = 10.sp,
-            color = Color(0xFF99A1AF),
+            color = GotchaColors.TextSubtle,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth(),
@@ -696,7 +696,7 @@ private fun ChatRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(width = 0.dp, color = Color.Transparent, shape = RoundedCornerShape(0))
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -741,7 +741,7 @@ private fun ChatRow(
                     if (conversation.lastMessage?.deleted != true && !conversation.lastMessage?.translation.isNullOrBlank()) {
                         Icon(
                             Icons.Outlined.Translate,
-                            contentDescription = "Translated message",
+                            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_translated_message),
                             tint = GotchaColors.BrandPurple,
                             modifier = Modifier.size(14.dp),
                         )
@@ -1222,7 +1222,7 @@ fun MessagingChatScreen(
                 lookupError = null
             },
             sheetState = sheetState,
-            containerColor = Color.White,
+            containerColor = GotchaColors.SurfaceCard,
             scrimColor = Color.Black.copy(alpha = 0.12f),
         ) {
             Column(
@@ -1261,7 +1261,7 @@ fun MessagingChatScreen(
                 }
                 when {
                     lookupLoading -> Text(
-                        "Looking up…",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_looking_up),
                         fontFamily = Inter,
                         fontSize = 15.sp,
                         color = GotchaColors.TextMuted,
@@ -1285,7 +1285,7 @@ fun MessagingChatScreen(
                         lookup?.contextualMeaning?.takeIf { it.isNotBlank() && lookup?.kind != "sentence" }?.let { meaning ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    "NATURAL MEANING",
+                                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_natural_meaning),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -1297,7 +1297,7 @@ fun MessagingChatScreen(
                         lookup?.translation?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { tr ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    "TRANSLATION",
+                                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_translation),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -1309,7 +1309,7 @@ fun MessagingChatScreen(
                         lookup?.grammarNote?.takeIf { it.isNotBlank() && it != lookup?.contextualMeaning }?.let { note ->
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 Text(
-                                    "GRAMMAR NOTE",
+                                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_grammar_note),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 11.sp,
@@ -1364,7 +1364,7 @@ fun MessagingChatScreen(
                             Icon(Icons.Outlined.Add, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                "Save to vocabulary",
+                                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_save_to_vocabulary),
                                 color = Color.White,
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
@@ -1381,21 +1381,21 @@ fun MessagingChatScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .messagingDirectoryStatusPad()
             .windowInsetsPadding(WindowInsets.navigationBars.union(WindowInsets.ime)),
     ) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_arrow_left),
-                contentDescription = "Back",
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_back),
                 tint = GotchaColors.Ink,
                 modifier = Modifier
                     .size(20.dp)
@@ -1460,7 +1460,7 @@ fun MessagingChatScreen(
                 )
                 Icon(
                     Icons.Outlined.Close,
-                    contentDescription = "Dismiss tip",
+                    contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_dismiss_tip),
                     tint = GotchaColors.BrandPurple,
                     modifier = Modifier
                         .size(16.dp)
@@ -1523,7 +1523,7 @@ fun MessagingChatScreen(
                                     "typing…",
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(16.dp))
-                                        .background(Color(0xFFF3F4F6))
+                                        .background(GotchaColors.SurfaceMuted)
                                         .padding(horizontal = 14.dp, vertical = 8.dp),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.SemiBold,
@@ -1535,7 +1535,7 @@ fun MessagingChatScreen(
                     }
                 }
                 error != null -> OfflineEmptyState(
-                    subtitle = "Connect to the internet to load this chat. Open it once while online to keep messages for offline.",
+                    subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_this_cha),
                     onRetry = { load() },
                 )
                 else -> ChatSkeleton(modifier = Modifier.fillMaxSize())
@@ -1603,7 +1603,7 @@ fun MessagingChatScreen(
                     }
                     Icon(
                         Icons.Outlined.Close,
-                        contentDescription = "Cancel",
+                        contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_cancel),
                         tint = GotchaColors.TextSubtle,
                         modifier = Modifier
                             .size(18.dp)
@@ -1614,7 +1614,7 @@ fun MessagingChatScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1672,7 +1672,7 @@ fun MessagingChatScreen(
                 ) {
                     Icon(
                         Icons.AutoMirrored.Outlined.Send,
-                        contentDescription = "Send",
+                        contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_send),
                         tint = Color.White,
                         modifier = Modifier.size(16.dp),
                     )
@@ -1681,16 +1681,16 @@ fun MessagingChatScreen(
             confirmDelete?.let { msg ->
                 AlertDialog(
                     onDismissRequest = { confirmDelete = null },
-                    title = { Text("Delete message?", fontFamily = Inter, fontWeight = FontWeight.Bold) },
-                    text = { Text("This message will be deleted for everyone.", fontFamily = Inter) },
+                    title = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete_message), fontFamily = Inter, fontWeight = FontWeight.Bold) },
+                    text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_this_message_will_be_deleted_for_everyon), fontFamily = Inter) },
                     confirmButton = {
                         TextButton(onClick = { deleteConfirmed(msg) }) {
-                            Text("Delete", color = Color(0xFFB42318), fontFamily = Inter)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), color = Color(0xFFB42318), fontFamily = Inter)
                         }
                     },
                     dismissButton = {
                         TextButton(onClick = { confirmDelete = null }) {
-                            Text("Cancel", fontFamily = Inter)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_cancel), fontFamily = Inter)
                         }
                     },
                 )
@@ -1780,7 +1780,7 @@ private fun MessageBubble(
 ) {
     var menuOpen by remember(msg.id) { mutableStateOf(false) }
     val bodyColor = if (msg.mine) Color.White else GotchaColors.Ink
-    val secondaryColor = if (msg.mine) Color.White.copy(alpha = 0.8f) else Color(0xFF6A7282)
+    val secondaryColor = if (msg.mine) Color.White.copy(alpha = 0.8f) else GotchaColors.TextMuted
     val primaryText = presented.primary.ifBlank { "…" }
     val parent = msg.replyTo
     val replyName = when {
@@ -1823,10 +1823,10 @@ private fun MessageBubble(
                     .then(
                         when {
                             msg.deleted -> Modifier
-                                .background(Color.White)
+                                .background(GotchaColors.SurfaceCard)
                                 .border(1.dp, Color(0xFFD1D5DC), RoundedCornerShape(16.dp))
                             msg.mine -> Modifier.background(GotchaColors.WebAccent)
-                            else -> Modifier.background(Color.White).border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(16.dp))
+                            else -> Modifier.background(GotchaColors.SurfaceCard).border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                         },
                     )
                     .padding(horizontal = 14.dp, vertical = 12.dp),
@@ -1834,7 +1834,7 @@ private fun MessageBubble(
             ) {
                 if (msg.deleted) {
                     Text(
-                        "This message was deleted",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_this_message_was_deleted),
                         fontFamily = Inter,
                         fontSize = 14.sp,
                         fontStyle = FontStyle.Italic,
@@ -1858,7 +1858,7 @@ private fun MessageBubble(
                                 messageSnippet(parent.body, parent.deleted),
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
-                                color = if (msg.mine) Color.White.copy(alpha = 0.8f) else Color(0xFF6A7282),
+                                color = if (msg.mine) Color.White.copy(alpha = 0.8f) else GotchaColors.TextMuted,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1938,13 +1938,13 @@ private fun MessageSendStatus(status: String?) {
         "failed" -> Text("!", fontFamily = Inter, fontSize = 10.sp, color = Color(0xFFB42318))
         "read" -> Icon(
             Icons.Outlined.DoneAll,
-            contentDescription = "Read",
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_read),
             tint = GotchaColors.BrandPurple,
             modifier = Modifier.size(14.dp),
         )
         else -> Icon(
             Icons.Outlined.Done,
-            contentDescription = "Sent",
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_sent),
             tint = GotchaColors.TextSubtle,
             modifier = Modifier.size(13.dp),
         )
@@ -1964,7 +1964,7 @@ private fun MessageActionsButton(
     Box {
         Icon(
             Icons.Outlined.MoreVert,
-            contentDescription = "Message actions",
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_message_actions),
             tint = GotchaColors.TextSubtle,
             modifier = Modifier
                 .size(22.dp)
@@ -1974,10 +1974,10 @@ private fun MessageActionsButton(
             expanded = expanded,
             onDismissRequest = { onExpandedChange(false) },
             shape = RoundedCornerShape(12.dp),
-            containerColor = Color.White,
+            containerColor = GotchaColors.SurfaceCard,
         ) {
             DropdownMenuItem(
-                text = { Text("Reply", fontFamily = Inter, fontSize = 14.sp) },
+                text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_reply), fontFamily = Inter, fontSize = 14.sp) },
                 onClick = {
                     onExpandedChange(false)
                     onReply()
@@ -1985,7 +1985,7 @@ private fun MessageActionsButton(
             )
             if (canEdit) {
                 DropdownMenuItem(
-                    text = { Text("Edit", fontFamily = Inter, fontSize = 14.sp) },
+                    text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_edit), fontFamily = Inter, fontSize = 14.sp) },
                     onClick = {
                         onExpandedChange(false)
                         onEdit()
@@ -1994,7 +1994,7 @@ private fun MessageActionsButton(
             }
             if (canDelete) {
                 DropdownMenuItem(
-                    text = { Text("Delete", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFB42318)) },
+                    text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFB42318)) },
                     onClick = {
                         onExpandedChange(false)
                         onDelete()
@@ -2198,14 +2198,14 @@ fun FindLearnersScreen(
             .background(GotchaColors.Surface)
             .messagingDirectoryStatusPad(),
     ) {
-        MessagingDirectoryHeader(title = "Find Learners", onBack = onBack)
+        MessagingDirectoryHeader(title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_find_learners), onBack = onBack)
 
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(1.5.dp, GotchaColors.BrandPurple, RoundedCornerShape(14.dp))
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -2221,7 +2221,7 @@ fun FindLearnersScreen(
                 singleLine = true,
                 decorationBox = { inner ->
                     if (query.isBlank()) {
-                        Text("Search @username...", fontFamily = Inter, fontSize = 15.sp, color = GotchaColors.TextSubtle)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_search_username), fontFamily = Inter, fontSize = 15.sp, color = GotchaColors.TextSubtle)
                     }
                     inner()
                 },
@@ -2265,7 +2265,7 @@ fun FindLearnersScreen(
                     modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
                 )
                 error != null && peers.isEmpty() -> OfflineEmptyState(
-                    subtitle = "Connect to the internet to find learners.",
+                    subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_find_learners),
                     onRetry = { reload() },
                 )
                 else -> {
@@ -2312,7 +2312,7 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .clickable(onClick = onOpen)
             .padding(12.dp),
@@ -2443,7 +2443,7 @@ fun MessagingPeerProfileScreen(
             .background(GotchaColors.Surface)
             .messagingDirectoryStatusPad(),
     ) {
-        MessagingDirectoryHeader(title = "Profile", onBack = onBack)
+        MessagingDirectoryHeader(title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_profile), onBack = onBack)
         OfflineBannerIfNeeded(
             connectivity = container.connectivityObserver,
             hasCachedContent = peer != null,
@@ -2467,7 +2467,7 @@ fun MessagingPeerProfileScreen(
                 }
             }
             error != null && peer == null -> OfflineEmptyState(
-                subtitle = "Connect to the internet to load this profile.",
+                subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_this_pro),
                 onRetry = { reloadKey += 1 },
             )
             peer != null -> {
@@ -2538,7 +2538,7 @@ fun MessagingPeerProfileScreen(
                     }
                     if (p.targetLanguages.isNotEmpty() || p.nativeLanguage != null) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Languages", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_languages), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 val langs = buildList {
                                     p.nativeLanguage?.let { add(it to "Native") }
@@ -2549,7 +2549,7 @@ fun MessagingPeerProfileScreen(
                                         Modifier
                                             .weight(1f)
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(Color.White)
+                                            .background(GotchaColors.SurfaceCard)
                                             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                             .padding(12.dp),
                                         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -2564,12 +2564,12 @@ fun MessagingPeerProfileScreen(
                     }
                     p.currentlyReading?.let { book ->
                         Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Currently Reading", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_currently_reading), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
                             Column(
                                 Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(16.dp))
-                                    .background(Color.White)
+                                    .background(GotchaColors.SurfaceCard)
                                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                                     .padding(12.dp),
                                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -2650,7 +2650,7 @@ private fun PeerStat(value: String, label: String, iconRes: Int, modifier: Modif
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

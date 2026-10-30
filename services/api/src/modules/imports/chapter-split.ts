@@ -41,6 +41,8 @@ const GUTENBERG_END = /\*{3}\s*END OF (?:THE|THIS) PROJECT GUTENBERG[\s\S]*?\*{3
 const ISOLATED_ROMAN = new RegExp(`^(${ROMAN})\\.?$`, 'i');
 const ISOLATED_NUMBER = /^(\d{1,3})\.?$/;
 /** "1 ANTHONY CADE SIGNS ON" / "I. A Lady in Distress" — number without the word Chapter. */
+/** "L E I P Z I G" — a heading typeset with spaces between single letters. */
+const LETTER_SPACED = /^(?:\p{L}\s+){2,}\p{L}\.?$/u;
 const BARE_NUMBERED_TITLE = new RegExp(`^(?:#{1,3}\\s+)?(${NUM})(?:[.:—–-]|\\s+)\\s*(.+)$`, 'i');
 
 const TITLE_STOP = new Set([
@@ -227,6 +229,8 @@ function headingFromLine(
   if (!raw || raw.length > 160) return null;
   if (isDialogueLine(raw)) return null;
   if (IMAGE_CAPTION.test(raw) || isOcrImageJunkLine(raw)) return null;
+  // UI-19: letter-spaced display headings ("L E I P Z I G") are not "Chapter L" + title.
+  if (LETTER_SPACED.test(raw)) return null;
 
   const md = raw.match(MARKDOWN_HEADING);
   if (md) {
@@ -860,9 +864,12 @@ function chaptersFromHeadings(lines: string[], headings: FoundHeading[], fallbac
     const preface = lines.slice(0, first.index).join('\n').trim();
     if (preface && wordCount(preface) >= 80 && !isMostlyTocListing(preface)) {
       const firstNum = parseChapterOrdinal(first.title);
+      // UI-19: the untitled text before "Chapter II" is Chapter I; keep the book's numbering style.
+      const romanSequence = /^(?:chapter\s+)?[IVXLCDM]+\b/i.test(first.title.replace(/^#+\s+/, '')) &&
+        !/^(?:chapter\s+)?\d/i.test(first.title);
       const title =
         firstNum === 2
-          ? prettyChapterTitle('Chapter 1')
+          ? prettyChapterTitle(romanSequence ? 'Chapter I' : 'Chapter 1')
           : fallbackTitle.slice(0, 160);
       chapters.push({ title, text: preface });
     }

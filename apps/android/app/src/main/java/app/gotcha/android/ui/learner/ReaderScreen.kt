@@ -68,6 +68,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import app.gotcha.android.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.shadow
@@ -123,13 +124,14 @@ fun ReaderScreen(
     onBack: () -> Unit,
     onOpenPractice: (contentId: String, segmentId: String?) -> Unit = { _, _ -> },
 ) {
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     val seededContent = remember(contentId) { container.contentRepository.contentMemory(contentId) }
     val seededSegments = remember(contentId) {
         container.contentRepository.segmentsMemory(contentId).orEmpty()
     }
+    val readerCtx = androidx.compose.ui.platform.LocalContext.current
     var content by remember(contentId) { mutableStateOf(seededContent) }
     var segments by remember(contentId) { mutableStateOf(seededSegments) }
     var selected by remember(contentId) { mutableStateOf<String?>(null) }
@@ -206,30 +208,17 @@ fun ReaderScreen(
         preparedAnnotated = annotated
     }
 
-    suspend fun stepProgress(target: Int, pauseMs: Long = 90) {
+    // UI-25: progress reflects real work only — no artificial per-tick / milestone delays.
+    @Suppress("UNUSED_PARAMETER")
+    fun stepProgress(target: Int, pauseMs: Long = 0) {
         if (loadProgress < target) loadProgress = target
-        while (smoothProgress < target) {
-            smoothProgress = (smoothProgress + 2).coerceAtMost(target)
-            delay(10)
-        }
-        delay(pauseMs)
+        if (smoothProgress < target) smoothProgress = target
     }
 
-    suspend fun finishLoader(fast: Boolean = false) {
-        val milestones = listOf(25, 50, 75, 92, 100)
-        val tickMs = if (fast) 6L else 12L
-        val stepMs = if (fast) 18L else 50L
-        val tailMs = if (fast) 100L else 350L
-        val step = if (fast) 5 else 2
-        for (milestone in milestones) {
-            if (loadProgress < milestone) loadProgress = milestone
-            while (smoothProgress < milestone) {
-                smoothProgress = (smoothProgress + step).coerceAtMost(milestone)
-                delay(tickMs)
-            }
-            if (milestone < 100) delay(stepMs)
-        }
-        delay(tailMs)
+    @Suppress("UNUSED_PARAMETER")
+    fun finishLoader(fast: Boolean = false) {
+        loadProgress = 100
+        smoothProgress = 100
         loaderDone = true
     }
 
@@ -455,6 +444,14 @@ fun ReaderScreen(
         onBack()
     }
     BackHandler(onBack = handleBack)
+    // UI-18: system Back first closes the word pop-up; only a second Back leaves the reader.
+    // Declared after the reader handler so it takes precedence while enabled.
+    BackHandler(enabled = selected != null) {
+        selected = null
+        lookup = null
+        lookupError = null
+        selectedSentence = null
+    }
 
     LaunchedEffect(payStep) {
         if (payStep != "celebrate") return@LaunchedEffect
@@ -492,7 +489,7 @@ fun ReaderScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "Library",
+                        stringResource(R.string.reader_library),
                         fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 14.sp,
@@ -512,34 +509,34 @@ fun ReaderScreen(
                                     modifier = Modifier.size(48.dp),
                                 )
                                 Text(
-                                    "Congratulations!",
+                                    stringResource(R.string.reader_congrats),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 24.sp,
                                     color = GotchaColors.Ink,
                                 )
                                 Text(
-                                    "${book.title?.takeIf { it.isNotBlank() } ?: "This book"} is yours. Opening…",
+                                    stringResource(R.string.reader_book_yours, book.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.reader_this_book)),
                                     fontFamily = Inter,
                                     fontSize = 14.sp,
                                     color = GotchaColors.TextMuted,
                                 )
                                 GotchaPrimaryButton(
-                                    text = "Start reading",
+                                    text = stringResource(R.string.reader_start_reading),
                                     onClick = { reloadKey += 1 },
                                 )
                             }
                         }
                     } else {
                     Text(
-                        book.title?.takeIf { it.isNotBlank() } ?: "Paid book",
+                        book.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.reader_paid_book),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
                         color = GotchaColors.Ink,
                     )
                     Text(
-                        "Pay once to unlock this book in your library.",
+                        stringResource(R.string.reader_pay_once),
                         fontFamily = Inter,
                         fontSize = 14.sp,
                         color = GotchaColors.TextMuted,
@@ -573,7 +570,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = e.apiErrorMessage("Could not start checkout")
+                                        payError = e.apiErrorMessage(readerCtx.getString(R.string.reader_checkout_failed))
                                     } finally {
                                         payLoading = false
                                     }
@@ -591,9 +588,11 @@ fun ReaderScreen(
             val hasSegments = segments.isNotEmpty()
             val body = preparedSource ?: currentPageText
             val pageAnnotated = preparedAnnotated!!
-            val chapterTitle = currentSegment?.chapterTitle?.takeIf { it.isNotBlank() }
-                ?: currentSegment?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
-            val bookTitle = content?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+            val chapterTitle = (currentSegment?.chapterTitle?.takeIf { it.isNotBlank() }
+                ?: currentSegment?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() })
+                ?.let(::tidyChapterTitle)
+            val chapterFallback = stringResource(R.string.reader_chapter_n)
+            val bookTitle = content?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.reader_untitled)
             // Honest API progress only — never invent a Figma % (same rule as Content Detail).
             val pageInChapter = remember(segments, segmentIndex, currentSegment) {
                 val chapterIdx = currentSegment?.chapterIndex ?: segments.getOrNull(segmentIndex)?.chapterIndex ?: 0
@@ -606,9 +605,10 @@ fun ReaderScreen(
                 segments.forEachIndexed { index, seg ->
                     val key = seg.chapterIndex
                     if (!groups.containsKey(key)) {
-                        val title = seg.chapterTitle?.takeIf { it.isNotBlank() }
-                            ?: seg.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() }
-                            ?: "Chapter ${key + 1}"
+                        val title = (seg.chapterTitle?.takeIf { it.isNotBlank() }
+                            ?: seg.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() })
+                            ?.let(::tidyChapterTitle)
+                            ?: chapterFallback.format(key + 1)
                         groups[key] = Triple(index, title, 1)
                     } else {
                         val current = groups.getValue(key)
@@ -674,12 +674,12 @@ fun ReaderScreen(
                         ) {
                             Icon(
                                 Icons.AutoMirrored.Outlined.ArrowBack,
-                                contentDescription = "Library",
+                                contentDescription = stringResource(R.string.reader_library),
                                 tint = Color(0xFF6A7282),
                                 modifier = Modifier.size(16.dp),
                             )
                             Text(
-                                "Library",
+                                stringResource(R.string.reader_library),
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 14.sp,
@@ -703,7 +703,7 @@ fun ReaderScreen(
                         ) {
                             Icon(
                                 Icons.Outlined.Remove,
-                                contentDescription = "Zoom out",
+                                contentDescription = stringResource(R.string.reader_zoom_out),
                                 tint = Color(0xFF6A7282),
                                 modifier = Modifier
                                     .size(28.dp)
@@ -727,7 +727,7 @@ fun ReaderScreen(
                             )
                             Icon(
                                 Icons.Outlined.Add,
-                                contentDescription = "Zoom in",
+                                contentDescription = stringResource(R.string.reader_zoom_in),
                                 tint = Color(0xFF6A7282),
                                 modifier = Modifier
                                     .size(28.dp)
@@ -744,7 +744,7 @@ fun ReaderScreen(
                             Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)).padding(horizontal = 4.dp))
                             Icon(
                                 Icons.Outlined.Visibility,
-                                contentDescription = "Unknown only",
+                                contentDescription = stringResource(R.string.reader_unknown_only),
                                 tint = if (showUnknownOnly) GotchaBlue.B700 else Color(0xFF6A7282),
                                 modifier = Modifier
                                     .size(28.dp)
@@ -768,7 +768,7 @@ fun ReaderScreen(
                             ) {
                                 Icon(
                                     Icons.Outlined.School,
-                                    contentDescription = "Practice",
+                                    contentDescription = stringResource(R.string.reader_practice),
                                     tint = if (hasSegments) GotchaBlue.B700 else GotchaColors.TextSubtle,
                                     modifier = Modifier.size(14.dp),
                                 )
@@ -797,7 +797,7 @@ fun ReaderScreen(
                             )
                             Spacer(Modifier.height(12.dp))
                             Text(
-                                "This content has no readable text yet",
+                                stringResource(R.string.reader_no_text),
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
@@ -855,12 +855,13 @@ fun ReaderScreen(
                     ) {
                         Text(
                             if (chapterGroups.size > 1) {
-                                val chapterNum = chapterGroups.indexOfFirst { (_, triple) ->
-                                    segmentIndex >= triple.first && segmentIndex < triple.first + triple.third
-                                }.let { if (it >= 0) it + 1 else 1 }
-                                "Chapter $chapterNum of ${chapterGroups.size}"
+                                // UI-19: follow the visible segment's chapter key (groups need not be contiguous).
+                                val currentKey = segments.getOrNull(segmentIndex)?.chapterIndex
+                                val chapterNum = chapterGroups.indexOfFirst { (key, _) -> key == currentKey }
+                                    .let { if (it >= 0) it + 1 else 1 }
+                                stringResource(R.string.reader_chapter_of, chapterNum, chapterGroups.size)
                             } else {
-                                "${segmentIndex + 1} of ${segments.size}"
+                                stringResource(R.string.reader_page_of, segmentIndex + 1, segments.size)
                             },
                             fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
@@ -911,7 +912,7 @@ fun ReaderScreen(
                                             selected = readerActiveWord(word, result)
                                             vocabMarkable = isReaderVocabMarkable(word, result.kind)
                                         } catch (e: Exception) {
-                                            lookupError = e.apiErrorMessage("Lookup failed. Try again.")
+                                            lookupError = e.apiErrorMessage(readerCtx.getString(R.string.reader_lookup_failed))
                                         } finally {
                                             lookingUp = false
                                         }
@@ -955,7 +956,7 @@ fun ReaderScreen(
                                     modifier = Modifier.size(16.dp),
                                 )
                                 Text(
-                                    "Previous",
+                                    stringResource(R.string.reader_previous),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 13.sp,
@@ -1010,7 +1011,7 @@ fun ReaderScreen(
                                     horizontalArrangement = Arrangement.spacedBy(4.dp),
                                 ) {
                                     Text(
-                                        "Next",
+                                        stringResource(R.string.reader_next),
                                         fontFamily = Inter,
                                         fontWeight = FontWeight.Medium,
                                         fontSize = 13.sp,
@@ -1045,7 +1046,7 @@ fun ReaderScreen(
                                         modifier = Modifier.size(16.dp),
                                     )
                                     Text(
-                                        "Finish",
+                                        stringResource(R.string.reader_finish),
                                         fontFamily = Inter,
                                         fontWeight = FontWeight.Medium,
                                         fontSize = 13.sp,
@@ -1110,9 +1111,9 @@ fun ReaderScreen(
                                         ),
                                     )
                                     wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "learning")
-                                    savedMsg = "Saved to vocabulary"
+                                    savedMsg = readerCtx.getString(R.string.reader_saved_vocab)
                                 } catch (e: Exception) {
-                                    savedMsg = e.apiErrorMessage("Save failed")
+                                    savedMsg = e.apiErrorMessage(readerCtx.getString(R.string.reader_save_failed))
                                 }
                             }
                         },
@@ -1123,9 +1124,9 @@ fun ReaderScreen(
                                     val source = content?.language ?: "ru"
                                     container.contentRepository.markKnownWord(activeWord, source, "known")
                                     wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "known")
-                                    savedMsg = "Marked as known"
+                                    savedMsg = readerCtx.getString(R.string.reader_marked_known)
                                 } catch (e: Exception) {
-                                    savedMsg = e.apiErrorMessage("Update failed")
+                                    savedMsg = e.apiErrorMessage(readerCtx.getString(R.string.reader_update_failed))
                                 }
                             }
                         },
@@ -1136,9 +1137,9 @@ fun ReaderScreen(
                                     val source = content?.language ?: "ru"
                                     container.contentRepository.markKnownWord(activeWord, source, "ignored")
                                     wordStatuses = applyReaderWordStatus(wordStatuses, activeWord, lookup, "ignored")
-                                    savedMsg = "Word ignored"
+                                    savedMsg = readerCtx.getString(R.string.reader_word_ignored)
                                 } catch (e: Exception) {
-                                    savedMsg = e.apiErrorMessage("Update failed")
+                                    savedMsg = e.apiErrorMessage(readerCtx.getString(R.string.reader_update_failed))
                                 }
                             }
                         },
@@ -1150,12 +1151,12 @@ fun ReaderScreen(
         showGlassLoader -> {
             GlassLoadingScreen(
                 progress = smoothProgress.coerceIn(0, 100),
-                title = "Loading your book…",
+                title = stringResource(R.string.reader_loading_book),
                 subtitle = when {
-                    loadProgress < 30 -> "Fetching book details"
-                    loadProgress < 70 -> "Downloading chapters"
-                    loadProgress < 95 -> "Preparing the first page"
-                    else -> "Almost ready"
+                    loadProgress < 30 -> stringResource(R.string.reader_loading_details)
+                    loadProgress < 70 -> stringResource(R.string.reader_loading_chapters)
+                    loadProgress < 95 -> stringResource(R.string.reader_loading_first_page)
+                    else -> stringResource(R.string.reader_loading_almost)
                 },
                 modifier = Modifier.fillMaxSize(),
             )
@@ -1168,7 +1169,7 @@ fun ReaderScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
-                            "This content has no readable text yet",
+                            stringResource(R.string.reader_no_text),
                             fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
@@ -1184,7 +1185,7 @@ fun ReaderScreen(
                 }
             } else {
                 OfflineEmptyState(
-                    subtitle = "Connect to the internet to load this book, or open it once while online to save it for offline reading.",
+                    subtitle = stringResource(R.string.reader_offline_body),
                     onRetry = { reloadKey += 1 },
                 )
             }
@@ -1377,7 +1378,7 @@ private fun DictionaryBottomSheet(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Dictionary",
+                stringResource(R.string.reader_dictionary),
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 12.sp,
@@ -1391,7 +1392,7 @@ private fun DictionaryBottomSheet(
                     .clickable(onClick = onClose),
                 contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Outlined.Close, contentDescription = "Close", tint = Color(0xFF99A1AF), modifier = Modifier.size(16.dp))
+                Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.reader_close), tint = Color(0xFF99A1AF), modifier = Modifier.size(16.dp))
             }
         }
         HorizontalDivider(color = Color(0xFFF3F4F6))
@@ -1411,7 +1412,7 @@ private fun DictionaryBottomSheet(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     CircularProgressIndicator(color = GotchaColors.WebAccent, modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
-                    Text("Looking up…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                    Text(stringResource(R.string.reader_looking_up), fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
                 }
             } else if (error != null) {
                 Text(error, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFDC2626))
@@ -1435,7 +1436,7 @@ private fun DictionaryBottomSheet(
                             )
                             if (sentenceLike || lookup.phrase?.isNotBlank() == true) {
                                 Text(
-                                    if (sentenceLike) "Sentence" else "Phrase",
+                                    if (sentenceLike) stringResource(R.string.reader_sentence) else stringResource(R.string.reader_phrase),
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.SemiBold,
                                     fontSize = 10.sp,
@@ -1461,7 +1462,7 @@ private fun DictionaryBottomSheet(
                             .clickable(onClick = onSpeak),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Outlined.VolumeUp, contentDescription = "Pronounce", tint = Color(0xFF99A1AF), modifier = Modifier.size(18.dp))
+                        Icon(Icons.Outlined.VolumeUp, contentDescription = stringResource(R.string.reader_pronounce), tint = Color(0xFF99A1AF), modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -1474,7 +1475,7 @@ private fun DictionaryBottomSheet(
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
-                        Text("Natural meaning", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
+                        Text(stringResource(R.string.reader_natural_meaning), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
                         Text(meaning, fontFamily = Inter, fontSize = 15.sp, lineHeight = 22.sp, color = Color(0xFF1E2939))
                     }
                 }
@@ -1493,7 +1494,7 @@ private fun DictionaryBottomSheet(
                         .padding(12.dp),
                     verticalArrangement = Arrangement.spacedBy(4.dp),
                 ) {
-                    Text("Translation", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
+                    Text(stringResource(R.string.reader_translation), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
                     Text(
                         lookup.translation.orEmpty(),
                         fontFamily = Inter,
@@ -1526,7 +1527,7 @@ private fun DictionaryBottomSheet(
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         DictionaryActionButton(
-                            label = "Save",
+                            label = stringResource(R.string.reader_save),
                             icon = Icons.Outlined.BookmarkBorder,
                             active = wordStatus == "learning",
                             activeBorder = Color(0xFFBFDBFE),
@@ -1537,7 +1538,7 @@ private fun DictionaryBottomSheet(
                             modifier = Modifier.weight(1f),
                         )
                         DictionaryActionButton(
-                            label = "Known",
+                            label = stringResource(R.string.reader_known),
                             icon = Icons.Outlined.Check,
                             active = wordStatus == "known",
                             activeBorder = Color(0xFFA7F3D0),
@@ -1548,7 +1549,7 @@ private fun DictionaryBottomSheet(
                             modifier = Modifier.weight(1f),
                         )
                         DictionaryActionButton(
-                            label = "Ignore",
+                            label = stringResource(R.string.reader_ignore),
                             icon = Icons.Outlined.VisibilityOff,
                             active = wordStatus == "ignored",
                             activeBorder = Color(0xFFD1D5DB),
@@ -1819,4 +1820,17 @@ private object ReaderPageCache {
     fun put(key: String, value: AnnotatedString) {
         synchronized(lock) { map[key] = value }
     }
+}
+
+/**
+ * UI-19: collapse letter-spaced headings from PDF extraction ("L E I P Z I G" → "LEIPZIG",
+ * "Chapter L E I P Z I G" → "LEIPZIG") so chips and headers stay readable for already-ingested books.
+ */
+internal fun tidyChapterTitle(raw: String): String {
+    val spaced = Regex("""(?:\b\p{L}\s){3,}\p{L}\b""")
+    var t = spaced.replace(raw.trim()) { m -> m.value.replace(Regex("""\s+"""), "") }
+    // "Chapter LEIPZIG" (a place/heading, not a number) → keep the heading only.
+    val m = Regex("""^(?i:chapter)\s+(\p{Lu}{4,})$""").find(t)
+    if (m != null && !Regex("""^[IVXLCDM]+$""").matches(m.groupValues[1])) t = m.groupValues[1]
+    return t
 }

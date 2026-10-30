@@ -95,7 +95,7 @@ android {
 }
 
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
+    val composeBom = platform("androidx.compose:compose-bom:2025.05.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)
 
@@ -126,6 +126,8 @@ dependencies {
     implementation("com.jakewharton.retrofit:retrofit2-kotlinx-serialization-converter:1.0.0")
 
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // Onboarding illustrations (team/DESIGN-android-auth-onboarding.md §A.6).
+    implementation("com.airbnb.android:lottie-compose:6.6.10")
     implementation("androidx.datastore:datastore-preferences:1.1.1")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
     // Backdrop blur for learner bottom nav (frosted glass over scrolling content).

@@ -67,12 +67,12 @@ import app.gotcha.android.ui.theme.Inter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
-private data class PracticeTypeOption(val value: String, val label: String, val description: String)
+private data class PracticeTypeOption(val value: String, val label: Int, val description: Int)
 
+/** UI-33: the "Short answer" (writing) type is not offered on mobile. */
 private val PRACTICE_TYPES = listOf(
-    PracticeTypeOption("comprehension", "Comprehension", "Multiple-choice questions about the passage"),
-    PracticeTypeOption("cloze", "Fill in the blank", "Complete the missing word from context"),
-    PracticeTypeOption("writing", "Short answer", "Answer in your own words"),
+    PracticeTypeOption("comprehension", app.gotcha.android.R.string.quiz_type_comprehension, app.gotcha.android.R.string.quiz_type_comprehension_sub),
+    PracticeTypeOption("cloze", app.gotcha.android.R.string.quiz_type_cloze, app.gotcha.android.R.string.quiz_type_cloze_sub),
 )
 
 /** Figma has no dedicated practice frame — this mirrors web-learner's PracticePage.tsx 1:1
@@ -83,9 +83,10 @@ fun PracticeScreen(
     segmentId: String?,
     onBack: () -> Unit,
 ) {
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     var content by remember(contentId) { mutableStateOf<ContentItem?>(null) }
     var contentLoadProgress by remember(contentId) { mutableIntStateOf(0) }
@@ -147,7 +148,7 @@ fun PracticeScreen(
             try {
                 val started = container.practiceRepository.start(contentId, segmentId, practiceType)
                 if (started.questions.isEmpty()) {
-                    startError = "No quiz questions could be generated for this chapter. Try another one."
+                    startError = ctx.getString(app.gotcha.android.R.string.quiz_no_questions)
                 } else {
                     session = started
                     questionIdx = 0
@@ -156,7 +157,7 @@ fun PracticeScreen(
                     showResults = false
                 }
             } catch (e: Exception) {
-                startError = e.apiErrorMessage("Could not start practice session")
+                startError = e.apiErrorMessage(ctx.getString(app.gotcha.android.R.string.quiz_start_failed))
             } finally {
                 starting = false
             }
@@ -174,7 +175,7 @@ fun PracticeScreen(
                 score = res.score
                 showResults = true
             } catch (e: Exception) {
-                startError = e.apiErrorMessage("Could not submit answers")
+                startError = e.apiErrorMessage(ctx.getString(app.gotcha.android.R.string.quiz_submit_failed))
             } finally {
                 submitting = false
             }
@@ -211,9 +212,9 @@ fun PracticeScreen(
     }
 
     val headerTitle = when {
-        showResults -> "Practice results"
-        session != null -> content?.title ?: "Practice"
-        else -> content?.title ?: "Practice"
+        showResults -> androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_results)
+        session != null -> content?.title ?: androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_title)
+        else -> content?.title ?: androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_title)
     }
 
     Column(Modifier.fillMaxSize().background(GotchaBlue.ReaderBg).statusBarsPadding()) {
@@ -221,7 +222,7 @@ fun PracticeScreen(
             Modifier
                 .fillMaxWidth()
                 .height(48.dp)
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(width = 0.dp, color = Color.Transparent)
                 .padding(horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -234,38 +235,38 @@ fun PracticeScreen(
             ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = "Back to reading",
-                    tint = Color(0xFF6A7282),
+                    contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_back_to_reading),
+                    tint = GotchaColors.TextMuted,
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
-                    "Back to reading",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_back_to_reading),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Medium,
                     fontSize = 14.sp,
-                    color = Color(0xFF6A7282),
+                    color = GotchaColors.TextMuted,
                 )
             }
-            Box(Modifier.width(1.dp).height(16.dp).background(Color(0xFFE5E7EB)))
+            Box(Modifier.width(1.dp).height(16.dp).background(GotchaColors.Border))
             Text(
                 headerTitle,
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
-                color = Color(0xFF1E2939),
+                color = GotchaColors.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
         }
-        HorizontalDivider(color = Color(0xFFE5E7EB), thickness = 1.dp)
+        HorizontalDivider(color = GotchaColors.Border, thickness = 1.dp)
 
         when {
             segmentId == null -> PracticeEmptyState(onBack = onBack)
             contentLoading -> GlassLoadingScreen(
                 progress = contentLoadProgress,
-                title = "Loading practice…",
-                subtitle = "Fetching chapter details",
+                title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_loading),
+                subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_loading_sub),
                 modifier = Modifier.fillMaxSize(),
             )
             showResults -> PracticeResultsView(
@@ -318,7 +319,7 @@ private fun PracticeEmptyState(onBack: () -> Unit) {
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "Practice what you read",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_empty_title),
             fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 18.sp,
@@ -326,15 +327,14 @@ private fun PracticeEmptyState(onBack: () -> Unit) {
         )
         Spacer(Modifier.height(8.dp))
         Text(
-            "Open any chapter in the Reader and tap Practice to quiz yourself on it — comprehension, " +
-                "fill-in-the-blank, and short-answer questions generated from that exact passage.",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_empty_body),
             fontFamily = Inter,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,
             textAlign = TextAlign.Center,
         )
         Spacer(Modifier.height(20.dp))
-        GotchaPrimaryButton(text = "Back to library", onClick = onBack)
+        GotchaPrimaryButton(text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.vocab_go_library), onClick = onBack)
     }
 }
 
@@ -355,17 +355,17 @@ private fun PracticeSetupView(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Column {
-                Text("Quiz yourself", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_setup_title), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Generated from the chapter you were just reading" +
-                        (contentTitle?.let { " in \u201c$it\u201d" } ?: "") + ".",
+                    if (contentTitle != null) androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_setup_sub_title, contentTitle)
+                    else androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_setup_sub),
                     fontFamily = Inter,
                     fontSize = 13.sp,
                     color = GotchaColors.TextMuted,
@@ -378,7 +378,7 @@ private fun PracticeSetupView(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(if (active) GotchaColors.WebAccentSoft else Color.White)
+                            .background(if (active) GotchaColors.WebAccentSoft else GotchaColors.SurfaceCard)
                             .border(
                                 1.dp,
                                 if (active) GotchaColors.WebAccent else GotchaColors.Border,
@@ -388,13 +388,13 @@ private fun PracticeSetupView(
                             .padding(horizontal = 16.dp, vertical = 12.dp),
                     ) {
                         Text(
-                            opt.label,
+                            androidx.compose.ui.res.stringResource(opt.label),
                             fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 14.sp,
                             color = if (active) GotchaColors.WebAccent else GotchaColors.Ink,
                         )
-                        Text(opt.description, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                        Text(androidx.compose.ui.res.stringResource(opt.description), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                     }
                 }
             }
@@ -402,7 +402,7 @@ private fun PracticeSetupView(
                 Text(error, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             GotchaPrimaryButton(
-                text = if (starting) "Generating quiz…" else "Start quiz",
+                text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_generating).takeIf { starting } ?: androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_start),
                 onClick = onStart,
                 loading = starting,
             )
@@ -462,7 +462,7 @@ private fun PracticeQuizView(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(20.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
@@ -497,7 +497,7 @@ private fun PracticeQuizView(
                 OutlinedTextField(
                     value = freeText,
                     onValueChange = onFreeTextChange,
-                    placeholder = { Text("Type your answer…", fontFamily = Inter) },
+                    placeholder = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_type_answer), fontFamily = Inter) },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text),
@@ -510,7 +510,7 @@ private fun PracticeQuizView(
         }
 
         GotchaPrimaryButton(
-            text = if (submitting) "Submitting…" else if (isLast) "Finish quiz" else "Next question",
+            text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_submitting).takeIf { submitting } ?: if (isLast) androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_finish) else androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_next),
             onClick = onNext,
             loading = submitting,
             enabled = !submitting,
@@ -539,9 +539,9 @@ private fun PracticeResultsView(
         else -> GotchaColors.Danger.copy(alpha = 0.1f)
     }
     val message = when {
-        pct >= 70 -> "Great work — keep it up!"
-        pct >= 40 -> "Good effort — review the explanations below."
-        else -> "Keep practicing — review the explanations below."
+        pct >= 70 -> androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_msg_great)
+        pct >= 40 -> androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_msg_good)
+        else -> androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_msg_keep)
     }
 
     Column(
@@ -556,7 +556,7 @@ private fun PracticeResultsView(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(20.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(20.dp))
                 .padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -585,7 +585,7 @@ private fun PracticeResultsView(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -614,14 +614,14 @@ private fun PracticeResultsView(
                             color = GotchaColors.Ink,
                         )
                         Text(
-                            "Your answer: ${r?.userAnswer?.takeIf { it.isNotBlank() } ?: "—"}",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_your_answer, r?.userAnswer?.takeIf { it.isNotBlank() } ?: "—"),
                             fontFamily = Inter,
                             fontSize = 12.sp,
                             color = GotchaColors.TextMuted,
                         )
                         if (r?.isCorrect != true) {
                             Text(
-                                "Correct answer: ${r?.correctAnswer?.takeIf { it.isNotBlank() } ?: q.correctAnswer}",
+                                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_correct_answer, r?.correctAnswer?.takeIf { it.isNotBlank() } ?: q.correctAnswer.orEmpty()),
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.SuccessText,
@@ -641,7 +641,7 @@ private fun PracticeResultsView(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                     .clickable(onClick = onRestart)
                     .padding(vertical = 14.dp),
@@ -649,7 +649,7 @@ private fun PracticeResultsView(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Outlined.Refresh, null, tint = GotchaColors.Ink, modifier = Modifier.size(16.dp))
-                    Text("Try another quiz", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.Ink)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_try_another), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.Ink)
                 }
             }
             Box(
@@ -661,7 +661,7 @@ private fun PracticeResultsView(
                     .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                Text("Back to reading", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.quiz_back_to_reading), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
             }
         }
     }

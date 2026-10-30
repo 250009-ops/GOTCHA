@@ -88,7 +88,7 @@ fun ImportScreen(
     onRead: (String) -> Unit = {},
     embedded: Boolean = false,
 ) {
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
 
@@ -118,8 +118,11 @@ fun ImportScreen(
         importsUnlimited = res.importsUnlimited == true
     }
 
-    LaunchedEffect(Unit) {
+    // UI-10: Retry re-runs the initial history load.
+    var historyReload by remember { mutableStateOf(0) }
+    LaunchedEffect(historyReload) {
         historyLoading = true
+        historyError = null
         runCatching { loadHistory(1) }
             .onFailure { historyError = it.apiErrorMessage("Could not load import history") }
         historyLoading = false
@@ -186,9 +189,9 @@ fun ImportScreen(
                     )
                     if (embedded) {
                         Text(
-                            "Add your own texts — articles, books, or any text you want to read and learn from.",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_add_your_own_texts_articles_books_or_any),
                             fontFamily = Inter,
-                            color = Color(0xFF99A1AF),
+                            color = GotchaColors.TextSubtle,
                             fontSize = 14.sp,
                             lineHeight = 20.sp,
                             modifier = Modifier.padding(top = 4.dp),
@@ -201,9 +204,9 @@ fun ImportScreen(
                         modifier = Modifier
                             .size(36.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFFF2F4F7)),
+                            .background(GotchaColors.SurfaceMuted),
                     ) {
-                        Icon(Icons.Outlined.Close, contentDescription = "Close")
+                        Icon(Icons.Outlined.Close, contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_close))
                     }
                 }
             }
@@ -244,7 +247,7 @@ fun ImportScreen(
                 verticalAlignment = Alignment.Top,
             ) {
                 Text(
-                    "Import History",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_import_history),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
@@ -253,7 +256,7 @@ fun ImportScreen(
                 Text(
                     importHistorySummary(allowance, importRemaining, importsUnlimited, total),
                     fontFamily = Inter,
-                    color = Color(0xFF99A1AF),
+                    color = GotchaColors.TextSubtle,
                     fontSize = 12.sp,
                     lineHeight = 16.sp,
                     modifier = Modifier.width(160.dp),
@@ -276,6 +279,12 @@ fun ImportScreen(
                             strokeWidth = 2.dp,
                         )
                     }
+                }
+                imports.isEmpty() && historyError != null -> {
+                    app.gotcha.android.ui.components.ErrorState(
+                        message = historyError!!,
+                        onRetry = { historyReload += 1 },
+                    )
                 }
                 imports.isEmpty() -> {
                     ImportHistoryEmptyState()
@@ -315,12 +324,12 @@ fun ImportScreen(
                                 },
                                 enabled = page > 1 && deletingId == null,
                             ) {
-                                Text("Previous", fontFamily = Inter, fontSize = 12.sp)
+                                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_previous), fontFamily = Inter, fontSize = 12.sp)
                             }
                             Text(
                                 "Page $page of ${maxOf(1, (total + PAGE_SIZE - 1) / PAGE_SIZE)}",
                                 fontFamily = Inter,
-                                color = Color(0xFF99A1AF),
+                                color = GotchaColors.TextSubtle,
                                 fontSize = 12.sp,
                             )
                             TextButton(
@@ -333,7 +342,7 @@ fun ImportScreen(
                                 },
                                 enabled = hasMore && deletingId == null,
                             ) {
-                                Text("Next", fontFamily = Inter, fontSize = 12.sp)
+                                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_next), fontFamily = Inter, fontSize = 12.sp)
                             }
                         }
                     }
@@ -407,13 +416,13 @@ private fun ImportWebTabPanel(
         modifier = Modifier
             .fillMaxWidth()
             .clip(panelShape)
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), panelShape),
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, panelShape),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .border(width = 1.dp, color = Color(0xFFF3F4F6), shape = RoundedCornerShape(0.dp)),
+                .border(width = 1.dp, color = GotchaColors.SurfaceMuted, shape = RoundedCornerShape(0.dp)),
         ) {
             ImportWebTabButton(
                 label = "URL",
@@ -423,14 +432,14 @@ private fun ImportWebTabPanel(
                 modifier = Modifier.weight(1f),
             )
             ImportWebTabButton(
-                label = "Paste",
+                label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_paste),
                 icon = Icons.Outlined.ContentPaste,
                 selected = selectedTab == ImportTab.Paste,
                 onClick = { onTab(ImportTab.Paste) },
                 modifier = Modifier.weight(1f),
             )
             ImportWebTabButton(
-                label = "File",
+                label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_file),
                 icon = Icons.Outlined.FileUpload,
                 selected = selectedTab == ImportTab.File,
                 onClick = { onTab(ImportTab.File) },
@@ -446,8 +455,8 @@ private fun ImportWebTabPanel(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFFFFFBEB))
-                        .border(1.dp, Color(0xFFFEE685), RoundedCornerShape(14.dp))
+                        .background(GotchaColors.WebStreakBg)
+                        .border(1.dp, GotchaColors.WebStreakBorder, RoundedCornerShape(14.dp))
                         .padding(12.dp),
                 ) {
                     Text(
@@ -457,7 +466,7 @@ private fun ImportWebTabPanel(
                             "Import allowance reached. Delete an old import to free up space — paid imports are not available right now."
                         },
                         fontFamily = Inter,
-                        color = Color(0xFFBB4D00),
+                        color = GotchaColors.WebStreakText,
                         fontSize = 12.sp,
                         lineHeight = 16.sp,
                     )
@@ -470,7 +479,7 @@ private fun ImportWebTabPanel(
                     "Imports are free right now."
                 },
                 fontFamily = Inter,
-                color = Color(0xFF99A1AF),
+                color = GotchaColors.TextSubtle,
                 fontSize = 11.sp,
                 lineHeight = 16.sp,
             )
@@ -493,7 +502,7 @@ private fun ImportWebTabButton(
 ) {
     val bg = if (selected) Color(0x80F5F3FF) else Color.Transparent
     val borderColor = if (selected) GotchaColors.BrandPurple else Color.Transparent
-    val textColor = if (selected) GotchaBlue.B700 else Color(0xFF99A1AF)
+    val textColor = if (selected) GotchaBlue.B700 else GotchaColors.TextSubtle
     Column(
         modifier = modifier
             .background(bg)
@@ -519,7 +528,7 @@ private fun ImportOption(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .clickable(onClick = onClick)
             .padding(16.dp),
@@ -549,7 +558,7 @@ private fun ImportHistoryEmptyState() {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -564,11 +573,11 @@ private fun ImportHistoryEmptyState() {
         ) {
             Icon(Icons.Outlined.Upload, null, tint = GotchaColors.BrandPurple, modifier = Modifier.size(22.dp))
         }
-        Text("No imports yet", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
+        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_imports_yet), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = GotchaColors.Ink)
         Text(
-            "Paste text, import from a URL, or upload a PDF/EPUB to build your personal reading library.",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_paste_text_import_from_a_url_or_upload_a),
             fontFamily = Inter,
-            color = Color(0xFF99A1AF),
+            color = GotchaColors.TextSubtle,
             fontSize = 13.sp,
             lineHeight = 18.sp,
         )
@@ -590,8 +599,8 @@ private fun ImportHistoryRow(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(16.dp),
     ) {
         Row(verticalAlignment = Alignment.Top) {
@@ -625,7 +634,7 @@ private fun ImportHistoryRow(
                             Text(
                                 url,
                                 fontFamily = Inter,
-                                color = Color(0xFF99A1AF),
+                                color = GotchaColors.TextSubtle,
                                 fontSize = 12.sp,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
@@ -635,7 +644,7 @@ private fun ImportHistoryRow(
                         Text(
                             item.importType?.replace('_', ' ')?.replaceFirstChar { it.titlecase(Locale.getDefault()) } ?: "Import",
                             fontFamily = Inter,
-                            color = Color(0xFF99A1AF),
+                            color = GotchaColors.TextSubtle,
                             fontSize = 11.sp,
                             modifier = Modifier.padding(top = 2.dp),
                         )
@@ -649,10 +658,10 @@ private fun ImportHistoryRow(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     item.createdAt?.let {
-                        Text(importRelativeTime(it), fontFamily = Inter, color = Color(0xFF99A1AF), fontSize = 12.sp)
+                        Text(importRelativeTime(it), fontFamily = Inter, color = GotchaColors.TextSubtle, fontSize = 12.sp)
                     }
                     item.content?.wordCount?.takeIf { it > 0 }?.let { wc ->
-                        Text(formatImportWordCount(wc), fontFamily = Inter, color = Color(0xFF99A1AF), fontSize = 12.sp)
+                        Text(formatImportWordCount(wc), fontFamily = Inter, color = GotchaColors.TextSubtle, fontSize = 12.sp)
                     }
                     if (isPendingImportStatus(status) &&
                         item.progressPagesTotal != null &&
@@ -666,10 +675,10 @@ private fun ImportHistoryRow(
                         )
                     }
                     if (isPendingImportStatus(status) && item.progressPhase == "ocr") {
-                        Text("AI is reading scanned pages…", fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_ai_is_reading_scanned_pages), fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
                     }
                     if (isPendingImportStatus(status) && item.progressPhase == "ai") {
-                        Text("AI is cleaning up the text…", fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_ai_is_cleaning_up_the_text), fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
                     }
                     if (status == "failed" && !item.errorMessage.isNullOrBlank()) {
                         Text(
@@ -688,7 +697,7 @@ private fun ImportHistoryRow(
         if (showActions) {
             HorizontalDivider(
                 modifier = Modifier.padding(top = 12.dp),
-                color = Color(0xFFF9FAFB),
+                color = GotchaColors.Surface,
             )
             Row(
                 modifier = Modifier
@@ -701,14 +710,14 @@ private fun ImportHistoryRow(
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .border(1.dp, Color(0x1A000000), RoundedCornerShape(14.dp))
-                            .background(Color.White)
+                            .background(GotchaColors.SurfaceCard)
                             .clickable { onRead(contentId) }
                             .padding(horizontal = 10.dp, vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(14.dp), tint = GotchaColors.Ink)
-                        Text("Read", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_read), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.Ink)
                     }
                 }
                 Spacer(Modifier.weight(1f))
@@ -730,7 +739,7 @@ private fun ImportHistoryRow(
                         Icon(Icons.Outlined.Delete, null, modifier = Modifier.size(14.dp), tint = Color(0xFFFF6467))
                     }
                     Text(
-                        "Delete",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
@@ -745,11 +754,11 @@ private fun ImportHistoryRow(
 @Composable
 private fun ImportStatusBadge(status: String) {
     val (bg, border, text, label, icon) = when (status) {
-        "ready" -> StatusStyle(Color(0xFFECFDF5), Color(0xFFA4F4CF), Color(0xFF007A55), "Ready", Icons.Outlined.CheckCircle)
+        "ready" -> StatusStyle(GotchaColors.SuccessBg, Color(0xFFA4F4CF), Color(0xFF007A55), "Ready", Icons.Outlined.CheckCircle)
         "processing", "tokenizing" -> StatusStyle(GotchaBlue.LearningBg, Color(0xFFBEDBFF), GotchaBlue.LearningText, "Processing", Icons.Outlined.Schedule)
-        "queued" -> StatusStyle(Color(0xFFFFFBEB), Color(0xFFFEE685), Color(0xFFBB4D00), "Queued", Icons.Outlined.Schedule)
-        "failed" -> StatusStyle(Color(0xFFFEF2F2), Color(0xFFFFC9C9), Color(0xFFC10007), "Failed", Icons.Outlined.ErrorOutline)
-        else -> StatusStyle(Color(0xFFF9FAFB), Color(0xFFE5E7EB), Color(0xFF4B5563), status.replaceFirstChar { it.titlecase(Locale.getDefault()) }, Icons.Outlined.Schedule)
+        "queued" -> StatusStyle(GotchaColors.WebStreakBg, GotchaColors.WebStreakBorder, GotchaColors.WebStreakText, "Queued", Icons.Outlined.Schedule)
+        "failed" -> StatusStyle(GotchaColors.DangerBg, Color(0xFFFFC9C9), Color(0xFFC10007), "Failed", Icons.Outlined.ErrorOutline)
+        else -> StatusStyle(GotchaColors.Surface, GotchaColors.Border, GotchaColors.TextMuted, status.replaceFirstChar { it.titlecase(Locale.getDefault()) }, Icons.Outlined.Schedule)
     }
     Row(
         modifier = Modifier

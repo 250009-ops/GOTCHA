@@ -68,6 +68,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.max
 import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.ui.window.Dialog
 import app.gotcha.android.BuildConfig
 import app.gotcha.android.LocalAppContainer
@@ -158,14 +160,14 @@ private fun ProfileBackButton(onBack: () -> Unit) {
         Modifier
             .size(36.dp)
             .clip(CircleShape)
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, CircleShape)
             .clickable(onClick = onBack),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_arrow_left),
-            contentDescription = "Back",
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_back),
             tint = GotchaColors.Ink,
             modifier = Modifier.size(20.dp),
         )
@@ -190,7 +192,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp)),
     ) {
         content()
@@ -251,7 +253,7 @@ private fun ProfileField(
             .fillMaxWidth()
             .height(minHeight.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -295,7 +297,7 @@ private fun SegmentedControl(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(4.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -455,7 +457,7 @@ fun EditProfileScreen(
             .learnerDirectoryStatusPad(),
     ) {
         ProfileDirHeader(
-            title = "Edit Profile",
+            title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_edit_profile),
             onBack = onBack,
             trailing = {
                 Text(
@@ -600,7 +602,7 @@ fun EditProfileScreen(
                                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                                         ) {
                                             Text(
-                                                "Verified",
+                                                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_verified),
                                                 fontFamily = Inter,
                                                 fontWeight = FontWeight.Bold,
                                                 fontSize = 10.sp,
@@ -619,7 +621,7 @@ fun EditProfileScreen(
                                         .fillMaxWidth()
                                         .height(44.dp)
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color.White)
+                                        .background(GotchaColors.SurfaceCard)
                                         .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                         .clickable { nativePickerOpen = true }
                                         .padding(horizontal = 12.dp),
@@ -629,7 +631,7 @@ fun EditProfileScreen(
                                     Text(langLabel(nativeLang), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink)
                                     Icon(
                                         painter = painterResource(R.drawable.ic_book_open),
-                                        contentDescription = "Change native language",
+                                        contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_change_native_language),
                                         tint = GotchaColors.BrandPurple,
                                         modifier = Modifier.size(18.dp),
                                     )
@@ -742,7 +744,7 @@ fun NotificationsListScreen(
         if (href.isNotBlank()) onOpenHref(href) else onOpenSettings()
     }
 
-    LearnerSubpage(title = "Notifications", onBack = onBack) {
+    LearnerSubpage(title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_notifications), onBack = onBack) {
         Column(
             Modifier
                 .fillMaxSize()
@@ -757,10 +759,10 @@ fun NotificationsListScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Text(
-                    "New books, messages, and learning reminders",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_books_messages_and_learning_reminder),
                     fontFamily = Inter,
                     fontSize = 14.sp,
-                    color = Color(0xFF6B7280),
+                    color = GotchaColors.TextMuted,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
@@ -768,7 +770,7 @@ fun NotificationsListScreen(
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
-                    color = if (unreadCount > 0) GotchaColors.WebAccent else Color(0xFF9CA3AF),
+                    color = if (unreadCount > 0) GotchaColors.WebAccent else GotchaColors.TextSubtle,
                     modifier = Modifier.clickable(enabled = unreadCount > 0, onClick = offline.guardClick(::markAllRead)),
                 )
             }
@@ -794,7 +796,7 @@ fun NotificationsListScreen(
                         .background(if (selected) GotchaColors.WebAccent else Color.White)
                         .border(
                             1.dp,
-                            if (selected) GotchaColors.WebAccent else Color(0xFFE5E7EB),
+                            if (selected) GotchaColors.WebAccent else GotchaColors.Border,
                             RoundedCornerShape(50),
                         )
                         .clickable { filter = key }
@@ -802,7 +804,7 @@ fun NotificationsListScreen(
                     fontFamily = Inter,
                     fontWeight = FontWeight.Medium,
                     fontSize = 12.sp,
-                    color = if (selected) Color.White else Color(0xFF4B5563),
+                    color = if (selected) Color.White else GotchaColors.TextMuted,
                 )
             }
         }
@@ -813,7 +815,7 @@ fun NotificationsListScreen(
                 }
             }
             error != null && items.isEmpty() -> OfflineEmptyState(
-                subtitle = "Connect to the internet to load your notifications.",
+                subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_your_not),
                 onRetry = { reloadKey += 1 },
             )
             filtered.isEmpty() -> {
@@ -821,15 +823,15 @@ fun NotificationsListScreen(
                     Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
-                        .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                        .background(GotchaColors.SurfaceCard)
+                        .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
                         .padding(horizontal = 24.dp, vertical = 64.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.ic_bell),
                         contentDescription = null,
-                        tint = Color(0xFFD1D5DB),
+                        tint = GotchaColors.Border,
                         modifier = Modifier.size(32.dp),
                     )
                     Text(
@@ -841,15 +843,15 @@ fun NotificationsListScreen(
                         fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp,
-                        color = Color(0xFF111827),
+                        color = GotchaColors.Ink,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 12.dp),
                     )
                     Text(
-                        "New catalog books will show up here when they are published.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_catalog_books_will_show_up_here_when),
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF6B7280),
+                        color = GotchaColors.TextMuted,
                         textAlign = TextAlign.Center,
                         modifier = Modifier.padding(top = 4.dp),
                     )
@@ -863,10 +865,10 @@ fun NotificationsListScreen(
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
+                                .background(GotchaColors.SurfaceCard)
                                 .border(
                                     width = if (item.unread) 1.5.dp else 1.dp,
-                                    color = if (item.unread) GotchaColors.WebAccent else Color(0xFFF3F4F6),
+                                    color = if (item.unread) GotchaColors.WebAccent else GotchaColors.SurfaceMuted,
                                     shape = RoundedCornerShape(16.dp),
                                 )
                                 .clickable(onClick = { openItem(item) })
@@ -898,7 +900,7 @@ fun NotificationsListScreen(
                                         fontFamily = Inter,
                                         fontWeight = if (item.unread) FontWeight.Bold else FontWeight.SemiBold,
                                         fontSize = 14.sp,
-                                        color = if (item.unread) Color(0xFF111827) else Color(0xFF1F2937),
+                                        color = if (item.unread) GotchaColors.Ink else Color(0xFF1F2937),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f).padding(end = 12.dp),
@@ -907,7 +909,7 @@ fun NotificationsListScreen(
                                         notificationTimeLabel(item.createdAt),
                                         fontFamily = Inter,
                                         fontSize = 11.sp,
-                                        color = Color(0xFF9CA3AF),
+                                        color = GotchaColors.TextSubtle,
                                     )
                                 }
                                 Text(
@@ -915,7 +917,7 @@ fun NotificationsListScreen(
                                     fontFamily = Inter,
                                     fontSize = 14.sp,
                                     lineHeight = 20.sp,
-                                    color = Color(0xFF6B7280),
+                                    color = GotchaColors.TextMuted,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.padding(top = 4.dp),
@@ -934,9 +936,9 @@ private fun notificationVisual(kind: String): Triple<Int, Color, Color> = when (
     "content" -> Triple(R.drawable.ic_book_open, GotchaBlue.B50, GotchaBlue.B700)
     "message" -> Triple(R.drawable.ic_message, GotchaBlue.InfoBg, GotchaBlue.InfoText)
     "streak" -> Triple(R.drawable.ic_flame, Color(0xFFFFF7ED), Color(0xFFC2410C))
-    "goal" -> Triple(R.drawable.ic_target, Color(0xFFECFDF5), Color(0xFF047857))
+    "goal" -> Triple(R.drawable.ic_target, GotchaColors.SuccessBg, GotchaColors.SuccessText)
     "vocab" -> Triple(R.drawable.ic_activity_clock, Color(0xFFEEF2FF), Color(0xFF3730A3))
-    else -> Triple(R.drawable.ic_bell, Color(0xFFF3F4F6), Color(0xFF4B5563))
+    else -> Triple(R.drawable.ic_bell, GotchaColors.SurfaceMuted, GotchaColors.TextMuted)
 }
 
 private fun notificationTimeLabel(iso: String?): String {
@@ -1026,8 +1028,8 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             SectionLabel("Reminders")
             SettingsCard {
                 ToggleRow(
-                    title = "Learning reminders",
-                    subtitle = "Streak and daily reading alerts (when push is available)",
+                    title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_learning_reminders),
+                    subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_streak_and_daily_reading_alerts_when_pus),
                     checked = enabled,
                     onCheckedChange = { next ->
                         enabled = next
@@ -1045,7 +1047,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                 )
             }
             Text(
-                "Granular notification channels aren’t available yet — this matches the web preference.",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_granular_notification_channels_aren_t_av),
                 fontFamily = Inter,
                 fontSize = 12.sp,
                 color = GotchaColors.TextMuted,
@@ -1249,7 +1251,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Email Support", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_email_support), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text(
                             "support@gotchaa.uz",
                             fontFamily = Inter,
@@ -1273,7 +1275,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Version", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_version), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text(
                             BuildConfig.VERSION_NAME,
                             fontFamily = Inter,
@@ -1295,7 +1297,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Privacy Policy", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_privacy_policy), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
                     }
                     HorizontalDivider(color = GotchaColors.Border)
@@ -1307,7 +1309,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Text("Terms of Service", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_terms_of_service), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                         Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
                     }
                 }
@@ -1345,21 +1347,21 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Text(
-                    "Password updated",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_password_updated),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
                     color = GotchaColors.Ink,
                 )
                 Text(
-                    "Your password has been changed. You'll need to sign in again on your other devices.",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_your_password_has_been_changed_you_ll_ne),
                     fontFamily = Inter,
                     fontSize = 14.sp,
                     color = GotchaColors.TextMuted,
                 )
                 Spacer(Modifier.weight(1f))
                 GotchaPrimaryButton(
-                    text = "Done",
+                    text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_done),
                     onClick = onBack,
                     containerColor = GotchaColors.BrandPurpleMid,
                     shapeRadius = 16,
@@ -1391,7 +1393,7 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                 }
                 Spacer(Modifier.weight(1f))
                 GotchaPrimaryButton(
-                    text = "Update Password",
+                    text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_update_password),
                     loading = loading,
                     enabled = currentPassword.isNotBlank() && newPassword.isNotBlank() && confirmPassword.isNotBlank(),
                     onClick = {
@@ -1439,7 +1441,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(24.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .padding(24.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
@@ -1449,7 +1451,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "Delete account",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete_account),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
@@ -1462,14 +1464,14 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                         .clickable(enabled = !loading, onClick = onDismiss),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Outlined.Close, contentDescription = "Close", tint = GotchaColors.TextMuted, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Outlined.Close, contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_close), tint = GotchaColors.TextMuted, modifier = Modifier.size(18.dp))
                 }
             }
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xFFFEF2F2))
+                    .background(GotchaColors.DangerBg)
                     .border(1.dp, Color(0xFFFEE2E2), RoundedCornerShape(14.dp))
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -1481,7 +1483,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                     modifier = Modifier.size(16.dp),
                 )
                 Text(
-                    "This permanently anonymizes your account and signs you out everywhere. This cannot be undone.",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_this_permanently_anonymizes_your_account),
                     fontFamily = Inter,
                     fontSize = 12.sp,
                     color = Color(0xFFB91C1C),
@@ -1500,7 +1502,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 Text(error!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             GotchaPrimaryButton(
-                text = "Permanently delete my account",
+                text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_permanently_delete_my_account),
                 loading = loading,
                 enabled = password.isNotBlank() && confirmText.isNotBlank(),
                 onClick = {
@@ -1621,7 +1623,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -1665,7 +1667,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                             Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(16.dp))
-                                .background(Color.White)
+                                .background(GotchaColors.SurfaceCard)
                                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                                 .clickable {
                                     val previous = selected
@@ -1674,6 +1676,9 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                                         saveError = null
                                         runCatching {
                                             container.userRepository.updateProfile(uiLanguage = lang.code)
+                                        }.onSuccess {
+                                            // UI-17: the whole UI switches language now, not on the next launch.
+                                            app.gotcha.android.ui.theme.AppUiPrefs.updateLanguage(lang.code)
                                         }.onFailure { e ->
                                             selected = previous
                                             saveError = e.message ?: "Couldn’t save language"
@@ -1800,7 +1805,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Text(
-                "Chat translations and word meanings use this language. You can reset it anytime.",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_chat_translations_and_word_meanings_use),
                 fontFamily = Inter,
                 fontSize = 14.sp,
                 color = GotchaColors.TextMuted,
@@ -1828,7 +1833,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(16.dp))
-                            .background(Color.White)
+                            .background(GotchaColors.SurfaceCard)
                             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                             .clickable {
                                 val previous = selected
@@ -1906,3 +1911,4 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
         }
     }
 }
+

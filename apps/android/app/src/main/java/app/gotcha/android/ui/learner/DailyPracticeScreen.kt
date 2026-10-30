@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaColors
+
 import android.media.MediaPlayer
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
@@ -93,10 +95,10 @@ data class PracticePalette(
 )
 
 val PracticeLight = PracticePalette(
-    bg = GotchaBlue.Canvas, card = Color.White, card2 = Color(0xFFF9FAFF), text = Color(0xFF101828), text2 = Color(0xFF4A5565),
-    text3 = GotchaBlue.TextPlaceholder, line = Color(0xFFE5E7EB), cta = GotchaBlue.B700, accent = GotchaBlue.B700,
-    accentSoft = GotchaBlue.B50, track = Color(0xFFE4E7F5), ok = Color(0xFF047857), okBg = Color(0xFFECFDF5),
-    bad = Color(0xFFDC2626), badBg = Color(0xFFFEF2F2), warn = Color(0xFFB45309), warnBg = Color(0xFFFEF3C7),
+    bg = GotchaBlue.Canvas, card = Color.White, card2 = Color(0xFFF9FAFF), text = GotchaColors.Ink, text2 = GotchaColors.TextMuted,
+    text3 = GotchaBlue.TextPlaceholder, line = GotchaColors.Border, cta = GotchaBlue.B700, accent = GotchaBlue.B700,
+    accentSoft = GotchaBlue.B50, track = Color(0xFFE4E7F5), ok = GotchaColors.SuccessText, okBg = GotchaColors.SuccessBg,
+    bad = Color(0xFFDC2626), badBg = GotchaColors.DangerBg, warn = GotchaColors.WarningText, warnBg = GotchaColors.WarningBg,
     streak = Color(0xFFC2410C), streakBg = Color(0xFFFFF7ED),
 )
 
@@ -121,24 +123,13 @@ private enum class Stage { Hub, Play, Summary }
 /** Daily mixed practice (FSRS): hub → player → summary. Matches team/design/practice-mobile-*.png. */
 @Composable
 fun DailyPracticeScreen(onBack: () -> Unit, onOpenLibrary: () -> Unit) {
-    val container = LocalAppContainer.current
-    var appTheme by remember { mutableStateOf<String?>(null) }
-    var lang by remember { mutableStateOf("en") }
-    LaunchedEffect(Unit) {
-        container.userRepository.mePeek()?.data?.let { me ->
-            appTheme = me.preferences?.appTheme
-            lang = me.uiLanguage ?: "en"
-        }
-        runCatching { container.userRepository.me() }.getOrNull()?.let { me ->
-            appTheme = me.preferences?.appTheme
-            lang = me.uiLanguage ?: lang
-        }
-    }
-    val dark = resolveDark(appTheme)
+    // UI-06 / UI-17: theme and copy follow the app-wide state (system or user choice), like every other screen.
+    val dark = app.gotcha.android.ui.theme.GotchaThemeState.isDark
+    val lang = app.gotcha.android.ui.theme.AppUiPrefs.language
     GotchaTheme(darkTheme = dark) {
         DailyPracticeContent(
             c = if (dark) PracticeDark else PracticeLight,
-            t = practiceCopyFor(lang),
+            t = remember(lang) { practiceCopyFor(lang) },
             onBack = onBack,
             onOpenLibrary = onOpenLibrary,
         )
@@ -200,7 +191,12 @@ private fun DailyPracticeContent(c: PracticePalette, t: PracticeCopy, onBack: ()
 
     Box(Modifier.fillMaxSize().background(c.bg).statusBarsPadding().navigationBarsPadding().imePadding()) {
         when (stage) {
-            Stage.Hub -> PracticeHub(
+            // UI-11: spinner while the first overview loads (was an empty hub).
+            Stage.Hub -> if (overview == null && error == null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator(color = c.accent, strokeWidth = 3.dp)
+                }
+            } else PracticeHub(
                 c, t, overview, size, busy, caughtUp, error,
                 onSize = { size = it },
                 onStart = { start() },

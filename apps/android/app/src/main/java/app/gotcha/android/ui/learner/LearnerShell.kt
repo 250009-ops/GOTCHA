@@ -35,7 +35,7 @@ import app.gotcha.android.PendingWordNavigation
 import app.gotcha.android.data.ChatLangs
 import app.gotcha.android.ui.components.ReconnectionFlashOverlay
 import app.gotcha.android.ui.i18n.LocalUiCopy
-import app.gotcha.android.ui.i18n.uiCopyFor
+import app.gotcha.android.ui.i18n.uiCopyFrom
 import app.gotcha.android.ui.nav.learnerSlideComposable
 import app.gotcha.android.ui.nav.learnerTabComposable
 import app.gotcha.android.ui.theme.GotchaSystemBars
@@ -69,9 +69,11 @@ private fun navigateLearnerTab(nav: NavHostController, route: String) {
 private fun sidebarToRoute(item: String): String = when (item) {
     "vocabulary" -> "words"
     "stats" -> "progress"
-    "settings" -> "settings"
     else -> item
 }
+
+/** Bottom-tab routes: Library · Vocabulary · Import · Statistics · Settings. */
+private val learnerTabRoutes = setOf("library", "words", "import", "progress", "settings")
 
 @Composable
 fun LearnerShell(
@@ -99,7 +101,8 @@ fun LearnerShell(
         PendingReaderReturn.value?.also { PendingReaderReturn.value = null }
     }
 
-    var uiLanguage by remember { mutableStateOf("en") }
+    // UI-17: the interface language is app-wide state; Save in App Language applies it without a relaunch.
+    val uiLanguage = app.gotcha.android.ui.theme.AppUiPrefs.language
     var notifUnread by remember { mutableIntStateOf(0) }
     var streakCount by remember { mutableIntStateOf(0) }
     var displayName by remember { mutableStateOf<String?>(null) }
@@ -120,12 +123,14 @@ fun LearnerShell(
     }
 
     LaunchedEffect(current) {
-        val fromCache = container.userRepository.mePeek()?.data?.uiLanguage?.lowercase()
-        if (!fromCache.isNullOrBlank()) uiLanguage = fromCache
+        container.userRepository.mePeek()?.data?.let { cached ->
+            cached.uiLanguage?.takeIf { it.isNotBlank() }?.let { app.gotcha.android.ui.theme.AppUiPrefs.updateLanguage(it) }
+        }
         runCatching { container.userRepository.meFetch().data }
             .getOrNull()
             ?.let { me ->
-                me.uiLanguage?.lowercase()?.takeIf { it.isNotBlank() }?.let { uiLanguage = it }
+                me.uiLanguage?.takeIf { it.isNotBlank() }?.let { app.gotcha.android.ui.theme.AppUiPrefs.updateLanguage(it) }
+                me.preferences?.appTheme?.let { app.gotcha.android.ui.theme.AppUiPrefs.updateTheme(it) }
                 displayName = me.displayName
                 email = me.email
                 avatarUrl = me.avatarUrl
@@ -141,7 +146,7 @@ fun LearnerShell(
             notifUnread = container.userRepository.notificationsFetch().data.unreadCount
         }
     }
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
 
     val scope = rememberCoroutineScope()
     DisposableEffect(Unit) {
@@ -198,25 +203,27 @@ fun LearnerShell(
         }
     }
     LaunchedEffect(pendingBrowseRestore) {
-        if (pendingBrowseRestore != null) {
-            nav.navigate("browse") { launchSingleTop = true }
+        // UI-18: return to the tab the reader was opened from, never a restored sibling tab.
+        val origin = pendingBrowseRestore?.originRoute ?: return@LaunchedEffect
+        when {
+            origin == "browse" -> nav.navigate("browse") { launchSingleTop = true }
+            origin in learnerTabRoutes && nav.currentDestination?.route != origin -> navigateLearnerTab(nav, origin)
         }
     }
 
     val openReaderFromLearner: (String) -> Unit = { id ->
-        if (current == "browse") {
-            PendingReaderReturn.value = ReaderReturnContext(
-                browseFilter = browseFilter,
-                browseCollection = browseCollection,
-                librarySearch = librarySearch,
-            )
-        } else {
-            PendingReaderReturn.value = null
-        }
+        val origin = current ?: LearnerStartRoute
+        PendingReaderReturn.value = ReaderReturnContext(
+            originRoute = if (origin == "browse" || origin in learnerTabRoutes) origin else LearnerStartRoute,
+            browseFilter = browseFilter.takeIf { origin == "browse" },
+            browseCollection = browseCollection.takeIf { origin == "browse" },
+            librarySearch = if (origin == "browse") librarySearch else "",
+        )
         onOpenReader(id)
     }
 
-    val uiCopy = remember(uiLanguage) { uiCopyFor(uiLanguage) }
+    val localizedContext = androidx.compose.ui.platform.LocalContext.current
+    val uiCopy = remember(localizedContext, uiLanguage) { uiCopyFrom(localizedContext) }
     val (chromeTopInset, chromeBottomInset) = rememberLearnerChromeInsets(showChrome, searchExpanded)
     CompositionLocalProvider(
         LocalLearnerBottomInset provides chromeBottomInset,
@@ -249,6 +256,7 @@ fun LearnerShell(
                 when (item) {
                     "notifications" -> nav.navigate("notifications")
                     "messages" -> nav.navigate("messages")
+                    "practice" -> onOpenPractice()
                     else -> {
                         val dest = sidebarToRoute(item)
                         if (dest == "library") {
@@ -309,6 +317,7 @@ fun LearnerShell(
                             initialSearch = initialSearch,
                             openReviewOnLaunch = openReview,
                             onGoToLibrary = { navigateLearnerTab(nav, "library") },
+                            onOpenPractice = onOpenPractice,
                         )
                     }
                     learnerTabComposable("import") {
@@ -338,6 +347,7 @@ fun LearnerShell(
                                         pendingVocabReview = true
                                         navigateLearnerTab(nav, "words")
                                     },
+                                    onOpenPractice = onOpenPractice,
                                 )
                             },
                         )
@@ -485,6 +495,7 @@ private fun openNotificationHref(
     href: String,
     onHighlightContent: (String?) -> Unit = {},
     onOpenVocabReview: () -> Unit = {},
+    onOpenPractice: () -> Unit = {},
 ) {
     val route = href.trim().trimStart('/')
     val path = route.substringBefore('?')
@@ -497,6 +508,7 @@ private fun openNotificationHref(
             if (path == "vocab_review") onOpenVocabReview() else navigateLearnerTab(nav, "words")
         }
         path == "messages" -> nav.navigate("messages")
+        path == "practice" -> onOpenPractice()
         path == "library" || path == "home" || path.startsWith("content/") -> {
             onHighlightContent(notificationContentId(route))
             navigateLearnerTab(nav, "library")

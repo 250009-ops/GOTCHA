@@ -405,7 +405,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                 }
 
-                GotchaTextField(label = "Title (optional)", value = title, onValueChange = { title = it }, placeholder = "Auto from filename")
+                GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_title_optional), value = title, onValueChange = { title = it }, placeholder = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_auto_from_filename))
 
                 if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
 
@@ -529,7 +529,7 @@ fun ImportFileScreen(onBack: () -> Unit, onImported: () -> Unit) {
 
     LearnerSubpage(
 
-        title = "Upload File",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_upload_file),
 
         onBack = onBack,
 

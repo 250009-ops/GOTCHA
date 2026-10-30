@@ -81,7 +81,7 @@ import dev.chrisbanes.haze.hazeChild
 
 data class LearnerBottomTab(
     val route: String,
-    val label: String,
+    @androidx.annotation.StringRes val labelRes: Int,
     @DrawableRes val iconRes: Int,
 )
 
@@ -96,11 +96,11 @@ val learnerChromeRoutes = setOf(
 
 /** Icons aligned with web-learner sidebar (Lucide Home / Brain / Upload / BarChart3 / Settings). */
 val learnerBottomTabs = listOf(
-    LearnerBottomTab("library", "Library", R.drawable.ic_nav_home),
-    LearnerBottomTab("vocabulary", "Vocabulary", R.drawable.ic_nav_brain),
-    LearnerBottomTab("import", "Import", R.drawable.ic_nav_upload),
-    LearnerBottomTab("stats", "Statistics", R.drawable.ic_nav_chart),
-    LearnerBottomTab("settings", "Settings", R.drawable.ic_settings_gear),
+    LearnerBottomTab("library", R.string.nav_library, R.drawable.ic_nav_home),
+    LearnerBottomTab("vocabulary", R.string.nav_vocabulary, R.drawable.ic_nav_brain),
+    LearnerBottomTab("import", R.string.nav_import, R.drawable.ic_nav_upload),
+    LearnerBottomTab("stats", R.string.nav_statistics, R.drawable.ic_nav_chart),
+    LearnerBottomTab("settings", R.string.nav_settings, R.drawable.ic_settings_gear),
 )
 
 @Composable
@@ -193,7 +193,7 @@ fun PayAsYouGoHomeBanner(onClick: () -> Unit, modifier: Modifier = Modifier) {
             modifier = Modifier
                 .size(36.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.12f)),
+                .background(GotchaColors.SurfaceCard.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(
@@ -205,14 +205,14 @@ fun PayAsYouGoHomeBanner(onClick: () -> Unit, modifier: Modifier = Modifier) {
         }
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "Pay as you go",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_pay_as_you_go),
                 color = Color.White,
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 14.sp,
             )
             Text(
-                "Import books · Pay per file",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_import_books_pay_per_file),
                 color = GotchaBlue.B200,
                 fontFamily = Inter,
                 fontSize = 12.sp,
@@ -242,13 +242,17 @@ fun learnerNavBarInset(): Dp {
     return max(fromInsets, 48.dp)
 }
 
+private val ChatFabClearance = 72.dp
+
 @Composable
 fun rememberLearnerChromeInsets(showChrome: Boolean, searchExpanded: Boolean = false): Pair<Dp, Dp> {
     val navBar = learnerNavBarInset()
     val statusBar = learnerStatusBarInset()
     return if (showChrome) {
         val searchExtra = if (searchExpanded) GlassChrome.SearchPanelHeight + 8.dp else 0.dp
-        val bottom = GlassChrome.NavHeight + GlassChrome.NavPillBottomGap + navBar + GlassChrome.ContentClearance
+        // UI-29: also clear the chat FAB (56 dp + badge) so it never covers row actions at the list end.
+        val bottom = GlassChrome.NavHeight + GlassChrome.NavPillBottomGap + navBar + GlassChrome.ContentClearance +
+            ChatFabClearance
         val top = statusBar + GlassChrome.NavPillTopGap + GlassChrome.TopBarHeight +
             GlassChrome.TopContentClearance + searchExtra
         top to bottom
@@ -296,6 +300,13 @@ private fun LearnerFrostedTopBar(
             fadeAtBottom = true,
             modifier = Modifier.fillMaxSize(),
         )
+        // UI-30: opaque theme scrim behind the status bar so scrolled covers never show through.
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(statusInset)
+                .background(GotchaColors.WebCanvas.copy(alpha = 0.96f)),
+        )
         Column(
             modifier = Modifier
                 .align(Alignment.TopCenter)
@@ -315,7 +326,7 @@ private fun LearnerFrostedTopBar(
                         ambientColor = Color.Black.copy(alpha = 0.03f),
                     )
                     .clip(barShape)
-                    .background(Color.White.copy(alpha = pillAlpha)),
+                    .background(GotchaColors.SurfaceCard.copy(alpha = pillAlpha)),
             ) {
                 Row(
                     modifier = Modifier
@@ -366,8 +377,8 @@ private fun SearchIconButton(expanded: Boolean, onClick: () -> Unit) {
                     Modifier.background(GotchaColors.BrandPurpleSoft)
                 } else {
                     Modifier
-                        .border(1.dp, Color(0xFFE5E7EB), CircleShape)
-                        .background(Color.White)
+                        .border(1.dp, GotchaColors.Border, CircleShape)
+                        .background(GotchaColors.SurfaceCard)
                 },
             )
             .clickable(
@@ -379,8 +390,8 @@ private fun SearchIconButton(expanded: Boolean, onClick: () -> Unit) {
     ) {
         Icon(
             Icons.Outlined.Search,
-            contentDescription = "Search library",
-            tint = if (expanded) GotchaColors.BrandPurple else Color(0xFF4B5563),
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_search_library),
+            tint = if (expanded) GotchaColors.BrandPurple else GotchaColors.TextMuted,
             modifier = Modifier.size(16.dp),
         )
     }
@@ -399,9 +410,8 @@ private fun LearnerFrostedBottomBar(
     val totalHeight = fadeTop + GlassChrome.NavHeight + GlassChrome.NavPillBottomGap + navInset
     val blurCapable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
     val pillAlpha = if (blurCapable) 0.92f else 0.98f
-    val inactiveNav = Color(0xFF6B7280)
+    val inactiveNav = GotchaColors.TextMuted
     val activeNav = GotchaColors.BrandPurple
-
     Box(modifier = modifier.fillMaxWidth().height(totalHeight)) {
         ClearGlassSheet(
             hazeState = hazeState,
@@ -423,8 +433,8 @@ private fun LearnerFrostedBottomBar(
                     ambientColor = Color.Black.copy(alpha = 0.06f),
                 )
                 .clip(barShape)
-                .background(Color.White.copy(alpha = pillAlpha))
-                .border(1.dp, Color(0xFFE5E7EB), barShape),
+                .background(GotchaColors.SurfaceCard.copy(alpha = pillAlpha))
+                .border(1.dp, GotchaColors.Border, barShape),
         ) {
             Row(
                 modifier = Modifier
@@ -462,13 +472,13 @@ private fun LearnerFrostedBottomBar(
                                 }
                                 Icon(
                                     painter = painterResource(tab.iconRes),
-                                    contentDescription = tab.label,
+                                    contentDescription = androidx.compose.ui.res.stringResource(tab.labelRes),
                                     modifier = Modifier.size(GlassChrome.TabIconSize),
                                     tint = if (selected) Color.White else inactiveNav,
                                 )
                             }
                             Text(
-                                tab.label,
+                                androidx.compose.ui.res.stringResource(tab.labelRes),
                                 modifier = Modifier.padding(top = GlassChrome.TabIconLabelGap),
                                 style = TextStyle(
                                     fontFamily = Inter,
@@ -527,8 +537,8 @@ private fun NotificationButton(unreadNotifs: Int, onClick: () -> Unit) {
             modifier = Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .border(1.dp, Color(0xFFE5E7EB), CircleShape)
-                .background(Color.White)
+                .border(1.dp, GotchaColors.Border, CircleShape)
+                .background(GotchaColors.SurfaceCard)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null,
@@ -538,8 +548,8 @@ private fun NotificationButton(unreadNotifs: Int, onClick: () -> Unit) {
         ) {
             Icon(
                 Icons.Outlined.NotificationsNone,
-                contentDescription = "Notifications",
-                tint = Color(0xFF4B5563),
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_notifications),
+                tint = GotchaColors.TextMuted,
                 modifier = Modifier.size(16.dp),
             )
         }
@@ -601,7 +611,7 @@ private fun UserMenuButton(
                         .width(240.dp)
                         .shadow(8.dp, RoundedCornerShape(12.dp))
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
+                        .background(GotchaColors.SurfaceCard)
                         .padding(12.dp),
                 ) {
                     Row(
@@ -615,7 +625,7 @@ private fun UserMenuButton(
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
-                                color = Color(0xFF111827),
+                                color = GotchaColors.Ink,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -623,7 +633,7 @@ private fun UserMenuButton(
                                 email.orEmpty(),
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
-                                color = Color(0xFF6B7280),
+                                color = GotchaColors.TextMuted,
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -634,14 +644,14 @@ private fun UserMenuButton(
                             .padding(vertical = 10.dp)
                             .fillMaxWidth()
                             .height(1.dp)
-                            .background(Color(0xFFE5E7EB)),
+                            .background(GotchaColors.Border),
                     )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFF9FAFB))
-                            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                            .background(GotchaColors.Surface)
+                            .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                             .clickable {
                                 menuOpen = false
                                 onLogout()
@@ -653,15 +663,15 @@ private fun UserMenuButton(
                         Icon(
                             Icons.AutoMirrored.Outlined.Logout,
                             contentDescription = null,
-                            tint = Color(0xFF6B7280),
+                            tint = GotchaColors.TextMuted,
                             modifier = Modifier.size(18.dp),
                         )
                         Text(
-                            "Log out",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_log_out),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
-                            color = Color(0xFF6B7280),
+                            color = GotchaColors.TextMuted,
                         )
                     }
                 }
@@ -681,8 +691,8 @@ private fun WebSearchField(
             .fillMaxWidth()
             .height(GlassChrome.SearchPanelHeight)
             .clip(RoundedCornerShape(14.dp))
-            .background(Color.White.copy(alpha = 0.95f))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+            .background(GotchaColors.SurfaceCard.copy(alpha = 0.95f))
+            .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -690,7 +700,7 @@ private fun WebSearchField(
         Icon(
             Icons.Outlined.Search,
             contentDescription = null,
-            tint = Color(0xFF9CA3AF),
+            tint = GotchaColors.TextSubtle,
             modifier = Modifier.size(14.dp),
         )
         BasicTextField(
@@ -700,17 +710,17 @@ private fun WebSearchField(
             textStyle = TextStyle(
                 fontFamily = Inter,
                 fontSize = 14.sp,
-                color = Color(0xFF111827),
+                color = GotchaColors.Ink,
             ),
             cursorBrush = SolidColor(GotchaColors.BrandPurple),
             modifier = Modifier.weight(1f),
             decorationBox = { inner ->
                 if (query.isEmpty()) {
                     Text(
-                        "Search library…",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_search_library),
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF9CA3AF),
+                        color = GotchaColors.TextSubtle,
                     )
                 }
                 inner()
@@ -793,6 +803,13 @@ private fun SystemStatusGlass(
         modifier = modifier
             .fillMaxWidth()
             .height(statusInset + fadeBottom),
+    )
+    // UI-30: solid scrim under the status bar itself.
+    Box(
+        modifier
+            .fillMaxWidth()
+            .height(statusInset)
+            .background(GotchaColors.WebCanvas.copy(alpha = 0.96f)),
     )
 }
 

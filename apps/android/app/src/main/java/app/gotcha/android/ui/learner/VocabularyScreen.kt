@@ -79,6 +79,7 @@ private enum class VocabSortKey { Lemma, DueAt, IntervalDays, Repetitions }
 @Composable
 fun VocabularyScreen(
     initialSearch: String? = null,
+    onOpenPractice: () -> Unit = {},
     openReviewOnLaunch: Boolean = false,
     onGoToLibrary: () -> Unit = {},
 ) {
@@ -161,8 +162,8 @@ fun VocabularyScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color(0xFF99A1AF))
-                    Text("Loading vocabulary…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = GotchaColors.TextSubtle)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_loading_vocabulary), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                 }
             }
         }
@@ -171,9 +172,9 @@ fun VocabularyScreen(
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     VocabPageHeader(total = 0, learning = 0, mastered = 0, dueCount = 0, showReview = false, onReview = {})
                     VocabEmptyPanel(
-                        title = "Couldn't load vocabulary",
+                        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_couldn_t_load_vocabulary),
                         description = error.orEmpty(),
-                        actionLabel = "Retry",
+                        actionLabel = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_retry),
                         onAction = { refreshAll() },
                     )
                 }
@@ -183,13 +184,13 @@ fun VocabularyScreen(
             WebCenteredColumn(maxWidth = WebMaxWidth.W6xl, modifier = Modifier.fillMaxSize().background(GotchaColors.WebCanvas)) {
                 Column(Modifier.padding(horizontal = 16.dp, vertical = 24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Column {
-                        Text("Vocabulary", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color(0xFF111827))
-                        Text("Build your personal word list while reading", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_vocabulary), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = GotchaColors.Ink)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_build_your_personal_word_list_while_read), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                     }
                     VocabEmptyPanel(
-                        title = "No words saved yet",
-                        description = "Tap any word while reading to look it up and save it to your vocabulary list.",
-                        actionLabel = "Go to library",
+                        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_words_saved_yet),
+                        description = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_tap_any_word_while_reading_to_look_it_up),
+                        actionLabel = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_go_to_library),
                         onAction = onGoToLibrary,
                     )
                 }
@@ -249,6 +250,27 @@ fun VocabularyScreen(
                             )
                         }
                         item {
+                            // UI-16: entry point to the daily-practice hub (FSRS mixed exercises).
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .background(GotchaColors.SurfaceCard)
+                                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
+                                    .clickable(onClick = offline.guardClick(onOpenPractice))
+                                    .padding(horizontal = 14.dp, vertical = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Icon(Icons.Outlined.AutoAwesome, null, tint = GotchaColors.BrandPurple, modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_daily_practice), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = GotchaColors.Ink)
+                                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_mixed_exercises_from_the_words_you_saved), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
+                                }
+                                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_start), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.BrandPurple)
+                            }
+                        }
+                        item {
                             OfflineBannerIfNeeded(
                                 connectivity = container.connectivityObserver,
                                 hasCachedContent = items.isNotEmpty(),
@@ -257,18 +279,18 @@ fun VocabularyScreen(
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    VocabStatChip("Total", items.size, Icons.Outlined.Book, Color(0xFF364153), Color(0xFFF9FAFB), Color(0xFFE5E7EB), Modifier.weight(1f))
+                                    VocabStatChip(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_total), items.size, Icons.Outlined.Book, GotchaColors.TextMuted, GotchaColors.Surface, GotchaColors.Border, Modifier.weight(1f))
                                     VocabStatChip(
-                                        "Due", dueCount, Icons.Outlined.Schedule,
-                                        if (dueCount > 0) Color(0xFFBB4D00) else Color(0xFF364153),
-                                        if (dueCount > 0) Color(0xFFFFFBEB) else Color(0xFFF9FAFB),
-                                        if (dueCount > 0) Color(0xFFFEE685) else Color(0xFFE5E7EB),
+                                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_due), dueCount, Icons.Outlined.Schedule,
+                                        if (dueCount > 0) GotchaColors.WebStreakText else GotchaColors.TextMuted,
+                                        if (dueCount > 0) GotchaColors.WebStreakBg else GotchaColors.Surface,
+                                        if (dueCount > 0) GotchaColors.WebStreakBorder else GotchaColors.Border,
                                         Modifier.weight(1f),
                                     )
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    VocabStatChip("Learning", totalLearning, Icons.Outlined.Psychology, GotchaBlue.LearningText, GotchaBlue.LearningBg, Color(0xFFBEDBFF), Modifier.weight(1f))
-                                    VocabStatChip("Mastered", totalKnown, Icons.Outlined.CheckCircle, Color(0xFF007A55), Color(0xFFECFDF5), Color(0xFFA4F4CF), Modifier.weight(1f))
+                                    VocabStatChip(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_learning), totalLearning, Icons.Outlined.Psychology, GotchaBlue.LearningText, GotchaBlue.LearningBg, Color(0xFFBEDBFF), Modifier.weight(1f))
+                                    VocabStatChip(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_mastered), totalKnown, Icons.Outlined.CheckCircle, Color(0xFF007A55), GotchaColors.SuccessBg, Color(0xFFA4F4CF), Modifier.weight(1f))
                                 }
                             }
                         }
@@ -277,14 +299,14 @@ fun VocabularyScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White)
-                                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
+                                    .background(GotchaColors.SurfaceCard)
+                                    .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(12.dp))
                                     .padding(horizontal = 14.dp, vertical = 12.dp),
                             ) {
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                                         Icon(Icons.Outlined.AutoAwesome, null, tint = GotchaColors.WebAccent, modifier = Modifier.size(14.dp))
-                                        Text("Mastery", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF374151))
+                                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_mastery), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
                                     }
                                     Text("$masteredPct%", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.WebAccent)
                                 }
@@ -292,7 +314,7 @@ fun VocabularyScreen(
                                     progress = { masteredPct / 100f },
                                     modifier = Modifier.fillMaxWidth().padding(top = 8.dp).height(6.dp).clip(RoundedCornerShape(50)),
                                     color = GotchaColors.WebAccent,
-                                    trackColor = Color(0xFFF3F4F6),
+                                    trackColor = GotchaColors.SurfaceMuted,
                                 )
                             }
                         }
@@ -301,21 +323,21 @@ fun VocabularyScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White)
-                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                                    .background(GotchaColors.SurfaceCard)
+                                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                     .padding(horizontal = 12.dp, vertical = 10.dp),
                             ) {
                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Icon(Icons.Outlined.Search, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(14.dp))
+                                    Icon(Icons.Outlined.Search, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(14.dp))
                                     BasicTextField(
                                         value = query,
                                         onValueChange = { query = it },
                                         singleLine = true,
-                                        textStyle = TextStyle(fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF111827)),
+                                        textStyle = TextStyle(fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink),
                                         cursorBrush = SolidColor(GotchaColors.WebAccent),
                                         modifier = Modifier.fillMaxWidth(),
                                         decorationBox = { inner ->
-                                            if (query.isEmpty()) Text("Search words…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+                                            if (query.isEmpty()) Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_search_words), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                                             inner()
                                         },
                                     )
@@ -337,11 +359,11 @@ fun VocabularyScreen(
                                         fontFamily = Inter,
                                         fontWeight = FontWeight.Medium,
                                         fontSize = 12.sp,
-                                        color = if (on) Color.White else Color(0xFF4B5563),
+                                        color = if (on) Color.White else GotchaColors.TextMuted,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
                                             .background(if (on) GotchaColors.WebAccent else Color.White)
-                                            .border(1.dp, if (on) GotchaColors.WebAccent else Color(0xFFE5E7EB), RoundedCornerShape(8.dp))
+                                            .border(1.dp, if (on) GotchaColors.WebAccent else GotchaColors.Border, RoundedCornerShape(8.dp))
                                             .clickable { chipFilter = chip }
                                             .padding(horizontal = 10.dp, vertical = 6.dp),
                                     )
@@ -353,10 +375,10 @@ fun VocabularyScreen(
                         } else if (filtered.isEmpty()) {
                             item {
                                 Text(
-                                    "No words match your search",
+                                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_words_match_your_search),
                                     fontFamily = Inter,
                                     fontSize = 14.sp,
-                                    color = Color(0xFF99A1AF),
+                                    color = GotchaColors.TextSubtle,
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
                                     textAlign = TextAlign.Center,
                                 )
@@ -380,7 +402,7 @@ fun VocabularyScreen(
                                 },
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
-                                color = Color(0xFF99A1AF),
+                                color = GotchaColors.TextSubtle,
                                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 16.dp),
                                 textAlign = TextAlign.Center,
                             )
@@ -410,12 +432,12 @@ private fun VocabPageHeader(
 ) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Column(modifier = Modifier.weight(1f)) {
-            Text("Vocabulary", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color(0xFF111827))
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_vocabulary), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = GotchaColors.Ink)
             Text(
                 "$total word${if (total == 1) "" else "s"} · $learning learning · $mastered mastered",
                 fontFamily = Inter,
                 fontSize = 14.sp,
-                color = Color(0xFF99A1AF),
+                color = GotchaColors.TextSubtle,
                 modifier = Modifier.padding(top = 2.dp),
             )
         }
@@ -442,15 +464,15 @@ private fun VocabEmptyPanel(title: String, description: String, actionLabel: Str
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        Icon(Icons.Outlined.Book, null, tint = Color(0xFF99A1AF), modifier = Modifier.size(40.dp))
-        Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
-        Text(description, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF), textAlign = TextAlign.Center)
+        Icon(Icons.Outlined.Book, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(40.dp))
+        Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+        Text(description, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle, textAlign = TextAlign.Center)
         Text(
             actionLabel,
             fontFamily = Inter,
@@ -506,8 +528,8 @@ private fun VocabWordCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(12.dp))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
@@ -516,14 +538,14 @@ private fun VocabWordCard(
                     if (isDue) {
                         Box(Modifier.size(6.dp).clip(CircleShape).background(Color(0xFFFBBF24)))
                     }
-                    Text(item.lemma.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = Color(0xFF111827))
+                    Text(item.lemma.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = GotchaColors.Ink)
                     VocabStatusBadge(status)
                 }
                 Text(
                     item.translation.orEmpty(),
                     fontFamily = Inter,
                     fontSize = 14.sp,
-                    color = Color(0xFF6B7280),
+                    color = GotchaColors.TextMuted,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(top = 2.dp),
@@ -532,7 +554,7 @@ private fun VocabWordCard(
                     "Next ${formatVocabDueDate(item.dueAt)} · ${item.intervalDays ?: 0}d · ${item.repetitions ?: 0} reps",
                     fontFamily = Inter,
                     fontSize = 11.sp,
-                    color = Color(0xFF9CA3AF),
+                    color = GotchaColors.TextSubtle,
                     modifier = Modifier.padding(top = 6.dp),
                 )
             }
@@ -555,7 +577,7 @@ private fun VocabWordCard(
                         .padding(8.dp),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Icon(Icons.Outlined.Delete, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(16.dp))
+                    Icon(Icons.Outlined.Delete, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(16.dp))
                 }
             }
         }
@@ -564,7 +586,7 @@ private fun VocabWordCard(
 
 @Composable
 private fun VocabStatusBadge(status: String) {
-    val (bg, fg) = if (status == "known") Color(0xFFD1FAE5) to Color(0xFF047857) else Color(0xFFDBEAFE) to Color(0xFF1D4ED8)
+    val (bg, fg) = if (status == "known") Color(0xFFD1FAE5) to GotchaColors.SuccessText else Color(0xFFDBEAFE) to Color(0xFF1D4ED8)
     Text(
         status,
         fontFamily = Inter,

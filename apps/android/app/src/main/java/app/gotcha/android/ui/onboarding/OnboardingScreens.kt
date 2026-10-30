@@ -1,6 +1,26 @@
 ﻿package app.gotcha.android.ui.onboarding
 
-import androidx.compose.foundation.Image
+import androidx.annotation.RawRes
+import androidx.annotation.StringRes
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import app.gotcha.android.ui.components.AuthTextLink
+import app.gotcha.android.ui.components.rememberReducedMotion
+import app.gotcha.android.ui.theme.GotchaThemeState
+import com.airbnb.lottie.compose.LottieAnimation
+import com.airbnb.lottie.compose.LottieCompositionSpec
+import com.airbnb.lottie.compose.LottieConstants
+import com.airbnb.lottie.compose.animateLottieCompositionAsState
+import com.airbnb.lottie.compose.rememberLottieComposition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -80,7 +100,7 @@ fun SplashScreen(onFinished: (loggedIn: Boolean, isAdmin: Boolean, onboardingDon
             BrandWordmark(fontSize = 48, color = Color.White)
             Spacer(Modifier.height(12.dp))
             Text(
-                "Read your way to fluency",
+                stringResource(R.string.splash_tagline),
                 color = Color.White.copy(alpha = 0.85f),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.Medium,
@@ -101,156 +121,181 @@ fun SplashScreen(onFinished: (loggedIn: Boolean, isAdmin: Boolean, onboardingDon
     }
 }
 
+/** DESIGN-android-auth-onboarding.md §A.6: Lottie art per page, copy in string resources. */
 private data class OnboardingPage(
-    val title: String,
-    val body: String,
-    val imageRes: Int,
+    @StringRes val title: Int,
+    @StringRes val body: Int,
+    @RawRes val anim: Int,
+    @RawRes val animDark: Int,
+    /** Static hero frame (fraction of the timeline) shown under reduced motion. */
+    val heroFrame: Float,
+    val loop: Boolean,
 )
 
 private val pages = listOf(
-    OnboardingPage(
-        "Read real content in any language",
-        "Learn English, Russian, or Uzbek by reading actual books, news, and articles with in-context translation.",
-        R.drawable.onboarding_1,
-    ),
-    OnboardingPage(
-        "Build vocabulary naturally",
-        "Tap any word to instantly translate and add it to your smart spaced repetition deck.",
-        R.drawable.onboarding_2,
-    ),
-    OnboardingPage(
-        "Track your journey",
-        "Monitor your progress with CEFR levels, daily reading streaks, and real-time comprehension statistics.",
-        R.drawable.onboarding_3,
-    ),
-    OnboardingPage(
-        "Join 12,840+ learners",
-        "Be part of a thriving global community learning languages through content they actually love.",
-        R.drawable.onboarding_4,
-    ),
+    OnboardingPage(R.string.onb_1_title, R.string.onb_1_body, R.raw.onboarding_1_read, R.raw.onboarding_1_read_dark, 110f / 240f, true),
+    OnboardingPage(R.string.onb_2_title, R.string.onb_2_body, R.raw.onboarding_2_vocab, R.raw.onboarding_2_vocab_dark, 110f / 240f, true),
+    OnboardingPage(R.string.onb_3_title, R.string.onb_3_body, R.raw.onboarding_3_progress, R.raw.onboarding_3_progress_dark, 149f / 150f, false),
+    OnboardingPage(R.string.onb_4_title, R.string.onb_4_body, R.raw.onboarding_4_community, R.raw.onboarding_4_community_dark, 180f / 360f, true),
 )
+
+@Composable
+private fun OnboardingArt(page: OnboardingPage, active: Boolean, modifier: Modifier = Modifier) {
+    val reduce = rememberReducedMotion()
+    // Dark art follows the in-app theme (system / light / dark), not only the -night qualifier.
+    val res = if (GotchaThemeState.isDark) page.animDark else page.anim
+    val comp by rememberLottieComposition(LottieCompositionSpec.RawRes(res))
+    var resumed by remember { mutableStateOf(true) }
+    LifecycleResumeEffect(Unit) {
+        resumed = true
+        onPauseOrDispose { resumed = false }
+    }
+    val progress by animateLottieCompositionAsState(
+        composition = comp,
+        isPlaying = active && resumed && !reduce,
+        iterations = if (page.loop) LottieConstants.IterateForever else 1,
+        restartOnPlay = true,
+    )
+    val shape = RoundedCornerShape(24.dp)
+    Box(
+        modifier
+            .fillMaxWidth()
+            .widthIn(max = 360.dp)
+            .aspectRatio(4f / 3f)
+            .clip(shape)
+            .border(1.dp, GotchaColors.Border, shape),
+    ) {
+        LottieAnimation(
+            composition = comp,
+            progress = { if (reduce) page.heroFrame else progress },
+            modifier = Modifier.matchParentSize(),
+            contentScale = ContentScale.Fit,
+        )
+    }
+}
 
 @Composable
 fun OnboardingScreen(onDone: () -> Unit) {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
-    var index by remember { mutableIntStateOf(0) }
-    val page = pages[index]
-    GotchaSystemBars(darkIcons = true)
+    val pagerState = rememberPagerState(pageCount = { pages.size })
+    val index = pagerState.currentPage
+    GotchaSystemBars()
+    val finish: () -> Unit = {
+        scope.launch {
+            container.tokenStore.setOnboardingDone()
+            onDone()
+        }
+    }
 
-    Column(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .background(GotchaColors.Surface)
             .statusBarsPadding()
             .navigationBarsPadding(),
-        verticalArrangement = Arrangement.SpaceBetween,
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
+        // §A.4: shrink spacers on short screens.
+        val compact = maxHeight < 640.dp
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                BrandMark(size = 32)
-                Spacer(Modifier.width(12.dp))
-                BrandWordmark(fontSize = 18)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = if (compact) 12.dp else 24.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    BrandMark(size = 32)
+                    Spacer(Modifier.width(12.dp))
+                    BrandWordmark(fontSize = 18, contentDescription = null)
+                }
+                if (index < pages.lastIndex) {
+                    AuthTextLink(
+                        text = stringResource(R.string.onb_skip),
+                        onClick = finish,
+                        fontSize = 14.sp,
+                    )
+                }
             }
-            if (index < pages.lastIndex) {
-                Text(
-                    "Skip",
-                    color = GotchaColors.TextMuted,
-                    fontFamily = Manrope,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 14.sp,
-                    modifier = Modifier.clickable {
-                        scope.launch {
-                            container.tokenStore.setOnboardingDone()
-                            onDone()
+
+            // UI-28: swipeable pages (HorizontalPager) instead of button-only paging.
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxWidth().weight(1f),
+                verticalAlignment = Alignment.CenterVertically,
+            ) { i ->
+                val page = pages[i]
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    OnboardingArt(page, active = pagerState.currentPage == i && !pagerState.isScrollInProgress)
+                    Spacer(Modifier.height(if (compact) 20.dp else 32.dp))
+                    Text(
+                        stringResource(page.title),
+                        fontFamily = Manrope,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 28.sp,
+                        lineHeight = 36.sp,
+                        color = GotchaColors.Ink,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().semantics { heading() },
+                    )
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        stringResource(page.body),
+                        fontFamily = Manrope,
+                        color = GotchaColors.TextMuted,
+                        fontSize = 16.sp,
+                        lineHeight = 24.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(top = 16.dp, bottom = if (compact) 20.dp else 32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().clearAndSetSemantics { },
+                    horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+                ) {
+                    pages.indices.forEach { i ->
+                        val w by animateDpAsState(if (i == index) 24.dp else 8.dp, label = "dot")
+                        Box(
+                            modifier = Modifier
+                                .height(8.dp)
+                                .width(w)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(if (i == index) GotchaColors.BrandPurple else GotchaColors.Border),
+                        )
+                    }
+                }
+                Spacer(Modifier.height(24.dp))
+                GotchaPrimaryButton(
+                    text = stringResource(if (index == pages.lastIndex) R.string.onb_get_started else R.string.onb_next),
+                    shapeRadius = 16,
+                    modifier = Modifier.fillMaxWidth(),
+                    onClick = {
+                        if (index < pages.lastIndex) {
+                            scope.launch { pagerState.animateScrollToPage(index + 1) }
+                        } else {
+                            finish()
                         }
                     },
                 )
             }
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Image(
-                painter = painterResource(page.imageRes),
-                contentDescription = null,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(4f / 3f)
-                    .clip(RoundedCornerShape(24.dp))
-                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(24.dp)),
-                contentScale = ContentScale.Crop,
-            )
-            Spacer(Modifier.height(32.dp))
-            Text(
-                page.title,
-                fontFamily = Manrope,
-                fontWeight = FontWeight.ExtraBold,
-                fontSize = 28.sp,
-                lineHeight = 36.sp,
-                color = GotchaColors.Ink,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(12.dp))
-            Text(
-                page.body,
-                fontFamily = Manrope,
-                color = GotchaColors.TextMuted,
-                fontSize = 16.sp,
-                lineHeight = 24.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
-        }
-
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .padding(bottom = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
-            ) {
-                pages.indices.forEach { i ->
-                    Box(
-                        modifier = Modifier
-                            .height(8.dp)
-                            .width(if (i == index) 24.dp else 8.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(if (i == index) GotchaColors.BrandPurple else GotchaColors.Border),
-                    )
-                }
-            }
-            Spacer(Modifier.height(24.dp))
-            GotchaPrimaryButton(
-                text = if (index == pages.lastIndex) "Get Started" else "Next",
-                containerColor = GotchaColors.BrandPurple,
-                shapeRadius = 16,
-                onClick = {
-                    if (index < pages.lastIndex) {
-                        index++
-                    } else {
-                        scope.launch {
-                            container.tokenStore.setOnboardingDone()
-                            onDone()
-                        }
-                    }
-                },
-            )
         }
     }
 }

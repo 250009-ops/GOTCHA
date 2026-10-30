@@ -8,6 +8,7 @@ import {
 import { campaignAudienceMatches, PUSH_CAMPAIGN_CHANNELS } from '../../common/campaign-audience';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { effectiveStreakCount } from '../../services/streak.service';
 
 type Draft = {
   kind: string;
@@ -212,7 +213,9 @@ export class NotificationsService {
     const streakLast = user?.streakLastDate
       ? user.streakLastDate.toISOString().slice(0, 10)
       : null;
-    const streakCount = user?.streakCount ?? 0;
+    // UI-21: same decayed streak as /me (users.service effectiveStreakCount), so the reminder never
+    // promises a 5-day streak while the header shows 0. Skipped entirely when the streak is gone.
+    const streakCount = effectiveStreakCount(user?.streakCount ?? 0, user?.streakLastDate ?? null);
     const remindersOn = prefs?.notificationsEnabled !== false;
     if (remindersOn && streakCount > 0 && streakLast !== today) {
       const text = formatNotification(locale, 'streak', { streakCount, firstName });

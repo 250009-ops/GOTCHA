@@ -1,0 +1,202 @@
+{
+ "ui_home": {
+  "en": "Home",
+  "ru": "Главная",
+  "uz": "Bosh sahifa"
+ },
+ "ui_library": {
+  "en": "Library",
+  "ru": "Библиотека",
+  "uz": "Kutubxona"
+ },
+ "ui_words": {
+  "en": "Words",
+  "ru": "Слова",
+  "uz": "So‘zlar"
+ },
+ "ui_progress": {
+  "en": "Progress",
+  "ru": "Прогресс",
+  "uz": "Progress"
+ },
+ "ui_profile": {
+  "en": "Profile",
+  "ru": "Профиль",
+  "uz": "Profil"
+ },
+ "ui_app_language": {
+  "en": "App Language",
+  "ru": "Язык приложения",
+  "uz": "Ilova tili"
+ },
+ "ui_app_language_hint": {
+  "en": "Choose your preferred interface language",
+  "ru": "Выберите язык интерфейса",
+  "uz": "Interfeys tilini tanlang"
+ },
+ "ui_search_languages": {
+  "en": "Search languages...",
+  "ru": "Поиск языка...",
+  "uz": "Til qidirish..."
+ },
+ "ui_language_saved": {
+  "en": "Saved to your account. Web and mobile share this setting.",
+  "ru": "Сохранено в аккаунте. Веб и приложение используют одну настройку.",
+  "uz": "Hisobingizga saqlandi. Veb va ilova bitta sozlamani ishlatadi."
+ },
+ "ui_daily_goal": {
+  "en": "Daily Goal",
+  "ru": "Дневная цель",
+  "uz": "Kunlik maqsad"
+ },
+ "ui_adjust_goal": {
+  "en": "Adjust your goal",
+  "ru": "Изменить цель",
+  "uz": "Maqsadni o‘zgartirish"
+ },
+ "ui_reminders": {
+  "en": "Reminders",
+  "ru": "Напоминания",
+  "uz": "Eslatmalar"
+ },
+ "ui_daily_reminder": {
+  "en": "Daily reminder",
+  "ru": "Ежедневное напоминание",
+  "uz": "Kunlik eslatma"
+ },
+ "ui_daily_reminder_sub": {
+  "en": "Receive a push alert to read",
+  "ru": "Push-уведомление почитать",
+  "uz": "O‘qish uchun push-xabar"
+ },
+ "ui_this_week": {
+  "en": "This Week",
+  "ru": "Эта неделя",
+  "uz": "Shu hafta"
+ },
+ "ui_save_changes": {
+  "en": "Save Changes",
+  "ru": "Сохранить",
+  "uz": "Saqlash"
+ },
+ "ui_minutes": {
+  "en": "minutes",
+  "ru": "минут",
+  "uz": "daqiqa"
+ },
+ "ui_goal_achieved": {
+  "en": "% of your daily goal achieved",
+  "ru": "% дневной цели",
+  "uz": "% kunlik maqsad"
+ },
+ "ui_reading_preferences": {
+  "en": "Reading Preferences",
+  "ru": "Настройки чтения",
+  "uz": "O‘qish sozlamalari"
+ },
+ "ui_default_font_size": {
+  "en": "Default font size",
+  "ru": "Размер шрифта",
+  "uz": "Shrift o‘lchami"
+ },
+ "ui_default_theme": {
+  "en": "Default theme",
+  "ru": "Тема",
+  "uz": "Mavzu"
+ },
+ "ui_theme_light": {
+  "en": "Light",
+  "ru": "Светлая",
+  "uz": "Yorug‘"
+ },
+ "ui_theme_sepia": {
+  "en": "Sepia",
+  "ru": "Сепия",
+  "uz": "Sepia"
+ },
+ "ui_theme_dark": {
+  "en": "Dark",
+  "ru": "Тёмная",
+  "uz": "Qorong‘i"
+ },
+ "ui_highlight_known": {
+  "en": "Highlight known words",
+  "ru": "Подсветка известных слов",
+  "uz": "Ma’lum so‘zlarni belgilash"
+ },
+ "ui_highlight_known_sub": {
+  "en": "Show known-word highlighting in the reader",
+  "ru": "Показывать известные слова в читалке",
+  "uz": "O‘qishda ma’lum so‘zlarni ko‘rsatish"
+ },
+ "ui_tts": {
+  "en": "Text-to-speech",
+  "ru": "Озвучка",
+  "uz": "Ovozli o‘qish"
+ },
+ "ui_tts_sub": {
+  "en": "Read text aloud when supported",
+  "ru": "Читать текст вслух, если доступно",
+  "uz": "Matnni ovozda o‘qish"
+ },
+ "ui_notifications": {
+  "en": "Notifications",
+  "ru": "Уведомления",
+  "uz": "Bildirishnomalar"
+ },
+ "ui_notifications_sub": {
+  "en": "Learning reminders",
+  "ru": "Напоминания об учёбе",
+  "uz": "O‘qish eslatmalari"
+ },
+ "ui_reading_prefs_sub": {
+  "en": "Text size, theme, TTS",
+  "ru": "Шрифт, тема, озвучка",
+  "uz": "Shrift, mavzu, ovoz"
+ },
+ "ui_password": {
+  "en": "Password",
+  "ru": "Пароль",
+  "uz": "Parol"
+ },
+ "ui_password_sub": {
+  "en": "Change your account password",
+  "ru": "Сменить пароль",
+  "uz": "Parolni o‘zgartirish"
+ },
+ "ui_native_language": {
+  "en": "Native language",
+  "ru": "Родной язык",
+  "uz": "Ona tili"
+ },
+ "ui_delete_account": {
+  "en": "Delete account",
+  "ru": "Удалить аккаунт",
+  "uz": "Hisobni o‘chirish"
+ },
+ "ui_delete_account_sub": {
+  "en": "Permanently delete your account and all data",
+  "ru": "Безвозвратно удалить аккаунт и данные",
+  "uz": "Hisob va ma’lumotlarni butunlay o‘chirish"
+ },
+ "ui_sign_out": {
+  "en": "Sign out",
+  "ru": "Выйти",
+  "uz": "Chiqish"
+ },
+ "ui_change_photo": {
+  "en": "Change photo",
+  "ru": "Сменить фото",
+  "uz": "Rasmni almashtirish"
+ },
+ "ui_photo_hint": {
+  "en": "JPG, PNG, or WebP up to 2 MB",
+  "ru": "JPG, PNG или WebP до 2 МБ",
+  "uz": "JPG, PNG yoki WebP, 2 MB gacha"
+ },
+ "ui_minutes_per_day": {
+  "en": "minutes / day",
+  "ru": "минут / день",
+  "uz": "daqiqa / kun"
+ }
+}

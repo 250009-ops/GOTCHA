@@ -75,6 +75,11 @@ import app.gotcha.android.ui.theme.WebMaxWidth
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.util.Locale
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.role
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 
 private val uiLanguageOptions = listOf(
     AppLanguageOption("en", "English", "English", "🇬🇧"),
@@ -91,6 +96,8 @@ private data class TargetLangModalState(
 
 @Composable
 fun SettingsScreen(
+    /** Null when Settings is a bottom tab (no back arrow). */
+    onBack: (() -> Unit)? = null,
     onLogout: () -> Unit,
     onOpenImport: () -> Unit,
     onChangePassword: () -> Unit,
@@ -120,6 +127,15 @@ fun SettingsScreen(
     var showKnown by remember { mutableStateOf(false) }
     var tts by remember { mutableStateOf(false) }
     var notificationsEnabled by remember { mutableStateOf(true) }
+    var appTheme by remember { mutableStateOf(app.gotcha.android.ui.theme.GotchaThemeState.appTheme) }
+    // UI-32: the last saved values; Save is enabled only when the draft differs.
+    var savedDraft by remember { mutableStateOf<List<Any?>>(emptyList()) }
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val savedMsg = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_saved)
+    fun draft(): List<Any?> = listOf(
+        displayName.trim(), nativeLanguage, uiLanguage, (fontSlider * 100).toInt(), (lineSpacing * 10).toInt(),
+        theme, showKnown, tts, notificationsEnabled, appTheme,
+    )
 
     fun applyMe(data: MeResponse) {
         me = data
@@ -133,7 +149,10 @@ fun SettingsScreen(
         showKnown = prefs?.showKnownWords ?: false
         tts = prefs?.ttsEnabled ?: false
         notificationsEnabled = prefs?.notificationsEnabled ?: true
+        appTheme = app.gotcha.android.ui.theme.AppUiPrefs.normalizeTheme(prefs?.appTheme ?: app.gotcha.android.ui.theme.GotchaThemeState.appTheme)
+        savedDraft = draft()
     }
+    val dirty = savedDraft.isNotEmpty() && draft() != savedDraft
 
     val photoPicker = rememberLauncherForActivityResult(
         ActivityResultContracts.PickVisualMedia(),
@@ -183,7 +202,7 @@ fun SettingsScreen(
                 .map(CatalogLanguage::toAppLanguageOption)
             subscription = runCatching { container.api.subscription() }.getOrNull()
         } catch (e: Exception) {
-            if (me == null) saveError = e.apiErrorMessage("Failed to load settings")
+            if (me == null) saveError = e.apiErrorMessage(context.getString(app.gotcha.android.R.string.settings_load_failed))
         } finally {
             loading = false
         }
@@ -203,6 +222,7 @@ fun SettingsScreen(
     }
     val pagesWindow = pageWindowLabel(allowance?.resetCycle)
 
+    Box(Modifier.fillMaxSize()) {
     WebCenteredColumn(
         maxWidth = WebMaxWidth.W3xl,
         modifier = Modifier
@@ -212,7 +232,8 @@ fun SettingsScreen(
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Spacer(Modifier.height(learnerScrollTopInset()))
@@ -221,27 +242,39 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
+                if (onBack != null) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.common_back),
+                    tint = GotchaColors.Ink,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(RoundedCornerShape(22.dp))
+                        .clickable(onClick = onBack)
+                        .padding(10.dp),
+                )
+                }
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        "Settings",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_title),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 22.sp,
-                        color = Color(0xFF111827),
+                        color = GotchaColors.Ink,
                     )
                     Text(
-                        "Manage your account and learning preferences.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_subtitle),
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF99A1AF),
+                        color = GotchaColors.TextSubtle,
                         modifier = Modifier.padding(top = 2.dp),
                     )
                 }
                 Box(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
-                        .background(if (saving || loading) GotchaColors.WebAccent.copy(alpha = 0.6f) else GotchaColors.WebAccent)
-                        .clickable(enabled = !loading && !saving) {
+                        .background(if (saving || loading || !dirty) GotchaColors.WebAccent.copy(alpha = 0.45f) else GotchaColors.WebAccent)
+                        .clickable(enabled = !loading && !saving && dirty) {
                             scope.launch {
                                 saving = true
                                 saveError = null
@@ -258,10 +291,15 @@ fun SettingsScreen(
                                         showKnownWords = showKnown,
                                         ttsEnabled = tts,
                                         notificationsEnabled = notificationsEnabled,
+                                        appTheme = appTheme,
                                     )
+                                    // UI-17 / UI-06: language and theme apply at once, no relaunch.
+                                    app.gotcha.android.ui.theme.AppUiPrefs.updateLanguage(uiLanguage)
+                                    app.gotcha.android.ui.theme.AppUiPrefs.updateTheme(appTheme)
                                     applyMe(container.userRepository.meFetch().data)
+                                    launch { snackbar.showSnackbar(savedMsg) }
                                 } catch (e: Exception) {
-                                    saveError = e.apiErrorMessage("Save failed")
+                                    saveError = e.apiErrorMessage(context.getString(app.gotcha.android.R.string.settings_save_failed))
                                 } finally {
                                     saving = false
                                 }
@@ -270,7 +308,7 @@ fun SettingsScreen(
                         .padding(horizontal = 16.dp, vertical = 10.dp),
                 ) {
                     Text(
-                        if (saving) "Saving…" else "Save changes",
+                        androidx.compose.ui.res.stringResource(if (saving) app.gotcha.android.R.string.settings_saving else app.gotcha.android.R.string.ui_save_changes),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
@@ -283,20 +321,23 @@ fun SettingsScreen(
                 connectivity = container.connectivityObserver,
                 hasCachedContent = me != null,
             )
-            saveError?.let {
+            if (saveError != null && me == null && !loading) {
+                // UI-10: load failure gets a Retry, not just red text.
+                app.gotcha.android.ui.components.ErrorState(message = saveError!!, onRetry = { reloadKey += 1 })
+            } else saveError?.let {
                 Text(it, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
 
-            SettingsSection("Account") {
-                SettingsRow("Photo", "Used on Home, Profile, and chat. JPG, PNG, or WebP up to 2 MB.") {
+            SettingsSection(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_account)) {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_photo), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_photo_hint)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         SettingsAvatar(me?.displayName, me?.avatarUrl)
                         Text(
-                            if (uploadingPhoto) "Uploading…" else "Change photo",
+                            androidx.compose.ui.res.stringResource(if (uploadingPhoto) app.gotcha.android.R.string.settings_uploading else app.gotcha.android.R.string.ui_change_photo),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Medium,
                             fontSize = 14.sp,
-                            color = Color(0xFF0A0A0A),
+                            color = GotchaColors.Ink,
                             modifier = Modifier
                                 .clip(RoundedCornerShape(14.dp))
                                 .border(1.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
@@ -312,30 +353,30 @@ fun SettingsScreen(
                         )
                     }
                 }
-                SettingsRow("Display name", "Shown on your profile and leaderboard") {
-                    SettingsTextField(displayName, { displayName = it }, "Your name")
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_display_name), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_display_name_sub)) {
+                    SettingsTextField(displayName, { displayName = it }, androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_your_name))
                 }
-                SettingsRow("Native language", "Used for translations and lookups") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_native_language), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_native_sub)) {
                     SettingsDropdown(
                         value = nativeLanguage,
                         options = languageOptions.ifEmpty { uiLanguageOptions },
                         onSelect = { nativeLanguage = it },
                     )
                 }
-                SettingsRow("App language", "Interface language on web and mobile.") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_app_language), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_app_language_sub)) {
                     SettingsDropdown(value = uiLanguage, options = uiLanguageOptions, onSelect = { uiLanguage = it })
                 }
-                SettingsRow("Email", "Used for login and notifications") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_email), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_email_sub)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(
                             me?.email.orEmpty(),
                             fontFamily = Inter,
                             fontSize = 14.sp,
-                            color = Color(0xFF6A7282),
+                            color = GotchaColors.TextMuted,
                             modifier = Modifier.weight(1f, fill = false),
                         )
                         Text(
-                            "Verified",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_verified),
                             fontFamily = Inter,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp,
@@ -347,13 +388,13 @@ fun SettingsScreen(
                         )
                     }
                 }
-                SettingsRow("Password", showDivider = false) {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_password), showDivider = false) {
                     Text(
-                        "Change password",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_change_password),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Medium,
                         fontSize = 14.sp,
-                        color = Color(0xFF0A0A0A),
+                        color = GotchaColors.Ink,
                         modifier = Modifier
                             .clip(RoundedCornerShape(14.dp))
                             .border(1.dp, Color.Black.copy(alpha = 0.1f), RoundedCornerShape(14.dp))
@@ -363,13 +404,13 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSection("Target Languages") {
+            SettingsSection(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_target_languages)) {
                 if (visibleTargets.isEmpty()) {
                     Text(
-                        "No target languages set yet.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_no_targets),
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF99A1AF),
+                        color = GotchaColors.TextSubtle,
                         modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
                     )
                 } else {
@@ -403,35 +444,35 @@ fun SettingsScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Icon(Icons.Outlined.Add, contentDescription = null, tint = Color(0xFF0A0A0A), modifier = Modifier.size(16.dp))
-                    Text("Add language", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = Color(0xFF0A0A0A))
+                    Icon(Icons.Outlined.Add, contentDescription = null, tint = GotchaColors.Ink, modifier = Modifier.size(16.dp))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_add_language), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 13.sp, color = GotchaColors.Ink)
                 }
             }
 
-            SettingsSection("Reading Preferences") {
+            SettingsSection(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_reading_preferences)) {
                 Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("PREVIEW", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color(0xFF99A1AF))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_preview), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaColors.TextSubtle)
                     Text(
-                        "The old lighthouse had stood on the cliff for more than a hundred years.",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_preview_text),
                         fontFamily = Inter,
                         fontSize = (14 * (0.8 + fontSlider * 0.8)).sp,
                         lineHeight = (14 * lineSpacing).sp,
-                        color = Color(0xFF1E2939),
+                        color = GotchaColors.Ink,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color.White)
+                            .background(GotchaColors.SurfaceCard)
                             .padding(16.dp),
                     )
                 }
-                SettingsRow("Font size", "${(100 * (0.8 + fontSlider * 0.8)).toInt()}% — base size") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_default_font_size), "${(100 * (0.8 + fontSlider * 0.8)).toInt()}%") {
                     Slider(
                         value = fontSlider,
                         onValueChange = { fontSlider = it },
                         colors = SliderDefaults.colors(thumbColor = GotchaColors.WebAccent, activeTrackColor = GotchaColors.WebAccent),
                     )
                 }
-                SettingsRow("Line spacing", "${String.format(Locale.US, "%.1f", lineSpacing)}× line height") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_line_spacing), "${String.format(Locale.US, "%.1f", lineSpacing)}×") {
                     Slider(
                         value = lineSpacing,
                         onValueChange = { lineSpacing = it },
@@ -439,34 +480,36 @@ fun SettingsScreen(
                         colors = SliderDefaults.colors(thumbColor = GotchaColors.WebAccent, activeTrackColor = GotchaColors.WebAccent),
                     )
                 }
-                SettingsRow("Reader theme") {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("light" to "Light", "sepia" to "Sepia", "dark" to "Dark").forEach { (value, label) ->
-                            val on = theme == value
-                            Text(
-                                label,
-                                fontFamily = Inter,
-                                fontWeight = FontWeight.Medium,
-                                fontSize = 12.sp,
-                                color = if (on) GotchaBlue.B700 else Color(0xFF6A7282),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .background(if (on) GotchaBlue.B50 else Color.White)
-                                    .border(1.dp, if (on) GotchaBlue.B300 else Color(0xFFE5E7EB), RoundedCornerShape(10.dp))
-                                    .clickable { theme = value }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                            )
-                        }
-                    }
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_app_theme), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_app_theme_sub)) {
+                    ThemeChips(
+                        options = listOf(
+                            "system" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.theme_system),
+                            "light" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_theme_light),
+                            "dark" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_theme_dark),
+                        ),
+                        selected = appTheme,
+                        onSelect = { appTheme = it },
+                    )
                 }
-                SettingsRow("Show known words", "When off, known words show without any highlight") {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_reader_theme)) {
+                    ThemeChips(
+                        options = listOf(
+                            "light" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_theme_light),
+                            "sepia" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_theme_sepia),
+                            "dark" to androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_theme_dark),
+                        ),
+                        selected = theme,
+                        onSelect = { theme = it },
+                    )
+                }
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_highlight_known), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_highlight_known_sub)) {
                     Switch(
                         checked = showKnown,
                         onCheckedChange = { showKnown = it },
                         colors = SwitchDefaults.colors(checkedTrackColor = GotchaColors.WebAccent),
                     )
                 }
-                SettingsRow("Text-to-speech", "Read text aloud while you follow along", showDivider = false) {
+                SettingsRow(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_tts), androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_tts_sub), showDivider = false) {
                     Switch(
                         checked = tts,
                         onCheckedChange = { tts = it },
@@ -475,10 +518,10 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSection("Learning Goals") {
+            SettingsSection(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_learning_goals)) {
                 SettingsRow(
-                    "Email notifications",
-                    "Get an email for new messages, plus reminders before your streak breaks",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_email_notifications),
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_email_notifications_sub),
                     showDivider = false,
                 ) {
                     Switch(
@@ -489,7 +532,7 @@ fun SettingsScreen(
                 }
             }
 
-            SettingsSection("Usage & Imports") {
+            SettingsSection(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_usage)) {
                 Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Box(
                         modifier = Modifier
@@ -501,8 +544,8 @@ fun SettingsScreen(
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Column {
-                                    Text("FREE ALLOWANCE", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B200)
-                                    Text("Pay per import", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
+                                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_free_allowance), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B200)
+                                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_pay_per_import), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
                                 }
                                 Icon(Icons.Outlined.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                             }
@@ -520,7 +563,7 @@ fun SettingsScreen(
                                 }
                             }
                             Text(
-                                "Import more content",
+                                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_import_more),
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
@@ -528,7 +571,7 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color.White)
+                                    .background(GotchaColors.SurfaceCard)
                                     .clickable(onClick = offline.guardClick(onOpenImport))
                                     .padding(vertical = 10.dp),
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -537,15 +580,15 @@ fun SettingsScreen(
                     }
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("AI lookups today", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF6A7282))
-                            Text("$lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota}", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF6A7282))
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_ai_lookups_today), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                            Text("$lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota}", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                         }
                         Box(
                             Modifier
                                 .fillMaxWidth()
                                 .height(8.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(Color(0xFFF3F4F6)),
+                                .background(GotchaColors.SurfaceMuted),
                         ) {
                             Box(
                                 Modifier
@@ -559,12 +602,12 @@ fun SettingsScreen(
                     if (allowance != null) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Free imports today", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF6A7282))
+                                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_free_imports_today), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
                                 Text(
                                     "${allowance.dailyFreeUsed}/${allowance.dailyFreeImportsPerUser}",
                                     fontFamily = Inter,
                                     fontSize = 12.sp,
-                                    color = Color(0xFF6A7282),
+                                    color = GotchaColors.TextMuted,
                                 )
                             }
                             Box(
@@ -572,7 +615,7 @@ fun SettingsScreen(
                                     .fillMaxWidth()
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFFF3F4F6)),
+                                    .background(GotchaColors.SurfaceMuted),
                             ) {
                                 Box(
                                     Modifier
@@ -591,28 +634,37 @@ fun SettingsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                    .background(GotchaColors.SurfaceCard)
+                    .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "Signed in as ${me?.email.orEmpty()}",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.settings_signed_in_as, me?.email.orEmpty()),
                     fontFamily = Inter,
                     fontSize = 13.sp,
-                    color = Color(0xFF99A1AF),
+                    color = GotchaColors.TextSubtle,
                 )
                 Text(
-                    "Sign out",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.ui_sign_out),
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 15.sp,
                     color = GotchaColors.Danger,
-                    modifier = Modifier.clickable(onClick = offline.guardClick(onLogout)),
+                    modifier = Modifier
+                        .clickable(onClick = offline.guardClick(onLogout))
+                        .minimumInteractiveComponentSize(),
                 )
             }
             Spacer(Modifier.height(learnerScrollBottomInset()))
         }
+    }
+        androidx.compose.material3.SnackbarHost(
+            snackbar,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = learnerNavBarInset() + 16.dp),
+        )
     }
 
     langModal?.let { modal ->
@@ -633,24 +685,50 @@ fun SettingsScreen(
     }
 }
 
+/** Segmented chips that never wrap (UI-31: "Dark" broke onto two lines). */
+@Composable
+internal fun ThemeChips(options: List<Pair<String, String>>, selected: String, onSelect: (String) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        options.forEach { (value, label) ->
+            val on = selected == value
+            Text(
+                label,
+                fontFamily = Inter,
+                fontWeight = FontWeight.Medium,
+                fontSize = 12.sp,
+                maxLines = 1,
+                softWrap = false,
+                color = if (on) GotchaColors.BrandPurple else GotchaColors.TextMuted,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (on) GotchaColors.BrandPurpleTint else GotchaColors.SurfaceCard)
+                    .border(1.dp, if (on) GotchaColors.BrandPurpleMuted else GotchaColors.Border, RoundedCornerShape(10.dp))
+                    .clickable { onSelect(value) }
+                    .semantics { this.selected = on; role = androidx.compose.ui.semantics.Role.RadioButton }
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+            )
+        }
+    }
+}
+
 @Composable
 private fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp)),
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp)),
     ) {
         Text(
             title,
             fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 20.sp,
-            color = Color(0xFF111827),
+            color = GotchaColors.Ink,
             modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
         )
-        HorizontalDivider(color = Color(0xFFF9FAFB))
+        HorizontalDivider(color = GotchaColors.Surface)
         content()
     }
 }
@@ -671,16 +749,16 @@ private fun SettingsRow(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text(label, fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = Color(0xFF364153))
+                Text(label, fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.TextMuted)
                 description?.let {
-                    Text(it, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF), modifier = Modifier.padding(top = 2.dp))
+                    Text(it, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle, modifier = Modifier.padding(top = 2.dp))
                 }
             }
             Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 trailing()
             }
         }
-        if (showDivider) HorizontalDivider(color = Color(0xFFF9FAFB))
+        if (showDivider) HorizontalDivider(color = GotchaColors.Surface)
     }
 }
 
@@ -713,16 +791,16 @@ private fun SettingsTextField(value: String, onChange: (String) -> Unit, placeho
         value = value,
         onValueChange = onChange,
         singleLine = true,
-        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF111827)),
+        textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink),
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFFF9FAFB))
-            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+            .background(GotchaColors.Surface)
+            .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         decorationBox = { inner ->
             if (value.isEmpty()) {
-                Text(placeholder, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                Text(placeholder, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
             }
             inner()
         },
@@ -738,12 +816,12 @@ private fun SettingsDropdown(value: String, options: List<AppLanguageOption>, on
             label,
             fontFamily = Inter,
             fontSize = 14.sp,
-            color = Color(0xFF111827),
+            color = GotchaColors.Ink,
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFFF9FAFB))
-                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                .background(GotchaColors.Surface)
+                .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                 .clickable { open = !open }
                 .padding(horizontal = 12.dp, vertical = 10.dp),
         )
@@ -752,8 +830,8 @@ private fun SettingsDropdown(value: String, options: List<AppLanguageOption>, on
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                    .background(GotchaColors.SurfaceCard)
+                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                     .padding(vertical = 4.dp),
             ) {
                 options.forEach { opt ->
@@ -800,12 +878,12 @@ private fun TargetLanguageRow(
                     "Level: ${(tl.cefrLevel ?: "a1").uppercase()}",
                     fontFamily = Inter,
                     fontSize = 12.sp,
-                    color = Color(0xFF99A1AF),
+                    color = GotchaColors.TextSubtle,
                 )
             }
             if (tl.isPrimary) {
                 Text(
-                    "Primary",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_primary),
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp,
@@ -817,18 +895,18 @@ private fun TargetLanguageRow(
                 )
             }
             if (canRemove) {
-                Text("Remove", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.Danger, modifier = Modifier.clickable(onClick = onRemove))
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_remove), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.Danger, modifier = Modifier.clickable(onClick = onRemove))
             }
             Icon(
                 Icons.Outlined.ChevronRight,
-                contentDescription = "Edit",
-                tint = Color(0xFF99A1AF),
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_edit),
+                tint = GotchaColors.TextSubtle,
                 modifier = Modifier
                     .size(18.dp)
                     .clickable(onClick = onEdit),
             )
         }
-        if (showDivider) HorizontalDivider(color = Color(0xFFF9FAFB))
+        if (showDivider) HorizontalDivider(color = GotchaColors.Surface)
     }
 }
 
@@ -881,7 +959,7 @@ private fun TargetLanguageModal(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 if (state.mode == "add") {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("Language", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = Color(0xFF4A5565))
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_language), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.TextMuted)
                         BasicTextField(
                             value = langQuery.ifBlank { selectedLabel?.let { "${it.flag} ${it.englishLabel}" } ?: "" },
                             onValueChange = {
@@ -889,12 +967,12 @@ private fun TargetLanguageModal(
                                 langPickerOpen = true
                             },
                             singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF111827)),
+                            textStyle = androidx.compose.ui.text.TextStyle(fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFFF9FAFB))
-                                .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                                .background(GotchaColors.Surface)
+                                .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                                 .padding(horizontal = 12.dp, vertical = 10.dp),
                         )
                         if (langPickerOpen && filteredLanguages.isNotEmpty()) {
@@ -902,8 +980,8 @@ private fun TargetLanguageModal(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
-                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
-                                    .background(Color.White),
+                                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
+                                    .background(GotchaColors.SurfaceCard),
                             ) {
                                 filteredLanguages.forEach { opt ->
                                     Text(
@@ -928,17 +1006,17 @@ private fun TargetLanguageModal(
                         "${selectedLabel?.flag ?: "🌐"} ${selectedLabel?.englishLabel ?: targetLanguage.uppercase()}",
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF6A7282),
+                        color = GotchaColors.TextMuted,
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Color(0xFFF9FAFB))
-                            .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(14.dp))
+                            .background(GotchaColors.Surface)
+                            .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
                             .padding(horizontal = 12.dp, vertical = 10.dp),
                     )
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("CEFR level", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = Color(0xFF4A5565))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_cefr_level), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.TextMuted)
                     SettingsDropdown(
                         value = cefrLevel,
                         options = cefrLevels.map { AppLanguageOption(it, it.uppercase(), it.uppercase(), "") },
@@ -951,7 +1029,7 @@ private fun TargetLanguageModal(
                     modifier = Modifier.clickable { isPrimary = !isPrimary },
                 ) {
                     Checkbox(checked = isPrimary, onCheckedChange = { isPrimary = it })
-                    Text("Set as primary target language", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF364153))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_set_as_primary_target_language), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted)
                 }
                 error?.let {
                     Text(it, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.Danger)
@@ -998,7 +1076,7 @@ private fun TargetLanguageModal(
         },
         dismissButton = {
             TextButton(onClick = onDismiss, enabled = !saving) {
-                Text("Cancel", fontFamily = Inter)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_cancel), fontFamily = Inter)
             }
         },
     )

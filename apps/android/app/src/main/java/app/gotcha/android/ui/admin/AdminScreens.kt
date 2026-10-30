@@ -139,6 +139,11 @@ fun AdminShell(onBackToLearner: () -> Unit, onLogout: () -> Unit = {}) {
     val nav = rememberNavController()
     val backStack by nav.currentBackStackEntryAsState()
     val current = backStack?.destination?.route
+    // Admin console is light-only; restore the learner theme when leaving.
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        app.gotcha.android.ui.theme.GotchaThemeState.forceLight = true
+        onDispose { app.gotcha.android.ui.theme.GotchaThemeState.forceLight = false }
+    }
     GotchaSystemBars(darkIcons = true)
     val container = LocalAppContainer.current
     var me by remember { mutableStateOf<AdminMe?>(null) }

@@ -82,7 +82,7 @@ fun LearnerSubpage(
     onBack: () -> Unit,
     body: @Composable () -> Unit,
 ) {
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     Column(
         Modifier
             .fillMaxSize()
@@ -102,14 +102,14 @@ fun LearnerSubpage(
                 Modifier
                     .size(32.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(10.dp))
                     .clickable(onClick = onBack),
                 contentAlignment = Alignment.Center,
             ) {
                 Icon(
                     Icons.AutoMirrored.Outlined.ArrowBack,
-                    contentDescription = "Back",
+                    contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_back),
                     tint = GotchaColors.Ink,
                     modifier = Modifier.size(18.dp),
                 )
@@ -140,8 +140,8 @@ fun WebDirectoryFormPanel(
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 8.dp)
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
         content = content,
@@ -154,7 +154,7 @@ private fun TopicResultRow(item: ContentItem, onClick: () -> Unit) {
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(14.dp))
             .clickable(onClick = onClick)
             .padding(12.dp),
@@ -306,14 +306,14 @@ fun ContentDetailScreen(
         ) {
             Icon(
                 Icons.Outlined.ChevronLeft,
-                contentDescription = "Back",
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_back),
                 tint = GotchaColors.Ink,
                 modifier = Modifier
                     .size(20.dp)
                     .clickable(onClick = onBack),
             )
             Text(
-                "Book Details",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_book_details),
                 fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
@@ -326,13 +326,13 @@ fun ContentDetailScreen(
         if (item == null && (awaitingPeek || isFetching)) {
             GlassLoadingScreen(
                 progress = loadProgress.coerceAtLeast(10),
-                title = "Loading book details…",
+                title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_loading_book_details),
                 subtitle = if (loadProgress < 60) "Fetching metadata" else "Preparing your library",
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (item == null) {
             OfflineEmptyState(
-                subtitle = "Connect to the internet to load this book, or open it once while online to save it for offline reading.",
+                subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_this_boo),
             )
         } else {
             Column(
@@ -443,7 +443,7 @@ fun ContentDetailScreen(
 
                     if (description != null) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("Description", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_description), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
                             Text(
                                 description,
                                 fontFamily = Inter,
@@ -458,13 +458,13 @@ fun ContentDetailScreen(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White)
+                            .background(GotchaColors.SurfaceCard)
                             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text("Current Progress", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_current_progress), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = GotchaColors.Ink)
                             Text(
                                 progressLabel,
                                 fontFamily = Inter,
@@ -510,7 +510,7 @@ fun ContentDetailScreen(
                         verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
                         Text(
-                            "Similar Books",
+                            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_similar_books),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 16.sp,
@@ -554,7 +554,7 @@ private fun SimilarBookCard(
         Modifier
             .width(180.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
             .padding(8.dp),
@@ -655,12 +655,12 @@ fun TopicResultsScreen(topic: String, onBack: () -> Unit, onOpenReader: (String)
 @Composable
 fun BookmarksScreen(onBack: () -> Unit) {
     LearnerSubpage(
-        title = "Bookmarks",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_bookmarks),
         onBack = onBack,
         body = {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text(
-                    "Bookmarks you save in the reader will appear here.",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_bookmarks_you_save_in_the_reader_will_ap),
                     fontFamily = Inter,
                     color = GotchaColors.TextMuted,
                     fontSize = 14.sp,
@@ -705,18 +705,18 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
     }
 
     LearnerSubpage(
-        title = "Reading settings",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_reading_settings),
         onBack = onBack,
         body = {
             when {
                 loading -> LoadingBox(Modifier.fillMaxSize())
                 error != null -> OfflineEmptyState(
-                    subtitle = "Connect to the internet to load reading settings.",
+                    subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_connect_to_the_internet_to_load_reading),
                     onRetry = { reloadKey += 1 },
                     compact = true,
                 )
                 else -> Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Text("Text size", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_text_size), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(0.9f to "S", 1.0f to "M", 1.2f to "L", 1.4f to "XL").forEach { (scale, label) ->
                             val on = kotlin.math.abs(fontScale - scale) < 0.05f
@@ -741,7 +741,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                             )
                         }
                     }
-                    Text("Theme", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_theme), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf("light", "sepia", "dark").forEach { t ->
                             val on = theme == t
@@ -776,13 +776,13 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
 @Composable
 fun LevelTestScreen(onBack: () -> Unit) {
     LearnerSubpage(
-        title = "Level test",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_level_test),
         onBack = onBack,
         body = {
             Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("Quick CEFR placement", fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
-                Text("Answer a short set of questions to refresh your level estimate.", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 14.sp)
-                GotchaPrimaryButton(text = "Start test", onClick = onBack)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_quick_cefr_placement), fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_answer_a_short_set_of_questions_to_refre), fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 14.sp)
+                GotchaPrimaryButton(text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_start_test), onClick = onBack)
             }
         },
     )
@@ -823,8 +823,8 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
 
     val formContent: @Composable () -> Unit = {
         if (paymentStep == null) {
-            GotchaTextField(label = "Article URL", value = url, onValueChange = { url = it }, placeholder = "https://…")
-            GotchaTextField(label = "Title (optional)", value = title, onValueChange = { title = it })
+            GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_article_url), value = url, onValueChange = { url = it }, placeholder = "https://…")
+            GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_title_optional), value = title, onValueChange = { title = it })
             if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
             GotchaPrimaryButton(
                 text = if (loading) "Importing…" else "Import from URL",
@@ -923,7 +923,7 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
 @Composable
 fun ImportUrlScreen(onBack: () -> Unit, onImported: () -> Unit) {
     LearnerSubpage(
-        title = "Import from URL",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_import_from_url),
         onBack = onBack,
         body = {
             Column(
@@ -976,9 +976,9 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
 
     val formContent: @Composable () -> Unit = {
         if (paymentStep == null) {
-                    GotchaTextField(label = "Title", value = title, onValueChange = { title = it }, placeholder = "My article")
+                    GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_title), value = title, onValueChange = { title = it }, placeholder = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_my_article))
                     GotchaMultilineTextField(
-                        label = "Text",
+                        label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_text),
                         value = text,
                         onValueChange = { text = it },
                         placeholder = "Paste your text here… (minimum $MIN_PASTE_WORDS words; long texts are split into reader pages)",
@@ -1109,7 +1109,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
 @Composable
 fun PasteTextScreen(onBack: () -> Unit, onImported: () -> Unit) {
     LearnerSubpage(
-        title = "Paste text",
+        title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_paste_text),
         onBack = onBack,
         body = {
             Column(

@@ -79,7 +79,7 @@ fun MessagingBackButton(onBack: () -> Unit, modifier: Modifier = Modifier) {
     ) {
         Icon(
             painter = painterResource(R.drawable.ic_arrow_left),
-            contentDescription = "Back",
+            contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_back),
             tint = GotchaColors.Ink,
             modifier = Modifier.size(16.dp),
         )
@@ -98,7 +98,7 @@ fun MessagingDirectoryHeader(
             Modifier
                 .fillMaxWidth()
                 .height(56.dp)
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .padding(horizontal = 24.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -176,7 +176,7 @@ fun MessagingChatFab(
         ) {
             Icon(
                 painter = painterResource(R.drawable.ic_message),
-                contentDescription = "Messages",
+                contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_messages),
                 tint = Color.White,
                 modifier = Modifier.size(24.dp),
             )

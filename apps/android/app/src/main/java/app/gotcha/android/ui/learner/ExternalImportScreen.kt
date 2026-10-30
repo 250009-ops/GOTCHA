@@ -50,7 +50,7 @@ fun ExternalImportScreen(
     onCancel: () -> Unit,
     onOpenReader: (String) -> Unit,
 ) {
-    GotchaSystemBars(darkIcons = true)
+    GotchaSystemBars()
     val container = LocalAppContainer.current
     val controller = container.externalImportController
     val state by controller.state.collectAsState()
@@ -148,7 +148,7 @@ fun ExternalImportScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
                     Text(
-                        "Open in GOTCHA",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_open_in_gotcha),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 20.sp,
@@ -212,12 +212,12 @@ fun ExternalImportScreen(
                         color = GotchaColors.Danger,
                         textAlign = TextAlign.Center,
                     )
-                    GotchaPrimaryButton(text = "Try again", onClick = { controller.retry() })
+                    GotchaPrimaryButton(text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_try_again), onClick = { controller.retry() })
                     TextButton(onClick = {
                         controller.reset()
                         onCancel()
                     }) {
-                        Text("Go back", fontFamily = Inter, color = GotchaColors.TextMuted)
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_go_back), fontFamily = Inter, color = GotchaColors.TextMuted)
                     }
                 }
             }
@@ -226,7 +226,7 @@ fun ExternalImportScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = GotchaColors.BrandPurple)
                     Spacer(Modifier.height(12.dp))
-                    Text("Opening reader…", fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_opening_reader), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.Ink)
                 }
             }
         }

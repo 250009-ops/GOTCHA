@@ -1053,6 +1053,8 @@ class UserRepository(
         readerLineSpacing: Double? = null,
         showKnownWords: Boolean? = null,
         ttsEnabled: Boolean? = null,
+        /** system | light | dark (UI-06). */
+        appTheme: String? = null,
     ): UserPreferences {
         val prefs = api.updatePreferences(
             UpdatePreferencesRequest(
@@ -1063,6 +1065,7 @@ class UserRepository(
                 readerLineSpacing = readerLineSpacing,
                 showKnownWords = showKnownWords,
                 ttsEnabled = ttsEnabled,
+                appTheme = appTheme,
             ),
         )
         runCatching { meFetch() }

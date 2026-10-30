@@ -132,7 +132,7 @@ fun VocabularyReviewModal(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White),
+                    .background(GotchaColors.SurfaceCard),
             ) {
                 Row(
                     Modifier
@@ -146,14 +146,14 @@ fun VocabularyReviewModal(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Icon(Icons.Outlined.Psychology, null, tint = GotchaColors.WebAccent, modifier = Modifier.size(16.dp))
-                        Text("SRS Review", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF374151))
+                        Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_srs_review), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.TextMuted)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             "${(index + 1).coerceAtMost(queue.size.coerceAtLeast(1))} / ${queue.size}",
                             fontFamily = Inter,
                             fontSize = 12.sp,
-                            color = Color(0xFF9CA3AF),
+                            color = GotchaColors.TextSubtle,
                         )
                         Box(
                             Modifier
@@ -162,12 +162,12 @@ fun VocabularyReviewModal(
                                 .clickable { closeModal() },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Icon(Icons.Outlined.Close, null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(16.dp))
+                            Icon(Icons.Outlined.Close, null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(16.dp))
                         }
                     }
                 }
 
-                Box(Modifier.fillMaxWidth().height(4.dp).background(Color(0xFFF3F4F6))) {
+                Box(Modifier.fillMaxWidth().height(4.dp).background(GotchaColors.SurfaceMuted)) {
                     Box(Modifier.fillMaxWidth(progress).height(4.dp).background(GotchaColors.WebAccent))
                 }
 
@@ -196,13 +196,13 @@ fun VocabularyReviewModal(
                                 Icon(Icons.Outlined.CheckCircle, null, tint = Color(0xFF059669), modifier = Modifier.size(32.dp))
                             }
                             Spacer(Modifier.height(16.dp))
-                            Text("Session complete!", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = Color(0xFF111827))
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_session_complete), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = GotchaColors.Ink)
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "Reviewed $reviewed word${if (reviewed == 1) "" else "s"}. Great job!",
                                 fontFamily = Inter,
                                 fontSize = 14.sp,
-                                color = Color(0xFF6B7280),
+                                color = GotchaColors.TextMuted,
                             )
                             Spacer(Modifier.height(24.dp))
                             ReviewModalButton("Back to vocabulary", onClick = { closeModal() }, filled = true)
@@ -218,7 +218,7 @@ fun VocabularyReviewModal(
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 30.sp,
-                                color = Color(0xFF111827),
+                                color = GotchaColors.Ink,
                                 textAlign = TextAlign.Center,
                             )
                             item.contextSentence?.takeIf { it.isNotBlank() }?.let { ctx ->
@@ -227,7 +227,7 @@ fun VocabularyReviewModal(
                                     "\"$ctx\"",
                                     fontFamily = Inter,
                                     fontSize = 12.sp,
-                                    color = Color(0xFF9CA3AF),
+                                    color = GotchaColors.TextSubtle,
                                     fontStyle = FontStyle.Italic,
                                     maxLines = 2,
                                     overflow = TextOverflow.Ellipsis,
@@ -241,18 +241,18 @@ fun VocabularyReviewModal(
                                     Modifier
                                         .fillMaxWidth()
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(Color(0xFFF9FAFB))
-                                        .border(2.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                                        .background(GotchaColors.Surface)
+                                        .border(2.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                         .clickable(enabled = !busy) { revealed = true }
                                         .padding(vertical = 12.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                 ) {
-                                    Text("Show translation", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+                                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_show_translation), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                                     Text(
-                                        "Tap to reveal",
+                                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_tap_to_reveal),
                                         fontFamily = Inter,
                                         fontSize = 11.sp,
-                                        color = Color(0xFF9CA3AF).copy(alpha = 0.6f),
+                                        color = GotchaColors.TextSubtle.copy(alpha = 0.6f),
                                         modifier = Modifier.padding(top = 4.dp),
                                     )
                                 }
@@ -271,7 +271,7 @@ fun VocabularyReviewModal(
                                             fontFamily = Inter,
                                             fontWeight = FontWeight.Medium,
                                             fontSize = 16.sp,
-                                            color = Color(0xFF374151),
+                                            color = GotchaColors.TextMuted,
                                             textAlign = TextAlign.Center,
                                         )
                                     }
@@ -286,7 +286,7 @@ fun VocabularyReviewModal(
                                                 Modifier
                                                     .weight(1f)
                                                     .clip(RoundedCornerShape(12.dp))
-                                                    .background(Color.White)
+                                                    .background(GotchaColors.SurfaceCard)
                                                     .border(1.dp, borderColor, RoundedCornerShape(12.dp))
                                                     .clickable(enabled = !busy) { rate(label) }
                                                     .padding(vertical = 10.dp),

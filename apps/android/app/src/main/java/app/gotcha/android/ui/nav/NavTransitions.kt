@@ -19,17 +19,17 @@ import androidx.navigation.compose.composable
 private const val SheetAnimMs = 280
 private const val FadeAnimMs = 150
 
-/** Zero animation — bottom-nav tab switches (Home, Library, Words, Progress, Profile). */
+/** Short cross-fade for bottom-nav tab switches (UI-12): Home, Library, Words, Progress, Profile. */
 fun NavGraphBuilder.learnerTabComposable(
     route: String,
     content: @Composable AnimatedContentScope.(NavBackStackEntry) -> Unit,
 ) {
     composable(
         route = route,
-        enterTransition = { EnterTransition.None },
-        exitTransition = { ExitTransition.None },
-        popEnterTransition = { EnterTransition.None },
-        popExitTransition = { ExitTransition.None },
+        enterTransition = { fadeIn(tween(FadeAnimMs)) },
+        exitTransition = { fadeOut(tween(FadeAnimMs / 2)) },
+        popEnterTransition = { fadeIn(tween(FadeAnimMs)) },
+        popExitTransition = { fadeOut(tween(FadeAnimMs / 2)) },
         content = content,
     )
 }

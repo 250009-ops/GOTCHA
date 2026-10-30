@@ -7,7 +7,7 @@ import {
   type ExtractedChapter,
 } from '../imports/extract-text';
 import { chaptersHaveRealTitles, splitAccurateChapters } from '../imports/chapter-split';
-import { preparePastedText } from '../imports/import-text-cleaner';
+import { preparePastedText, reflowProse } from '../imports/import-text-cleaner';
 
 const FRONT_MATTER_TITLE = /^(copyright|isbn|colophon|legal)$/i;
 
@@ -60,7 +60,8 @@ export function buildSegmentsFromChapters(
   mode: 'literary' | 'tight',
 ): BuiltSegment[] {
   const cleaned = chapters
-    .map((c) => ({ title: c.title.trim() || 'Chapter', text: c.text.trim() }))
+    // UI-24: de-hyphenate and unwrap hard line breaks before pagination (all ingest paths).
+    .map((c) => ({ title: c.title.trim() || 'Chapter', text: reflowProse(c.text).trim() }))
     .filter((c) => c.text.length > 0);
 
   const segments: BuiltSegment[] = [];

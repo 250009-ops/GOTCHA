@@ -59,6 +59,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.runtime.mutableIntStateOf
+import app.gotcha.android.R
+import app.gotcha.android.ui.components.ErrorState
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.data.model.AuthUser
@@ -85,7 +90,18 @@ import java.util.Calendar
 import java.util.Locale
 import kotlin.math.roundToInt
 
-private val staticFilterTabs = listOf("Fiction", "News", "Imports", "A1–A2", "B1–B2", "C1–C2")
+/** Filter keys; labels come from [filterLabel]. "Paid" = priced catalog items (UI-26). */
+private val staticFilterTabs = listOf("Fiction", "News", "Paid", "Imports", "A1–A2", "B1–B2", "C1–C2")
+
+@Composable
+private fun filterLabel(key: String): String = when (key) {
+    "All" -> stringResource(R.string.library_filter_all)
+    "Fiction" -> stringResource(R.string.library_filter_fiction)
+    "News" -> stringResource(R.string.library_filter_news)
+    "Paid" -> stringResource(R.string.library_filter_paid)
+    "Imports" -> stringResource(R.string.library_filter_imports)
+    else -> key
+}
 
 private val coverPalettes = listOf(
     listOf(GotchaBlue.B500, GotchaBlue.B400, Color(0xFF4F39F6)),
@@ -114,13 +130,13 @@ private fun isUserImport(item: ContentItem) =
     item.contentType == "user_import" || item.contentSource == "user_import"
 
 private fun cefrColors(level: String): Pair<Color, Color> = when (level.lowercase()) {
-    "a1" -> Color(0xFFD1FAE5) to Color(0xFF047857)
+    "a1" -> Color(0xFFD1FAE5) to GotchaColors.SuccessText
     "a2" -> Color(0xFFCCFBF1) to Color(0xFF0F766E)
     "b1" -> Color(0xFFDBEAFE) to Color(0xFF1D4ED8)
     "b2" -> Color(0xFFE0E7FF) to Color(0xFF4338CA)
     "c1" -> GotchaBlue.B50 to GotchaBlue.B700
     "c2" -> Color(0xFFFCE7F3) to Color(0xFFBE185D)
-    else -> Color(0xFFF3F4F6) to Color(0xFF4B5563)
+    else -> GotchaColors.SurfaceMuted to GotchaColors.TextMuted
 }
 
 @Composable
@@ -135,6 +151,8 @@ fun LibraryScreen(
     headerQuery: String = "",
     onHeaderSearchChange: (String) -> Unit = {},
     highlightContentId: String? = null,
+    /** UI-02: the Library tab (Figma 21:212) — search + chips + grid under the shell chrome, Import FAB. */
+    asTab: Boolean = false,
 ) {
     val container = LocalAppContainer.current
     val widthDp = webScreenWidthDp()
@@ -153,6 +171,9 @@ fun LibraryScreen(
     var viewGrid by remember { mutableStateOf(true) }
     var search by remember { mutableStateOf(headerQuery) }
     var activeFilter by remember { mutableStateOf(browseFilter ?: "All") }
+    var reloadKey by remember { mutableIntStateOf(0) }
+    var catalogError by remember { mutableStateOf<String?>(null) }
+    val ctx = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(headerQuery) {
         search = headerQuery
@@ -161,7 +182,7 @@ fun LibraryScreen(
         if (!browseFilter.isNullOrBlank()) activeFilter = browseFilter
     }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(reloadKey) {
         loading = feed == null
         error = null
         container.contentRepository.feedPeek()?.let {
@@ -188,7 +209,7 @@ fun LibraryScreen(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (feed == null) error = e.apiErrorMessage("Failed to load library")
+            if (feed == null) error = e.apiErrorMessage(ctx.getString(R.string.library_load_failed))
         } finally {
             loading = false
         }
@@ -205,13 +226,14 @@ fun LibraryScreen(
     val catalogLangQuery = languageTabs.firstOrNull { it.equals(activeFilter, true) }?.lowercase().orEmpty()
         .takeIf { it != nativeCode }.orEmpty()
 
-    LaunchedEffect(isBrowse, browseCollection, catalogLangQuery, activeFilter) {
+    LaunchedEffect(isBrowse, browseCollection, catalogLangQuery, activeFilter, reloadKey) {
         if (!isBrowse || !browseCollection.isNullOrBlank()) {
             if (!isBrowse) catalog = emptyList()
             return@LaunchedEffect
         }
         if (activeFilter == "Imports") return@LaunchedEffect
         catalogLoading = true
+        catalogError = null
         try {
             val all = mutableListOf<ContentItem>()
             var page = 1
@@ -227,8 +249,11 @@ fun LibraryScreen(
                 page += 1
             }
             catalog = all.distinctBy { it.id }
-        } catch (_: Exception) {
-            // keep whatever we have
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // keep whatever we have; surface a retry only when there is nothing to show (UI-09)
+            if (catalog.isEmpty()) catalogError = e.apiErrorMessage(ctx.getString(R.string.library_load_failed))
         } finally {
             catalogLoading = false
         }
@@ -303,7 +328,11 @@ fun LibraryScreen(
                         activeFilter = activeFilter,
                         onFilter = { activeFilter = it },
                         filtered = filtered,
-                        emptyLibrary = !gridLoading && !catalogLoading && baseItems.isEmpty(),
+                        emptyLibrary = !gridLoading && !catalogLoading && baseItems.isEmpty() &&
+                            catalogError == null && error == null,
+                        loadError = if (baseItems.isEmpty()) catalogError ?: error else null,
+                        onRetry = { reloadKey += 1 },
+                        asTab = asTab,
                         gridLoading = gridLoading,
                         langFlags = langFlags,
                         highlightId = highlightContentId,
@@ -328,7 +357,22 @@ fun LibraryScreen(
                 onOpenReader = { id -> offline.guardClick { onOpenReader(id) }() },
                 onBrowse = onBrowse,
                 onImport = onImport,
+                onRetry = { reloadKey += 1 },
                 )
+            }
+        }
+        if (asTab) {
+            // Figma 21:212 "Import FAB" (29:2): bottom-right, above the bottom nav; the chat FAB stacks above it.
+            androidx.compose.material3.FloatingActionButton(
+                onClick = onImport,
+                containerColor = GotchaBlue.B700,
+                contentColor = Color.White,
+                shape = CircleShape,
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 24.dp, bottom = learnerNavBarInset() + app.gotcha.android.ui.theme.GlassChrome.NavHeight + app.gotcha.android.ui.theme.GlassChrome.NavPillBottomGap + 16.dp),
+            ) {
+                Icon(Icons.Outlined.Upload, contentDescription = stringResource(R.string.library_import_content))
             }
         }
     }
@@ -349,6 +393,7 @@ private fun HomeBody(
     onOpenReader: (String) -> Unit,
     onBrowse: (String?, String?) -> Unit,
     onImport: () -> Unit,
+    onRetry: () -> Unit = {},
 ) {
     val hour = Calendar.getInstance().get(Calendar.HOUR_OF_DAY)
     val greeting = when {
@@ -408,9 +453,9 @@ private fun HomeBody(
 
         highlighted?.let { item ->
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("NEW MATERIAL", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B700, letterSpacing = 0.8.sp)
-                Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
-                Text("On your library dashboard — open it when you want to read or purchase.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_material), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B700, letterSpacing = 0.8.sp)
+                Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_on_your_library_dashboard_open_it_when_y), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                 Box(Modifier.width(168.dp)) {
                     ContentCard(item = item, highlighted = true, langFlags = langFlags, onOpen = { onOpenReader(item.id) })
                 }
@@ -444,8 +489,8 @@ private fun HomeBody(
         }
 
         Shelf(
-            title = "New in the library",
-            subtitle = "Admin catalog — A4 covers, not your personal imports",
+            title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_in_the_library),
+            subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_admin_catalog_a4_covers_not_your_persona),
             items = feed?.recentlyPublished.orEmpty().take(10),
             widthDp = widthDp,
             langFlags = langFlags,
@@ -454,8 +499,8 @@ private fun HomeBody(
             onOpen = onOpenReader,
         )
         Shelf(
-            title = "Your imports",
-            subtitle = "Files and URLs you brought in — kept separate from the store",
+            title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_your_imports),
+            subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_files_and_urls_you_brought_in_kept_separ),
             items = feed?.myImports.orEmpty().take(10),
             widthDp = widthDp,
             langFlags = langFlags,
@@ -485,7 +530,7 @@ private fun HomeBody(
             SectionHeading("Browse Library", "Explore all available reading content") { onBrowse(null, null) }
         }
         if (error != null && feed == null) {
-            Text(error, fontFamily = Inter, color = GotchaColors.Danger, fontSize = 13.sp)
+            ErrorState(message = error, onRetry = onRetry)
         }
         Spacer(Modifier.height(learnerScrollBottomInset()))
     }
@@ -513,6 +558,9 @@ private fun BrowseBody(
     onBack: () -> Unit,
     onOpenReader: (String) -> Unit,
     onImport: () -> Unit,
+    loadError: String? = null,
+    onRetry: () -> Unit = {},
+    asTab: Boolean = false,
     ) {
     val cols = when {
         widthDp >= 1280 -> 5
@@ -520,30 +568,33 @@ private fun BrowseBody(
         widthDp >= WebBreakpoints.Sm -> 3
         else -> 2
     }
-    val bottomPad = learnerNavBarInset() + 12.dp
+    val bottomPad = if (asTab) learnerScrollBottomInset() else learnerNavBarInset() + 12.dp
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = hPad),
+            .padding(horizontal = if (asTab) 24.dp else hPad),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Spacer(Modifier.height(learnerStatusBarInset() + 8.dp))
+        Spacer(Modifier.height(if (asTab) learnerScrollTopInset() else learnerStatusBarInset() + 8.dp))
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Icon(
-                Icons.AutoMirrored.Outlined.ArrowBack,
-                contentDescription = "Back to Library",
-                tint = Color(0xFF6B7280),
-                modifier = Modifier
-                    .size(36.dp)
-                    .clickable { onBack() }
-                    .padding(6.dp),
-            )
+            if (!asTab) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ArrowBack,
+                    contentDescription = stringResource(R.string.common_back),
+                    tint = GotchaColors.TextMuted,
+                    modifier = Modifier
+                        .size(44.dp)
+                        .clip(CircleShape)
+                        .clickable { onBack() }
+                        .padding(10.dp),
+                )
+            }
             Text(
-                collectionTitle ?: "Browse Library",
+                collectionTitle ?: stringResource(if (asTab) R.string.nav_library else R.string.library_browse),
                 fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 22.sp,
-                color = Color(0xFF111827),
+                color = GotchaColors.Ink,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -552,7 +603,7 @@ private fun BrowseBody(
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color(0xFFF3F4F6))
+                        .background(GotchaColors.SurfaceMuted)
                         .padding(4.dp),
                 ) {
                     ViewToggle(Icons.Outlined.GridView, viewGrid) { onViewGrid(true) }
@@ -569,12 +620,12 @@ private fun BrowseBody(
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(12.dp))
+                    .background(GotchaColors.SurfaceCard)
+                    .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(14.dp))
+                    Icon(Icons.Outlined.Search, contentDescription = null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(14.dp))
                     BasicTextField(
                         value = search,
                         onValueChange = onSearch,
@@ -582,14 +633,14 @@ private fun BrowseBody(
                         textStyle = androidx.compose.ui.text.TextStyle(
                             fontFamily = Inter,
                             fontSize = 14.sp,
-                            color = Color(0xFF111827),
+                            color = GotchaColors.Ink,
                         ),
                         cursorBrush = SolidColor(GotchaColors.WebAccent),
                         modifier = Modifier.fillMaxWidth(),
                         decorationBox = { inner ->
                             Box {
                                 if (search.isEmpty()) {
-                                    Text("Search…", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+                                    Text(stringResource(R.string.library_search_hint), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle, maxLines = 1)
                                 }
                                 inner()
                             }
@@ -599,7 +650,7 @@ private fun BrowseBody(
             }
         }
         if (!collectionDesc.isNullOrBlank() && search.isBlank()) {
-            Text(collectionDesc, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
+            Text(collectionDesc, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
         }
         if (search.isBlank()) {
             Row(
@@ -609,17 +660,17 @@ private fun BrowseBody(
                 filterTabs.forEach { tab ->
                     val on = activeFilter == tab
                     Text(
-                        tab,
+                        filterLabel(tab),
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(if (on) GotchaColors.WebAccent else Color.White)
-                            .border(1.dp, if (on) GotchaColors.WebAccent else Color(0xFFE5E7EB), RoundedCornerShape(50))
+                            .background(if (on) GotchaColors.WebAccent else GotchaColors.SurfaceCard)
+                            .border(1.dp, if (on) GotchaColors.WebAccent else GotchaColors.Border, RoundedCornerShape(50))
                             .clickable { onFilter(tab) }
                             .padding(horizontal = 14.dp, vertical = 6.dp),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Medium,
                         fontSize = 12.sp,
-                        color = if (on) Color.White else Color(0xFF4B5563),
+                        color = if (on) Color.White else GotchaColors.TextMuted,
                     )
                 }
             }
@@ -632,6 +683,7 @@ private fun BrowseBody(
                     .fillMaxWidth(),
                 bottomPadding = bottomPad,
             )
+            loadError != null -> ErrorState(message = loadError, onRetry = onRetry)
             emptyLibrary -> EmptyLibrary(onImport)
             filtered.isEmpty() -> EmptySearch()
             viewGrid -> LazyVerticalGrid(
@@ -683,7 +735,7 @@ private fun ViewToggle(icon: androidx.compose.ui.graphics.vector.ImageVector, ac
             .clickable(onClick = onClick)
             .padding(6.dp),
     ) {
-        Icon(icon, contentDescription = null, tint = if (active) Color(0xFF374151) else Color(0xFF9CA3AF), modifier = Modifier.size(16.dp))
+        Icon(icon, contentDescription = null, tint = if (active) GotchaColors.TextMuted else GotchaColors.TextSubtle, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -695,9 +747,9 @@ private fun GreetingBlock(greeting: String, firstName: String, subtitle: String,
             fontFamily = Inter,
             fontWeight = FontWeight.Bold,
             fontSize = 22.sp,
-            color = Color(0xFF111827),
+            color = GotchaColors.Ink,
         )
-        Text(subtitle, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF6B7280), modifier = Modifier.padding(top = 2.dp))
+        Text(subtitle, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -710,8 +762,8 @@ private fun StatChips(streak: Int, words: Int, fill: Boolean, modifier: Modifier
             "$streak days",
             "Streak",
             Color(0xFFE17100),
-            Color(0xFFFFFBEB),
-            Color(0xFFFEE685),
+            GotchaColors.WebStreakBg,
+            GotchaColors.WebStreakBorder,
             chipMod,
         )
         StatChip(
@@ -747,7 +799,7 @@ private fun StatChip(
     ) {
         Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(16.dp))
         Column {
-            Text(value, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color(0xFF111827))
+            Text(value, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = GotchaColors.Ink)
             Text(label, fontFamily = Inter, fontSize = 11.sp, color = tint.copy(alpha = 0.70f))
         }
     }
@@ -793,9 +845,9 @@ private fun Shelf(
 private fun SectionHeading(title: String, subtitle: String?, onSeeAll: (() -> Unit)? = null) {
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
         Column(Modifier.weight(1f)) {
-            Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
+            Text(title, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
             if (!subtitle.isNullOrBlank()) {
-                Text(subtitle, fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF9CA3AF), modifier = Modifier.padding(top = 2.dp))
+                Text(subtitle, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextSubtle, modifier = Modifier.padding(top = 2.dp))
             }
         }
         if (onSeeAll != null) {
@@ -806,7 +858,7 @@ private fun SectionHeading(title: String, subtitle: String?, onSeeAll: (() -> Un
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("See all", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_see_all), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
                 Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = GotchaColors.WebAccent, modifier = Modifier.size(14.dp))
             }
         }
@@ -841,7 +893,7 @@ private fun ContinueReadingCard(item: ContentItem, onOpen: (String) -> Unit) {
                 .padding(20.dp)
                 .fillMaxWidth(),
         ) {
-            Text("CONTINUE READING", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.White.copy(alpha = 0.70f), letterSpacing = 0.8.sp)
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_continue_reading), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color.White.copy(alpha = 0.70f), letterSpacing = 0.8.sp)
             Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val sub = itemSubtitle(item)
             if (sub.isNotBlank()) {
@@ -865,12 +917,12 @@ private fun ContinueReadingCard(item: ContentItem, onOpen: (String) -> Unit) {
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White)
+                        .background(GotchaColors.SurfaceCard)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("Resume", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = Color(0xFF111827))
-                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(12.dp).padding(start = 4.dp), tint = Color(0xFF111827))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_resume), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.Ink)
+                    Icon(Icons.AutoMirrored.Outlined.ArrowForward, contentDescription = null, modifier = Modifier.size(12.dp).padding(start = 4.dp), tint = GotchaColors.Ink)
                 }
             }
             Box(
@@ -879,13 +931,13 @@ private fun ContinueReadingCard(item: ContentItem, onOpen: (String) -> Unit) {
                     .fillMaxWidth()
                     .height(4.dp)
                     .clip(RoundedCornerShape(50))
-                    .background(Color.White.copy(alpha = 0.20f)),
+                    .background(GotchaColors.SurfaceCard.copy(alpha = 0.20f)),
             ) {
                 Box(
                     Modifier
                         .fillMaxWidth((item.progressPct ?: 0.0).toFloat().coerceIn(0f, 100f) / 100f)
                         .height(4.dp)
-                        .background(Color.White, RoundedCornerShape(50)),
+                        .background(GotchaColors.SurfaceCard, RoundedCornerShape(50)),
                 )
             }
         }
@@ -908,8 +960,8 @@ private fun ContentCard(
                 .fillMaxWidth()
                 .then(highlightMod)
                 .clip(shape)
-                .background(Color.White)
-                .border(1.dp, Color(0xFFF3F4F6), shape)
+                .background(GotchaColors.SurfaceCard)
+                .border(1.dp, GotchaColors.SurfaceMuted, shape)
                 .clickable { onOpen() }
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -917,15 +969,16 @@ private fun ContentCard(
         ) {
             CoverArt(item, Modifier.width(52.dp).aspectRatio(3f / 4f).clip(RoundedCornerShape(8.dp)))
             Column(Modifier.weight(1f)) {
-                Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF111827), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 val sub = itemSubtitle(item)
                 if (sub.isNotBlank()) {
-                    Text(sub, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF9CA3AF), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(sub, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
+            PaidBadge(item)
             CefrBadge(item.cefrLevel.orEmpty())
             Text(langFlags[item.language?.lowercase()] ?: "🌐", fontSize = 14.sp)
-            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = Color(0xFFD1D5DB), modifier = Modifier.size(16.dp))
+            Icon(Icons.Outlined.ChevronRight, contentDescription = null, tint = GotchaColors.Border, modifier = Modifier.size(16.dp))
         }
         return
     }
@@ -934,8 +987,8 @@ private fun ContentCard(
             .fillMaxWidth()
             .then(highlightMod)
             .clip(shape)
-            .background(Color.White)
-            .border(1.dp, Color(0xFFF3F4F6), shape)
+            .background(GotchaColors.SurfaceCard)
+            .border(1.dp, GotchaColors.SurfaceMuted, shape)
             .clickable { onOpen() },
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(3f / 4f)) {
@@ -950,7 +1003,7 @@ private fun ContentCard(
                     (item.contentType ?: "").replace('_', ' '),
                     modifier = Modifier
                         .clip(RoundedCornerShape(6.dp))
-                        .background(Color.White.copy(alpha = 0.20f))
+                        .background(GotchaColors.SurfaceCard.copy(alpha = 0.20f))
                         .padding(horizontal = 6.dp, vertical = 2.dp),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Medium,
@@ -964,43 +1017,32 @@ private fun ContentCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
             ) {
-                if (item.needsCatalogPayment()) {
-                    Text(
-                        formatUzs(item.catalogPriceUzs()),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(Color.White.copy(alpha = 0.90f))
-                            .padding(horizontal = 6.dp, vertical = 2.dp),
-                        fontFamily = Inter,
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 10.sp,
-                        color = GotchaBlue.B700,
-                    )
-                }
+                // UI-26: lock + price on locked paid books; "Owned" once bought. Tap → Reader paywall.
+                PaidBadge(item)
                 Text(langFlags[item.language?.lowercase()] ?: "🌐", fontSize = 16.sp)
             }
         }
         Column(Modifier.padding(12.dp)) {
-            Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = Color(0xFF111827), maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink, maxLines = 2, overflow = TextOverflow.Ellipsis)
             val sub = itemSubtitle(item)
             if (sub.isNotBlank()) {
-                Text(sub, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF9CA3AF), maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
+                Text(sub, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle, maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 4.dp))
             }
             Row(
                 Modifier.fillMaxWidth().padding(top = 12.dp).border(width = 0.dp, color = Color.Transparent),
                 horizontalArrangement = Arrangement.SpaceBetween,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Icon(Icons.Outlined.Book, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(12.dp))
-                    Text(formatWordCount(item.wordCount ?: 0), fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF9CA3AF))
+                    Icon(Icons.Outlined.Book, contentDescription = null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(12.dp))
+                    Text(formatWordCount(item.wordCount ?: 0), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                 }
                 val pct = item.progressPct ?: 0.0
                 Text(
                     when {
-                        item.needsCatalogPayment() -> "Try sample"
+                        item.needsCatalogPayment() -> stringResource(R.string.library_try_sample)
                         pct > 0 -> "${pct.roundToInt()}%"
-                        (item.knownWordRatio ?: 0.0) > 0 -> "${((item.knownWordRatio ?: 0.0) * 100).roundToInt()}% known"
-                        else -> "New"
+                        (item.knownWordRatio ?: 0.0) > 0 -> stringResource(R.string.library_pct_known, ((item.knownWordRatio ?: 0.0) * 100).roundToInt())
+                        else -> stringResource(R.string.library_new)
                     },
                     fontFamily = Inter,
                     fontWeight = if (pct > 0) FontWeight.SemiBold else FontWeight.Medium,
@@ -1015,7 +1057,7 @@ private fun ContentCard(
                         .fillMaxWidth()
                         .height(4.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(Color(0xFFF3F4F6)),
+                        .background(GotchaColors.SurfaceMuted),
                 ) {
                     Box(
                         Modifier
@@ -1065,11 +1107,11 @@ private fun EmptyLibrary(onImport: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Icon(Icons.Outlined.Book, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(40.dp))
-        Text("Your library is empty", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
-        Text("Import your own text or explore featured collections once content is available.", fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF9CA3AF))
+        Icon(Icons.Outlined.Book, contentDescription = null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(40.dp))
+        Text(stringResource(R.string.library_empty_title), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink)
+        Text(stringResource(R.string.library_empty_body), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextSubtle)
         Text(
-            "Import content",
+            stringResource(R.string.library_import_content),
             fontFamily = Inter,
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp,
@@ -1087,7 +1129,7 @@ private fun EmptyLibrary(onImport: () -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Icon(Icons.Outlined.Upload, contentDescription = null, tint = GotchaColors.WebAccent, modifier = Modifier.size(16.dp))
-            Text("Or import your first article", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.WebAccent)
+            Text(stringResource(R.string.library_import_first), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.WebAccent)
         }
     }
 }
@@ -1098,9 +1140,9 @@ private fun EmptySearch() {
         modifier = Modifier.fillMaxWidth().padding(vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Icon(Icons.Outlined.Search, contentDescription = null, tint = Color(0xFF9CA3AF), modifier = Modifier.size(32.dp))
-        Text("No content found", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827), modifier = Modifier.padding(top = 8.dp))
-        Text("Try a different search or filter to find something to read.", fontFamily = Inter, fontSize = 13.sp, color = Color(0xFF9CA3AF))
+        Icon(Icons.Outlined.Search, contentDescription = null, tint = GotchaColors.TextSubtle, modifier = Modifier.size(32.dp))
+        Text(stringResource(R.string.library_no_results), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaColors.Ink, modifier = Modifier.padding(top = 8.dp))
+        Text(stringResource(R.string.library_no_results_body), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextSubtle)
     }
 }
 
@@ -1113,6 +1155,7 @@ private fun matchesSearch(item: ContentItem, query: String): Boolean {
 private fun matchesFilter(item: ContentItem, activeFilter: String, languageTabs: List<String>): Boolean {
     if (activeFilter == "Imports") return isUserImport(item)
     if (isUserImport(item)) return false
+    if (activeFilter == "Paid") return item.isPaid()
     if (activeFilter == "All") return true
     val langTab = languageTabs.firstOrNull { it.equals(activeFilter, true) }
     if (langTab != null) return (item.language ?: "").equals(langTab, true)

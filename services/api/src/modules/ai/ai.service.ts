@@ -52,6 +52,7 @@ import {
   sanitizePhrase,
   unpackLookupNote,
 } from './lookup-normalize';
+import { groundQuizQuestions } from './quiz-grounding';
 
 type MemoryLookup = {
   lemma: string;
@@ -789,13 +790,18 @@ export class AiService {
     try {
       const response = await client.chat.completions.create({
         model,
-        temperature: 0.4,
+        // UI-20: deterministic and grounded — explanations must not invent facts.
+        temperature: 0,
         response_format: { type: 'json_object' },
         messages: [
           {
             role: 'system',
             content:
-              'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}. For cloze/writing types, options may be empty arrays.',
+              'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}. For cloze/writing types, options may be empty arrays.\n' +
+              'Grounding rules: use ONLY facts stated in the passage. Never add outside knowledge, dates, numbers or names that are not in the passage. ' +
+              'Each explanation must quote or paraphrase the passage sentence that supports the answer. ' +
+              'If the passage abbreviates a date or number (e.g. "Anno 17"), do not expand it unless the passage itself states the full value. ' +
+              'For multiple choice, correctAnswer must be exactly one of the options.',
           },
           {
             role: 'user',
@@ -806,7 +812,9 @@ export class AiService {
 
       try {
         const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}');
-        return parsed.questions ?? [];
+        return groundQuizQuestions(parsed.questions, segmentText.slice(0, 4000), {
+          requireOptions: practiceType !== PracticeType.cloze && practiceType !== PracticeType.writing,
+        });
       } catch {
         return [];
       }

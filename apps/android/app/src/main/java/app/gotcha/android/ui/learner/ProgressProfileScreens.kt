@@ -172,13 +172,13 @@ fun ProgressScreen() {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(modifier = Modifier.weight(1f)) {
-                    Text("Statistics", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color(0xFF111827))
-                    Text("Track your learning progress over time.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_statistics), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = GotchaColors.Ink)
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_track_your_learning_progress_over_time), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                 }
                 Row(
                     modifier = Modifier
                         .clip(RoundedCornerShape(14.dp))
-                        .background(Color(0xFFF3F4F6))
+                        .background(GotchaColors.SurfaceMuted)
                         .padding(4.dp),
                 ) {
                     StatsRangeChip("Last 7 days", range7d) { range7d = true }
@@ -202,9 +202,9 @@ fun ProgressScreen() {
                         StatsKpiCard(
                             "${formatStatsStreakCount(streak)} days",
                             "Current streak",
-                            Color(0xFFBB4D00),
-                            Color(0xFFFFFBEB),
-                            Color(0xFFFEE685),
+                            GotchaColors.WebStreakText,
+                            GotchaColors.WebStreakBg,
+                            GotchaColors.WebStreakBorder,
                             Modifier.weight(1f),
                         )
                         StatsKpiCard(
@@ -230,9 +230,9 @@ fun ProgressScreen() {
                         StatsKpiCard(
                             "${todayMinutes}m",
                             "Read today",
-                            Color(0xFF364153),
-                            Color(0xFFF9FAFB),
-                            Color(0xFFE5E7EB),
+                            GotchaColors.TextMuted,
+                            GotchaColors.Surface,
+                            GotchaColors.Border,
                             Modifier.weight(1f),
                             sub = streakGoalSub,
                         )
@@ -244,14 +244,14 @@ fun ProgressScreen() {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                    .background(GotchaColors.SurfaceCard)
+                    .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
                     .padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("Language Progress", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_language_progress), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
                 if (languages.isEmpty()) {
-                    Text("Language progress appears as you save words while reading.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_language_progress_appears_as_you_save_wo), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextSubtle)
                 } else {
                     languages.forEach { lang ->
                         LanguageProgressCard(lang)
@@ -261,12 +261,12 @@ fun ProgressScreen() {
 
             if (!hasActivity) {
                 StatsEmptyState(
-                    title = "No activity yet",
+                    title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_activity_yet),
                     description = "Your reading time, word saves, and streak charts will appear here once you start learning.",
                 )
             } else {
                 StatsChartCard(
-                    title = "Reading Time",
+                    title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_reading_time),
                     subtitle = "$readingInPeriod min in this period · avg $avgReadingInPeriod min/day",
                     trailing = { StatsGLogo(size = 32) },
                 ) {
@@ -277,7 +277,7 @@ fun ProgressScreen() {
                 }
 
                 StatsChartCard(
-                    title = "New Words",
+                    title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_words),
                     subtitle = "$wordsInPeriod words in this period",
                     trailing = { StatsGLogo(size = 32) },
                 ) {
@@ -288,8 +288,8 @@ fun ProgressScreen() {
                 }
 
                 StatsChartCard(
-                    title = "Weekly Word Saves",
-                    subtitle = "New vocabulary per week",
+                    title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_weekly_word_saves),
+                    subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_vocabulary_per_week),
                 ) {
                     StatsDotLineChart(
                         data = weeklySeries,
@@ -308,14 +308,14 @@ fun ProgressScreen() {
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(16.dp))
-                        .background(Color.White)
-                        .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                        .background(GotchaColors.SurfaceCard)
+                        .border(1.dp, GotchaColors.SurfaceMuted, RoundedCornerShape(16.dp))
                         .padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    Text("Vocabulary Breakdown", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                    Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_vocabulary_breakdown), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        VocabBreakdownTile("Total saved", totalVocab, Color(0xFFE5E7EB), Color(0xFF364153), Modifier.weight(1f))
+                        VocabBreakdownTile("Total saved", totalVocab, GotchaColors.Border, GotchaColors.TextMuted, Modifier.weight(1f))
                         VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), GotchaBlue.LearningText, Modifier.weight(1f))
                         VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
                     }
@@ -324,7 +324,7 @@ fun ProgressScreen() {
                             .fillMaxWidth()
                             .height(10.dp)
                             .clip(RoundedCornerShape(50))
-                            .background(Color(0xFFF3F4F6)),
+                            .background(GotchaColors.SurfaceMuted),
                     ) {
                         Row(Modifier.fillMaxSize()) {
                             Box(Modifier.fillMaxWidth(masteredPct / 100f).fillMaxHeight().background(Color(0xFF00D492)))
@@ -332,8 +332,8 @@ fun ProgressScreen() {
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
-                        Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                        Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                        Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                     }
                 }
             }
@@ -349,7 +349,7 @@ private fun StatsRangeChip(label: String, active: Boolean, onClick: () -> Unit) 
         fontFamily = Inter,
         fontWeight = FontWeight.SemiBold,
         fontSize = 12.sp,
-        color = if (active) Color(0xFF1E2939) else Color(0xFF99A1AF),
+        color = if (active) GotchaColors.Ink else GotchaColors.TextSubtle,
         modifier = Modifier
             .clip(RoundedCornerShape(10.dp))
             .background(if (active) Color.White else Color.Transparent)
@@ -391,7 +391,7 @@ private fun VocabBreakdownTile(label: String, value: Int, dot: Color, text: Colo
     Row(
         modifier = modifier
             .clip(RoundedCornerShape(14.dp))
-            .background(Color(0xFFF9FAFB))
+            .background(GotchaColors.Surface)
             .padding(12.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -399,7 +399,7 @@ private fun VocabBreakdownTile(label: String, value: Int, dot: Color, text: Colo
         Box(Modifier.size(12.dp).clip(RoundedCornerShape(6.dp)).background(dot))
         Column {
             Text("$value", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = text)
-            Text(label, fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+            Text(label, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
         }
     }
 }
@@ -604,7 +604,7 @@ fun ProfileScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     Text(
-                        "Learning Languages",
+                        androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_learning_languages),
                         fontFamily = Manrope,
                         fontWeight = FontWeight.Bold,
                         fontSize = 16.sp,
@@ -619,7 +619,7 @@ fun ProfileScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clip(RoundedCornerShape(12.dp))
-                                    .background(Color.White)
+                                    .background(GotchaColors.SurfaceCard)
                                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
                                     .clickable(onClick = offline.guardClick { onOpenSettings("language/${lang.code}") })
                                     .padding(12.dp),
@@ -683,7 +683,7 @@ private fun ProfileSettingsSection(
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Text(
-            "Settings",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_settings),
             fontFamily = Manrope,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
@@ -693,13 +693,13 @@ private fun ProfileSettingsSection(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(Color.White)
+                .background(GotchaColors.SurfaceCard)
                 .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp)),
         ) {
             ProfileSettingsRow(
                 iconRes = R.drawable.ic_message,
-                title = "Messages",
-                subtitle = "Chats with other learners",
+                title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_messages),
+                subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_chats_with_other_learners),
                 showDivider = true,
             ) { offline.guardClick { onOpenSettings("messages") }() }
             ProfileSettingsRow(
@@ -737,7 +737,7 @@ private fun ProfileSettingsSection(
 
     if (isAdmin) {
         Text(
-            "Admin dashboard",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_admin_dashboard),
             color = GotchaColors.BrandPurple,
             fontFamily = Manrope,
             fontWeight = FontWeight.SemiBold,
@@ -760,7 +760,7 @@ private fun ProfileSettingsSection(
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .clickable(onClick = offline.guardClick {
                 scope.launch {
@@ -778,7 +778,7 @@ private fun ProgressStatCard(label: String, value: String, iconRes: Int, cardMod
     Column(
         modifier = cardModifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .padding(16.dp),
     ) {
@@ -802,7 +802,7 @@ private fun LanguageProgressCard(lang: LangProgress) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .padding(16.dp),
     ) {
@@ -824,7 +824,7 @@ private fun LanguageProgressCard(lang: LangProgress) {
         }
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Words saved", fontFamily = Manrope, color = GotchaColors.TextSubtle, fontSize = 12.sp)
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_words_saved), fontFamily = Manrope, color = GotchaColors.TextSubtle, fontSize = 12.sp)
             Text("${lang.wordCount} words", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
@@ -879,7 +879,7 @@ private fun AchievementCard(
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -907,7 +907,7 @@ private fun ProfileMiniStat(value: String, label: String, iconRes: Int, modifier
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(12.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

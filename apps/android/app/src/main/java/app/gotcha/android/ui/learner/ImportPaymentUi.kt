@@ -198,7 +198,7 @@ fun ImportQuoteStepUi(
                 color = GotchaColors.Ink,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color(0xFFF3F4F6))
+                    .background(GotchaColors.SurfaceMuted)
                     .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
@@ -216,7 +216,7 @@ fun ImportQuoteStepUi(
                 color = GotchaColors.Ink,
             )
             quote.tier?.label?.let { tierLabel ->
-                Text("  ·  ", color = Color(0xFFD1D5DB), fontSize = 13.sp)
+                Text("  ·  ", color = GotchaColors.Border, fontSize = 13.sp)
                 Text(tierLabel, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.Ink)
             }
         }
@@ -225,8 +225,8 @@ fun ImportQuoteStepUi(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(12.dp))
-                .border(1.dp, Color(0xFFE4E7EC), RoundedCornerShape(12.dp))
-                .background(Color.White)
+                .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
+                .background(GotchaColors.SurfaceCard)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
@@ -236,7 +236,7 @@ fun ImportQuoteStepUi(
                         "Page tier (${tier.label.orEmpty()})",
                         fontFamily = Inter,
                         fontSize = 14.sp,
-                        color = Color(0xFF6A7282),
+                        color = GotchaColors.TextMuted,
                     )
                     Text(
                         formatSom(tier.priceUzs ?: 0.0),
@@ -248,12 +248,12 @@ fun ImportQuoteStepUi(
                 }
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Estimated pages", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF6A7282))
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_estimated_pages), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.TextMuted)
                 Text("~${quote.estimatedPages}", fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.Ink)
             }
-            HorizontalDivider(color = Color(0xFFE4E7EC))
+            HorizontalDivider(color = GotchaColors.Border)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text("Total", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
+                Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_total), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
                 Text(
                     formatSom(quote.amountUzs),
                     fontFamily = Inter,
@@ -270,7 +270,7 @@ fun ImportQuoteStepUi(
                 fontFamily = Inter,
                 fontSize = 12.sp,
                 lineHeight = 17.sp,
-                color = Color(0xFF6A7282),
+                color = GotchaColors.TextMuted,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
@@ -288,7 +288,7 @@ fun ImportQuoteStepUi(
             onClick = onProceed,
         )
         Text(
-            "Cancel",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_cancel),
             color = GotchaColors.TextMuted,
             fontFamily = Inter,
             fontWeight = FontWeight.SemiBold,

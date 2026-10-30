@@ -551,3 +551,29 @@ assert.equal(missingOpen.some((c) => /Imported PDF/i.test(c.title)), false, miss
 assert.ok(missingOpen.some((c) => /^Chapter 1$/i.test(c.title)), missingOpenTitles);
 
 console.log('chapter-split tests passed');
+
+// UI-19: letter-spaced place headings are not chapters; front matter before Chapter II is Chapter I.
+{
+  const filler = (w: string) => Array.from({ length: 120 }, () => w).join(' ');
+  const text = [
+    `${filler('Erzählung')}.`,
+    '',
+    'II.',
+    'Der Deichgraf',
+    '',
+    `${filler('Wasser')}.`,
+    '',
+    'L E I P Z I G',
+    '',
+    `${filler('Sturm')}.`,
+    '',
+    'III.',
+    'Die Flut',
+    '',
+    `${filler('Winter')}.`,
+  ].join('\n');
+  const chapters = splitAccurateChapters(text, 'Der Schimmelreiter');
+  const titles = chapters.map((c) => c.title);
+  assert.ok(!titles.some((t) => /L E I P Z I G|^Chapter L\b/i.test(t)), `no letter-spaced chapter: ${titles.join(' | ')}`);
+  if (titles.length >= 3) assert.match(titles[0], /^Chapter I\b/, `front matter becomes Chapter I: ${titles.join(' | ')}`);
+}

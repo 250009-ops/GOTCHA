@@ -18,7 +18,7 @@ import androidx.core.view.WindowCompat
  *                  false → light glyphs on dark backgrounds (splash gradient).
  */
 @Composable
-fun GotchaSystemBars(darkIcons: Boolean = true) {
+fun GotchaSystemBars(darkIcons: Boolean = !GotchaThemeState.isDark) {
     val view = LocalView.current
     if (view.isInEditMode) return
     SideEffect {

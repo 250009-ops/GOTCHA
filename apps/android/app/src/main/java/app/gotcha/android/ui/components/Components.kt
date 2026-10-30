@@ -22,6 +22,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.material.icons.outlined.ErrorOutline
+import app.gotcha.android.ui.theme.Inter
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -76,6 +80,34 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.material3.minimumInteractiveComponentSize
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.autofill.ContentType
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.contentType
+import androidx.compose.ui.semantics.error
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.unit.IntOffset
+import app.gotcha.android.R
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.ui.theme.BagelFatOne
@@ -91,7 +123,8 @@ fun GotchaPrimaryButton(
     modifier: Modifier = Modifier,
     loading: Boolean = false,
     enabled: Boolean = true,
-    containerColor: Color = GotchaColors.BrandPurpleDeep,
+    // DESIGN §B #5: CTA is Blue700 (logo blue), not Blue800.
+    containerColor: Color = GotchaColors.BrandPurple,
     contentColor: Color = Color.White,
     shapeRadius: Int = 14,
 ) {
@@ -102,7 +135,13 @@ fun GotchaPrimaryButton(
     Box(
         modifier = modifier
             .heightIn(min = minHeight)
-            .shadow(8.dp, shape, spotColor = containerColor.copy(alpha = 0.19f)),
+            // DESIGN §B #6: brand-tinted ambient + spot shadow (rgba(33,7,170,.22)).
+            .shadow(
+                if (enabled) 8.dp else 0.dp,
+                shape,
+                ambientColor = containerColor.copy(alpha = 0.22f),
+                spotColor = containerColor.copy(alpha = 0.22f),
+            ),
     ) {
         Button(
             onClick = onClick,
@@ -115,8 +154,9 @@ fun GotchaPrimaryButton(
             colors = ButtonDefaults.buttonColors(
                 containerColor = containerColor,
                 contentColor = contentColor,
-                disabledContainerColor = containerColor.copy(alpha = 0.5f),
-                disabledContentColor = contentColor.copy(alpha = 0.8f),
+                // Loading keeps the full colour (button width/look fixed, §B #20); disabled = M3 38 % (#21).
+                disabledContainerColor = if (loading) containerColor else containerColor.copy(alpha = 0.38f),
+                disabledContentColor = if (loading) contentColor else contentColor.copy(alpha = 0.8f),
             ),
         ) {
             if (loading) {
@@ -193,6 +233,13 @@ fun GotchaMultilineTextField(
     }
 }
 
+/**
+ * Auth/form text field per DESIGN-android-auth-onboarding.md §B:
+ * BasicTextField 52dp min (grows with font scale), 1.5dp border r12, Blue700 focus border + 3dp ring @16 %,
+ * inline error with icon + semantics, 20dp eye toggle with a label, IME actions, autofill content type,
+ * label tied to the field for TalkBack, and bring-into-view on focus so the CTA stays above the keyboard.
+ */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun GotchaTextField(
     label: String,
@@ -204,71 +251,254 @@ fun GotchaTextField(
     keyboardType: KeyboardType = KeyboardType.Text,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     inputFilter: ((String) -> String)? = null,
+    error: String? = null,
+    enabled: Boolean = true,
+    imeAction: ImeAction = ImeAction.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    capitalization: KeyboardCapitalization? = null,
+    autofill: ContentType? = null,
+    onFocusLost: (() -> Unit)? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
+    var focused by remember { mutableStateOf(false) }
+    var wasFocused by remember { mutableStateOf(false) }
+    val bringIntoView = remember { BringIntoViewRequester() }
+    val scope = rememberCoroutineScope()
     val resolvedType = if (isPassword) KeyboardType.Password else keyboardType
     val disableSuggestions =
-        isPassword || resolvedType == KeyboardType.Password || resolvedType == KeyboardType.Email
+        isPassword || resolvedType == KeyboardType.Password || resolvedType == KeyboardType.Email || capitalization == KeyboardCapitalization.Words
     val resolvedVisualTransformation = when {
         isPassword && !visible -> PasswordVisualTransformation()
         else -> visualTransformation
     }
-    Column(modifier = modifier.fillMaxWidth()) {
+    val isError = !error.isNullOrBlank()
+    val shape = RoundedCornerShape(12.dp)
+    val borderColor = when {
+        isError -> GotchaColors.Danger
+        focused -> GotchaColors.BrandPurple
+        else -> GotchaColors.BorderInput
+    }
+    val ringColor = if (isError) GotchaColors.Danger.copy(alpha = 0.16f) else GotchaColors.BrandPurple.copy(alpha = 0.16f)
+    val textColor = if (enabled) GotchaColors.InkSecondary else GotchaColors.TextPlaceholder
+    // Error shake (§B #38): 3 × 4dp over 240ms, skipped under reduced motion.
+    val shake = remember { Animatable(0f) }
+    val reduceMotion = rememberReducedMotion()
+    LaunchedEffect(error) {
+        if (isError && !reduceMotion) {
+            repeat(3) {
+                shake.animateTo(4f, tween(40))
+                shake.animateTo(-4f, tween(40))
+            }
+            shake.animateTo(0f, tween(0))
+        }
+    }
+    Column(modifier = modifier.fillMaxWidth().bringIntoViewRequester(bringIntoView)) {
         Text(
             text = label,
             fontFamily = Manrope,
             fontWeight = FontWeight.Bold,
             fontSize = 13.sp,
             color = GotchaColors.InkSecondary,
+            modifier = Modifier.clearAndSetSemantics { },
         )
         Spacer(Modifier.height(8.dp))
-        OutlinedTextField(
+        BasicTextField(
             value = value,
             onValueChange = { raw -> onValueChange(inputFilter?.invoke(raw) ?: raw) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
+            enabled = enabled,
             singleLine = true,
-            placeholder = {
-                Text(placeholder, color = GotchaColors.TextPlaceholder, fontSize = 15.sp)
-            },
             visualTransformation = resolvedVisualTransformation,
-            trailingIcon = if (isPassword) {
-                {
-                    IconButton(onClick = { visible = !visible }) {
-                        Icon(
-                            imageVector = if (visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
-                            contentDescription = null,
-                            tint = GotchaColors.TextMuted,
-                        )
-                    }
-                }
-            } else null,
             keyboardOptions = KeyboardOptions(
                 keyboardType = resolvedType,
-                autoCorrect = !disableSuggestions,
-                capitalization = if (disableSuggestions) {
+                autoCorrectEnabled = !disableSuggestions,
+                imeAction = imeAction,
+                capitalization = capitalization ?: if (disableSuggestions) {
                     KeyboardCapitalization.None
                 } else {
                     KeyboardCapitalization.Unspecified
                 },
             ),
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = GotchaColors.SurfaceInput,
-                unfocusedContainerColor = GotchaColors.SurfaceInput,
-                focusedBorderColor = GotchaColors.BrandPurple,
-                unfocusedBorderColor = GotchaColors.BorderInput,
-                cursorColor = GotchaColors.BrandPurple,
-                focusedTextColor = GotchaColors.InkSecondary,
-                unfocusedTextColor = GotchaColors.InkSecondary,
-            ),
+            keyboardActions = keyboardActions,
+            cursorBrush = SolidColor(GotchaColors.BrandPurple),
             textStyle = androidx.compose.ui.text.TextStyle(
                 fontFamily = Manrope,
                 fontSize = 15.sp,
-                color = GotchaColors.InkSecondary,
+                color = textColor,
             ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(shake.value.dp.roundToPx(), 0) }
+                .onFocusChanged { state ->
+                    focused = state.isFocused
+                    if (state.isFocused) {
+                        wasFocused = true
+                        scope.launch {
+                            // Wait for the IME to animate in, then keep the field (and CTA below) visible.
+                            delay(250)
+                            bringIntoView.bringIntoView()
+                        }
+                    } else if (wasFocused) {
+                        onFocusLost?.invoke()
+                    }
+                }
+                .semantics {
+                    contentDescription = label
+                    if (isError) error(error.orEmpty())
+                    if (autofill != null) contentType = autofill
+                },
+            decorationBox = { inner ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 52.dp)
+                        .drawBehind {
+                            if (focused || isError) {
+                                val ring = 3.dp.toPx()
+                                drawRoundRect(
+                                    color = ringColor,
+                                    topLeft = Offset(-ring, -ring),
+                                    size = androidx.compose.ui.geometry.Size(size.width + 2 * ring, size.height + 2 * ring),
+                                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(12.dp.toPx() + ring),
+                                )
+                            }
+                        }
+                        .clip(shape)
+                        .background(GotchaColors.SurfaceInput)
+                        .border(1.5.dp, borderColor, shape)
+                        .padding(start = 16.dp, end = if (isPassword) 4.dp else 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(Modifier.weight(1f).padding(vertical = 14.dp)) {
+                        if (value.isEmpty() && placeholder.isNotEmpty()) {
+                            Text(
+                                placeholder,
+                                color = GotchaColors.TextPlaceholder,
+                                fontFamily = Manrope,
+                                fontSize = 15.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        inner()
+                    }
+                    if (isPassword) {
+                        IconButton(
+                            onClick = { visible = !visible },
+                            enabled = enabled,
+                            modifier = Modifier.size(40.dp),
+                        ) {
+                            Icon(
+                                imageVector = if (visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
+                                contentDescription = stringResource(
+                                    if (visible) R.string.auth_hide_password else R.string.auth_show_password,
+                                ),
+                                tint = GotchaColors.TextPlaceholder,
+                                modifier = Modifier.size(20.dp),
+                            )
+                        }
+                    }
+                }
+            },
         )
+        AnimatedVisibility(
+            visible = isError,
+            enter = expandVertically(tween(200)) + fadeIn(tween(200)),
+            exit = shrinkVertically(tween(150)) + fadeOut(tween(150)),
+        ) {
+            Row(
+                modifier = Modifier.padding(top = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(
+                    Icons.Outlined.ErrorOutline,
+                    contentDescription = null,
+                    tint = GotchaColors.Danger,
+                    modifier = Modifier.size(16.dp),
+                )
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    error.orEmpty(),
+                    fontFamily = Manrope,
+                    fontSize = 12.sp,
+                    lineHeight = 16.sp,
+                    color = GotchaColors.Danger,
+                )
+            }
+        }
+    }
+}
+
+/** True when the system "Remove animations" setting is on (ANIMATOR_DURATION_SCALE == 0). */
+@Composable
+fun rememberReducedMotion(): Boolean {
+    val ctx = LocalContext.current
+    return remember(ctx) {
+        runCatching {
+            android.provider.Settings.Global.getFloat(
+                ctx.contentResolver,
+                android.provider.Settings.Global.ANIMATOR_DURATION_SCALE,
+                1f,
+            ) == 0f
+        }.getOrDefault(false)
+    }
+}
+
+/** Form-level error banner (§B #19/#35): DangerBg r12, polite live region, animated in. */
+@Composable
+fun FormErrorBanner(message: String?, modifier: Modifier = Modifier) {
+    AnimatedVisibility(
+        visible = !message.isNullOrBlank(),
+        enter = expandVertically(tween(200)) + fadeIn(tween(200)),
+        exit = shrinkVertically(tween(150)) + fadeOut(tween(150)),
+        modifier = modifier,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(12.dp))
+                .background(GotchaColors.DangerBg)
+                .padding(horizontal = 14.dp, vertical = 12.dp)
+                .semantics { liveRegion = LiveRegionMode.Polite },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Outlined.ErrorOutline, contentDescription = null, tint = GotchaColors.Danger, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(10.dp))
+            Text(message.orEmpty(), fontFamily = Manrope, fontSize = 13.sp, color = GotchaColors.Danger)
+        }
+    }
+}
+
+/** Accessible auth text link (§B #9/#33): Manrope, ≥48dp touch target, Role.Button. */
+@Composable
+fun AuthTextLink(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    fontSize: androidx.compose.ui.unit.TextUnit = 14.sp,
+) {
+    Box(
+        modifier = modifier
+            .minimumInteractiveComponentSize()
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text,
+            fontFamily = Manrope,
+            fontWeight = FontWeight.Bold,
+            fontSize = fontSize,
+            color = if (enabled) GotchaColors.BrandPurple else GotchaColors.TextPlaceholder,
+        )
+    }
+}
+
+/** "Prompt + link" footer used on sign in and sign up (§B #9). */
+@Composable
+fun AuthFooterLink(prompt: String, action: String, onClick: () -> Unit, enabled: Boolean = true) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(prompt, fontFamily = Manrope, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.TextPlaceholder)
+        AuthTextLink(action, onClick, enabled = enabled)
     }
 }
 
@@ -295,7 +525,7 @@ fun BrandMark(
         modifier = Modifier
             .then(
                 if (elevated && size >= 32) {
-                    Modifier.shadow(10.dp, shape, ambientColor = Color(0x802107AA), spotColor = Color(0x802107AA))
+                    Modifier.shadow(10.dp, shape, ambientColor = Color(0x592107AA), spotColor = Color(0x592107AA))
                 } else {
                     Modifier
                 },
@@ -309,10 +539,11 @@ fun BrandMark(
 fun BrandWordmark(
     fontSize: Int = 18,
     color: Color = GotchaColors.Ink,
+    contentDescription: String? = "GOTCHA",
 ) {
     androidx.compose.foundation.Image(
         painter = androidx.compose.ui.res.painterResource(app.gotcha.android.R.drawable.ic_gotcha_wordmark),
-        contentDescription = "GOTCHA",
+        contentDescription = contentDescription,
         colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(color),
         modifier = Modifier.height(fontSize.dp),
     )
@@ -413,7 +644,7 @@ fun StatCard(label: String, value: String, valueColor: Color = GotchaColors.Ink,
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(12.dp),
     ) {
@@ -526,7 +757,7 @@ fun GlassLoadingScreen(
                 modifier = Modifier
                     .padding(horizontal = 32.dp)
                     .clip(RoundedCornerShape(24.dp))
-                    .background(Color.White.copy(alpha = if (blurCapable) 0.72f else 0.88f))
+                    .background(GotchaColors.SurfaceCard.copy(alpha = if (blurCapable) 0.72f else 0.88f))
                     .border(1.dp, Color.White.copy(alpha = 0.55f), RoundedCornerShape(24.dp))
                     .padding(horizontal = 28.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -586,9 +817,8 @@ fun GlassLoadingScreen(
     }
 }
 
-private val skeletonBase = Color(0xFFE5E7EB)
-private val skeletonHighlight = Color(0xFFF3F4F6)
-
+private val skeletonBase: Color get() = GotchaColors.Border
+private val skeletonHighlight: Color get() = GotchaColors.SurfaceMuted
 @Composable
 fun SkeletonBox(
     modifier: Modifier = Modifier,
@@ -621,7 +851,7 @@ fun StatCardSkeleton(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
-            .background(Color.White)
+            .background(GotchaColors.SurfaceCard)
             .border(1.dp, GotchaColors.Border, RoundedCornerShape(12.dp))
             .padding(12.dp),
     ) {
@@ -755,7 +985,7 @@ fun LibraryBrowseSkeleton(
             Column(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -789,7 +1019,7 @@ fun LibraryGridSkeleton(
             Column(
                 modifier = Modifier
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
+                    .background(GotchaColors.SurfaceCard)
                     .border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                     .padding(12.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -893,11 +1123,57 @@ fun ProgressSkeleton(modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * Shared load-error state (UI-09/UI-10): icon, message, Retry. Network failures fall back to the
+ * offline state so the copy matches the cause.
+ */
+@Composable
+fun ErrorState(message: String, onRetry: () -> Unit, modifier: Modifier = Modifier) {
+    if (looksLikeNetworkFailure(message)) {
+        OfflineEmptyState(onRetry = onRetry, compact = true, modifier = modifier)
+        return
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 32.dp)
+            .semantics { liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        androidx.compose.material3.Icon(
+            androidx.compose.material.icons.Icons.Outlined.ErrorOutline,
+            contentDescription = null,
+            tint = GotchaColors.TextSubtle,
+            modifier = Modifier.size(36.dp),
+        )
+        Text(
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.error_title),
+            fontFamily = Inter,
+            fontWeight = FontWeight.Bold,
+            fontSize = 16.sp,
+            color = GotchaColors.Ink,
+            textAlign = TextAlign.Center,
+        )
+        Text(message, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(4.dp))
+        androidx.compose.material3.OutlinedButton(
+            onClick = onRetry,
+            shape = RoundedCornerShape(12.dp),
+            border = androidx.compose.foundation.BorderStroke(1.dp, GotchaColors.Border),
+            colors = androidx.compose.material3.ButtonDefaults.outlinedButtonColors(contentColor = GotchaColors.BrandPurple),
+            modifier = Modifier.heightIn(min = 44.dp),
+        ) {
+            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.common_retry), fontFamily = Inter, fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
 @Composable
 fun ErrorBox(message: String, onRetry: (() -> Unit)? = null) {
     if (looksLikeNetworkFailure(message)) {
         OfflineEmptyState(
-            subtitle = "Connect to the internet to load this screen.",
+            subtitle = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.offline_screen_subtitle),
             onRetry = onRetry,
             compact = true,
         )
@@ -912,15 +1188,15 @@ fun ErrorBox(message: String, onRetry: (() -> Unit)? = null) {
         Text(message, color = GotchaColors.TextMuted)
         if (onRetry != null) {
             Spacer(Modifier.height(12.dp))
-            GotchaPrimaryButton(text = "Retry", onClick = onRetry, modifier = Modifier.width(160.dp))
+            GotchaPrimaryButton(text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.common_retry), onClick = onRetry, modifier = Modifier.width(160.dp))
         }
     }
 }
 
 @Composable
 fun OfflineEmptyState(
-    message: String = "You're offline",
-    subtitle: String = "Connect to the internet to load your content.",
+    message: String = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.offline_message),
+    subtitle: String = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.offline_subtitle),
     onRetry: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
     compact: Boolean = false,
@@ -937,7 +1213,7 @@ fun OfflineEmptyState(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             Text(
-                "Offline mode",
+                androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.offline_title),
                 fontFamily = Manrope,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp,
@@ -964,7 +1240,7 @@ fun OfflineEmptyState(
             if (onRetry != null) {
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "Tap to retry",
+                    androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.offline_tap_retry),
                     fontFamily = Manrope,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
@@ -1012,7 +1288,7 @@ fun OfflineBanner(modifier: Modifier = Modifier) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "Offline mode — showing saved data",
+            androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_offline_mode_showing_saved_data),
             fontFamily = Manrope,
             fontSize = 13.sp,
             color = GotchaColors.TextMuted,

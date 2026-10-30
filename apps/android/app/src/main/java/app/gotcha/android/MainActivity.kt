@@ -22,6 +22,9 @@ import app.gotcha.android.di.AppContainer
 import app.gotcha.android.ui.nav.GotchaNavHost
 import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.GotchaTheme
+import app.gotcha.android.ui.theme.AppUiPrefs
+import app.gotcha.android.ui.theme.GotchaThemeState
+import app.gotcha.android.ui.theme.LocalizedContent
 import app.gotcha.android.data.import.cacheExternalImport
 import app.gotcha.android.data.import.isSupportedImportMime
 import app.gotcha.android.data.import.titleFromFileName
@@ -42,6 +45,8 @@ val PendingReaderNavigation = MutableStateFlow<String?>(null)
 
 /** Restores Browse Library when returning from the root-level reader (LearnerShell is recreated). */
 data class ReaderReturnContext(
+    /** UI-18: learner tab the reader was opened from; Back returns there and nowhere else. */
+    val originRoute: String = "home",
     val browseFilter: String? = null,
     val browseCollection: String? = null,
     val librarySearch: String = "",
@@ -244,6 +249,11 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
+        // UI-06 / UI-17: theme + in-app language apply from the first frame (pre-login too).
+        AppUiPrefs.init(this)
+        GotchaThemeState.systemDark =
+            (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK) ==
+                android.content.res.Configuration.UI_MODE_NIGHT_YES
         // Default: dark status icons on light screens.
         // Per-screen overrides via GotchaSystemBars (re-applies SystemBarStyle).
         enableEdgeToEdge(
@@ -268,6 +278,7 @@ class MainActivity : ComponentActivity() {
         val container = (application as GotchaApp).container
         setContent {
             GotchaTheme {
+                LocalizedContent {
                 CompositionLocalProvider(LocalAppContainer provides container) {
                     Box(Modifier.fillMaxSize()) {
                         Surface(
@@ -278,6 +289,7 @@ class MainActivity : ComponentActivity() {
                         }
                         ExternalImportDebugOverlay()
                     }
+                }
                 }
             }
         }
