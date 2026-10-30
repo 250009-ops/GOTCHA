@@ -28,7 +28,7 @@ import kotlin.coroutines.resume
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /** User-facing billing failure (message is shown as-is; never mentions other payment routes). */
-class PlayBillingException(message: String, val cancelled: Boolean = false) : Exception(message)
+class PlayBillingException(message: String, val cancelled: Boolean = false, val pending: Boolean = false) : Exception(message)
 
 /**
  * Google Play Billing for every digital purchase in the app (imports, catalog books, Plus).
@@ -36,6 +36,8 @@ class PlayBillingException(message: String, val cancelled: Boolean = false) : Ex
  * the Play Developer API, grants the unlock and acknowledges/consumes it. Purchases made on the web unlock here
  * through GET /billing/entitlements.
  */
+private const val PENDING_MSG = "Your payment is pending. The item unlocks as soon as Google Play confirms it."
+
 class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdatedListener {
     private val client: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
@@ -85,7 +87,10 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
             ).build(),
         ).productDetailsList?.firstOrNull() ?: throw PlayBillingException("This item is not available in your country yet.")
         val pp = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details).apply {
-            details.subscriptionOfferDetails?.firstOrNull()?.offerToken?.let { setOfferToken(it) }
+            // m-p2-6: pick the plain base-plan offer (no offerId) explicitly, never a promo/trial offer by position.
+            details.subscriptionOfferDetails?.let { offers ->
+                (offers.firstOrNull { it.offerId == null } ?: offers.firstOrNull())?.offerToken?.let { setOfferToken(it) }
+            }
         }.build()
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(pp))
@@ -110,16 +115,37 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
             .purchasesList.firstOrNull { it.products.contains(sku) }
 
     private suspend fun verify(sku: String, purchase: Purchase, importQuote: ImportQuoteRequest? = null): PlayVerifyResponse {
-        if (purchase.purchaseState == Purchase.PurchaseState.PENDING) {
-            throw PlayBillingException("Your payment is pending. The item unlocks as soon as Google Play confirms it.")
+        if (purchase.purchaseState == Purchase.PurchaseState.PENDING) throw PlayBillingException(PENDING_MSG, pending = true)
+        val r = api.playVerify(PlayVerifyRequest(sku, purchase.purchaseToken, importQuote))
+        // PM3: only "granted" unlocks anything; pending / expired are surfaced instead of a false success.
+        when (r.status) {
+            "granted" -> return r
+            "pending" -> throw PlayBillingException(PENDING_MSG, pending = true)
+            else -> throw PlayBillingException("Google Play didn't confirm this purchase. If you were charged, it will be refunded automatically.")
         }
-        return api.playVerify(PlayVerifyRequest(sku, purchase.purchaseToken, importQuote))
     }
 
+    /** PM3: the localized price Google Play will actually charge (null if Play is unavailable). */
+    suspend fun bookPrice(contentId: String): String? = runCatching {
+        val sku = api.playBookSku(contentId)?.sku ?: return null
+        connect()
+        client.queryProductDetails(
+            QueryProductDetailsParams.newBuilder().setProductList(
+                listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(BillingClient.ProductType.INAPP).build()),
+            ).build(),
+        ).productDetailsList?.firstOrNull()?.oneTimePurchaseOfferDetails?.formattedPrice
+    }.getOrNull()
+
     /** Pays for one import with the Play SKU mapped to the quoted page tier; returns the server payment id. */
-    suspend fun buyImport(tierId: String, quote: ImportQuoteRequest): String {
+    suspend fun buyImport(tierId: String, quote: ImportQuoteRequest, maxPages: Int? = null): String {
         val sku = products().products.firstOrNull { it.kind == "import_tier" && it.importTierId == tierId }?.sku
             ?: throw PlayBillingException("This import size can't be purchased in the app yet. Try a shorter document.")
+        // PB2: reuse an unused Play credit that covers this tier (bought earlier, verify finished but import never ran).
+        val ents = runCatching { api.entitlements() }.getOrNull()
+        val needed = maxPages ?: Int.MAX_VALUE
+        ents?.importCredits?.firstOrNull { !it.used && it.source == "google_play" && (it.tierId == tierId || (it.maxPages ?: -1) >= needed) }
+            ?.let { return it.paymentId }
+        // On ITEM_ALREADY_OWNED, launch() falls back to the owned token; the server verifies it without needing a quote.
         val purchase = launch(sku, BillingClient.ProductType.INAPP) ?: throw PlayBillingException("Purchase failed. Please try again.")
         return verify(sku, purchase, quote).paymentId ?: throw PlayBillingException("Purchase could not be confirmed. Please try again.")
     }
@@ -149,11 +175,12 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
             val known = products().products.associateBy { it.sku }
             for (type in listOf(BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS)) {
                 client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build()).purchasesList
-                    .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && !it.isAcknowledged }
+                    // PB2: unacknowledged purchases AND every still-owned INAPP item (an owned consumable means
+                    // the server never consumed it). Import tiers verify without a quote and become a tier credit.
+                    .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && (!it.isAcknowledged || type == BillingClient.ProductType.INAPP) }
                     .forEach { p ->
                         val sku = p.products.firstOrNull() ?: return@forEach
-                        // Import credits need the import's quote, which the import screen re-sends; skip them here.
-                        if (known[sku]?.kind == "import_tier") return@forEach
+                        if (known[sku] == null) return@forEach
                         runCatching { api.playVerify(PlayVerifyRequest(sku, p.purchaseToken, null)) }
                     }
             }

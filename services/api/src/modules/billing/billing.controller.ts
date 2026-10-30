@@ -28,7 +28,9 @@ export class BillingController {
 
   /** Everything the user owns from any source (web Atmos, Android Play, admin). Clients call this at login. */
   @Get('entitlements')
-  myEntitlements(@CurrentUser() user: AuthUserPayload) {
+  async myEntitlements(@CurrentUser() user: AuthUserPayload) {
+    // PM2: re-read lapsed Play subscriptions (rate-limited) before reporting them expired.
+    await this.playBilling.refreshUserSubscriptions(user.sub).catch(() => undefined);
     return this.entitlements.forUser(user.sub);
   }
 
@@ -55,7 +57,7 @@ export class BillingController {
   @SkipThrottle()
   @Post('play/rtdn')
   @HttpCode(204)
-  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string } }) {
+  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string; messageId?: string } }) {
     if (!(await this.play.verifyPush(auth, token))) throw new UnauthorizedException();
     await this.playBilling.handleRtdn(body);
   }

@@ -593,12 +593,13 @@ export class AtmosClient {
    * 5. Cancel Transaction (Reverse)
    * POST /merchant/pay/reverse
    * Cancels a transaction and refunds the card.
+   * Atmos documents no idempotency key for this call (docs.atmos.uz, "Отмена транзакции": only transaction_id,
+   * hold_amount, reason). Double refunds are prevented on our side (paid→refunding claim) and by Atmos itself,
+   * which rejects reversing an already-reversed transaction. See docs/ATMOS.md §Refunds.
    */
   async reverseTransaction(params: {
     transactionId: number;
     reason?: string;
-    /** Sent as Idempotency-Key (our payment id) so a retried reverse can be de-duplicated. */
-    idempotencyKey?: string;
   }): Promise<{ transactionId: number; raw: unknown }> {
     const token = await this.getAccessToken();
 
@@ -612,7 +613,6 @@ export class AtmosClient {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
-        ...(params.idempotencyKey ? { 'Idempotency-Key': params.idempotencyKey } : {}),
         Accept: 'application/json',
       },
       body: JSON.stringify(payload),

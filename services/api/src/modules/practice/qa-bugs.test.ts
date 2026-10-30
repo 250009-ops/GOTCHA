@@ -21,9 +21,12 @@ function practice(session: any) {
     practiceSession: {
       findFirst: async ({ where }: any) => (session && where.userId === session.userId && where.id === session.id ? session : null),
       update: async ({ data }: any) => { writes.push(['session', data]); return { ...session, ...data }; },
+      updateMany: async ({ where, data }: any) => { if (session.completedAt !== null || where.completedAt !== null) return { count: 0 }; writes.push(['session', data]); Object.assign(session, data); return { count: 1 }; },
+      findUniqueOrThrow: async () => ({ ...session }),
     },
     practiceAnswer: { create: async ({ data }: any) => { writes.push(['answer', data]); return data; } },
   };
+  prisma.$transaction = (fn: any) => fn(prisma);
   return { svc: new PracticeService(prisma, {} as any, {} as any), writes };
 }
 const base = { id: 's1', userId: 'u1', completedAt: null, questionCount: 3, questions: [Q('q1', 'A'), Q('q2', 'B'), Q('q3', 'C')] };
@@ -40,6 +43,17 @@ async function main() {
     const { svc } = practice({ ...base });
     const r = await svc.submitAnswers('u1', 's1', { answers: [{ questionId: 'q1', userAnswer: ' a. ' }] } as any);
     assert.equal(r.score, 1 / 3);
+  }
+  // m7: a second concurrent submit loses with 409 and writes nothing
+  {
+    const sess = { ...base };
+    const { svc, writes } = practice(sess);
+    const [a, b] = await Promise.allSettled([
+      svc.submitAnswers('u1', 's1', { answers: [{ questionId: 'q1', userAnswer: 'A' }] } as any),
+      svc.submitAnswers('u1', 's1', { answers: [{ questionId: 'q1', userAnswer: 'A' }] } as any),
+    ]);
+    assert.equal([a, b].filter((x) => x.status === 'fulfilled').length, 1);
+    assert.equal(writes.filter((w) => w[0] === 'answer').length, 1);
   }
   // BUG-03 unknown id: 400, no completion, no answers leaked
   {

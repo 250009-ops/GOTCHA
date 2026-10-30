@@ -25,10 +25,14 @@ async function main() {
       update: async ({ where, data }: any) => { const p = promos.find((x) => x.id === where.id); p.redemptions += data.redemptions.increment; return p; },
     },
     importPayment: {
-      count: async ({ where }: any) => payments.filter((p) => p.userId === where.userId && p.promoCodeId === where.promoCodeId && p.promoRedeemed).length,
+      count: async ({ where }: any) => (where.status ? payments.filter((p) => p.promoCodeId === where.promoCodeId && p.status === 'pending').length
+        : payments.filter((p) => p.userId === where.userId && where.OR.some((w: any) => p.promoCodeId === w.promoCodeId && (w.promoRedeemed ? p.promoRedeemed : p.status === 'pending'))).length),
       findUnique: async ({ where }: any) => payments.find((p) => p.id === where.id),
       updateMany: async ({ where, data }: any) => { const p = payments.find((x) => x.id === where.id && x.promoRedeemed === where.promoRedeemed); if (!p) return { count: 0 }; Object.assign(p, data); return { count: 1 }; },
+      update: async ({ where, data }: any) => Object.assign(payments.find((x) => x.id === where.id), data),
     },
+    // conditional increment (m-p2-5): mirrors the SQL WHERE redemptions < max_redemptions
+    $executeRaw: async (_q: TemplateStringsArray, id: string) => { const p = promos.find((x) => x.id === id); if (p.maxRedemptions != null && p.redemptions >= p.maxRedemptions) return 0; p.redemptions++; return 1; },
     subscriptionPlan: {
       findFirst: async ({ where }: any) => plans.find((p) => p.tier === where.tier) ?? null,
       update: async ({ where, data }: any) => Object.assign(plans.find((p) => p.id === where.id), data),
@@ -48,6 +52,14 @@ async function main() {
   assert.equal(await code('LAUNCH', 'imports'), 'promo_used', 'per-user limit');
   promos[0].redemptions = 2;
   assert.equal(await code('LAUNCH', 'imports', 'u2'), 'promo_exhausted');
+  // m-p2-5: an open checkout holds a slot; and a redemption past the cap doesn't increment, it flags.
+  promos[0].redemptions = 1;
+  payments.push({ id: 'pay2', userId: 'u3', promoCodeId: 'p1', promoRedeemed: false, status: 'pending' });
+  assert.equal(await code('LAUNCH', 'imports', 'u4'), 'promo_exhausted', 'pending checkout holds the last slot');
+  promos[0].redemptions = 2;
+  assert.equal(await svc.redeemForPayment('pay2'), false);
+  assert.equal(promos[0].redemptions, 2, 'cap never exceeded');
+  assert.equal(payments[1].needsAttention, true);
 
   // plan edits
   await assert.rejects(svc.updatePlan('free', { priceUzs: 1000 }), /free plan must cost 0/);

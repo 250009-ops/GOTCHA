@@ -161,14 +161,31 @@ async function main() {
     assert.equal(f.payments[0].status, S.paid);
     assert.equal(f.payments[0].needsAttention, true);
   }
-  // B2 reconciler: stale refunding row; Atmos shows reversed ⇒ finalized
+  // P1-R1 reconciler: stale refunding row, retried reverse OK ⇒ finalized
   {
     const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundReason: 'x' }));
-    f.atmos.confirmed = false;
     f.db.importPayment.findMany = async () => [f.payments[0]];
     const r = await f.svc.reconcileStaleRefunds(0);
     assert.equal(r.finalized, 1);
     assert.equal(f.payments[0].status, S.refunded);
+  }
+  // P1-R1: reverse rejected/unknown ⇒ stays refunding + needsAttention, never rolled back to paid
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundReason: 'x' }));
+    f.atmos.reverseFails = true;
+    f.db.importPayment.findMany = async () => [f.payments[0]];
+    const r = await f.svc.reconcileStaleRefunds(0);
+    assert.equal(r.flagged, 1);
+    assert.equal(f.payments[0].status, S.refunding);
+    assert.equal(f.payments[0].needsAttention, true);
+  }
+  // P1-R1: minimum age enforced even when the caller asks for 0 (admin endpoint)
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(), refundReason: 'x' }));
+    let cutoff: Date | null = null;
+    f.db.importPayment.findMany = async ({ where }: any) => { cutoff = where.refundRequestedAt.lt; return []; };
+    await f.svc.reconcileStaleRefunds(0);
+    assert.ok(cutoff! <= new Date(Date.now() - 10 * 60_000 + 1000));
   }
   console.log('review-p1 payments: all passed');
 }

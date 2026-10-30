@@ -90,6 +90,9 @@ export type CheckoutResult = {
   step: 'done' | 'card' | 'otp' | 'paid';
 };
 
+/** A refund younger than this is assumed in flight and never reconciled (REVIEW-p2 P1-R1). */
+export const REFUND_RECONCILE_MIN_AGE_MS = 10 * 60_000;
+
 @Injectable()
 export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportCommerceService.name);
@@ -574,7 +577,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
   /**
    * Refund a paid payment (REVIEW B2). Claim first (paid→refunding), then reverse at Atmos with the payment id as
-   * idempotency key, then in ONE transaction: refunding→refunded, revoke only the access this payment granted,
+   * claim as the only dedupe (Atmos has no idempotency key), then in ONE transaction: refunding→refunded, revoke only the access this payment granted,
    * and write the AuditLog. A failed reverse rolls the claim back to paid and surfaces the error.
    * Local-only refunds (no transaction to reverse) are allowed only when Atmos is explicitly in test mode (M1).
    */
@@ -608,7 +611,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
     if (hasTx) {
       try {
-        await this.atmos.reverseTransaction({ transactionId, reason: opts.reason, idempotencyKey: paymentId });
+        await this.atmos.reverseTransaction({ transactionId, reason: opts.reason });
       } catch (e) {
         await this.prisma.importPayment.updateMany({
           where: { id: paymentId, status: ImportPaymentStatus.refunding },
@@ -659,30 +662,44 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * B2 reconciler: refunds stuck in `refunding` (process died between reverse and finalize). If Atmos shows the
-   * transaction reversed/cancelled, finalize; otherwise roll back to paid and flag for support.
+   * B2 reconciler (REVIEW-p2 P1-R1): refunds stuck in `refunding` for at least REFUND_RECONCILE_MIN_AGE_MS (the
+   * process died between reverse and finalize). It NEVER rolls back to `paid`:
+   *  - retry the reverse: Atmos accepts it (first reverse never landed) or returns OK → finalize;
+   *  - any other answer (incl. "already reversed", whose code Atmos doesn't document) → stay `refunding`,
+   *    set needsAttention, record the Atmos result; support checks the Atmos cabinet and finalizes by hand.
+   * The minimum age also applies to the admin endpoint, so an in-flight refund is never touched.
    */
-  async reconcileStaleRefunds(olderThanMs = 10 * 60_000) {
+  async reconcileStaleRefunds(olderThanMs = REFUND_RECONCILE_MIN_AGE_MS) {
+    const age = Math.max(olderThanMs, REFUND_RECONCILE_MIN_AGE_MS);
     const stale = await this.prisma.importPayment.findMany({
-      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - olderThanMs) } },
+      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - age) } },
       take: 50,
     });
     let finalized = 0;
-    let rolledBack = 0;
+    let flagged = 0;
     for (const p of stale) {
       const tx = Number(p.providerPaymentId);
-      const remote = Number.isFinite(tx) && tx > 0 && this.atmos.configured() ? await this.atmos.getTransaction(tx).catch(() => null) : null;
-      const reversed = !!remote && (remote.confirmed === false || /cancel|revers|refund/i.test(String(remote.statusMessage ?? '')));
-      if (reversed) {
-        await this.finalizeRefund(p, { actorId: p.refundRequestedBy, action: 'payment.refund.reconciled', metadata: { reason: p.refundReason, statusCode: remote?.statusCode ?? null } })
+      const hasTx = Number.isFinite(tx) && tx > 0 && p.amountTiyins > 0;
+      let ok = !hasTx && this.atmos.mode() === 'test';
+      let atmosResult: string | null = null;
+      if (hasTx && this.atmos.configured()) {
+        try {
+          await this.atmos.reverseTransaction({ transactionId: tx, reason: p.refundReason ?? 'refund' });
+          ok = true;
+        } catch (e) {
+          atmosResult = e instanceof Error ? e.message.slice(0, 300) : 'error';
+        }
+      }
+      if (ok) {
+        await this.finalizeRefund(p, { actorId: p.refundRequestedBy, action: 'payment.refund.reconciled', metadata: { reason: p.refundReason } })
           .then(() => finalized++)
           .catch(() => undefined);
       } else {
-        await this.prisma.importPayment.updateMany({ where: { id: p.id, status: ImportPaymentStatus.refunding }, data: { status: ImportPaymentStatus.paid, needsAttention: true } });
-        rolledBack++;
+        await this.prisma.importPayment.updateMany({ where: { id: p.id, status: ImportPaymentStatus.refunding }, data: { needsAttention: true, cancelReason: atmosResult ? `reconcile: ${atmosResult}` : 'reconcile: atmos unreachable' } });
+        flagged++;
       }
     }
-    return { checked: stale.length, finalized, rolledBack };
+    return { checked: stale.length, finalized, flagged, rolledBack: 0 };
   }
 
   async getPayment(userId: string, paymentId: string) {
@@ -753,7 +770,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   /** Reverse a charge we must not keep; on failure, flag the row for support instead of pretending. */
   private async reverseOrFlag(paymentId: string, transactionId: number, reason: string) {
     try {
-      await this.atmos.reverseTransaction({ transactionId, reason, idempotencyKey: paymentId });
+      await this.atmos.reverseTransaction({ transactionId, reason });
     } catch (e) {
       await this.prisma.importPayment.update({ where: { id: paymentId }, data: { needsAttention: true } }).catch(() => undefined);
       this.logger.error(`Reverse failed for payment ${paymentId}: ${(e as Error).message}`);
@@ -783,6 +800,13 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (payment.status !== ImportPaymentStatus.paid) {
       throw new ForbiddenException('Payment is not completed yet');
     }
+    if (payment.provider === 'google_play') {
+      // Play import credits are bought per page tier, not per source type (PB2); bind the type on first use.
+      if (payment.importType !== importType) {
+        await this.prisma.importPayment.update({ where: { id: payment.id }, data: { importType, contentFormat: this.mapImportTypeToFormat(importType) } });
+      }
+      return { ...payment, importType };
+    }
     if (payment.importType !== importType) {
       throw new BadRequestException('Payment import type does not match');
     }
@@ -795,7 +819,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
    */
   async assertPaymentCoversPages(
     userId: string,
-    payment: { id: string; amountTiyins: number; estimatedPages: number; userImportId?: string | null } | null,
+    payment: { id: string; amountTiyins: number; estimatedPages: number; userImportId?: string | null; provider?: string; tierId?: string | null } | null,
     actualPages: number,
     importType: ImportType,
   ) {
@@ -810,6 +834,22 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       { importType, contentFormat: this.mapImportTypeToFormat(importType), pageCount: pages },
       { excludePaymentId: payment.id },
     );
+
+    // REVIEW-p2 PB2: a Google Play import credit is bound here, at import time. It covers any document whose
+    // tier is not larger than the purchased tier. It is never auto-refunded (Google owns Play refunds): a
+    // document that is too big leaves the credit unused for a later, smaller import.
+    if (payment.provider === 'google_play') {
+      const bought = payment.tierId ? await this.prisma.importPageTier.findUnique({ where: { id: payment.tierId } }) : null;
+      const neededMax = needed.tier?.maxPages ?? Number.POSITIVE_INFINITY;
+      const boughtMax = bought ? (bought.maxPages ?? Number.POSITIVE_INFINITY) : 0;
+      if (needed.requiresPayment && neededMax > boughtMax) {
+        throw new ForbiddenException({ message: `This document is ${pages} pages, more than your import credit covers. The credit stays available for a shorter document.`, code: 'credit_too_small' });
+      }
+      if (payment.estimatedPages !== pages) {
+        await this.prisma.importPayment.update({ where: { id: payment.id }, data: { estimatedPages: pages } });
+      }
+      return;
+    }
 
     const covers =
       !needed.requiresPayment ||
@@ -834,6 +874,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   private async voidUnusedPayment(paymentId: string) {
     const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.userImportId) return;
+    if (payment.provider === 'google_play') return; // Play credits are refunded by Google only (PB2)
     if (payment.status === ImportPaymentStatus.paid) {
       // M2: same claim/reverse/finalize flow as an admin refund. A failed reverse leaves it paid + flagged.
       await this.refundPaidPayment(payment.id, { reason: 'Page count mismatch', actorId: null, action: 'payment.refund.auto' }).catch((e) => {

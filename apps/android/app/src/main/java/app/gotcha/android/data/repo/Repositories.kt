@@ -662,14 +662,20 @@ class ImportRepository(private val api: GotchaApi, private val playBilling: app.
             return api.importCheckout(ImportCheckoutRequest(importType, contentFormat, textLength, wordCount, pageCount, "android"))
         }
         val tierId = quote.tier?.id ?: throw app.gotcha.android.data.billing.PlayBillingException("This import size can't be purchased in the app yet.")
-        val paymentId = playBilling.buyImport(tierId, ImportQuoteRequest(importType, contentFormat, textLength, wordCount, pageCount))
+        val paymentId = playBilling.buyImport(tierId, ImportQuoteRequest(importType, contentFormat, textLength, wordCount, pageCount), quote.tier?.maxPages)
         return ImportCheckoutResponse(paymentId = paymentId, status = "paid", isFree = false, quote = quote, step = "done")
     }
 
     /** Catalog book unlock via Google Play; already-owned books (bought on any platform) pass straight through. */
     suspend fun catalogCheckout(contentId: String): CatalogCheckoutResponse {
         val owned = runCatching { api.entitlements().books.any { it.contentId == contentId } }.getOrDefault(false)
-        if (!owned) playBilling.buyBook(contentId)
+        if (!owned) {
+            val ents = playBilling.buyBook(contentId) // throws unless the server answered "granted"
+            // PM3: re-check the book is really in the entitlements before reporting access.
+            val granted = ents?.books?.any { it.contentId == contentId }
+                ?: runCatching { api.entitlements().books.any { it.contentId == contentId } }.getOrDefault(false)
+            if (!granted) throw app.gotcha.android.data.billing.PlayBillingException("Purchase could not be confirmed yet. Please try again in a moment.")
+        }
         return CatalogCheckoutResponse(contentId = contentId, accessGranted = true, status = "paid", step = "done")
     }
     suspend fun paymentStatus(id: String) = api.importPayment(id)

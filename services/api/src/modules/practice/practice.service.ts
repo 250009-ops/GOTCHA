@@ -1,5 +1,5 @@
 import { normalize } from '@gotcha/shared';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
@@ -103,30 +103,27 @@ export class PracticeService {
       seen.add(answer.questionId);
     }
 
-    let correctCount = 0;
-    const results = [];
-
-    for (const answer of dto.answers) {
+    // m7: grade in memory, then claim completion and write answers in one transaction, so two concurrent
+    // submissions can't both complete the session or double-insert answers.
+    const graded = dto.answers.map((answer) => {
       const question = byId.get(answer.questionId)!;
-
-      const isCorrect =
-        normalize(answer.userAnswer) === normalize(question.correctAnswer); // case/punctuation/ё=е/Uzbek apostrophes
-      if (isCorrect) correctCount++;
-
-      const saved = await this.prisma.practiceAnswer.create({
-        data: {
-          sessionId,
-          questionId: question.id,
-          userAnswer: answer.userAnswer,
-          isCorrect,
-        },
+      // case/punctuation/ё=е/Uzbek apostrophes
+      return { question, userAnswer: answer.userAnswer, isCorrect: normalize(answer.userAnswer) === normalize(question.correctAnswer) };
+    });
+    const correctCount = graded.filter((g) => g.isCorrect).length;
+    const { updated, results } = await this.prisma.$transaction(async (tx) => {
+      const claim = await tx.practiceSession.updateMany({
+        where: { id: sessionId, userId, completedAt: null },
+        data: { correctCount, completedAt: new Date() },
       });
-      results.push({ ...saved, correctAnswer: question.correctAnswer, explanation: question.explanation });
-    }
-
-    const updated = await this.prisma.practiceSession.update({
-      where: { id: sessionId },
-      data: { correctCount, completedAt: new Date() },
+      if (claim.count !== 1) throw new ConflictException('Session already completed');
+      const results = [];
+      for (const g of graded) {
+        const saved = await tx.practiceAnswer.create({ data: { sessionId, questionId: g.question.id, userAnswer: g.userAnswer, isCorrect: g.isCorrect } });
+        results.push({ ...saved, correctAnswer: g.question.correctAnswer, explanation: g.question.explanation });
+      }
+      const updated = await tx.practiceSession.findUniqueOrThrow({ where: { id: sessionId } });
+      return { updated, results };
     });
 
     // Unanswered questions count as wrong; score is always within [0, 1].

@@ -25,19 +25,25 @@ export class EntitlementsService {
     });
     const plus = rows.filter((r) => r.kind === EntitlementKind.plus);
     const credits = rows.filter((r) => r.kind === EntitlementKind.import_credit && r.importPaymentId);
-    const unused = credits.length
-      ? new Set(
-          (await this.prisma.importPayment.findMany({
-            where: { id: { in: credits.map((c) => c.importPaymentId!) }, status: ImportPaymentStatus.paid, userImportId: null },
-            select: { id: true },
-          })).map((p) => p.id),
-        )
-      : new Set<string>();
+    const unusedRows = credits.length
+      ? await this.prisma.importPayment.findMany({
+          where: { id: { in: credits.map((c) => c.importPaymentId!) }, status: ImportPaymentStatus.paid, userImportId: null },
+          select: { id: true, tierId: true },
+        })
+      : [];
+    const unused = new Set(unusedRows.map((p) => p.id));
+    const tierIds = [...new Set(unusedRows.map((p) => p.tierId).filter((t): t is string => !!t))];
+    const tiers = tierIds.length ? await this.prisma.importPageTier.findMany({ where: { id: { in: tierIds } } }) : [];
+    const tierOf = new Map(unusedRows.map((p) => [p.id, tiers.find((t) => t.id === p.tierId) ?? null]));
     const latest = plus.reduce<(typeof plus)[number] | null>((a, b) => (!a || (b.expiresAt ?? new Date(8.64e15)) > (a.expiresAt ?? new Date(8.64e15)) ? b : a), null);
     return {
       plus: { active: plus.length > 0, source: latest?.source ?? null, expiresAt: latest?.expiresAt ?? null, sku: latest?.sku ?? null },
       books: rows.filter((r) => r.kind === EntitlementKind.catalog_book && r.contentId).map((r) => ({ contentId: r.contentId!, source: r.source })),
-      importCredits: credits.map((c) => ({ paymentId: c.importPaymentId!, source: c.source, used: !unused.has(c.importPaymentId!) })),
+      // Unused credits carry their tier so the app can reuse one instead of buying again (PB2).
+      importCredits: credits.map((c) => {
+        const t = tierOf.get(c.importPaymentId!);
+        return { paymentId: c.importPaymentId!, source: c.source, used: !unused.has(c.importPaymentId!), tierId: t?.id ?? null, maxPages: t ? t.maxPages : null };
+      }),
     };
   }
 

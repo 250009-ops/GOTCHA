@@ -10,7 +10,7 @@ app. The web app (gotchaa.uz) keeps Atmos. Purchases from either source unlock o
 | SKU → unlock mapping, per-platform price | `store_products` table; Admin → Payments → Pricing → *Google Play products* (audited) |
 | Unified ledger | `entitlements` (source `atmos` / `google_play` / `admin`). Access checks keep reading `user_subscriptions`, `content_purchases`, `import_payments`, which are kept in sync |
 | Token verification | `POST /billing/play/verify` → Play Developer API (`purchases.products.get` / `purchases.subscriptionsv2.get`), account binding through `obfuscatedAccountId = sha256("gotcha:"+userId)`, then acknowledge (books, Plus) or consume (import credits) |
-| RTDN | `POST /billing/play/rtdn` (Pub/Sub push). Authenticated with a Google OIDC token (`PLAY_RTDN_AUDIENCE`, optional `PLAY_RTDN_SA_EMAIL`) or a `?token=` secret (`PLAY_RTDN_TOKEN`). The state is always re-read from the Play API. Voided, refunded, or expired purchases revoke exactly the unlock they granted. A spent import credit is flagged `needsAttention` for support |
+| RTDN | `POST /billing/play/rtdn` (Pub/Sub push). Authenticated with a Google OIDC token: `PLAY_RTDN_AUDIENCE` **and** `PLAY_RTDN_SA_EMAIL` (both REQUIRED; the token's `email` must match and be verified). When OIDC is configured, `?token=` is ignored. The legacy `PLAY_RTDN_TOKEN` mode is only used when no audience is set (deprecated; production refuses to boot without valid OIDC config). Messages are deduped by Pub/Sub `messageId`. The state is always re-read from the Play API; a voided notification is confirmed against `voidedpurchases.list` before anything is revoked. Voided, refunded, or expired purchases revoke exactly the unlock they granted. A spent import credit is flagged `needsAttention` for support |
 | Client | `GET /billing/entitlements` at login (web + Android). Android `PlayBilling.syncAtLogin()` also re-sends unacknowledged purchases |
 
 Prices can differ per platform. The Play price customers pay is set in Play Console, and `store_products.price_uzs` records it for reports. PRICING.md §6 proposes the same list price on both platforms, with Gotcha absorbing Google's ~15% fee. The alternative is about +15% on Play.
@@ -20,7 +20,9 @@ Prices can differ per platform. The Play price customers pay is set in Play Cons
 PLAY_PACKAGE_NAME=app.gotcha.android
 PLAY_SERVICE_ACCOUNT_JSON=/run/secrets/play-sa.json   # or the inline JSON
 PLAY_RTDN_AUDIENCE=https://api.gotchaa.uz/api/v1/billing/play/rtdn
-PLAY_RTDN_SA_EMAIL=play-rtdn@<gcp-project>.iam.gserviceaccount.com
+PLAY_RTDN_SA_EMAIL=play-rtdn@<gcp-project>.iam.gserviceaccount.com   # REQUIRED with the audience
+PLAY_TOKEN_KEY=<32+ random bytes>          # REQUIRED in production: AES-256-GCM key for purchase tokens at rest
+PLAY_ACCOUNT_PEPPER=<random>               # optional: salts obfuscatedAccountId (set once, never change)
 # PLAY_RTDN_TOKEN=<long random>  (only if OIDC push auth is not used)
 ```
 
@@ -42,3 +44,22 @@ PLAY_RTDN_SA_EMAIL=play-rtdn@<gcp-project>.iam.gserviceaccount.com
 - A Plus paywall screen on Android. `PlayBilling.buyPlus()` is ready, but no screen sells Plus because it isn't marketed yet (GTM §0).
 - Play Console products themselves (steps above).
 - A real end-to-end purchase (needs steps 1–7 and a signed internal-testing build).
+
+
+## Background jobs and the 3-day rule
+
+Google refunds any purchase that isn't acknowledged (subscriptions, books) or consumed (import tiers) within **3 days**.
+`PlayBillingService.runJobs()` runs every 15 minutes in the API process:
+
+- retries ack/consume for purchases younger than 3 days that still aren't settled;
+- logs `ALERT` at ERROR level for any still unsettled after 48 h (wire this to alerting);
+- re-reads subscriptions expiring in the next 24 h (at most every 6 h per row); `GET /billing/entitlements` also re-reads lapsed Play subscriptions (at most hourly) before reporting them as expired;
+- purges RTDN message ids older than 7 days.
+
+Subscription states: ACTIVE, IN_GRACE_PERIOD and CANCELED (until expiry) grant Plus; ON_HOLD and PAUSED do not.
+
+Import tiers: a Play import purchase can be verified without a quote (e.g. recovered at login). It becomes an unused credit for its page tier and covers any import whose tier's maxPages is ≤ the bought tier's. A credit that is too small is kept (`credit_too_small`), never voided.
+
+## Rolling back
+
+Before rolling back migration 0021 (Play tables), `pg_dump` `play_purchases`, `store_products` and `entitlements`: the down migration drops them and the purchase history cannot be rebuilt otherwise. 0020's down migration restores plan values from `subscription_plans_backup_0020`.

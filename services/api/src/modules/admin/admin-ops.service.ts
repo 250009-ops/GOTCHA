@@ -118,6 +118,6 @@ export class AdminOpsService {
   }
 
   reconcileRefunds() {
-    return this.commerce.reconcileStaleRefunds(0);
+    return this.commerce.reconcileStaleRefunds(); // min age enforced inside (P1-R1)
   }
 }

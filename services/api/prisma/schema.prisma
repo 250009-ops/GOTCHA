@@ -1154,7 +1154,12 @@ model PlayPurchase {
   id             String   @id @default(uuid()) @db.Uuid
   /// sha256(purchaseToken): tokens are long and secret-ish; we only need equality.
   tokenHash      String   @unique @map("token_hash")
+  /// AES-256-GCM encrypted ("enc:v1:…", key PLAY_TOKEN_KEY); needed for ack/consume retries (m-p2-1).
   purchaseToken  String   @map("purchase_token")
+  /// Subscription upgrade/resubscribe: hash of the token this one replaced (PM5).
+  linkedTokenHash String? @map("linked_token_hash")
+  /// Last time the Play API was read for this token (PM1/PM2 jobs).
+  lastCheckedAt  DateTime? @map("last_checked_at")
   userId         String   @map("user_id") @db.Uuid
   sku            String
   kind           StoreProductKind
@@ -1174,4 +1179,13 @@ model PlayPurchase {
   @@index([userId])
   @@index([orderId])
   @@map("play_purchases")
+}
+
+/// Processed RTDN Pub/Sub message ids, kept 7 days for replay protection (PB1).
+model PlayRtdnMessage {
+  messageId  String   @id @map("message_id")
+  receivedAt DateTime @default(now()) @map("received_at")
+
+  @@index([receivedAt])
+  @@map("play_rtdn_messages")
 }

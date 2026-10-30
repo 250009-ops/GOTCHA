@@ -184,3 +184,14 @@ The Android app (`ImportScreen.kt`) uses the same API endpoints:
 1. `POST /billing/imports/checkout` → returns `step: "card"`
 2. `POST /billing/imports/payments/:id/pre-apply` with card data
 3. `POST /billing/imports/payments/:id/apply` with OTP
+
+## Refunds: what Atmos supports (checked 30 Oct 2026 against docs.atmos.uz/ru, "Отмена транзакции")
+- `POST /merchant/pay/reverse` accepts only `transaction_id` (the `success_trans_id` from apply), an optional `hold_amount` (to keep part of the money, in tiyins) and an optional `reason`. A successful reverse returns `result.code = "OK"`.
+- **There is no idempotency key.** Earlier code sent an `Idempotency-Key` header. Atmos doesn't document one, so it was removed. Duplicate protection comes from:
+  1. our atomic `paid → refunding` claim, so only one request ever calls reverse, and
+  2. Atmos refusing to reverse a transaction that's already been reversed (the error code for that isn't documented).
+- `POST /merchant/pay/get` doesn't document a "reversed" status, so we never infer a reversal from `status_message` or `confirmed`.
+- Reconciler (every 10 min, plus Admin → Payments → Reconcile): it only touches refunds that have been in `refunding` for **at least 10 minutes**, whoever triggers it. It retries the reverse:
+  - `OK` → finalize (`refunded`, access revoked, audited).
+  - Anything else → the payment stays `refunding` with `needsAttention` and the Atmos message saved in `cancel_reason`. Support checks the transaction in the Atmos cabinet and finishes the refund by hand.
+- It **never** rolls back to `paid`. Before this fix, rolling back could undo a refund that was still going through.

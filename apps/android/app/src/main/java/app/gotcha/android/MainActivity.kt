@@ -1,5 +1,7 @@
 ﻿package app.gotcha.android
 
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 import android.content.Intent
 import android.graphics.Color as AndroidColor
 import android.net.Uri
@@ -239,6 +241,8 @@ class MainActivity : ComponentActivity() {
         super.onResume()
         // Google Play purchase sheet needs a foreground Activity.
         (application as GotchaApp).container.playBilling.attach(this)
+        // m-p2-7: pending purchases completed while backgrounded are verified as soon as the app returns.
+        lifecycleScope.launch { runCatching { (application as GotchaApp).container.playBilling.syncAtLogin() } }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

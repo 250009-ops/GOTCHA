@@ -1826,7 +1826,14 @@ data class PlusEntitlement(val active: Boolean = false, val source: String? = nu
 data class BookEntitlement(val contentId: String, val source: String)
 
 @Serializable
-data class ImportCreditEntitlement(val paymentId: String, val source: String, val used: Boolean = false)
+data class ImportCreditEntitlement(
+    val paymentId: String,
+    val source: String,
+    val used: Boolean = false,
+    /** Play credits: the page tier bought; a credit covers any import whose tier has maxPages <= this. */
+    val tierId: String? = null,
+    val maxPages: Int? = null,
+)
 
 @Serializable
 data class EntitlementsResponse(

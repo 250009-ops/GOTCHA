@@ -1,5 +1,5 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
-import { createPublicKey, createSign, createVerify, timingSafeEqual, type JsonWebKey } from 'crypto';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
+import { createCipheriv, createDecipheriv, createHash, createPublicKey, createSign, createVerify, randomBytes, timingSafeEqual, type JsonWebKey } from 'crypto';
 import { readFileSync } from 'fs';
 
 /**
@@ -8,8 +8,9 @@ import { readFileSync } from 'fs';
  * Env:
  *  - PLAY_PACKAGE_NAME                    default app.gotcha.android
  *  - PLAY_SERVICE_ACCOUNT_JSON            service-account key JSON, or a path to it (Play Console → API access)
- *  - PLAY_RTDN_AUDIENCE / PLAY_RTDN_SA_EMAIL  Pub/Sub push OIDC check (recommended)
- *  - PLAY_RTDN_TOKEN                      shared ?token= secret on the push URL (fallback)
+ *  - PLAY_RTDN_AUDIENCE + PLAY_RTDN_SA_EMAIL  Pub/Sub push OIDC check (both REQUIRED for OIDC)
+ *  - PLAY_RTDN_TOKEN                      deprecated ?token= secret; only honoured when OIDC is NOT configured
+ *  - PLAY_TOKEN_KEY                       key for encrypting stored purchase tokens (required in production)
  */
 export interface PlayProductPurchase {
   purchaseState?: number; // 0 purchased, 1 canceled, 2 pending
@@ -37,12 +38,30 @@ const API = 'https://androidpublisher.googleapis.com/androidpublisher/v3/applica
 const b64url = (b: Buffer | string) => Buffer.from(b).toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
 @Injectable()
-export class GooglePlayClient {
+export class GooglePlayClient implements OnModuleInit {
   private readonly log = new Logger(GooglePlayClient.name);
   private token: { value: string; exp: number } | null = null;
   private certs: { keys: Array<JsonWebKey & { kid: string }>; exp: number } | null = null;
   /** Injectable for tests. */
   fetchImpl: typeof fetch = (...a) => fetch(...a);
+
+  /** PB1: fail closed at boot when Play is configured in production without a valid RTDN auth setup. */
+  onModuleInit() {
+    if (!this.configured()) return;
+    const problem = this.rtdnConfigProblem();
+    if (!problem) return;
+    if (process.env.NODE_ENV === 'production') throw new Error(`Google Play RTDN misconfigured: ${problem}`);
+    this.log.warn(`Google Play RTDN misconfigured: ${problem} (all pushes will be rejected)`);
+  }
+
+  rtdnConfigProblem(): string | null {
+    const aud = process.env.PLAY_RTDN_AUDIENCE?.trim();
+    const email = process.env.PLAY_RTDN_SA_EMAIL?.trim();
+    if (aud && !email) return 'PLAY_RTDN_SA_EMAIL is required with PLAY_RTDN_AUDIENCE';
+    if (!aud && !process.env.PLAY_RTDN_TOKEN?.trim()) return 'set PLAY_RTDN_AUDIENCE + PLAY_RTDN_SA_EMAIL';
+    if (process.env.NODE_ENV === 'production' && !process.env.PLAY_TOKEN_KEY?.trim()) return 'PLAY_TOKEN_KEY is required';
+    return null;
+  }
 
   packageName(): string {
     return process.env.PLAY_PACKAGE_NAME?.trim() || 'app.gotcha.android';
@@ -120,15 +139,26 @@ export class GooglePlayClient {
   }
 
   /**
-   * Authenticates a Pub/Sub push (RTDN). Accepts a Google-signed OIDC bearer for PLAY_RTDN_AUDIENCE
-   * (and PLAY_RTDN_SA_EMAIL when set), or the shared PLAY_RTDN_TOKEN query secret. Fails closed.
+   * Authenticates a Pub/Sub push (RTDN), failing closed (PB1).
+   * OIDC mode (PLAY_RTDN_AUDIENCE set): Google-signed RS256 token, iss accounts.google.com, exact aud,
+   * email === PLAY_RTDN_SA_EMAIL (required) and email_verified === true. The query token is ignored.
+   * Legacy mode (no audience): constant-time ?token= match, with a deprecation warning.
    */
   async verifyPush(authorization: string | undefined, queryToken: string | undefined): Promise<boolean> {
-    const shared = process.env.PLAY_RTDN_TOKEN?.trim();
-    if (shared && queryToken && timingSafeEq(shared, queryToken)) return true;
     const aud = process.env.PLAY_RTDN_AUDIENCE?.trim();
+    const email = process.env.PLAY_RTDN_SA_EMAIL?.trim();
+    if (!aud) {
+      const shared = process.env.PLAY_RTDN_TOKEN?.trim();
+      if (!shared || !queryToken) return false;
+      if (!this.warnedToken) {
+        this.warnedToken = true;
+        this.log.warn('RTDN ?token= auth is deprecated (it appears in access logs); configure OIDC push auth.');
+      }
+      return timingSafeEq(shared, queryToken);
+    }
+    if (!email) return false;
     const m = /^Bearer\s+(.+)$/i.exec(authorization ?? '');
-    if (!aud || !m) return false;
+    if (!m) return false;
     const [h, p, s] = m[1].split('.');
     if (!h || !p || !s) return false;
     try {
@@ -141,12 +171,28 @@ export class GooglePlayClient {
       if (!ok) return false;
       const now = Date.now() / 1000;
       if (!['accounts.google.com', 'https://accounts.google.com'].includes(claims.iss)) return false;
-      if (claims.aud !== aud || !(claims.exp > now) || claims.email_verified === false) return false;
-      const email = process.env.PLAY_RTDN_SA_EMAIL?.trim();
-      return !email || claims.email === email;
+      if (claims.aud !== aud || !(claims.exp > now)) return false;
+      return claims.email_verified === true && claims.email === email;
     } catch {
       return false;
     }
+  }
+
+  private warnedToken = false;
+
+  /** Voided purchases (refunds, chargebacks, revocations) since `sinceMs`, incl. subscriptions (type=1). */
+  async voidedPurchases(sinceMs: number): Promise<Array<{ purchaseToken: string; orderId?: string; voidedTimeMillis?: string }>> {
+    const out: Array<{ purchaseToken: string; orderId?: string; voidedTimeMillis?: string }> = [];
+    let page: string | undefined;
+    for (let i = 0; i < 10; i++) {
+      const q = new URLSearchParams({ startTime: String(sinceMs), type: '1', maxResults: '1000', ...(page ? { token: page } : {}) });
+      const r = await this.call<{ voidedPurchases?: typeof out; tokenPagination?: { nextPageToken?: string } }>(`/purchases/voidedpurchases?${q}`);
+      if (!r) throw new ServiceUnavailableException('Google Play voided purchases unavailable');
+      out.push(...(r.voidedPurchases ?? []));
+      page = r.tokenPagination?.nextPageToken;
+      if (!page) break;
+    }
+    return out;
   }
 
   private async googleCerts() {
@@ -162,4 +208,26 @@ function timingSafeEq(a: string, b: string): boolean {
   const x = Buffer.from(a);
   const y = Buffer.from(b);
   return x.length === y.length && timingSafeEqual(x, y);
+}
+
+// ---- m-p2-1: purchase tokens at rest (AES-256-GCM). Hash stays the lookup key. ----
+function tokenKey(): Buffer {
+  const k = process.env.PLAY_TOKEN_KEY?.trim();
+  if (!k && process.env.NODE_ENV === 'production') throw new Error('PLAY_TOKEN_KEY is required');
+  return createHash('sha256').update(k || 'gotcha-dev-play-token-key').digest();
+}
+
+export function sealToken(token: string): string {
+  const iv = randomBytes(12);
+  const c = createCipheriv('aes-256-gcm', tokenKey(), iv);
+  const body = Buffer.concat([c.update(token, 'utf8'), c.final()]);
+  return `enc:v1:${Buffer.concat([iv, c.getAuthTag(), body]).toString('base64url')}`;
+}
+
+export function openToken(stored: string): string {
+  if (!stored.startsWith('enc:v1:')) return stored; // legacy plaintext rows
+  const raw = Buffer.from(stored.slice(7), 'base64url');
+  const d = createDecipheriv('aes-256-gcm', tokenKey(), raw.subarray(0, 12));
+  d.setAuthTag(raw.subarray(12, 28));
+  return Buffer.concat([d.update(raw.subarray(28)), d.final()]).toString('utf8');
 }

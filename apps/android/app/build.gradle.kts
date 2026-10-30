@@ -15,23 +15,28 @@ val localProperties = Properties().apply {
  * versionCode is derived, never hand-edited: -PversionCode / VERSION_CODE (CI: run number), else the git
  * commit count, else 1. versionName: -PversionName / VERSION_NAME, else 1.0.<code>.
  */
+/**
+ * Floor above every versionCode already uploaded (closed testing used CI run numbers / git commit counts,
+ * all < 1000). Play rejects a versionCode that is not higher than the last upload; raise this if needed.
+ */
+val VERSION_CODE_FLOOR = 1000
 val derivedVersionCode: Int = (
     (project.findProperty("versionCode") as String?) ?: System.getenv("VERSION_CODE")
 )?.toIntOrNull() ?: runCatching {
     providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
         .standardOutput.asText.get().trim().toInt()
-}.getOrDefault(1)
+}.getOrDefault(1).coerceAtLeast(VERSION_CODE_FLOOR)
 val derivedVersionName: String =
     (project.findProperty("versionName") as String?) ?: System.getenv("VERSION_NAME") ?: "1.0.$derivedVersionCode"
 
 android {
     namespace = "app.gotcha.android"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "app.gotcha.android"
         minSdk = 24
-        targetSdk = 35
+        targetSdk = 36
         versionCode = derivedVersionCode
         versionName = derivedVersionName
         buildConfigField("String", "API_BASE_URL", "\"https://gotchaa.uz/api/v1/\"")

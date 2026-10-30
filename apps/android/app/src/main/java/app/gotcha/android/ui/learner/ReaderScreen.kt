@@ -555,8 +555,11 @@ fun ReaderScreen(
                         if (payError != null) {
                             Text(payError!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                         }
+                        // PM3: show the price Google Play will charge (localized), not our UZS list price.
+                        var playPrice by remember(contentId) { mutableStateOf<String?>(null) }
+                        LaunchedEffect(contentId) { playPrice = container.playBilling.bookPrice(contentId) }
                         GotchaPrimaryButton(
-                            text = "Unlock for ${formatSom(amount)}",
+                            text = "Unlock for ${playPrice ?: formatSom(amount)}",
                             loading = payLoading,
                             onClick = {
                                 scope.launch {
@@ -573,7 +576,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = e.apiErrorMessage("Could not start checkout")
+                                        payError = if (e is app.gotcha.android.data.billing.PlayBillingException) e.message else e.apiErrorMessage("Could not start checkout")
                                     } finally {
                                         payLoading = false
                                     }

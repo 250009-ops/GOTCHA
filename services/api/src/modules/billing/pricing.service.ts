@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Prisma, type PromoCode, type SubscriptionPlan } from '@prisma/client';
+import { ImportPaymentStatus, Prisma, type PromoCode, type SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type PricingLang = 'en' | 'ru' | 'uz';
@@ -61,8 +61,13 @@ export class PricingService {
     if (!promo || !promo.active) throw bad('promo_invalid', 'This promo code is not valid.');
     if (promo.appliesTo !== 'all' && promo.appliesTo !== scope) throw bad('promo_not_applicable', 'This promo code does not apply here.');
     if ((promo.validFrom && now < promo.validFrom) || (promo.validTo && now > promo.validTo)) throw bad('promo_expired', 'This promo code has expired.');
-    if (promo.maxRedemptions != null && promo.redemptions >= promo.maxRedemptions) throw bad('promo_exhausted', 'This promo code has been used up.');
-    const used = await this.prisma.importPayment.count({ where: { userId, promoCodeId: promo.id, promoRedeemed: true } });
+    // m-p2-5: open (pending, unexpired) checkouts hold a slot, so concurrent checkouts can't overshoot the cap.
+    const holding = { promoCodeId: promo.id, status: ImportPaymentStatus.pending, expiresAt: { gt: now } };
+    if (promo.maxRedemptions != null) {
+      const open = await this.prisma.importPayment.count({ where: holding });
+      if (promo.redemptions + open >= promo.maxRedemptions) throw bad('promo_exhausted', 'This promo code has been used up.');
+    }
+    const used = await this.prisma.importPayment.count({ where: { userId, OR: [{ promoCodeId: promo.id, promoRedeemed: true }, { ...holding }] } });
     if (used >= promo.perUserLimit) throw bad('promo_used', 'You have already used this promo code.');
     return promo;
   }
@@ -73,7 +78,14 @@ export class PricingService {
     if (!p?.promoCodeId || p.promoRedeemed) return false;
     const claimed = await this.prisma.importPayment.updateMany({ where: { id: paymentId, promoRedeemed: false }, data: { promoRedeemed: true } });
     if (claimed.count !== 1) return false;
-    await this.prisma.promoCode.update({ where: { id: p.promoCodeId }, data: { redemptions: { increment: 1 } } });
+    // m-p2-5: conditional increment; the cap is never exceeded in the counter. If a race slipped past checkout
+    // (the payment is already charged with the discount), keep the sale and flag it for review.
+    const n = await this.prisma.$executeRaw`UPDATE "promo_codes" SET "redemptions" = "redemptions" + 1, "updated_at" = NOW()
+      WHERE "id" = ${p.promoCodeId}::uuid AND ("max_redemptions" IS NULL OR "redemptions" < "max_redemptions")`;
+    if (n !== 1) {
+      await this.prisma.importPayment.update({ where: { id: paymentId }, data: { needsAttention: true } });
+      return false;
+    }
     return true;
   }
 
