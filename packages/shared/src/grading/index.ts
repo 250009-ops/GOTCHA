@@ -21,7 +21,7 @@ export interface GradeResult {
   matched: string | null;
   distance: number;
   /** Why it was "almost" (or why it is wrong), for feedback copy. */
-  reason?: 'typo' | 'diacritics' | 'uz_apostrophe' | 'wrong_script' | 'real_word' | 'empty';
+  reason?: 'typo' | 'diacritics' | 'uz_apostrophe' | 'wrong_script' | 'real_word' | 'empty' | 'ai_accepted';
   /** Per-character diff of the learner's answer vs the expected answer. */
   diff: DiffPart[];
 }

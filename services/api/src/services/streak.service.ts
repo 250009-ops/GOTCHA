@@ -18,6 +18,29 @@ export function calendarDateKey(
   }).format(date);
 }
 
+/** Offset (ms) of [timeZone] from UTC at [at]. */
+function tzOffsetMs(at: Date, timeZone: string): number {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(at)
+      .map((x) => [x.type, x.value]),
+  );
+  const asUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour % 24, +p.minute, +p.second);
+  return asUtc - Math.floor(at.getTime() / 1000) * 1000;
+}
+
+/**
+ * The real instant of local midnight for the calendar day containing [now] (e.g. 19:00Z the previous
+ * day for Asia/Tashkent). Use this for every `reviewedAt >=` "today" filter, not dateFromCalendarKey().
+ */
+export function startOfLocalDay(now: Date = new Date(), timeZone = STREAK_TIMEZONE): Date {
+  const key = calendarDateKey(now, timeZone);
+  const guess = new Date(`${key}T00:00:00.000Z`);
+  let t = guess.getTime() - tzOffsetMs(guess, timeZone);
+  t = guess.getTime() - tzOffsetMs(new Date(t), timeZone); // DST-safe second pass
+  return new Date(t);
+}
+
 /** Prisma `@db.Date` round-trip: UTC midnight of that calendar key. */
 export function dateFromCalendarKey(key: string): Date {
   return new Date(`${key}T00:00:00.000Z`);

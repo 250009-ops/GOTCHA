@@ -4,7 +4,9 @@ import {
   Controller,
   Delete,
   Get,
+  Headers,
   Param,
+  ParseUUIDPipe,
   Patch,
   Post,
   Query,
@@ -20,7 +22,7 @@ import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
 import { AdminOpsService } from './admin-ops.service';
-import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
+import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto, RefundPaymentDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
 @ApiTags('admin')
@@ -119,15 +121,26 @@ export class AdminController {
     return this.ops.listPayments({ status, q, page: Number(page), pageSize: Number(pageSize) });
   }
 
-  /** Refund stub — Atmos test mode only (see AdminOpsService.refundPayment). */
+  /**
+   * Full refund: claim → Atmos reverse (idempotency key) → finalize + audit. Local-only (no money moved) only when
+   * ATMOS_SANDBOX is explicitly true. Repeating the call for a refunded payment returns the existing result.
+   */
   @Post('payments/:id/refund')
   @Roles(AdminRole.superadmin)
   refundPayment(
     @CurrentUser() actor: AuthUserPayload,
-    @Param('id') id: string,
-    @Body() body: { reason?: string; amountUzs?: number },
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    return this.ops.refundPayment(actor.sub, id, body);
+    return this.ops.refundPayment(actor.sub, id, body, idempotencyKey?.slice(0, 100));
+  }
+
+  /** Resolve refunds stuck in `refunding` (also runs every 10 minutes). */
+  @Post('payments/reconcile')
+  @Roles(AdminRole.superadmin)
+  reconcilePayments() {
+    return this.ops.reconcileRefunds();
   }
 
   @Delete('users/:id')

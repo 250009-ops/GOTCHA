@@ -158,6 +158,8 @@ enum ImportPaymentStatus {
   failed
   expired
   refunded
+  /// Refund claimed; Atmos reverse in flight. Finalized to refunded, or rolled back to paid.
+  refunding
 }
 
 enum IngestionSourceType {
@@ -448,6 +450,8 @@ model ContentPurchase {
   status     PurchaseStatus @default(pending)
   provider   String         @default("local_placeholder")
   providerRef String?       @map("provider_ref")
+  /// The ImportPayment that granted this purchase: fulfill is an upsert on it, refunds revoke only it.
+  importPaymentId String?   @unique @map("import_payment_id") @db.Uuid
   createdAt  DateTime       @default(now()) @map("created_at")
 
   content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
@@ -510,8 +514,16 @@ model ImportPayment {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  refundReason        String?   @map("refund_reason")
+  refundRequestedBy   String?   @map("refund_requested_by") @db.Uuid
+  refundRequestedAt   DateTime? @map("refund_requested_at")
+  cancelReason        String?   @map("cancel_reason")
+  /// Money state may disagree with Atmos (failed reverse, confirm after cancel); needs a human.
+  needsAttention      Boolean   @default(false) @map("needs_attention")
+
   @@index([userId, status])
   @@index([providerPaymentId])
+  @@index([status, refundRequestedAt])
   @@map("import_payments")
 }
 
@@ -660,9 +672,16 @@ model VocabularyReview {
   xp             Int       @default(0)
   stabilityAfter Float?    @map("stability_after")
   extra          Boolean   @default(false)
+  /// Denormalized owner for per-user day queries (indexed).
+  userId         String?   @map("user_id") @db.Uuid
+  /// FSRS state before this review (0 = New). Counts introductions correctly under short-term steps.
+  stateBefore    Int?      @map("state_before")
+  judgedByAi     Boolean   @default(false) @map("judged_by_ai")
 
   vocab UserVocabulary @relation(fields: [vocabId], references: [id], onDelete: Cascade)
 
+  @@index([userId, reviewedAt])
+  @@index([vocabId, exerciseType, reviewedAt])
   @@map("vocabulary_reviews")
 }
 
@@ -682,6 +701,7 @@ model PracticeSession {
   segment   ContentSegment?     @relation(fields: [segmentId], references: [id])
   questions PracticeQuestion[]
   answers   PracticeAnswer[]
+  items     PracticeSessionItem[]
 
   @@map("practice_sessions")
 }
@@ -992,4 +1012,22 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([replyToId])
   @@map("messages")
+}
+
+/// Items issued by GET /practice/daily. POST /practice/answer only grades an issued (vocabId, type).
+model PracticeSessionItem {
+  id         String    @id @default(uuid()) @db.Uuid
+  sessionId  String    @map("session_id") @db.Uuid
+  vocabId    String    @map("vocab_id") @db.Uuid
+  type       String
+  extra      Boolean   @default(false)
+  attempts   Int       @default(0)
+  /// Set when the last answer was wrong ("again"): one more attempt is allowed in this session.
+  requeue    Boolean   @default(false)
+  answeredAt DateTime? @map("answered_at")
+
+  session PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, vocabId, type])
+  @@map("practice_session_items")
 }

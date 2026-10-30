@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
-import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsIn, IsInt, IsOptional, IsString, IsUUID,
+  Matches, Max, MaxLength, Min } from 'class-validator';
 import { EXERCISE_TYPES, type ExerciseType, type SrsRatingValue } from '@gotcha/shared';
 
 export class DailySessionQueryDto {
@@ -36,12 +37,12 @@ export class DailySessionQueryDto {
 export class AnswerExerciseDto {
   /** Client-generated id; the same answerId is processed once (idempotent). */
   @IsString()
-  @MaxLength(64)
+  @Matches(/^[A-Za-z0-9_-]{8,64}$/)
   answerId!: string;
 
-  @IsOptional()
+  /** Required (REVIEW B1): only items issued in this session can be answered. */
   @IsUUID()
-  sessionId?: string;
+  sessionId!: string;
 
   @IsUUID()
   vocabId!: string;

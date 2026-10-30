@@ -11,6 +11,19 @@ val localProperties = Properties().apply {
     rootProject.file("local.properties").takeIf { it.exists() }?.inputStream()?.use(::load)
 }
 
+/**
+ * versionCode is derived, never hand-edited: -PversionCode / VERSION_CODE (CI: run number), else the git
+ * commit count, else 1. versionName: -PversionName / VERSION_NAME, else 1.0.<code>.
+ */
+val derivedVersionCode: Int = (
+    (project.findProperty("versionCode") as String?) ?: System.getenv("VERSION_CODE")
+)?.toIntOrNull() ?: runCatching {
+    providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
+        .standardOutput.asText.get().trim().toInt()
+}.getOrDefault(1)
+val derivedVersionName: String =
+    (project.findProperty("versionName") as String?) ?: System.getenv("VERSION_NAME") ?: "1.0.$derivedVersionCode"
+
 android {
     namespace = "app.gotcha.android"
     compileSdk = 35
@@ -19,8 +32,8 @@ android {
         applicationId = "app.gotcha.android"
         minSdk = 24
         targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = derivedVersionCode
+        versionName = derivedVersionName
         buildConfigField("String", "API_BASE_URL", "\"https://gotchaa.uz/api/v1/\"")
         buildConfigField("String", "WEB_BASE_URL", "\"https://gotchaa.uz\"")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
@@ -40,12 +53,11 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            isShrinkResources = false
+            isMinifyEnabled = true
+            isShrinkResources = true
             isDebuggable = false
-            val releaseSigning = signingConfigs.getByName("release")
-            signingConfig =
-                if (releaseSigning.storeFile?.exists() == true) releaseSigning else signingConfigs.getByName("debug")
+            // Never ship a debug-signed release: without the upload keystore the release build fails (see below).
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
@@ -104,6 +116,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    testImplementation("junit:junit:4.13.2")
 
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
@@ -118,4 +131,13 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     debugImplementation("androidx.compose.ui:ui-test-manifest")
+}
+
+// Fail release builds early when the upload keystore is missing (REVIEW: no silent debug signing).
+gradle.taskGraph.whenReady {
+    val wantsRelease = allTasks.any { it.project == project && it.name.contains("Release") && (it.name.startsWith("assemble") || it.name.startsWith("bundle") || it.name.startsWith("package")) }
+    val store = android.signingConfigs.getByName("release").storeFile
+    if (wantsRelease && (store == null || !store.exists())) {
+        throw GradleException("Release signing keystore missing: set release.storeFile/storePassword/keyAlias/keyPassword in local.properties.")
+    }
 }

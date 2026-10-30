@@ -229,6 +229,16 @@ export class AtmosClient {
     return (process.env.ATMOS_API_BASE || 'https://apigw.atmos.uz').replace(/\/$/, '');
   }
 
+  /**
+   * REVIEW M1: Atmos mode must be explicit. 'test' only when ATMOS_SANDBOX is truthy, 'live' when it is
+   * falsy, null (unknown → fail closed for anything that would skip moving money) when unset.
+   */
+  mode(): 'test' | 'live' | null {
+    const v = process.env.ATMOS_SANDBOX;
+    if (v === undefined || v.trim() === '') return null;
+    return ['1', 'true', 'yes', 'on'].includes(v.trim().toLowerCase()) ? 'test' : 'live';
+  }
+
   configured(): boolean {
     return Boolean(
       process.env.ATMOS_CONSUMER_KEY?.trim() &&
@@ -587,6 +597,8 @@ export class AtmosClient {
   async reverseTransaction(params: {
     transactionId: number;
     reason?: string;
+    /** Sent as Idempotency-Key (our payment id) so a retried reverse can be de-duplicated. */
+    idempotencyKey?: string;
   }): Promise<{ transactionId: number; raw: unknown }> {
     const token = await this.getAccessToken();
 
@@ -600,6 +612,7 @@ export class AtmosClient {
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
+        ...(params.idempotencyKey ? { 'Idempotency-Key': params.idempotencyKey } : {}),
         Accept: 'application/json',
       },
       body: JSON.stringify(payload),

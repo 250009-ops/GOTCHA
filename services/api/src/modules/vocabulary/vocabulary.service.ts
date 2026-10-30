@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AppLanguage, WordStatus } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
@@ -267,6 +267,9 @@ export class VocabularyService {
       xp?: number;
       /** Extra (ahead-of-schedule) practice: logged, but a correct answer does not move the schedule. */
       extra?: boolean;
+      /** FSRS state before the review (0 = New). */
+      stateBefore?: number;
+      judgedByAi?: boolean;
     } = {},
   ) {
     if (this.useMemory(userId)) {
@@ -300,16 +303,19 @@ export class VocabularyService {
     const keepSchedule = !!meta.extra && dto.rating !== 'again';
     const next = reviewCard(vocab, dto.rating, now, vocab.id);
 
-    const [updated] = await this.prisma.$transaction([
-      keepSchedule
-        ? this.prisma.userVocabulary.update({ where: { id: vocabId }, data: { lastReviewedAt: now } })
-        : this.prisma.userVocabulary.update({
-            where: { id: vocabId },
-            data: { ...next, lastReviewedAt: now },
-          }),
+    // m1: optimistic concurrency. Two answers on the same card must not both schedule from the same state.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.userVocabulary.updateMany({
+        where: { id: vocabId, lastReviewedAt: vocab.lastReviewedAt },
+        data: keepSchedule ? { lastReviewedAt: now } : { ...next, lastReviewedAt: now },
+      });
+      if (claimed.count === 0) throw new ConflictException({ message: 'This word was just reviewed; try again.', code: 'review_conflict' });
       // Single review log: drives schedule history, XP, streak and analytics.
-      this.prisma.vocabularyReview.create({
+      await tx.vocabularyReview.create({
         data: {
+          userId,
+          stateBefore: meta.stateBefore ?? vocab.fsrsState,
+          judgedByAi: !!meta.judgedByAi,
           vocabId,
           rating: dto.rating,
           intervalBefore: vocab.intervalDays,
@@ -324,8 +330,9 @@ export class VocabularyService {
           stabilityAfter: keepSchedule ? vocab.stability : next.stability,
           extra: !!meta.extra,
         },
-      }),
-    ]);
+      });
+      return tx.userVocabulary.findUniqueOrThrow({ where: { id: vocabId } });
+    });
 
     if (updated.mastered) {
       await this.reading.markLemma(userId, updated.lemma, updated.sourceLang, WordStatus.known);

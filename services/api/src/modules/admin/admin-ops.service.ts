@@ -66,7 +66,7 @@ export class AdminOpsService {
         take: pageSize,
         select: {
           id: true, status: true, importType: true, contentFormat: true, estimatedPages: true, amountTiyins: true,
-          currency: true, provider: true, account: true, providerPaymentId: true, createdAt: true, paidAt: true,
+          currency: true, provider: true, account: true, providerPaymentId: true, needsAttention: true, createdAt: true, paidAt: true,
           user: { select: { id: true, email: true, displayName: true } },
         },
       }),
@@ -82,18 +82,18 @@ export class AdminOpsService {
     };
   }
 
-  /** Atmos runs in test mode until go-live; refunds are only allowed there (and are a local status change). */
+  /** M1: explicit only; unset ⇒ not test mode. */
   private isSandbox() {
-    if (process.env.ATMOS_SANDBOX !== undefined) return envFlagTrue(process.env.ATMOS_SANDBOX);
-    return true; // safe default until the production merchant contract is signed
+    return envFlagTrue(process.env.ATMOS_SANDBOX);
   }
+
 
   /**
    * Admin-only refund (BUG-06). Atmos test mode: reverses via Atmos when a transaction id exists, otherwise records
    * the refund locally. Live mode requires a transaction to reverse. Revokes catalog access and writes AuditLog.
    * Partial refunds are not supported by Atmos reverse, so only the full amount is accepted.
    */
-  async refundPayment(actorId: string, id: string, body: { reason?: string; amountUzs?: number }) {
+  async refundPayment(actorId: string, id: string, body: { reason?: string; amountUzs?: number }, idempotencyKey?: string) {
     const reason = String(body.reason ?? '').trim();
     if (reason.length < 3) throw new BadRequestException('A refund reason is required.');
     const p = await this.prisma.importPayment.findUnique({ where: { id } });
@@ -102,16 +102,17 @@ export class AdminOpsService {
     if (body.amountUzs != null && Math.round(Number(body.amountUzs)) !== full) {
       throw new BadRequestException(`Only full refunds are supported (${full} UZS).`);
     }
-    const sandbox = this.isSandbox();
-    const res = await this.commerce.refundPaidPayment(id, { reason, sandbox });
-    await this.audit(actorId, 'payment.refund', 'import_payment', id, {
-      reason, amountUzs: full, sandbox, reversedAtAtmos: res.reversedAtAtmos, accessRevoked: res.accessRevoked, userId: p.userId,
-    });
+    // Claim → reverse → finalize + AuditLog in one transaction (REVIEW B2) lives in the commerce service.
+    const res = await this.commerce.refundPaidPayment(id, { reason, actorId, idempotencyKey });
     return {
       ...res,
       amountUzs: full,
-      sandbox,
-      note: res.reversedAtAtmos ? 'Refunded via Atmos.' : 'Test-mode refund recorded locally; no money moved.',
+      sandbox: this.isSandbox(),
+      note: res.alreadyRefunded ? 'Already refunded.' : res.reversedAtAtmos ? 'Refunded via Atmos.' : 'Test-mode refund recorded locally; no money moved.',
     };
+  }
+
+  reconcileRefunds() {
+    return this.commerce.reconcileStaleRefunds(0);
   }
 }

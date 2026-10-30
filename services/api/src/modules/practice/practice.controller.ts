@@ -35,6 +35,7 @@ export class PracticeController {
 
   /** Server-side grading → FSRS → ReviewLog → XP / goal / streak. */
   @Post('answer')
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
   answer(@CurrentUser() user: AuthUserPayload, @Body() dto: AnswerExerciseDto) {
     return this.engine.answer(user.sub, dto);
   }

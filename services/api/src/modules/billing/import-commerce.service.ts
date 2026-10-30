@@ -3,6 +3,9 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
   NotFoundException,
   ServiceUnavailableException,
 } from '@nestjs/common';
@@ -81,7 +84,27 @@ export type CheckoutResult = {
 };
 
 @Injectable()
-export class ImportCommerceService {
+export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
+  private readonly logger = new Logger(ImportCommerceService.name);
+  private reconcileTimer?: NodeJS.Timeout;
+
+  onModuleInit() {
+    const mode = this.atmos.mode();
+    if (this.gatewayEnabled() && mode === null) {
+      this.logger.warn('ATMOS_SANDBOX is unset while payments are enabled: local-only refunds are refused (set it explicitly).');
+    } else {
+      this.logger.log(`Atmos mode: ${mode ?? 'unset'}`);
+    }
+    if (process.env.NODE_ENV !== 'test') {
+      this.reconcileTimer = setInterval(() => void this.reconcileStaleRefunds().catch(() => undefined), 10 * 60_000);
+      this.reconcileTimer.unref?.();
+    }
+  }
+
+  onModuleDestroy() {
+    if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+  }
+
   constructor(
     private prisma: PrismaService,
     private atmos: AtmosClient,
@@ -426,6 +449,10 @@ export class ImportCommerceService {
     if (payment.status === ImportPaymentStatus.paid) {
       return { paymentId, status: 'paid', step: 'paid' };
     }
+    // REVIEW B3: never charge a cancelled/failed/expired/refunded payment.
+    if (payment.status !== ImportPaymentStatus.pending) {
+      throw new ConflictException({ message: `Payment is ${payment.status}.`, code: 'payment_not_pending' });
+    }
     if (!payment.providerPaymentId) {
       throw new BadRequestException('Transaction not initialized');
     }
@@ -439,16 +466,12 @@ export class ImportCommerceService {
       });
 
       if (result.confirmed) {
-        const paid = await this.prisma.importPayment.update({
-          where: { id: payment.id },
-          data: {
-            status: ImportPaymentStatus.paid,
-            paidAt: new Date(),
-            ofdUrl: result.ofdUrl,
-            rawCallbackJson: result.raw as Prisma.InputJsonValue,
-          },
-        });
-        await this.fulfillCatalogPurchase(paid);
+        const ok = await this.transitionToPaid(payment.id, { ofdUrl: result.ofdUrl, raw: result.raw });
+        if (!ok) {
+          // Cancelled while the OTP was in flight: the card was charged, so give the money back.
+          await this.reverseOrFlag(payment.id, transactionId, 'Payment was cancelled before confirmation');
+          throw new ConflictException({ message: 'This payment was cancelled; the charge is being reversed.', code: 'payment_not_pending' });
+        }
 
         return {
           paymentId,
@@ -496,7 +519,7 @@ export class ImportCommerceService {
   async cancelPayment(
     userId: string,
     paymentId: string,
-    _reason?: string,
+    reason?: string,
   ): Promise<{ paymentId: string; status: string }> {
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
@@ -513,58 +536,125 @@ export class ImportCommerceService {
     // Conditional update: a webhook may have marked it paid in the meantime.
     const { count } = await this.prisma.importPayment.updateMany({
       where: { id: payment.id, status: ImportPaymentStatus.pending },
-      data: { status: ImportPaymentStatus.failed },
+      data: { status: ImportPaymentStatus.failed, cancelReason: reason?.slice(0, 500) ?? 'learner_cancelled' },
     });
     if (count === 0) throw new ConflictException({ message: 'Payment status changed; refresh and try again.', code: 'payment_not_pending' });
+    // B3: an OTP-less transaction may already be confirmed at Atmos (race with the webhook). Check once and give
+    // the money back if so; apply() now refuses non-pending payments, so the OTP can no longer charge the card.
+    const tx = Number(payment.providerPaymentId);
+    if (Number.isFinite(tx) && tx > 0 && this.atmos.configured()) {
+      const remote = await this.atmos.getTransaction(tx).catch(() => null);
+      if (remote?.confirmed) await this.reverseOrFlag(payment.id, tx, 'Cancelled by learner');
+    }
     return { paymentId, status: 'cancelled' };
   }
 
   /**
-   * Admin refund (BUG-06): paid → refunded, reverses the Atmos transaction when there is one, and revokes the
-   * catalog purchase it granted. [sandbox] = Atmos test mode: a payment without a transaction id is refunded
-   * locally only. Outside sandbox a transaction id is required.
+   * Refund a paid payment (REVIEW B2). Claim first (paid→refunding), then reverse at Atmos with the payment id as
+   * idempotency key, then in ONE transaction: refunding→refunded, revoke only the access this payment granted,
+   * and write the AuditLog. A failed reverse rolls the claim back to paid and surfaces the error.
+   * Local-only refunds (no transaction to reverse) are allowed only when Atmos is explicitly in test mode (M1).
    */
-  async refundPaidPayment(paymentId: string, opts: { reason: string; sandbox: boolean }) {
+  async refundPaidPayment(
+    paymentId: string,
+    opts: { reason: string; actorId: string | null; action?: string; idempotencyKey?: string },
+  ) {
     const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.refunded) {
+      return { paymentId, status: ImportPaymentStatus.refunded, reversedAtAtmos: null, accessRevoked: 0, alreadyRefunded: true };
+    }
     if (payment.status !== ImportPaymentStatus.paid) {
       throw new ConflictException({ message: `Only paid payments can be refunded (status: ${payment.status}).`, code: 'payment_not_paid' });
     }
     const transactionId = Number(payment.providerPaymentId);
-    const hasTx = Number.isFinite(transactionId) && transactionId > 0;
-    let reversed = false;
-    if (hasTx && this.atmos.configured()) {
-      await this.atmos.reverseTransaction({ transactionId, reason: opts.reason });
-      reversed = true;
-    } else if (!opts.sandbox) {
+    const hasTx = Number.isFinite(transactionId) && transactionId > 0 && payment.amountTiyins > 0;
+    const mode = this.atmos.mode();
+    if (!hasTx && mode !== 'test' && payment.amountTiyins > 0) {
       throw new ConflictException({ message: 'No Atmos transaction to reverse; refund in the Atmos cabinet first.', code: 'no_provider_transaction' });
     }
-    const { count } = await this.prisma.importPayment.updateMany({
-      where: { id: payment.id, status: ImportPaymentStatus.paid },
-      data: { status: ImportPaymentStatus.refunded },
+    if (hasTx && !this.atmos.configured()) {
+      throw new ServiceUnavailableException('Atmos is not configured; cannot reverse the charge.');
+    }
+
+    const claim = await this.prisma.importPayment.updateMany({
+      where: { id: paymentId, status: ImportPaymentStatus.paid },
+      data: { status: ImportPaymentStatus.refunding, refundReason: opts.reason, refundRequestedBy: opts.actorId, refundRequestedAt: new Date() },
     });
-    if (count === 0) throw new ConflictException({ message: 'Payment status changed; refresh and try again.', code: 'payment_not_paid' });
-    const revoked = await this.revokeCatalogPurchase(payment);
-    return { paymentId, status: ImportPaymentStatus.refunded, reversedAtAtmos: reversed, accessRevoked: revoked };
+    if (claim.count === 0) throw new ConflictException({ message: 'A refund for this payment is already in progress.', code: 'refund_in_progress' });
+
+    if (hasTx) {
+      try {
+        await this.atmos.reverseTransaction({ transactionId, reason: opts.reason, idempotencyKey: paymentId });
+      } catch (e) {
+        await this.prisma.importPayment.updateMany({
+          where: { id: paymentId, status: ImportPaymentStatus.refunding },
+          data: { status: ImportPaymentStatus.paid, needsAttention: true },
+        });
+        throw e;
+      }
+    }
+    const revoked = await this.finalizeRefund(payment, {
+      actorId: opts.actorId,
+      action: opts.action ?? 'payment.refund',
+      metadata: { reason: opts.reason, reversedAtAtmos: hasTx, atmosMode: mode, idempotencyKey: opts.idempotencyKey ?? null, userId: payment.userId, amountUzs: Math.round(payment.amountTiyins / 100) },
+    });
+    return { paymentId, status: ImportPaymentStatus.refunded, reversedAtAtmos: hasTx, accessRevoked: revoked, alreadyRefunded: false };
   }
 
-  /** Refund ⇒ the ContentPurchase it created no longer grants access (BUG-06). */
-  private async revokeCatalogPurchase(payment: { userId: string; contentFormat: string; providerPaymentId: string | null }) {
+  /** refunding→refunded + revoke + salesCount + AuditLog, atomically (B2/M3). Returns purchases revoked. */
+  private async finalizeRefund(
+    payment: { id: string; contentFormat: string },
+    audit: { actorId: string | null; action: string; metadata: Prisma.InputJsonValue },
+  ) {
     const contentId = catalogContentIdFromFormat(payment.contentFormat);
-    if (!contentId) return 0;
-    const where: Prisma.ContentPurchaseWhereInput = {
-      userId: payment.userId,
-      contentId,
-      status: PurchaseStatus.completed,
-      ...(payment.providerPaymentId ? { providerRef: payment.providerPaymentId } : {}),
-    };
-    const { count } = await this.prisma.contentPurchase.updateMany({ where, data: { status: PurchaseStatus.refunded } });
-    if (count > 0) {
-      await this.prisma.contentItem
-        .update({ where: { id: contentId }, data: { salesCount: { decrement: count } } })
-        .catch(() => undefined);
+    return this.prisma.$transaction(async (tx) => {
+      const done = await tx.importPayment.updateMany({
+        where: { id: payment.id, status: ImportPaymentStatus.refunding },
+        data: { status: ImportPaymentStatus.refunded },
+      });
+      if (done.count !== 1) throw new ConflictException({ message: 'Refund state changed concurrently.', code: 'refund_conflict' });
+      let revoked = 0;
+      if (contentId) {
+        // M3: only the purchase this payment granted.
+        revoked = (await tx.contentPurchase.updateMany({
+          where: { importPaymentId: payment.id, status: PurchaseStatus.completed },
+          data: { status: PurchaseStatus.refunded },
+        })).count;
+        if (revoked > 0) await tx.contentItem.update({ where: { id: contentId }, data: { salesCount: { decrement: revoked } } });
+      }
+      await tx.auditLog.create({
+        data: { actorId: audit.actorId, action: audit.action, entityType: 'import_payment', entityId: payment.id, metadata: { ...(audit.metadata as object), accessRevoked: revoked } },
+      });
+      return revoked;
+    });
+  }
+
+  /**
+   * B2 reconciler: refunds stuck in `refunding` (process died between reverse and finalize). If Atmos shows the
+   * transaction reversed/cancelled, finalize; otherwise roll back to paid and flag for support.
+   */
+  async reconcileStaleRefunds(olderThanMs = 10 * 60_000) {
+    const stale = await this.prisma.importPayment.findMany({
+      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - olderThanMs) } },
+      take: 50,
+    });
+    let finalized = 0;
+    let rolledBack = 0;
+    for (const p of stale) {
+      const tx = Number(p.providerPaymentId);
+      const remote = Number.isFinite(tx) && tx > 0 && this.atmos.configured() ? await this.atmos.getTransaction(tx).catch(() => null) : null;
+      const reversed = !!remote && (remote.confirmed === false || /cancel|revers|refund/i.test(String(remote.statusMessage ?? '')));
+      if (reversed) {
+        await this.finalizeRefund(p, { actorId: p.refundRequestedBy, action: 'payment.refund.reconciled', metadata: { reason: p.refundReason, statusCode: remote?.statusCode ?? null } })
+          .then(() => finalized++)
+          .catch(() => undefined);
+      } else {
+        await this.prisma.importPayment.updateMany({ where: { id: p.id, status: ImportPaymentStatus.refunding }, data: { status: ImportPaymentStatus.paid, needsAttention: true } });
+        rolledBack++;
+      }
     }
-    return count;
+    return { checked: stale.length, finalized, rolledBack };
   }
 
   async getPayment(userId: string, paymentId: string) {
@@ -579,16 +669,7 @@ export class ImportCommerceService {
       const remote = await this.atmos.getTransaction(transactionId);
       
       if (remote?.confirmed) {
-        const paid = await this.prisma.importPayment.update({
-          where: { id: payment.id },
-          data: {
-            status: ImportPaymentStatus.paid,
-            paidAt: new Date(),
-            ofdUrl: remote.ofdUrl,
-            rawCallbackJson: remote.raw as Prisma.InputJsonValue,
-          },
-        });
-        await this.fulfillCatalogPurchase(paid);
+        await this.transitionToPaid(payment.id, { ofdUrl: remote.ofdUrl, raw: remote.raw });
         return this.prisma.importPayment.findFirstOrThrow({ where: { id: paymentId, userId } });
       }
     }
@@ -605,19 +686,49 @@ export class ImportCommerceService {
     });
     if (!existing) return null;
     if (existing.status === ImportPaymentStatus.paid) return existing;
+    if (existing.status !== ImportPaymentStatus.pending) return null; // B3: no resurrection
 
-    const updated = await this.prisma.importPayment.update({
-      where: { id: existing.id },
+    const ok = await this.transitionToPaid(existing.id, {
+      providerRef: opts?.providerRef,
+      ofdUrl: opts?.ofdUrl,
+      raw: opts?.raw,
+    });
+    if (!ok) return null;
+    return this.prisma.importPayment.findUnique({ where: { id: existing.id } });
+  }
+
+  /**
+   * The only way a payment becomes paid (REVIEW B3): a conditional pending→paid write. Fulfillment runs only
+   * for the caller that won the transition, so webhook + poll + apply can't double-fulfill.
+   */
+  private async transitionToPaid(
+    paymentId: string,
+    opts: { providerRef?: string; ofdUrl?: string; raw?: unknown },
+  ): Promise<boolean> {
+    const { count } = await this.prisma.importPayment.updateMany({
+      where: { id: paymentId, status: ImportPaymentStatus.pending },
       data: {
         status: ImportPaymentStatus.paid,
         paidAt: new Date(),
-        providerPaymentId: opts?.providerRef ?? existing.providerPaymentId,
-        ofdUrl: opts?.ofdUrl ?? existing.ofdUrl,
-        rawCallbackJson: opts?.raw != null ? (opts.raw as Prisma.InputJsonValue) : undefined,
+        ...(opts.providerRef ? { providerPaymentId: opts.providerRef } : {}),
+        ...(opts.ofdUrl ? { ofdUrl: opts.ofdUrl } : {}),
+        ...(opts.raw != null ? { rawCallbackJson: opts.raw as Prisma.InputJsonValue } : {}),
       },
     });
-    await this.fulfillCatalogPurchase(updated);
-    return updated;
+    if (count !== 1) return false;
+    const paid = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (paid) await this.fulfillCatalogPurchase(paid);
+    return true;
+  }
+
+  /** Reverse a charge we must not keep; on failure, flag the row for support instead of pretending. */
+  private async reverseOrFlag(paymentId: string, transactionId: number, reason: string) {
+    try {
+      await this.atmos.reverseTransaction({ transactionId, reason, idempotencyKey: paymentId });
+    } catch (e) {
+      await this.prisma.importPayment.update({ where: { id: paymentId }, data: { needsAttention: true } }).catch(() => undefined);
+      this.logger.error(`Reverse failed for payment ${paymentId}: ${(e as Error).message}`);
+    }
   }
 
   /**
@@ -694,16 +805,12 @@ export class ImportCommerceService {
   private async voidUnusedPayment(paymentId: string) {
     const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.userImportId) return;
-    if (payment.status === ImportPaymentStatus.paid && payment.providerPaymentId) {
-      const transactionId = Number(payment.providerPaymentId);
-      if (Number.isFinite(transactionId) && transactionId > 0) {
-        await this.atmos.reverseTransaction({ transactionId, reason: 'Page count mismatch' }).catch(() => undefined);
-      }
-      await this.prisma.importPayment.update({
-        where: { id: payment.id },
-        data: { status: ImportPaymentStatus.refunded },
+    if (payment.status === ImportPaymentStatus.paid) {
+      // M2: same claim/reverse/finalize flow as an admin refund. A failed reverse leaves it paid + flagged.
+      await this.refundPaidPayment(payment.id, { reason: 'Page count mismatch', actorId: null, action: 'payment.refund.auto' }).catch((e) => {
+        this.logger.error(`Auto-refund failed for ${payment.id}: ${(e as Error).message}`);
+        return this.prisma.importPayment.update({ where: { id: payment.id }, data: { needsAttention: true } }).catch(() => undefined);
       });
-      await this.revokeCatalogPurchase(payment);
       return;
     }
     // Never overwrite a refunded/expired history (BUG-07): only pending payments become failed.
@@ -848,7 +955,9 @@ export class ImportCommerceService {
     };
   }
 
+  /** M3: idempotent per payment (unique import_payment_id); sales count moves only when a row is created. */
   private async fulfillCatalogPurchase(payment: {
+    id: string;
     userId: string;
     status: ImportPaymentStatus;
     contentFormat: string;
@@ -858,29 +967,25 @@ export class ImportCommerceService {
     if (payment.status !== ImportPaymentStatus.paid) return;
     const contentId = catalogContentIdFromFormat(payment.contentFormat);
     if (!contentId) return;
-
-    const existing = await this.prisma.contentPurchase.findFirst({
-      where: { userId: payment.userId, contentId, status: PurchaseStatus.completed },
-      select: { id: true },
-    });
-    if (existing) return;
-
-    await this.prisma.$transaction([
-      this.prisma.contentPurchase.create({
-        data: {
-          userId: payment.userId,
-          contentId,
-          amountUsd: payment.amountTiyins / 100,
-          status: PurchaseStatus.completed,
-          provider: 'atmos',
-          providerRef: payment.providerPaymentId,
-        },
-      }),
-      this.prisma.contentItem.update({
-        where: { id: contentId },
-        data: { salesCount: { increment: 1 } },
-      }),
-    ]);
+    try {
+      await this.prisma.$transaction([
+        this.prisma.contentPurchase.create({
+          data: {
+            userId: payment.userId,
+            contentId,
+            amountUsd: payment.amountTiyins / 100,
+            status: PurchaseStatus.completed,
+            provider: 'atmos',
+            providerRef: payment.providerPaymentId,
+            importPaymentId: payment.id,
+          },
+        }),
+        this.prisma.contentItem.update({ where: { id: contentId }, data: { salesCount: { increment: 1 } } }),
+      ]);
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return; // already fulfilled
+      throw e;
+    }
   }
 
   fingerprintAccount(parts: string[]) {

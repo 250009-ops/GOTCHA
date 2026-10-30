@@ -1,6 +1,6 @@
 // QA regressions: BUG-01..04 (practice), BUG-06/07 (payments), BUG-08 (plurals), BUG-10 (API error copy).
 import * as assert from 'node:assert/strict';
-import { PracticeType, ImportPaymentStatus } from '@prisma/client';
+import { PracticeType } from '@prisma/client';
 import { localizeApiError, pluralRu, pluralEn } from '@gotcha/shared';
 import { learnerCopyFor } from '@gotcha/shared/learner-copy';
 // AiService pulls in jsdom at load time; the service under test only needs it as a DI token.
@@ -61,53 +61,7 @@ async function main() {
     await assert.rejects(svc.getSession('u1', 'missing'), (e: any) => e.getStatus() === 404);
   }
 
-  // BUG-06/07 payments
-  function commerce(payment: any, atmosOk = true) {
-    const calls: any[] = [];
-    const prisma: any = {
-      importPayment: {
-        findFirst: async ({ where }: any) => (where.userId === payment.userId ? payment : null),
-        findUnique: async () => payment,
-        updateMany: async ({ where, data }: any) => {
-          if (where.status && where.status !== payment.status) return { count: 0 };
-          calls.push(['payment', data.status]); payment.status = data.status; return { count: 1 };
-        },
-        update: async ({ data }: any) => { calls.push(['payment!', data.status]); payment.status = data.status; return payment; },
-      },
-      contentPurchase: { updateMany: async ({ data }: any) => { calls.push(['purchase', data.status]); return { count: 1 }; } },
-      contentItem: { update: async () => ({}) },
-    };
-    const atmos: any = { configured: () => atmosOk, reverseTransaction: async () => { calls.push(['atmos.reverse']); return {}; } };
-    return { svc: new ImportCommerceService(prisma, atmos), calls };
-  }
-  const catalogFormat = 'catalog:11111111-1111-4111-8111-111111111111';
-  for (const status of [ImportPaymentStatus.paid, ImportPaymentStatus.refunded, ImportPaymentStatus.failed]) {
-    const p = { id: 'p1', userId: 'u1', status, providerPaymentId: status === 'paid' ? null : '42', contentFormat: catalogFormat, amountTiyins: 100 };
-    const { svc, calls } = commerce(p);
-    await assert.rejects(svc.cancelPayment('u1', 'p1'), (e: any) => e.getStatus() === 409, `cancel ${status}`);
-    assert.equal(p.status, status, 'status untouched');
-    assert.equal(calls.length, 0, 'no reverse/writes');
-  }
-  {
-    const p = { id: 'p1', userId: 'u1', status: ImportPaymentStatus.pending, providerPaymentId: null, contentFormat: 'pdf', amountTiyins: 100 };
-    const { svc } = commerce(p);
-    assert.equal((await svc.cancelPayment('u1', 'p1')).status, 'cancelled');
-    assert.equal(p.status, ImportPaymentStatus.failed);
-  }
-  {
-    const p = { id: 'p1', userId: 'u1', status: ImportPaymentStatus.paid, providerPaymentId: '42', contentFormat: catalogFormat, amountTiyins: 100 };
-    const { svc, calls } = commerce(p);
-    const r = await svc.refundPaidPayment('p1', { reason: 'dup', sandbox: false });
-    assert.deepEqual(calls.map((c) => c.join(':')), ['atmos.reverse', 'payment:refunded', 'purchase:refunded']);
-    assert.equal(r.accessRevoked, 1);
-    await assert.rejects(svc.refundPaidPayment('p1', { reason: 'again', sandbox: true }), (e: any) => e.getStatus() === 409);
-  }
-  {
-    const p = { id: 'p1', userId: 'u1', status: ImportPaymentStatus.paid, providerPaymentId: null, contentFormat: 'pdf', amountTiyins: 100 };
-    const { svc } = commerce(p, false);
-    await assert.rejects(svc.refundPaidPayment('p1', { reason: 'x', sandbox: false }), (e: any) => e.getStatus() === 409);
-    assert.equal(p.status, ImportPaymentStatus.paid);
-  }
+  // BUG-06/07 payments: covered (with the REVIEW-p1 refund flow) in billing/review-p1-payments.test.ts
 
   // BUG-08 plurals
   assert.deepEqual([1, 2, 5, 11, 21, 22, 25, 111].map((n) => pluralRu(n, 'слово', 'слова', 'слов')), ['слово', 'слова', 'слов', 'слов', 'слово', 'слова', 'слов', 'слов']);

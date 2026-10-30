@@ -48,8 +48,14 @@ jobs:
           release.keyPassword=${ANDROID_KEY_PASSWORD}
           EOF
 
-      - name: Build release AAB
-        run: ./gradlew bundleRelease --no-daemon
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platforms;android-35 build-tools;35.0.0'
+
+      - name: Build release AAB (fails without the keystore; versionCode = run number)
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: ./gradlew bundleRelease --no-daemon -Dorg.gradle.jvmargs="-Xmx4g -XX:MaxMetaspaceSize=1g"
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4

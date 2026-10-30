@@ -118,13 +118,13 @@ class MessagingRealtimeHub(
         }
     }
 
-    private suspend fun wsUrl(): String? {
-        val token = tokenStore.accessToken() ?: return null
+    /** Endpoint without credentials: the token goes in the Authorization header, never the URL (REVIEW m11). */
+    private fun wsUrl(): String? {
         val https = apiBaseUrl.trimEnd('/')
             .replace(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
         if (!https.startsWith("https://", ignoreCase = true)) return null
         val wsBase = "wss://" + https.removePrefix("https://").removePrefix("HTTPS://")
-        return "$wsBase/messaging/ws?token=${java.net.URLEncoder.encode(token, Charsets.UTF_8.name())}"
+        return "$wsBase/messaging/ws"
     }
 
     private suspend fun connectWebSocket() {
@@ -135,11 +135,12 @@ class MessagingRealtimeHub(
             return
         }
         val url = wsUrl()
-        if (url == null) {
+        val token = tokenStore.accessToken()
+        if (url == null || token == null) {
             startPolling()
             return
         }
-        val request = Request.Builder().url(url).build()
+        val request = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
         webSocket = wsClient.newWebSocket(
             request,
             object : WebSocketListener() {

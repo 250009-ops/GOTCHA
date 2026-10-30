@@ -1,9 +1,10 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
-import { PracticeType, type Prisma, type UserVocabulary } from '@prisma/client';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { PracticeType, Prisma, type UserVocabulary } from '@prisma/client';
 import {
   DEFAULT_DAILY_GOAL_XP,
   XP_RULES,
   buildCloze,
+  damerauLevenshtein,
   chooseExerciseType,
   displayStreak,
   gradeAnswer,
@@ -21,7 +22,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { VocabularyService } from '../vocabulary/vocabulary.service';
 import { AiService } from '../ai/ai.service';
-import { calendarDateKey, dateFromCalendarKey, diffCalendarDays } from '../../services/streak.service';
+import { calendarDateKey, dateFromCalendarKey, diffCalendarDays, startOfLocalDay } from '../../services/streak.service';
 import { buildPracticeItem, type PracticeItem } from './practice-items';
 export type { PracticeItem } from './practice-items';
 import type { AnswerExerciseDto, DailySessionQueryDto } from './dto/practice-engine.dto';
@@ -29,6 +30,24 @@ import type { AnswerExerciseDto, DailySessionQueryDto } from './dto/practice-eng
 type VocabRow = UserVocabulary & { content?: { id: string; title: string } | null };
 
 const MCQ_TYPES: ExerciseType[] = ['mcq_meaning', 'cloze_mcq', 'listening_mcq'];
+/** Max AI-judge calls per learner per local day (REVIEW M5). */
+export const AI_JUDGE_DAILY_CAP = Number(process.env.AI_JUDGE_DAILY_CAP ?? 40);
+
+/**
+ * Cheap gate before the AI judge (REVIEW M5): a plausible single word/short phrase in the same script,
+ * of similar length. Blocks prompt-injection payloads and saves calls on obvious misses.
+ */
+export function aiJudgeEligible(given: string, expected: string): boolean {
+  const g = given.trim();
+  const e = expected.trim();
+  if (g.length < 2 || g.length > 40) return false;
+  if (!/^[\p{L}\p{M}'’ʻʼ`\- ]+$/u.test(g)) return false;
+  if (g.split(/\s+/).length > 3) return false;
+  if (g.length < e.length * 0.5 || g.length > e.length * 1.5 + 2) return false;
+  const script = (s: string) => (/[\u0400-\u04FF]/.test(s) ? 'cyr' : 'lat');
+  if (script(g) !== script(e)) return false;
+  return damerauLevenshtein(g.toLowerCase(), e.toLowerCase()) <= Math.max(4, Math.ceil(e.length * 0.75));
+}
 
 @Injectable()
 export class PracticeEngineService {
@@ -97,7 +116,7 @@ export class PracticeEngineService {
   /** Rolling accuracy over the last N graded items (non-flashcard); 0.85 when there is little history. */
   private async recentSkill(userId: string, n = 10): Promise<number> {
     const rows = await this.prisma.vocabularyReview.findMany({
-      where: { vocab: { userId }, correct: { not: null } },
+      where: { userId, correct: { not: null } },
       orderBy: { reviewedAt: 'desc' },
       take: n,
       select: { correct: true },
@@ -131,10 +150,13 @@ export class PracticeEngineService {
         include,
       });
       // 2) new words up to today's remaining new-word allowance
-      const introducedToday = await this.prisma.vocabularyReview.count({
-        where: { vocab: { userId }, intervalBefore: 0, reviewedAt: { gte: dateFromCalendarKey(calendarDateKey(now)) }, exerciseType: { not: null }, extra: false },
+      // M6/M7: distinct words first seen (FSRS state New) since local midnight.
+      const introduced = await this.prisma.vocabularyReview.findMany({
+        where: { userId, stateBefore: 0, reviewedAt: { gte: startOfLocalDay(now) }, exerciseType: { not: null }, extra: false },
+        distinct: ['vocabId'],
+        select: { vocabId: true },
       });
-      const newAllowance = Math.max(0, stats.dailyNewWords - introducedToday);
+      const newAllowance = Math.max(0, stats.dailyNewWords - introduced.length);
       const newRows = await this.prisma.userVocabulary.findMany({
         where: { userId, ...lw, fsrsState: 0 },
         orderBy: { createdAt: 'desc' },
@@ -192,6 +214,11 @@ export class PracticeEngineService {
       recent.push(type);
       items.push(buildPracticeItem(v, type, extra, cloze, type === 'mcq_meaning' ? meaningOpts : wordOpts, rand));
     }
+    // B1: persist the issued exercise contract; /answer grades only these (sessionId, vocabId, type).
+    await this.prisma.practiceSessionItem.createMany({
+      data: items.map((it) => ({ sessionId: session.id, vocabId: it.vocabId, type: it.type, extra: it.extra })),
+      skipDuplicates: true,
+    });
     return { sessionId: session.id, items, caughtUp: false, totalWords: pool.length, skill: round2(skill), ...this.publicStats(stats) };
   }
 
@@ -237,8 +264,28 @@ export class PracticeEngineService {
   // ---------------------------------------------------------------- answer
 
   async answer(userId: string, dto: AnswerExerciseDto) {
-    const prior = await this.prisma.vocabularyReview.findUnique({ where: { answerId: dto.answerId } });
-    if (prior) throw new BadRequestException('Answer already recorded');
+    // m2: answerId is scoped per user; a replay returns 409 rather than a second grade.
+    const prior = await this.prisma.vocabularyReview.findUnique({ where: { answerId: scopedAnswerId(userId, dto.answerId) } });
+    if (prior) throw new ConflictException({ message: 'Answer already recorded', code: 'answer_duplicate' });
+
+    // B1 / m3: the session must be the caller's, open, and must have issued exactly this (vocabId, type).
+    const session = await this.prisma.practiceSession.findFirst({
+      where: { id: dto.sessionId, userId, practiceType: PracticeType.mixed },
+      select: { id: true, completedAt: true },
+    });
+    if (!session) throw new NotFoundException('Practice session not found');
+    if (session.completedAt) throw new ConflictException({ message: 'Session already completed', code: 'session_completed' });
+    const item = await this.prisma.practiceSessionItem.findUnique({
+      where: { sessionId_vocabId_type: { sessionId: session.id, vocabId: dto.vocabId, type: dto.type } },
+    });
+    if (!item) throw new BadRequestException({ message: 'This exercise was not issued in this session', code: 'item_not_issued' });
+    if (dto.selfRating && dto.type !== 'flashcard') throw new BadRequestException('selfRating is only valid for flashcards');
+    // Claim the attempt atomically: first answer, or one retry after a wrong ("again") answer.
+    const claim = await this.prisma.practiceSessionItem.updateMany({
+      where: { id: item.id, attempts: item.attempts, OR: [{ answeredAt: null }, { requeue: true }] },
+      data: { attempts: { increment: 1 }, answeredAt: new Date(), requeue: false },
+    });
+    if (claim.count === 0) throw new ConflictException({ message: 'This exercise was already answered', code: 'item_answered' });
 
     const vocab = await this.prisma.userVocabulary.findFirst({ where: { id: dto.vocabId, userId } });
     if (!vocab) throw new NotFoundException('Vocabulary entry not found');
@@ -247,6 +294,7 @@ export class PracticeEngineService {
     let expected = vocab.lemma;
     let judgedByAi = false;
     const exact = (ok: boolean): GradeResult => ({ verdict: ok ? 'correct' : 'wrong', correct: ok, matched: null, distance: ok ? 0 : 1, diff: [] });
+    const given = dto.answer ?? '';
 
     switch (dto.type) {
       case 'flashcard':
@@ -254,84 +302,100 @@ export class PracticeEngineService {
         break;
       case 'mcq_meaning':
         expected = vocab.translation;
-        grade = exact(normalize(dto.answer ?? '') === normalize(vocab.translation));
+        grade = exact(normalize(given) === normalize(vocab.translation));
         break;
       case 'listening_mcq':
-        grade = exact(normalize(dto.answer ?? '', vocab.sourceLang) === normalize(vocab.lemma, vocab.sourceLang));
+        grade = exact(normalize(given, vocab.sourceLang) === normalize(vocab.lemma, vocab.sourceLang));
         break;
       case 'cloze':
       case 'cloze_mcq': {
         const c = buildCloze(vocab.contextSentence, vocab.lemma);
         expected = c?.answer ?? vocab.lemma;
         if (dto.type === 'cloze_mcq') {
-          grade = exact(normalize(dto.answer ?? '', vocab.sourceLang) === normalize(expected, vocab.sourceLang));
+          grade = exact(normalize(given, vocab.sourceLang) === normalize(expected, vocab.sourceLang));
         } else {
-          grade = gradeAnswer(dto.answer ?? '', expected, { lang: vocab.sourceLang, knownWords: await this.deckWords(userId, vocab) });
+          grade = await this.gradeTyped(userId, vocab, given, expected);
           // The bare lemma in place of the inflected form counts as "almost" (PRD §4.2 AC2).
-          if (!grade.correct && normalize(dto.answer ?? '', vocab.sourceLang) === normalize(vocab.lemma, vocab.sourceLang)) {
+          if (!grade.correct && normalize(given, vocab.sourceLang) === normalize(vocab.lemma, vocab.sourceLang)) {
             grade = { ...grade, verdict: 'almost', correct: true, reason: 'typo' };
           }
         }
         break;
       }
       default:
-        grade = gradeAnswer(dto.answer ?? '', vocab.lemma, { lang: vocab.sourceLang, knownWords: await this.deckWords(userId, vocab) });
+        grade = await this.gradeTyped(userId, vocab, given, vocab.lemma);
     }
 
-    // Optional AI judge for synonyms/valid variants on typed recall & cloze. Falls back to the strict verdict.
-    if (grade && grade.verdict === 'wrong' && grade.reason !== 'wrong_script' && (dto.type === 'typed_recall' || dto.type === 'cloze') && (dto.answer ?? '').trim().length > 1) {
+    // Optional AI judge for synonyms on typed recall & cloze (M5: gated, capped, never better than "almost/hard").
+    if (
+      grade && grade.verdict === 'wrong' && grade.reason !== 'wrong_script' && grade.reason !== 'real_word' &&
+      (dto.type === 'typed_recall' || dto.type === 'cloze') && aiJudgeEligible(given, expected) &&
+      (await this.aiJudgeCallsToday(userId)) < AI_JUDGE_DAILY_CAP
+    ) {
       const ok = await this.ai.judgeAnswer({
         expected,
-        given: dto.answer!.trim(),
+        given: given.trim(),
         lang: vocab.sourceLang,
         meaning: vocab.translation,
         context: dto.type === 'cloze' ? vocab.contextSentence : null,
       });
-      if (ok === true) {
-        grade = { ...grade, verdict: 'almost', correct: true };
-        judgedByAi = true;
-      }
+      judgedByAi = ok !== null; // counts toward the cap whenever the model was consulted
+      if (ok === true) grade = { ...grade, verdict: 'almost', correct: true, reason: 'ai_accepted' as GradeResult['reason'] };
     }
 
     const verdict = dto.type === 'flashcard' ? (dto.selfRating === 'again' ? 'wrong' : 'correct') : grade!.verdict;
     const correct = verdict !== 'wrong';
-    const rating = outcomeToRating({
+    let rating = outcomeToRating({
       type: dto.type,
       verdict,
       responseMs: dto.responseMs,
       selfRating: dto.selfRating ?? (dto.type === 'flashcard' ? 'good' : undefined),
       hintUsed: dto.hintUsed,
     });
-    const extra = !!dto.extra && vocab.fsrsState !== 0 && vocab.dueAt > new Date();
+    if (grade?.reason === ('ai_accepted' as GradeResult['reason']) && rating !== 'again') rating = 'hard';
+    // Extra practice is decided by what the server issued, not by the client.
+    const extra = item.extra && vocab.fsrsState !== 0 && vocab.dueAt > new Date();
 
-    // Anti-abuse inputs for XP.
-    const dayStart = dateFromCalendarKey(calendarDateKey());
+    // Anti-abuse inputs for XP (local day, M7).
     const sameItemCountToday = await this.prisma.vocabularyReview.count({
-      where: { vocabId: vocab.id, exerciseType: dto.type, reviewedAt: { gte: dayStart } },
+      where: { vocabId: vocab.id, exerciseType: dto.type, reviewedAt: { gte: startOfLocalDay() } },
     });
-    let xp = xpForAnswer({
+    const xp = xpForAnswer({
       type: dto.type,
       verdict,
       responseMs: dto.responseMs,
       extra,
       sameItemCountToday,
-      firstCorrectEver: vocab.fsrsState === 0,
+      firstCorrectEver: vocab.fsrsState === 0, // first exposure
     });
 
-    const progressBefore = await this.todayStats(userId);
-    xp = Math.max(0, Math.min(xp, XP_RULES.dailyCap - progressBefore.xpToday));
-
-    const updated = await this.vocabulary.review(userId, vocab.id, { rating } as never, {
-      exerciseType: dto.type,
-      correct,
-      responseMs: dto.responseMs,
-      answerId: dto.answerId,
-      sessionId: dto.sessionId,
-      verdict,
-      xp,
-      extra,
-    });
+    let updated;
+    try {
+      updated = await this.vocabulary.review(userId, vocab.id, { rating } as never, {
+        exerciseType: dto.type,
+        correct,
+        responseMs: dto.responseMs,
+        answerId: scopedAnswerId(userId, dto.answerId),
+        sessionId: session.id,
+        verdict,
+        xp: 0, // actual (capped) XP is written by addXp below
+        extra,
+        stateBefore: vocab.fsrsState,
+        judgedByAi,
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        throw new ConflictException({ message: 'Answer already recorded', code: 'answer_duplicate' });
+      }
+      throw e;
+    }
+    if (rating === 'again') {
+      await this.prisma.practiceSessionItem.update({ where: { id: item.id }, data: { requeue: true } });
+    }
     const progress = await this.addXp(userId, xp, { allowStreak: !extra || (await this.queueEmpty(userId)) });
+    if (progress.xpGained > 0) {
+      await this.prisma.vocabularyReview.updateMany({ where: { answerId: scopedAnswerId(userId, dto.answerId) }, data: { xp: progress.xpGained } });
+    }
 
     return {
       correct,
@@ -348,31 +412,55 @@ export class PracticeEngineService {
       nextDueAt: updated.dueAt,
       intervalDays: updated.intervalDays,
       mastered: updated.mastered,
-      xpGained: xp,
       ...progress,
     };
   }
 
-  private async deckWords(userId: string, v: UserVocabulary): Promise<string[]> {
-    const rows = await this.prisma.userVocabulary.findMany({
-      where: { userId, sourceLang: v.sourceLang, id: { not: v.id } },
+  private aiJudgeCallsToday(userId: string) {
+    return this.prisma.vocabularyReview.count({ where: { userId, judgedByAi: true, reviewedAt: { gte: startOfLocalDay() } } });
+  }
+
+  /**
+   * Tolerant grading. M8: instead of loading the whole deck, look up only whether the learner typed
+   * another word from their own deck (one indexed query), and pass that single lemma as knownWords.
+   */
+  private async gradeTyped(userId: string, v: UserVocabulary, given: string, expected: string): Promise<GradeResult> {
+    const first = gradeAnswer(given, expected, { lang: v.sourceLang, knownWords: [] });
+    if (first.correct || !given.trim()) return first;
+    const other = await this.prisma.userVocabulary.findFirst({
+      where: { userId, sourceLang: v.sourceLang, id: { not: v.id }, lemma: { equals: given.trim(), mode: 'insensitive' } },
       select: { lemma: true },
-      take: 2000,
     });
-    return rows.map((r) => r.lemma);
+    return other ? gradeAnswer(given, expected, { lang: v.sourceLang, knownWords: [other.lemma] }) : first;
   }
 
   private async queueEmpty(userId: string) {
     return (await this.prisma.userVocabulary.count({ where: { userId, fsrsState: { not: 0 }, dueAt: { lte: new Date() } } })) === 0;
   }
 
-  /** Add XP; when today's goal is first reached, extend the streak (freezes cover missed days). */
+  /**
+   * Add XP atomically (M4): one UPDATE applies the daily cap and the day rollover in SQL, so parallel
+   * answers can neither exceed XP_RULES.dailyCap nor lose XP. The streak extends at most once per local
+   * day via a conditional update (freezes cover missed days).
+   */
   async addXp(userId: string, xp: number, opts: { allowStreak: boolean }) {
     const now = new Date();
-    const todayKey = calendarDateKey(now);
+    const today = dateFromCalendarKey(calendarDateKey(now));
+    const cap = XP_RULES.dailyCap;
+    const rows = await this.prisma.$queryRaw<Array<{ xp_today: number; xp_total: number; gained: number }>>`
+      WITH prev AS (
+        SELECT CASE WHEN xp_date = ${today}::date THEN xp_today ELSE 0 END AS before FROM users WHERE id = ${userId}::uuid FOR UPDATE
+      )
+      UPDATE users u SET
+        xp_today = LEAST(prev.before + ${xp}, ${cap}),
+        xp_total = u.xp_total + GREATEST(LEAST(prev.before + ${xp}, ${cap}) - prev.before, 0),
+        xp_date = ${today}::date
+      FROM prev WHERE u.id = ${userId}::uuid
+      RETURNING u.xp_today, u.xp_total, GREATEST(LEAST(prev.before + ${xp}, ${cap}) - prev.before, 0) AS gained`;
+    const r = rows[0] ?? { xp_today: 0, xp_total: 0, gained: 0 };
+    const xpToday = Number(r.xp_today);
+    const gained = Number(r.gained);
     const s = await this.todayStats(userId);
-    const xpToday = s.xpToday + xp;
-    const data: Prisma.UserUpdateInput = { xpTotal: { increment: xp }, xpToday, xpDate: dateFromCalendarKey(todayKey) };
     let streakCount = s.streakCount;
     let freezes = s.streakFreezes;
     let freezesUsed = 0;
@@ -381,25 +469,26 @@ export class PracticeEngineService {
       const gap = s.user.streakLastDate ? diffCalendarDays(s.user.streakLastDate, now) : null;
       const next = streakOnGoalMet({ count: s.user.streakCount, freezes: s.user.streakFreezes, lastDayGap: gap });
       if (next.extended) {
-        streakCount = next.count;
-        freezes = next.freezes;
-        freezesUsed = next.freezesUsed;
-        streakExtended = true;
-        Object.assign(data, {
-          streakCount: next.count,
-          streakFreezes: next.freezes,
-          streakLastDate: dateFromCalendarKey(todayKey),
-          bestStreak: Math.max(s.bestStreak, next.count),
+        const claimed = await this.prisma.user.updateMany({
+          where: { id: userId, streakLastDate: s.user.streakLastDate, streakCount: s.user.streakCount },
+          data: { streakCount: next.count, streakFreezes: next.freezes, streakLastDate: today, bestStreak: Math.max(s.bestStreak, next.count) },
         });
+        if (claimed.count === 1) {
+          streakCount = next.count;
+          freezes = next.freezes;
+          freezesUsed = next.freezesUsed;
+          streakExtended = true;
+        }
       }
     }
-    const u = await this.prisma.user.update({ where: { id: userId }, data, select: { xpTotal: true } });
+    const before = xpToday - gained;
     return {
+      xpGained: gained,
       xpToday,
-      xpTotal: u.xpTotal,
+      xpTotal: Number(r.xp_total),
       dailyGoalXp: s.dailyGoalXp,
       goalReached: xpToday >= s.dailyGoalXp,
-      goalReachedNow: s.xpToday < s.dailyGoalXp && xpToday >= s.dailyGoalXp,
+      goalReachedNow: before < s.dailyGoalXp && xpToday >= s.dailyGoalXp,
       streakCount,
       streakExtended,
       streakFreezes: freezes,
@@ -413,7 +502,7 @@ export class PracticeEngineService {
     const session = await this.prisma.practiceSession.findFirst({ where: { id: sessionId, userId, practiceType: PracticeType.mixed } });
     if (!session) throw new NotFoundException('Practice session not found');
     const logs = await this.prisma.vocabularyReview.findMany({
-      where: { sessionId },
+      where: { sessionId, userId },
       include: { vocab: { select: { id: true, lemma: true, translation: true, dueAt: true, stability: true } } },
       orderBy: { reviewedAt: 'asc' },
     });
@@ -424,14 +513,17 @@ export class PracticeEngineService {
     const correctCount = [...first.values()].filter((l) => l.correct).length;
     let bonus = 0;
     let progress = null;
-    if (!session.completedAt && answered > 0) {
-      bonus = sessionBonusXp(answered, correctCount);
+    // M4: claim completion first; only the caller that flips completedAt awards the bonus.
+    const claimed = !session.completedAt && answered > 0
+      ? (await this.prisma.practiceSession.updateMany({
+          where: { id: sessionId, userId, completedAt: null },
+          data: { completedAt: new Date(), correctCount, questionCount: answered },
+        })).count === 1
+      : false;
+    if (claimed) {
       const allExtra = logs.every((l) => l.extra);
-      progress = await this.addXp(userId, bonus, { allowStreak: !allExtra || (await this.queueEmpty(userId)) });
-      await this.prisma.practiceSession.update({
-        where: { id: sessionId },
-        data: { completedAt: new Date(), correctCount, questionCount: answered },
-      });
+      progress = await this.addXp(userId, sessionBonusXp(answered, correctCount), { allowStreak: !allExtra || (await this.queueEmpty(userId)) });
+      bonus = progress.xpGained;
     }
     const missed = [...new Map(logs.filter((l) => !l.correct).map((l) => [l.vocabId, l])).values()];
     const tomorrow = (await this.forecast(userId))[0]?.count ?? 0;
@@ -441,13 +533,18 @@ export class PracticeEngineService {
       accuracy: answered ? round2(correctCount / answered) : 0,
       xpEarned: logs.reduce((s, l) => s + l.xp, 0) + bonus,
       bonusXp: bonus,
-      newWords: logs.filter((l) => l.intervalBefore === 0 && l.correct).length,
+      newWords: new Set(logs.filter((l) => l.stateBefore === 0 && l.correct).map((l) => l.vocabId)).size,
       mistakes: missed.map((l) => ({ vocabId: l.vocabId, word: l.vocab.lemma, translation: l.vocab.translation, nextDueAt: l.vocab.dueAt })),
       hardest: missed.slice(0, 3).map((l) => l.vocab.lemma),
       dueTomorrow: tomorrow,
       ...(progress ?? this.publicStats(await this.todayStats(userId))),
     };
   }
+}
+
+/** answerIds are client-generated; prefix with the user so two users can never collide (m2). */
+export function scopedAnswerId(userId: string, answerId: string) {
+  return `${userId}:${answerId}`;
 }
 
 function round2(n: number) {

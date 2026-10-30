@@ -11,6 +11,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  MaxLength,
   MinLength,
   ValidateIf,
 } from 'class-validator';
@@ -226,4 +227,18 @@ export class UpdateAiLimitsDto {
   @IsInt()
   @Min(0)
   aiDailyLimit?: number;
+}
+
+/** REVIEW m10: validated refund body (full refunds only; amountUzs must equal the payment). */
+export class RefundPaymentDto {
+  @IsString()
+  @MinLength(3)
+  @MaxLength(500)
+  reason!: string;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  amountUzs?: number;
 }
