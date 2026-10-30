@@ -55,6 +55,9 @@ object PlayPurchaseLogic {
         else -> have >= need
     }
 
+    /** N2-M1: price shown for a one-time product: multi-offer list first, else the single-offer details. */
+    fun priceOf(firstOfMultiOffer: String?, singleOffer: String?): String? = firstOfMultiOffer ?: singleOffer
+
     /** Base-plan offer = the offer without an offerId; fall back to the first offer. */
     fun <T> baseOffer(offers: List<T>, offerId: (T) -> String?): T? = offers.firstOrNull { offerId(it) == null } ?: offers.firstOrNull()
 }

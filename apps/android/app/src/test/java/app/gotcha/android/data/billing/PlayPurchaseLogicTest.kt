@@ -65,4 +65,11 @@ class PlayPurchaseLogicTest {
         assertEquals("trial", PlayPurchaseLogic.baseOffer(listOf("trial" to "o1")) { it.second }?.first)
         assertNull(PlayPurchaseLogic.baseOffer(emptyList<Pair<String, String?>>()) { it.second })
     }
+
+    @Test fun bookPriceFallsBackToSingleOffer() {
+        // N2-M1: PBL 8+/9 only fills the offer list for multi-offer products.
+        assertEquals("UZS 25,000", PlayPurchaseLogic.priceOf(null, "UZS 25,000"))
+        assertEquals("UZS 19,000", PlayPurchaseLogic.priceOf("UZS 19,000", "UZS 25,000"))
+        assertNull(PlayPurchaseLogic.priceOf(null, null))
+    }
 }

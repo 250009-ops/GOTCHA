@@ -17,8 +17,8 @@ import com.android.billingclient.api.ProductDetails
 import com.android.billingclient.api.Purchase
 import com.android.billingclient.api.PurchasesUpdatedListener
 import com.android.billingclient.api.QueryProductDetailsParams
+import com.android.billingclient.api.QueryProductDetailsResult
 import com.android.billingclient.api.QueryPurchasesParams
-import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.sync.Mutex
@@ -84,15 +84,27 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
         code, BillingClient.BillingResponseCode.OK, BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED, BillingClient.BillingResponseCode.USER_CANCELED,
     )
 
-    /** PBL 8+: products Play couldn't return come back in unfetchedProductList instead of silently missing. */
+    /**
+     * PBL 8+: uses the callback API because only QueryProductDetailsResult carries unfetchedProductList (the ktx
+     * ProductDetailsResult drops it). N2-m5: unfetched products are logged with their status code.
+     */
     private suspend fun productDetails(sku: String, type: String): ProductDetails? {
         connect()
-        val res = client.queryProductDetails(
-            QueryProductDetailsParams.newBuilder().setProductList(
-                listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(type).build()),
-            ).build(),
-        )
-        return res.productDetailsList?.firstOrNull { it.productId == sku }
+        val params = QueryProductDetailsParams.newBuilder().setProductList(
+            listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(type).build()),
+        ).build()
+        val res: QueryProductDetailsResult? = suspendCancellableCoroutine { cont ->
+            client.queryProductDetailsAsync(params) { br, r ->
+                if (br.responseCode != BillingClient.BillingResponseCode.OK) {
+                    android.util.Log.w("PlayBilling", "queryProductDetails $sku failed: ${br.responseCode} ${br.debugMessage}")
+                }
+                if (cont.isActive) cont.resume(r)
+            }
+        }
+        res?.unfetchedProductList?.forEach { u ->
+            android.util.Log.w("PlayBilling", "unfetched product ${u.productId}: statusCode=${u.statusCode} (check Play Console: product active, country, app version)")
+        }
+        return res?.productDetailsList?.firstOrNull { it.productId == sku }
     }
 
     private suspend fun launch(sku: String, type: String): Purchase? = flowLock.withLock {
@@ -144,7 +156,10 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
     /** PM3: the localized price Google Play will actually charge (null if Play is unavailable). */
     suspend fun bookPrice(contentId: String): String? = runCatching {
         val sku = api.playBookSku(contentId)?.sku ?: return null
-        productDetails(sku, BillingClient.ProductType.INAPP)?.oneTimePurchaseOfferDetailsList?.firstOrNull()?.formattedPrice
+        // N2-M1: the list is only set for multi-offer products; single-price books use oneTimePurchaseOfferDetails.
+        productDetails(sku, BillingClient.ProductType.INAPP)?.let { d ->
+            PlayPurchaseLogic.priceOf(d.oneTimePurchaseOfferDetailsList?.firstOrNull()?.formattedPrice, d.oneTimePurchaseOfferDetails?.formattedPrice)
+        }
     }.getOrNull()
 
     /** Pays for one import with the Play SKU mapped to the quoted page tier; returns the server payment id. */

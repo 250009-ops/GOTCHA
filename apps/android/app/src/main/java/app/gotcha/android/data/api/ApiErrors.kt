@@ -94,7 +94,6 @@ fun Throwable.networkUserMessage(): String? {
     }
 }
 
-/** Human-readable message from the API body, falling back to a safe user-facing string. */
 /** Interface language for messages built outside composition (set by LearnerShell). */
 object ApiErrorLanguage {
     @Volatile var current: String? = null
@@ -107,6 +106,7 @@ fun rateLimitMessage(lang: String? = ApiErrorLanguage.current): String = when (l
     else -> "Too many requests. Please wait a moment and try again."
 }
 
+/** Human-readable message from the API body, falling back to a safe user-facing string. */
 fun Throwable.apiErrorMessage(fallback: String = "Something went wrong"): String {
     networkUserMessage()?.let { return it }
     val http = this as? HttpException

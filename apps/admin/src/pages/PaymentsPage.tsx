@@ -90,7 +90,8 @@ export default function PaymentsPage() {
       const res = await api<{ note?: string }>(`/admin/payments/${refund.id}/refund${finalizeMode ? '/finalize' : ''}`, {
         method: 'POST',
         // Full refunds only; the same key is reused if the admin retries this dialog.
-        headers: { 'Idempotency-Key': idemKey },
+        // The finalize endpoint has no idempotency (its refunding→refunded move is conditional).
+        ...(finalizeMode ? {} : { headers: { 'Idempotency-Key': idemKey } }),
         body: JSON.stringify({ reason }),
       });
       setMsg(res.note ?? (finalizeMode ? 'Refund closed as completed.' : 'Refund recorded.'));
