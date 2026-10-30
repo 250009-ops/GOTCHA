@@ -348,10 +348,10 @@ function TappableMessageText({
               'cursor-pointer underline underline-offset-[3px] rounded-[4px] px-0.5 -mx-px transition-colors',
               mine
                 ? 'decoration-white/80 hover:bg-white/20 hover:decoration-white'
-                : 'decoration-[#c4b4ff] hover:bg-[#f5f3ff] hover:decoration-[#7f22fe]',
+                : 'decoration-g-blue-200 hover:bg-g-blue-50 hover:decoration-g-blue-700',
               selected && (mine
-                ? 'font-semibold bg-white text-[#4d179a] decoration-[#4d179a] decoration-2 shadow-sm'
-                : 'font-semibold bg-[#ede9fe] text-[#4d179a] decoration-[#7f22fe] decoration-2'),
+                ? 'font-semibold bg-white text-g-blue-900 decoration-g-blue-900 decoration-2 shadow-sm'
+                : 'font-semibold bg-g-blue-50 text-g-blue-900 decoration-g-blue-700 decoration-2'),
             )}
           >
             {part.value}
@@ -396,7 +396,7 @@ function ToLangPicker({
       >
         <span className="text-[11px] font-semibold text-[#99a1af]">{chatToLabel(uiLang)}</span>
         {chatLangName(selected, uiLang)}
-        <Languages className="w-3.5 h-3.5 text-[#7008e7]" />
+        <Languages className="w-3.5 h-3.5 text-g-blue-700" />
         <ChevronDown className="w-3.5 h-3.5 text-[#99a1af]" />
       </button>
       {open && (
@@ -415,8 +415,8 @@ function ToLangPicker({
                 setOpen(false);
               }}
               className={cx(
-                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[#f5f3ff]',
-                code === selected && 'bg-[#f5f3ff] font-semibold',
+                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-g-blue-50',
+                code === selected && 'bg-g-blue-50 font-semibold',
               )}
             >
               <span>{chatLangFlag(code)}</span>
@@ -503,8 +503,8 @@ function WordMeaningPanel({
         {savedMsg ? <p className="text-sm text-[#047857]">{savedMsg}</p> : null}
 
         {!sentenceLike && (naturalMeaning || loading) ? (
-          <section className="rounded-xl bg-[#f5f3ff] p-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">{reader.naturalMeaning}</h3>
+          <section className="rounded-xl bg-g-blue-50 p-3">
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-g-blue-700 mb-2">{reader.naturalMeaning}</h3>
             <p className="text-sm text-[#0f1729] leading-6">
               {loading ? '…' : (naturalMeaning || lookup?.translation || reader.lookupError)}
             </p>
@@ -512,8 +512,8 @@ function WordMeaningPanel({
         ) : null}
 
         {lookup?.translation && (sentenceLike || lookup.translation.trim() !== naturalMeaning) ? (
-          <section className={sentenceLike ? 'rounded-xl bg-[#f5f3ff] p-3' : undefined}>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">{reader.translation}</h3>
+          <section className={sentenceLike ? 'rounded-xl bg-g-blue-50 p-3' : undefined}>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-g-blue-700 mb-2">{reader.translation}</h3>
             <p className="text-sm text-[#0f1729] leading-6 whitespace-pre-wrap break-words">{lookup.translation}</p>
           </section>
         ) : null}
@@ -532,7 +532,7 @@ function WordMeaningPanel({
           type="button"
           disabled={!canAct}
           onClick={onSave}
-          className="h-10 rounded-xl bg-[#7f22fe] text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+          className="h-10 rounded-xl bg-g-blue-700 text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
         >
           {reader.save}
         </button>
@@ -1270,7 +1270,7 @@ export default function MessagesPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder={msg.searchPlaceholder}
-              className="w-full h-9 pl-9 pr-3 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] text-sm outline-none focus:border-[#7008e7] focus:ring-1 focus:ring-[#7008e7]/40"
+              className="w-full h-9 pl-9 pr-3 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] text-sm outline-none focus:border-g-blue-700 focus:ring-1 focus:ring-g-blue-700/40"
             />
           </div>
         </div>
@@ -1286,7 +1286,7 @@ export default function MessagesPage() {
                   key={s.id}
                   type="button"
                   onClick={() => openPeerProfile(s.id)}
-                  className="w-[130px] shrink-0 rounded-2xl border border-[#e5e7eb] bg-white p-3 text-left hover:border-[#7008e7]/40 transition-colors"
+                  className="w-[130px] shrink-0 rounded-2xl border border-[#e5e7eb] bg-white p-3 text-left hover:border-g-blue-700/40 transition-colors"
                 >
                   <div className="flex flex-col items-center gap-2">
                     <UserAvatar name={s.displayName} url={s.avatarUrl} size={40} online={s.online} />
@@ -1317,7 +1317,7 @@ export default function MessagesPage() {
             <div className="p-6 text-sm text-[#99a1af]">{copy.common.loading}</div>
           ) : conversations.length === 0 ? (
             <div className="p-6 text-sm text-[#99a1af] flex flex-col items-center gap-2 text-center">
-              <MessageSquare className="w-8 h-8 text-[#c4b4ff]" />
+              <MessageSquare className="w-8 h-8 text-g-blue-200" />
               <p>{mp.noConversationsHint}</p>
             </div>
           ) : (
@@ -1362,13 +1362,13 @@ export default function MessagesPage() {
                       <p className={cx('text-xs truncate flex items-center gap-1', c.lastMessage?.deleted ? 'text-[#99a1af] italic' : 'text-[#4a5565]')}>
                         {c.lastMessage?.senderId === user?.id && !c.lastMessage?.deleted && (
                           c.lastMessage?.status === 'read'
-                            ? <CheckCheck className="w-3.5 h-3.5 text-[#7008e7] shrink-0" />
+                            ? <CheckCheck className="w-3.5 h-3.5 text-g-blue-700 shrink-0" />
                             : <Check className="w-3 h-3 text-[#99a1af] shrink-0" />
                         )}
                         <span className="truncate">{c.lastMessage?.body ?? msg.noConversations}</span>
                       </p>
                       {c.unreadCount > 0 && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#7008e7] text-white text-[10px] font-extrabold flex items-center justify-center">
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-white text-[10px] font-extrabold flex items-center justify-center">
                           {c.unreadCount}
                         </span>
                       )}
@@ -1414,7 +1414,7 @@ export default function MessagesPage() {
                 <button
                   type="button"
                   onClick={() => openPeerProfile(detail.peer?.id)}
-                  className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-[#f5f3ff] px-1 py-0.5"
+                  className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-g-blue-50 px-1 py-0.5"
                 >
                 <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
                 <div className="min-w-0">
@@ -1423,7 +1423,7 @@ export default function MessagesPage() {
                   </div>
                   <div className={cx(
                     'text-[11px] truncate',
-                    detail.peer?.typing ? 'text-[#7008e7] font-semibold' : detail.peer?.online ? 'text-[#16a34a]' : 'text-[#99a1af]',
+                    detail.peer?.typing ? 'text-g-blue-700 font-semibold' : detail.peer?.online ? 'text-[#16a34a]' : 'text-[#99a1af]',
                   )}>
                     {presenceLabel(detail.peer, mp, copy.commonExt) || detail.peer?.handle}
                   </div>
@@ -1435,10 +1435,10 @@ export default function MessagesPage() {
 
             {!tipDismissed && (
               <div className="bg-[#f4efff] border-b border-[#d3c2ff] px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0">
-                <p className="text-[12px] text-[#5b21b6] leading-5">{mp.chatTip}</p>
+                <p className="text-[12px] text-g-blue-800 leading-5">{mp.chatTip}</p>
                 <button
                   type="button"
-                  className="text-[#7c3aed] hover:text-[#5b21b6] text-sm leading-none px-1"
+                  className="text-g-blue-700 hover:text-g-blue-800 text-sm leading-none px-1"
                   onClick={() => setTipDismissed(true)}
                   aria-label={copy.commonExt.close}
                 >
@@ -1447,7 +1447,7 @@ export default function MessagesPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-3 bg-[#f5f3ff]">
+            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-3 bg-g-blue-50">
               {loadingThread && detail.messages.length === 0 ? (
                 <p className="text-sm text-[#99a1af]">{copy.common.loading}</p>
               ) : (
@@ -1504,7 +1504,7 @@ export default function MessagesPage() {
                             m.deleted
                               ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic shadow-none'
                               : mine
-                                ? 'rounded-2xl rounded-br-md bg-[#7f22fe] text-white'
+                                ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-white'
                                 : 'rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-gray-900',
                           )}
                         >
@@ -1512,10 +1512,10 @@ export default function MessagesPage() {
                             <div
                               className={cx(
                                 'mb-2 pl-2 border-l-2 text-[12px] leading-4',
-                                mine ? 'border-white/50 text-white/80' : 'border-[#7008e7] text-[#6a7282]',
+                                mine ? 'border-white/50 text-white/80' : 'border-g-blue-700 text-[#6a7282]',
                               )}
                             >
-                              <div className={cx('font-semibold', mine ? 'text-white' : 'text-[#7008e7]')}>
+                              <div className={cx('font-semibold', mine ? 'text-white' : 'text-g-blue-700')}>
                                 {replyName}
                               </div>
                               <div className="line-clamp-2 break-words">
@@ -1575,7 +1575,7 @@ export default function MessagesPage() {
                               type="button"
                               className={cx(
                                 'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] bg-white/80 border border-[#e5e7eb] shadow-sm hover:bg-white hover:text-[#4a5565] cursor-pointer',
-                                menuId === m.id && 'bg-white text-[#4a5565] border-[#c4b4ff]',
+                                menuId === m.id && 'bg-white text-[#4a5565] border-g-blue-200',
                               )}
                               aria-label={copy.commonExt.confirm}
                               onClick={() => setMenuId((id) => (id === m.id ? null : m.id))}
@@ -1598,16 +1598,16 @@ export default function MessagesPage() {
                                 >
                                   <button
                                     type="button"
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
+                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-g-blue-50 cursor-pointer"
                                     onClick={() => startReply(m)}
                                   >
-                                    <CornerUpLeft className="w-3.5 h-3.5 text-[#7008e7]" />
+                                    <CornerUpLeft className="w-3.5 h-3.5 text-g-blue-700" />
                                     {mp.reply}
                                   </button>
                                   {canEditMessage(m) && (
                                     <button
                                       type="button"
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
+                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-g-blue-50 cursor-pointer"
                                       onClick={() => startEdit(m)}
                                     >
                                       <Pencil className="w-3.5 h-3.5 text-[#6a7282]" />
@@ -1639,7 +1639,7 @@ export default function MessagesPage() {
                           ) : m.status === 'failed' ? (
                             <span className="text-red-500">!</span>
                           ) : m.status === 'read' ? (
-                            <CheckCheck className="w-3.5 h-3.5 text-[#7008e7]" />
+                            <CheckCheck className="w-3.5 h-3.5 text-g-blue-700" />
                           ) : (
                             <Check className="w-3 h-3" />
                           )
@@ -1651,7 +1651,7 @@ export default function MessagesPage() {
               )}
               {detail.peer?.typing && (
                 <div className="flex justify-start">
-                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold shadow-sm">
+                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-[13px] text-g-blue-700 font-semibold shadow-sm">
                     {mp.typing}
                   </div>
                 </div>
@@ -1670,9 +1670,9 @@ export default function MessagesPage() {
 
             <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
               {(replyTo || editing) && (
-                <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#f5f3ff] px-3 py-2">
-                  <div className="min-w-0 flex-1 border-l-2 border-[#7008e7] pl-2">
-                    <p className="text-[11px] font-bold text-[#7008e7]">
+                <div className="mb-2 flex items-start gap-2 rounded-xl bg-g-blue-50 px-3 py-2">
+                  <div className="min-w-0 flex-1 border-l-2 border-g-blue-700 pl-2">
+                    <p className="text-[11px] font-bold text-g-blue-700">
                       {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (detail.peer?.displayName ?? mp.you))}
                     </p>
                     <p className="text-xs text-[#6a7282] truncate">
@@ -1714,7 +1714,7 @@ export default function MessagesPage() {
                   type="button"
                   disabled={sending || !draft.trim()}
                   onClick={() => void send()}
-                  className="w-10 h-10 rounded-full bg-[#7008e7] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
+                  className="w-10 h-10 rounded-full bg-g-blue-700 text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
                   aria-label={editing ? copy.common.saveChanges : msg.send}
                 >
                   <Send className="w-4 h-4" />

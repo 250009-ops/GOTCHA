@@ -81,7 +81,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 const PAGE_SIZE = 15;
 
 const langBadge: Record<string, string> = {
-  fr: 'bg-violet-50 text-[#6c1d95]',
+  fr: 'bg-violet-50 text-g-blue-700',
   en: 'bg-sky-50 text-sky-700',
   ru: 'bg-amber-50 text-amber-700',
   uz: 'bg-fuchsia-50 text-fuchsia-700',
@@ -342,7 +342,7 @@ export default function ContentPage() {
                 className={cn(
                   'px-3 py-2.5 text-sm font-semibold border-b-2 -mb-px transition',
                   tab === t.id
-                    ? 'border-[#6c1d95] text-[#6c1d95]'
+                    ? 'border-g-blue-700 text-g-blue-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800',
                 )}
               >
@@ -430,7 +430,7 @@ export default function ContentPage() {
                 {licenses.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3 text-sm font-medium">{item.rightsHolder}</td>
-                    <td className="px-4 py-3"><Badge className="bg-violet-50 text-[#6c1d95]">{item.status}</Badge></td>
+                    <td className="px-4 py-3"><Badge className="bg-violet-50 text-g-blue-700">{item.status}</Badge></td>
                     <td className="px-4 py-3 text-sm text-slate-500">{item.attributionText}</td>
                   </tr>
                 ))}
@@ -485,7 +485,7 @@ export default function ContentPage() {
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-g-blue-700"
                       aria-label="Preview reading screen"
                       title="Preview reading screen"
                       onClick={() => setPreviewId(item.id)}
@@ -494,7 +494,7 @@ export default function ContentPage() {
                     </button>
                     <button
                       type="button"
-                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-g-blue-700"
                       aria-label="Edit"
                       onClick={() => navigate(`/content/${item.id}/edit`)}
                     >

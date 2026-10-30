@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -266,7 +267,7 @@ fun VocabularyScreen(
                                     )
                                 }
                                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    VocabStatChip("Learning", totalLearning, Icons.Outlined.Psychology, Color(0xFF1447E6), Color(0xFFEFF6FF), Color(0xFFBEDBFF), Modifier.weight(1f))
+                                    VocabStatChip("Learning", totalLearning, Icons.Outlined.Psychology, GotchaBlue.LearningText, GotchaBlue.LearningBg, Color(0xFFBEDBFF), Modifier.weight(1f))
                                     VocabStatChip("Mastered", totalKnown, Icons.Outlined.CheckCircle, Color(0xFF007A55), Color(0xFFECFDF5), Color(0xFFA4F4CF), Modifier.weight(1f))
                                 }
                             }

@@ -21,7 +21,7 @@ export type LibraryPreviewItem = {
 };
 
 const COVER_GRADIENTS = [
-  'linear-gradient(148deg, #8e51ff 0%, #ad46ff 50%, #4f39f6 100%)',
+  'linear-gradient(148deg, var(--g-blue-500) 0%, var(--g-blue-400) 50%, #4f39f6 100%)',
   'linear-gradient(142deg, #00d492 0%, #00bba7 50%, #0092b8 100%)',
   'linear-gradient(142deg, #fb2c6b 0%, #f6339a 50%, #e60076 100%)',
   'linear-gradient(148deg, #2b7fff 0%, #6a5cff 50%, #4f39f6 100%)',
@@ -32,7 +32,7 @@ const cefrStyle: Record<string, string> = {
   a2: 'bg-teal-100 text-teal-700',
   b1: 'bg-blue-100 text-blue-700',
   b2: 'bg-indigo-100 text-indigo-700',
-  c1: 'bg-violet-100 text-[#7008e7]',
+  c1: 'bg-violet-100 text-g-blue-700',
   c2: 'bg-pink-100 text-pink-700',
 };
 
@@ -118,7 +118,7 @@ function LearnerCard({
               {formatWordCount(item.wordCount)}
             </span>
             <span className="capitalize">{item.contentType.replace('_', ' ')}</span>
-            {showPrice ? <span className="text-[#7008e7] font-semibold">{formatUzs(price)}</span> : null}
+            {showPrice ? <span className="text-g-blue-700 font-semibold">{formatUzs(price)}</span> : null}
           </div>
         </div>
       </div>
@@ -126,7 +126,7 @@ function LearnerCard({
   }
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100/80 overflow-hidden text-left flex flex-col w-full h-full ring-2 ring-[#7008e7] ring-offset-2">
+    <div className="bg-white rounded-2xl border border-gray-100/80 overflow-hidden text-left flex flex-col w-full h-full ring-2 ring-g-blue-700 ring-offset-2">
       <div className="relative shrink-0 w-full aspect-[3/4]">
         <CoverArt item={item} />
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
@@ -140,7 +140,7 @@ function LearnerCard({
         </div>
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {showPrice ? (
-            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-[#7008e7] shadow-sm">
+            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-g-blue-700 shadow-sm">
               {formatUzs(price)}
             </span>
           ) : null}
@@ -193,11 +193,11 @@ export function LibraryPreviewModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="library-preview-title"
-        className="relative z-10 flex w-full max-w-5xl max-h-full flex-col overflow-hidden rounded-2xl bg-[#F5F3FF] shadow-2xl"
+        className="relative z-10 flex w-full max-w-5xl max-h-full flex-col overflow-hidden rounded-2xl bg-g-blue-50 shadow-2xl"
       >
         <header className="shrink-0 flex flex-wrap items-center gap-3 border-b border-gray-200/80 bg-white px-4 py-3">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#7008e7]">Learner library</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-g-blue-700">Learner library</p>
             <h2 id="library-preview-title" className="text-sm font-bold text-gray-900 truncate">
               Preview: {item.title}
             </h2>
@@ -206,14 +206,14 @@ export function LibraryPreviewModal({
             <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
               <button
                 type="button"
-                className={cn('rounded-md px-2.5 py-1 text-xs font-semibold', locked ? 'bg-[#7f22fe] text-white' : 'text-gray-600')}
+                className={cn('rounded-md px-2.5 py-1 text-xs font-semibold', locked ? 'bg-g-blue-700 text-white' : 'text-gray-600')}
                 onClick={() => setLocked(true)}
               >
                 Locked
               </button>
               <button
                 type="button"
-                className={cn('rounded-md px-2.5 py-1 text-xs font-semibold', !locked ? 'bg-[#7f22fe] text-white' : 'text-gray-600')}
+                className={cn('rounded-md px-2.5 py-1 text-xs font-semibold', !locked ? 'bg-g-blue-700 text-white' : 'text-gray-600')}
                 onClick={() => setLocked(false)}
               >
                 Owned
@@ -223,7 +223,7 @@ export function LibraryPreviewModal({
               <button
                 type="button"
                 aria-label="Grid view"
-                className={cn('size-8 grid place-items-center rounded-md', view === 'grid' ? 'bg-[#f4efff] text-[#7f22fe]' : 'text-gray-500')}
+                className={cn('size-8 grid place-items-center rounded-md', view === 'grid' ? 'bg-[#f4efff] text-g-blue-700' : 'text-gray-500')}
                 onClick={() => setView('grid')}
               >
                 <Grid3X3 className="size-3.5" />
@@ -231,7 +231,7 @@ export function LibraryPreviewModal({
               <button
                 type="button"
                 aria-label="List view"
-                className={cn('size-8 grid place-items-center rounded-md', view === 'list' ? 'bg-[#f4efff] text-[#7f22fe]' : 'text-gray-500')}
+                className={cn('size-8 grid place-items-center rounded-md', view === 'list' ? 'bg-[#f4efff] text-g-blue-700' : 'text-gray-500')}
                 onClick={() => setView('list')}
               >
                 <List className="size-3.5" />
@@ -266,7 +266,7 @@ export function LibraryPreviewModal({
                 key={f}
                 className={cn(
                   'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border',
-                  f === 'All' ? 'bg-[#7f22fe] text-white border-[#7f22fe]' : 'bg-white text-gray-600 border-gray-200',
+                  f === 'All' ? 'bg-g-blue-700 text-white border-g-blue-700' : 'bg-white text-gray-600 border-gray-200',
                 )}
               >
                 {f}

@@ -131,7 +131,7 @@ export default function LanguagesPage() {
           value={`${data.stats.avgCefrCoverage}%`}
           hint={
             <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1">
-              <div className="h-full bg-[#6c1d95]" style={{ width: `${data.stats.avgCefrCoverage}%` }} />
+              <div className="h-full bg-g-blue-700" style={{ width: `${data.stats.avgCefrCoverage}%` }} />
             </div>
           }
         />
@@ -199,7 +199,7 @@ export default function LanguagesPage() {
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <div className="h-2 w-[120px] rounded-full bg-slate-100 overflow-hidden">
-                        <div className="h-full bg-[#7c3aed]" style={{ width: `${lang.cefrCoverage}%` }} />
+                        <div className="h-full bg-g-blue-700" style={{ width: `${lang.cefrCoverage}%` }} />
                       </div>
                       <span className="text-xs font-semibold">{lang.cefrCoverage}%</span>
                     </div>

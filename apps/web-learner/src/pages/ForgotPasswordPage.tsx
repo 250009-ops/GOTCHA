@@ -89,13 +89,13 @@ export default function ForgotPasswordPage() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
                     autoComplete="email"
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                   />
                 </div>
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                  className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -110,7 +110,7 @@ export default function ForgotPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">{copy.auth.hasAccount}</span>
-                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-g-blue-700 font-bold hover:text-g-blue-800">
                   {copy.auth.signIn}
                 </Link>
               </div>
@@ -132,7 +132,7 @@ export default function ForgotPasswordPage() {
               </div>
 
               <div className="flex justify-center py-2">
-                <div className="flex items-center justify-center size-16 rounded-2xl bg-[#f3f0ff] text-[#7f22fe]">
+                <div className="flex items-center justify-center size-16 rounded-2xl bg-[#f3f0ff] text-g-blue-700">
                   <Mail className="w-8 h-8" />
                 </div>
               </div>
@@ -151,7 +151,7 @@ export default function ForgotPasswordPage() {
                     toast.message(copy.authPages.openInboxHint(email));
                   }
                 }}
-                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
               >
                 {copy.authPages.openEmailApp}
               </Button>
@@ -162,7 +162,7 @@ export default function ForgotPasswordPage() {
                   type="button"
                   onClick={() => void resend()}
                   disabled={loading}
-                  className="text-[#7f22fe] font-semibold underline underline-offset-2 disabled:opacity-60"
+                  className="text-g-blue-700 font-semibold underline underline-offset-2 disabled:opacity-60"
                 >
                   {loading ? copy.authPages.sending : copy.authPages.resendEmail}
                 </button>
@@ -170,7 +170,7 @@ export default function ForgotPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">{copy.auth.hasAccount}</span>
-                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-g-blue-700 font-bold hover:text-g-blue-800">
                   {copy.auth.signIn}
                 </Link>
               </div>

@@ -34,7 +34,7 @@ function growthHint(pct: number, prior?: number, current = 0) {
   return <span className={color}>{sign}{pct}% vs prior</span>;
 }
 
-export default function AnalyticsPage() {
+export default function AnalyticsPage({ embedded = false }: { embedded?: boolean } = {}) {
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [range, setRange] = useState('30d');
   const [loading, setLoading] = useState(false);
@@ -65,7 +65,7 @@ export default function AnalyticsPage() {
   return (
     <div>
       <PageHeader
-        title="Analytics"
+        title={embedded ? 'Engagement' : 'Analytics'}
         subtitle="Live learner reading, vocabulary, imports, and target-language mix."
         actions={
           <div className="flex gap-2">
@@ -88,6 +88,11 @@ export default function AnalyticsPage() {
       <div className="mb-4">
         <Badge className="bg-violet-50 text-violet-700">Live platform data</Badge>
       </div>
+      {data.source === 'seed' && (
+        // Audit P1 #12: never show seeded numbers as if they were real.
+        <Card className="p-8 text-center text-sm text-slate-500">No data yet — engagement appears once learners start reading.</Card>
+      )}
+      {data.source !== 'seed' && (<>
 
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6">
         <StatCard
@@ -163,7 +168,7 @@ export default function AnalyticsPage() {
           ) : (
             <BarChart
               data={data.cefrDistribution.map((c) => ({ label: c.level, value: c.count }))}
-              color="#a78bfa"
+              color="var(--g-blue-200)"
               fade={false}
             />
           )}
@@ -181,6 +186,7 @@ export default function AnalyticsPage() {
           )}
         </Card>
       </div>
+      </>)}
     </div>
   );
 }

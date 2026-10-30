@@ -81,14 +81,14 @@ export default function ResetPasswordPage() {
             <Button
               type="button"
               onClick={() => tryOpenGotchaAuthApp('reset-password', token, searchParams)}
-              className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+              className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
             >
               {copy.authPages.openGotchaApp}
             </Button>
             <button
               type="button"
               onClick={() => setUseWebFlow(true)}
-              className="text-sm font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+              className="text-sm font-semibold text-g-blue-700 hover:text-g-blue-800"
             >
               {copy.authPages.continueOnWeb}
             </button>
@@ -116,7 +116,7 @@ export default function ResetPasswordPage() {
               <Button
                 type="button"
                 onClick={() => navigate(loginPath)}
-                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
               >
                 {copy.auth.signIn}
               </Button>
@@ -130,13 +130,13 @@ export default function ResetPasswordPage() {
               <Button
                 type="button"
                 onClick={() => navigate('/forgot-password')}
-                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
               >
                 {copy.authPages.forgotTitle}
               </Button>
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">{copy.auth.hasAccount}</span>
-                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-g-blue-700 font-bold hover:text-g-blue-800">
                   {copy.auth.signIn}
                 </Link>
               </div>
@@ -158,7 +158,7 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={copy.auth.passwordPlaceholderRegister}
                       autoComplete="new-password"
-                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                     />
                     <button
                       type="button"
@@ -179,7 +179,7 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setConfirm(e.target.value)}
                       placeholder={copy.authPages.resetConfirmPlaceholder}
                       autoComplete="new-password"
-                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                     />
                     <button
                       type="button"
@@ -198,7 +198,7 @@ export default function ResetPasswordPage() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                  className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -213,7 +213,7 @@ export default function ResetPasswordPage() {
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">
                 <span className="text-[#6b7280]">{copy.auth.hasAccount}</span>
-                <Link to={loginPath} className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]">
+                <Link to={loginPath} className="text-g-blue-700 font-bold hover:text-g-blue-800">
                   {copy.auth.signIn}
                 </Link>
               </div>

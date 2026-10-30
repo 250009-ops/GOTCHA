@@ -2,6 +2,7 @@ package app.gotcha.android.ui.theme
 
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -11,19 +12,44 @@ import androidx.compose.ui.unit.sp
 
 private val ColorError = Color(0xFFDC2626)
 
+/** Light M3 scheme — GOTCHA Blue (DESIGN-practice.md §0 mapping table). */
 private val GotchaColorScheme = lightColorScheme(
-    primary = GotchaColors.BrandPurple,
+    primary = GotchaBlue.B700,
     onPrimary = GotchaColors.SurfaceCard,
-    secondary = GotchaColors.BrandPurpleDeep,
+    primaryContainer = GotchaBlue.B50,
+    onPrimaryContainer = GotchaBlue.B700,
+    secondary = GotchaBlue.B800,
     onSecondary = GotchaColors.SurfaceCard,
     background = GotchaColors.Surface,
     onBackground = GotchaColors.Ink,
     surface = GotchaColors.SurfaceCard,
     onSurface = GotchaColors.Ink,
-    surfaceVariant = GotchaColors.BrandPurpleSoft,
+    surfaceVariant = GotchaBlue.InfoBg,
     onSurfaceVariant = GotchaColors.TextMuted,
     outline = GotchaColors.Border,
     error = ColorError,
+)
+
+/** Dark M3 scheme (DESIGN-practice.md §0): ink ramp surfaces, Blue300 primary, Blue500 containers. */
+private val GotchaDarkColorScheme = darkColorScheme(
+    primary = GotchaBlue.B300,
+    onPrimary = GotchaBlue.DarkBase,
+    primaryContainer = GotchaBlue.B500,
+    onPrimaryContainer = Color.White,
+    secondary = GotchaBlue.B400,
+    onSecondary = GotchaBlue.DarkBase,
+    background = GotchaBlue.DarkBase,
+    onBackground = GotchaBlue.DarkText,
+    surface = GotchaBlue.DarkCard,
+    onSurface = GotchaBlue.DarkText,
+    surfaceVariant = GotchaBlue.DarkRaised,
+    onSurfaceVariant = GotchaBlue.DarkText2,
+    surfaceContainerLow = GotchaBlue.DarkRaised,
+    surfaceContainerHigh = GotchaBlue.DarkOverlay,
+    outline = GotchaBlue.DarkBorderStrong,
+    outlineVariant = GotchaBlue.DarkBorder,
+    error = GotchaBlue.DarkError,
+    onError = GotchaBlue.DarkBase,
 )
 
 private val GotchaTypography = Typography(
@@ -92,10 +118,14 @@ private val GotchaTypography = Typography(
     ),
 )
 
+/**
+ * [darkTheme] is opt-in: most screens still paint GotchaColors (light) directly, so following the system
+ * dark mode would mix schemes. Flip the default to `isSystemInDarkTheme()` once screens use MaterialTheme roles.
+ */
 @Composable
-fun GotchaTheme(content: @Composable () -> Unit) {
+fun GotchaTheme(darkTheme: Boolean = false, content: @Composable () -> Unit) {
     MaterialTheme(
-        colorScheme = GotchaColorScheme,
+        colorScheme = if (darkTheme) GotchaDarkColorScheme else GotchaColorScheme,
         typography = GotchaTypography,
         content = content,
     )

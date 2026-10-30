@@ -53,9 +53,9 @@ function relativeTime(
 function visual(kind: string) {
   switch (kind) {
     case 'content':
-      return { icon: BookOpen, bg: 'bg-[#f3e8ff]', fg: 'text-[#7008e7]' };
+      return { icon: BookOpen, bg: 'bg-g-blue-50', fg: 'text-g-blue-700' };
     case 'message':
-      return { icon: MessageSquare, bg: 'bg-[#e0f2fe]', fg: 'text-[#0369a1]' };
+      return { icon: MessageSquare, bg: 'bg-g-info-surface', fg: 'text-g-info-text' };
     case 'streak':
       return { icon: Flame, bg: 'bg-[#fff7ed]', fg: 'text-[#c2410c]' };
     case 'goal':
@@ -152,7 +152,7 @@ export default function NotificationsPage() {
           type="button"
           disabled={inbox.unreadCount === 0}
           onClick={() => void markAll()}
-          className="text-sm font-semibold text-[#7f22fe] disabled:text-gray-400"
+          className="text-sm font-semibold text-g-blue-700 disabled:text-gray-400"
         >
           {inbox.unreadCount > 0 ? copy.notifications.markAllRead : copy.notifications.emptyDescription}
         </button>
@@ -184,7 +184,7 @@ export default function NotificationsPage() {
               className={cn(
                 'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all capitalize',
                 filter === key
-                  ? 'bg-[#7f22fe] text-white border-[#7f22fe] shadow-sm'
+                  ? 'bg-g-blue-700 text-white border-g-blue-700 shadow-sm'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
               )}
             >
@@ -226,7 +226,7 @@ export default function NotificationsPage() {
                 className={cn(
                   'w-full text-left bg-white rounded-2xl p-4 flex gap-3 transition-all',
                   item.unread
-                    ? 'border-[1.5px] border-[#7f22fe] shadow-sm shadow-violet-100'
+                    ? 'border-[1.5px] border-g-blue-700 shadow-sm shadow-violet-100'
                     : 'border border-gray-100 hover:border-violet-200',
                 )}
               >

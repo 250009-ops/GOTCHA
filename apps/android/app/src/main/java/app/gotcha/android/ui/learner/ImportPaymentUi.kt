@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -267,7 +269,7 @@ fun ImportQuoteStepUi(
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 16.sp,
-                    color = Color(0xFF7008E7),
+                    color = GotchaBlue.B700,
                 )
             }
         }

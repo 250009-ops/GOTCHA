@@ -26,7 +26,7 @@ function EnvelopeIllustration() {
       <div className="absolute left-0 top-6 rounded-[10px] bg-[#2107aa] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(33,7,170,0.2)]">
         A
       </div>
-      <div className="absolute right-0 top-4 rounded-[10px] bg-[#6c1d95] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(108,29,149,0.2)]">
+      <div className="absolute right-0 top-4 rounded-[10px] bg-g-blue-700 px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(33, 7, 170,0.2)]">
         あ
       </div>
       <img
@@ -153,14 +153,14 @@ export default function VerifyEmailPage() {
             <Button
               type="button"
               onClick={() => tryOpenGotchaAuthApp('verify-email', token, searchParams)}
-              className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)]"
+              className="w-full h-14 rounded-[14px] bg-g-blue-700 hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
             >
               {copy.authPages.openGotchaApp}
             </Button>
             <button
               type="button"
               onClick={() => setUseWebFlow(true)}
-              className="text-sm font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+              className="text-sm font-semibold text-g-blue-700 hover:text-g-blue-800"
             >
               {copy.authPages.continueOnWeb}
             </button>
@@ -195,7 +195,7 @@ export default function VerifyEmailPage() {
               <Button
                 type="button"
                 onClick={openEmailApp}
-                className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(108,29,149,0.2)] gap-2.5"
+                className="w-full h-14 rounded-[14px] bg-g-blue-700 hover:bg-[#5a187d] font-bold text-base shadow-[0_10px_12px_rgba(33, 7, 170,0.2)] gap-2.5"
               >
                 <VerifyIcon src={a.externalLink} size={20} />
                 {copy.authPages.openEmailApp}
@@ -206,7 +206,7 @@ export default function VerifyEmailPage() {
                   type="button"
                   onClick={() => void resend()}
                   disabled={resending}
-                  className="text-[#6c1d95] underline underline-offset-2 disabled:opacity-60"
+                  className="text-g-blue-700 underline underline-offset-2 disabled:opacity-60"
                 >
                   {resending ? copy.authPages.sending : copy.authPages.resendEmail}
                 </button>
@@ -221,13 +221,13 @@ export default function VerifyEmailPage() {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@example.com"
-                className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-[#6c1d95]/20 focus:border-[#6c1d95]"
+                className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700"
               />
               <Button
                 type="button"
                 onClick={() => void resend()}
                 disabled={resending || !email}
-                className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
+                className="w-full h-14 rounded-[14px] bg-g-blue-700 hover:bg-[#5a187d] font-bold text-base"
               >
                 {resending ? copy.authPages.sending : copy.authPages.resendVerification}
               </Button>
@@ -238,7 +238,7 @@ export default function VerifyEmailPage() {
             <Button
               type="button"
               onClick={() => navigate(loginPath)}
-              className="w-full h-14 rounded-[14px] bg-[#6c1d95] hover:bg-[#5a187d] font-bold text-base"
+              className="w-full h-14 rounded-[14px] bg-g-blue-700 hover:bg-[#5a187d] font-bold text-base"
             >
               {copy.auth.signIn}
             </Button>
@@ -246,7 +246,7 @@ export default function VerifyEmailPage() {
 
           {phase === 'verifying' && (
             <div className="flex items-center gap-2 text-sm text-[#6b7280]">
-              <span className="w-4 h-4 border-2 border-[#6c1d95]/30 border-t-[#6c1d95] rounded-full animate-spin" />
+              <span className="w-4 h-4 border-2 border-g-blue-700/30 border-t-g-blue-700 rounded-full animate-spin" />
               {copy.authPages.confirmEmail}
             </div>
           )}
@@ -255,7 +255,7 @@ export default function VerifyEmailPage() {
 
           <div className="flex items-center justify-center gap-1.5 text-sm">
             <span className="font-medium text-[#6b7280]">{copy.authPages.alreadyVerified}</span>
-            <Link to={loginPath} className="font-bold text-[#6c1d95] underline underline-offset-2">
+            <Link to={loginPath} className="font-bold text-g-blue-700 underline underline-offset-2">
               {copy.auth.signIn}
             </Link>
           </div>

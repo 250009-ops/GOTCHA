@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { LanguagePicker } from './LanguagePicker';
+import { GotchaLogo } from './GotchaLogo';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
 
@@ -87,27 +88,7 @@ function useAuthMarketing(): AuthMarketing {
 }
 
 export function AuthBrandMark({ light }: { light?: boolean }) {
-  return (
-    <div className="flex items-center gap-3">
-      <div
-        className="flex items-center justify-center bg-[#2107aa] rounded-[12px]"
-        style={{ width: 40, height: 40 }}
-      >
-        <span
-          className="text-white text-2xl leading-none"
-          style={{ fontFamily: 'Bagel Fat One, cursive' }}
-        >
-          G
-        </span>
-      </div>
-      <span
-        className={`text-[20px] leading-7 tracking-[-0.5px] ${light ? 'text-white' : 'text-[#101828]'}`}
-        style={{ fontFamily: 'Bagel Fat One, cursive' }}
-      >
-        GOTCHA
-      </span>
-    </div>
-  );
+  return <GotchaLogo size={40} tone={light ? 'light' : 'ink'} />;
 }
 
 function MarketingPanel() {
@@ -116,7 +97,7 @@ function MarketingPanel() {
   const languageLine = formatLanguageList(languageNames);
 
   return (
-    <div className="hidden lg:flex flex-col w-[480px] shrink-0 relative overflow-hidden gap-6 px-10 pt-10 pb-8 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
+    <div className="hidden lg:flex flex-col w-[480px] shrink-0 relative overflow-hidden gap-6 px-10 pt-10 pb-8 bg-gradient-to-r from-g-blue-700 via-g-blue-900 via-[55%] to-g-blue-900">
       <div
         aria-hidden
         className="pointer-events-none absolute -left-[120px] -top-[120px] size-[320px] rounded-full bg-white/[0.05] blur-[40px]"
@@ -137,7 +118,7 @@ function MarketingPanel() {
             <br />
             <span className="font-bold">{copy.auth.readYourWayBold}</span>
           </h1>
-          <p className="text-[16px] leading-6 text-[#ddd6ff]">{copy.auth.authTagline}</p>
+          <p className="text-[16px] leading-6 text-g-blue-200">{copy.auth.authTagline}</p>
         </div>
 
         <div className="flex flex-col gap-3">
@@ -149,7 +130,7 @@ function MarketingPanel() {
               <span className="block shrink-0 size-2.5 rounded-full bg-[#ff8904]" />
               <div className="flex-1 min-w-0">
                 <div className="text-white font-bold text-sm leading-5">{f.title}</div>
-                <div className="text-[#c4b4ff] text-[13px] leading-[18px]">
+                <div className="text-g-blue-200 text-[13px] leading-[18px]">
                   {idx === 0 && languageLine ? copy.auth.booksInLanguages(languageLine) : f.desc}
                 </div>
               </div>
@@ -165,14 +146,14 @@ function MarketingPanel() {
               <p className="text-white text-[13px] font-semibold">
                 {copy.auth.learnersCount(learnerCount.toLocaleString('en-US'))}
               </p>
-              <p className="text-[#c4b4ff] text-xs">{copy.auth.alreadyReading}</p>
+              <p className="text-g-blue-200 text-xs">{copy.auth.alreadyReading}</p>
             </div>
             {readerInitials.length > 0 && (
               <div className="flex items-center">
                 {readerInitials.map((initials, idx) => (
                   <div
                     key={`${initials}-${idx}`}
-                    className={`flex items-center justify-center size-8 rounded-2xl border-2 border-white bg-gradient-to-r from-[#a684ff] to-[#4f39f6] text-white text-[10px] font-extrabold ${
+                    className={`flex items-center justify-center size-8 rounded-2xl border-2 border-white bg-gradient-to-r from-g-blue-200 to-[#4f39f6] text-white text-[10px] font-extrabold ${
                       idx > 0 ? '-ml-2' : ''
                     }`}
                   >
@@ -200,9 +181,9 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
       <MarketingPanel />
 
-      <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
+      <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-g-blue-700 via-g-blue-900 via-[55%] to-g-blue-900">
         <AuthBrandMark light />
-        <p className="text-[#ddd6ff] text-sm leading-5 pr-24">
+        <p className="text-g-blue-200 text-sm leading-5 pr-24">
           {copy.auth.readYourWay} {copy.auth.readYourWayBold}
         </p>
       </div>

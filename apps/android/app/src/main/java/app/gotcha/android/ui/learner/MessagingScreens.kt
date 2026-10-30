@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -131,8 +133,8 @@ private fun messagingInitials(name: String?): String {
 }
 
 private fun langChipColors(code: String): Pair<Color, Color> = when (code.uppercase(Locale.getDefault())) {
-    "RU" -> Color(0xFFF0E7FF) to Color(0xFF7008E7)
-    "EN" -> Color(0xFFE0F2FE) to Color(0xFF0369A1)
+    "RU" -> GotchaBlue.B100 to GotchaBlue.B700
+    "EN" -> GotchaBlue.InfoBg to GotchaBlue.InfoText
     "UZ" -> Color(0xFFECFDF5) to Color(0xFF047857)
     "FR" -> Color(0xFFFEF3C7) to Color(0xFFB45309)
     "JA" -> Color(0xFFFFE4E6) to Color(0xFFBE123C)
@@ -1569,7 +1571,7 @@ fun MessagingChatScreen(
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFF5F3FF))
+                        .background(GotchaBlue.B50)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -2038,7 +2040,7 @@ private fun TappableMessageText(
                 withStyle(
                     SpanStyle(
                         color = when {
-                            selected && onSender -> Color(0xFF4D179A)
+                            selected && onSender -> GotchaBlue.B900
                             selected -> GotchaColors.BrandPurple
                             else -> color
                         },

@@ -278,51 +278,43 @@ fun GotchaTextField(
  * - [splash]=true: white tile + navy G (node 21:15)
  * - Onboarding header uses [tileColor] = #6C2BD9 (node 21:33)
  */
+/**
+ * Canonical GOTCHA mark (team/BRAND-logo.md): BrandNavy #2107AA tile, radius 0.3125·size, white Bagel "G" at 0.5625·size.
+ * Drawable generated from packages/shared/brand by build_android.py. Sizes: 20, 24, 32, 40, 56, 100.
+ * [elevated] adds the canonical purple shadow (UI only, size >= 32).
+ */
 @Composable
 fun BrandMark(
-    size: Int = 56,
-    splash: Boolean = false,
-    cornerRadius: Int = if (splash && size >= 90) 24 else if (size >= 50) 16 else (size * 0.28f).toInt().coerceAtLeast(7),
-    tileColor: Color? = null,
-    letterColor: Color? = null,
+    size: Int = 32,
+    elevated: Boolean = false,
 ) {
-    val bg = tileColor ?: if (splash) Color.White else GotchaColors.BrandPurpleDeep
-    val fg = letterColor ?: if (splash) GotchaColors.BrandNavy else Color.White
-    val letterSp = when {
-        size >= 90 -> 56.sp
-        size >= 50 -> 36.sp
-        else -> (size * 0.56f).sp
-    }
-    Box(
+    val shape = RoundedCornerShape((size * 0.3125f).dp)
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(app.gotcha.android.R.drawable.ic_gotcha_mark),
+        contentDescription = "GOTCHA",
         modifier = Modifier
-            .size(size.dp)
-            .clip(RoundedCornerShape(cornerRadius.dp))
-            .background(bg),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = "G",
-            color = fg,
-            fontFamily = BagelFatOne,
-            fontWeight = FontWeight.Normal,
-            fontSize = letterSp,
-            lineHeight = letterSp,
-        )
-    }
+            .then(
+                if (elevated && size >= 32) {
+                    Modifier.shadow(10.dp, shape, ambientColor = Color(0x802107AA), spotColor = Color(0x802107AA))
+                } else {
+                    Modifier
+                },
+            )
+            .size(size.dp),
+    )
 }
 
+/** Canonical "GOTCHA" wordmark (outlined Bagel Fat One, −0.025em). [fontSize] = cap size; Ink on light, White on dark. */
 @Composable
 fun BrandWordmark(
-    fontSize: Int = 28,
-    color: Color = GotchaColors.BrandNavy,
+    fontSize: Int = 18,
+    color: Color = GotchaColors.Ink,
 ) {
-    Text(
-        text = "GOTCHA",
-        color = color,
-        fontFamily = BagelFatOne,
-        fontWeight = FontWeight.Normal,
-        fontSize = fontSize.sp,
-        letterSpacing = (-0.5).sp,
+    androidx.compose.foundation.Image(
+        painter = androidx.compose.ui.res.painterResource(app.gotcha.android.R.drawable.ic_gotcha_wordmark),
+        contentDescription = "GOTCHA",
+        colorFilter = androidx.compose.ui.graphics.ColorFilter.tint(color),
+        modifier = Modifier.height(fontSize.dp),
     )
 }
 

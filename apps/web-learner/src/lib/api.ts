@@ -1,3 +1,10 @@
+import { localizeApiError } from '@gotcha/shared';
+import { readStoredLearnerLocale, detectLearnerLocale } from './learnerLocale';
+
+function currentUiLang(): string {
+  if (typeof document !== 'undefined' && document.documentElement.lang) return document.documentElement.lang.slice(0, 2);
+  return readStoredLearnerLocale() ?? detectLearnerLocale();
+}
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
 const ACCESS_KEY = 'gotcha_learner_access';
@@ -110,9 +117,12 @@ export async function api<T>(
       email?: string;
       statusCode?: number;
     };
-    const message = Array.isArray(err.message)
-      ? err.message.join(', ')
-      : (err.message ?? 'Request failed');
+    // BUG-10: never surface raw English server text in RU/UZ.
+    const message = localizeApiError(currentUiLang(), {
+      message: err.message,
+      code: err.code,
+      status: err.statusCode ?? res.status,
+    });
     const error = new Error(message) as Error & {
       code?: string;
       email?: string;
@@ -159,7 +169,7 @@ export async function apiAudio(
     const err = (await res.json().catch(() => ({ message: res.statusText }))) as {
       message?: string | string[];
     };
-    const message = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Audio failed');
+    const message = localizeApiError(currentUiLang(), { message: err.message, status: res.status });
     throw new Error(message);
   }
   return res.blob();

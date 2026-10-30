@@ -110,7 +110,7 @@ function ChartShell({
 
 export function AreaLineChart({
   data,
-  color = '#8e51ff',
+  color = 'var(--g-blue-500)',
   valueSuffix = 'min',
   valueLabel = '',
   emptyMessage = 'No activity in this range',
@@ -291,10 +291,10 @@ export function BarChart({
 
 const HEATMAP_LEVELS = [
   'bg-[#f3f4f6] ring-1 ring-inset ring-gray-200',
-  'bg-[#ede9fe]',
-  'bg-[#c4b4ff]',
-  'bg-[#8e51ff]',
-  'bg-[#7008e7]',
+  'bg-g-blue-50',
+  'bg-g-blue-200',
+  'bg-g-blue-500',
+  'bg-g-blue-700',
 ];
 
 function heatmapLevelAbsolute(count: number) {
@@ -385,7 +385,7 @@ export function HeatmapCalendar({
                       type="button"
                       aria-label={`${formatShortDate(d.date)}: ${heatmapActivityLabel(d.count, finished, activityLabels)}`}
                       className={cn(
-                        'h-3 w-3 rounded-[5px] transition-transform duration-150 hover:scale-125 hover:ring-2 hover:ring-[#8e51ff]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8e51ff]',
+                        'h-3 w-3 rounded-[5px] transition-transform duration-150 hover:scale-125 hover:ring-2 hover:ring-g-blue-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-500',
                         HEATMAP_LEVELS[level],
                       )}
                       onMouseEnter={(e) => {

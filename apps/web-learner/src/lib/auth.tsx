@@ -55,6 +55,7 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const defaultPreferences: UserPreferences = {
   readerFontScale: 1,
   readerTheme: 'light',
+  appTheme: 'system',
   readerLineSpacing: 1.5,
   showKnownWords: true,
   ttsEnabled: false,

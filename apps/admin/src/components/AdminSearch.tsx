@@ -193,7 +193,7 @@ export function AdminSearch({ className }: { className?: string }) {
           }
         }}
         placeholder="Search user, language, billing..."
-        className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-12 py-2 text-sm outline-none focus:border-[#6c1d95]"
+        className="w-full rounded-lg border border-slate-200 bg-white pl-9 pr-12 py-2 text-sm outline-none focus:border-g-blue-700"
       />
       <kbd className="absolute right-2.5 top-1/2 -translate-y-1/2 hidden sm:inline text-[10px] font-semibold text-slate-400 border border-slate-200 rounded px-1.5 py-0.5 bg-slate-50">
         /
@@ -211,7 +211,7 @@ export function AdminSearch({ className }: { className?: string }) {
           >
             {loading && results.length === 0 ? (
               <div className="flex items-center gap-2 px-3 py-4 text-sm text-slate-500">
-                <Loader2 className="size-4 animate-spin text-[#6c1d95]" />
+                <Loader2 className="size-4 animate-spin text-g-blue-700" />
                 Searching…
               </div>
             ) : results.length === 0 ? (
@@ -241,7 +241,7 @@ export function AdminSearch({ className }: { className?: string }) {
                               )}
                             >
                               <div className="size-8 rounded-lg bg-violet-100 grid place-items-center shrink-0">
-                                <Icon className="size-4 text-[#6c1d95]" />
+                                <Icon className="size-4 text-g-blue-700" />
                               </div>
                               <div className="min-w-0 flex-1">
                                 <div className="text-sm font-medium text-slate-900 truncate">{hit.title}</div>

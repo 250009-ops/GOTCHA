@@ -61,6 +61,8 @@ private data class WsEnvelope(
  * endpoint is unavailable — as in the current REST-only API — falls back to polite polling
  * so open chats still receive updates without manual refresh.
  */
+private const val WEBSOCKET_ENABLED = false
+
 class MessagingRealtimeHub(
     private val apiBaseUrl: String,
     private val tokenStore: TokenStore,
@@ -126,6 +128,12 @@ class MessagingRealtimeHub(
     }
 
     private suspend fun connectWebSocket() {
+        // The API has no /messaging/ws endpoint (REST only), and a token in the query string would leak into
+        // proxy logs. Poll until a server WebSocket with header auth ships; then flip WEBSOCKET_ENABLED.
+        if (!WEBSOCKET_ENABLED) {
+            startPolling()
+            return
+        }
         val url = wsUrl()
         if (url == null) {
             startPolling()

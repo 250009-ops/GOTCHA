@@ -8,6 +8,7 @@ import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { buildLanguageProgress } from '../lib/languageProgress';
 import type { UserStatsResponse } from '../lib/types';
+import { BrandMark } from '../components/GotchaLogo';
 
 function localIsoDate(d: Date) {
   const y = d.getFullYear();
@@ -17,14 +18,7 @@ function localIsoDate(d: Date) {
 }
 
 function GLogo({ size = 40 }: { size?: number }) {
-  return (
-    <div
-      className="bg-[#2107aa] rounded-[14px] flex items-center justify-center shrink-0"
-      style={{ width: size, height: size }}
-    >
-      <span className="font-brand text-white leading-none" style={{ fontSize: size * 0.6 }}>G</span>
-    </div>
-  );
+  return <BrandMark size={size} />;
 }
 
 function KpiCard({
@@ -191,13 +185,13 @@ export default function StatsPage() {
           value={`${Math.floor(totalReadMinutes / 60)}${copy.commonExt.hours} ${totalReadMinutes % 60}${copy.commonExt.minutes}`}
           label={copy.statsPage.readingTime}
           sub={hasActivity ? `${copy.statsPage.dailyAverage} ${avgMinPerDay}${copy.commonExt.minutes}` : undefined}
-          color="text-[#7008e7] bg-[#f5f3ff] border-[#ddd6ff]"
+          color="text-g-blue-700 bg-g-blue-50 border-g-blue-200"
         />
         <KpiCard
           value={`${totalVocab}`}
           label={copy.statsPage.wordsAdded}
           sub={`${mastered} ${copy.vocabulary.mastered.toLowerCase()}`}
-          color="text-[#1447e6] bg-[#eff6ff] border-[#bedbff]"
+          color="text-g-learning-text bg-g-learning-bg border-[#bedbff]"
         />
         <KpiCard
           value={`${todayMinutes}${copy.commonExt.minutes}`}
@@ -216,7 +210,7 @@ export default function StatsPage() {
             <div key={lang.code} className="rounded-2xl border border-[#e5e7eb] p-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2.5 min-w-0">
-                  <span className="w-9 h-9 rounded-[10px] bg-[#f5f3ff] text-[#7008e7] text-xs font-extrabold flex items-center justify-center shrink-0">
+                  <span className="w-9 h-9 rounded-[10px] bg-g-blue-50 text-g-blue-700 text-xs font-extrabold flex items-center justify-center shrink-0">
                     {lang.code}
                   </span>
                   <span className="font-extrabold text-gray-900 truncate">{lang.name}</span>
@@ -225,11 +219,11 @@ export default function StatsPage() {
               </div>
               <div className="flex items-center justify-between mt-3 text-xs">
                 <span className="font-semibold text-[#99a1af]">{lang.towardLabel}</span>
-                <span className="font-bold text-[#7008e7]">{Math.round(lang.pct * 100)}%</span>
+                <span className="font-bold text-g-blue-700">{Math.round(lang.pct * 100)}%</span>
               </div>
               <div className="mt-2 h-2 bg-[#f3f4f6] rounded-[4px] overflow-hidden">
                 <div
-                  className="h-full bg-[#7f22fe] rounded-[4px] transition-all"
+                  className="h-full bg-g-blue-700 rounded-[4px] transition-all"
                   style={{ width: `${Math.round(lang.pct * 100)}%` }}
                 />
               </div>
@@ -254,7 +248,7 @@ export default function StatsPage() {
             <ChartCard title={copy.statsPage.readingTime} subtitle={`${readingInPeriod} ${copy.stats.minutes} · ${copy.statsPage.dailyAverage} ${avgReadingInPeriod} ${copy.stats.minutes}`} icon={<GLogo size={32} />}>
               <AreaLineChart
                 data={readingSeries}
-                color="#8e51ff"
+                color="var(--g-blue-500)"
                 valueSuffix={copy.commonExt.minutes}
                 emptyMessage={copy.statsPage.noDataYet}
               />
@@ -311,7 +305,7 @@ export default function StatsPage() {
             <div className="grid sm:grid-cols-3 gap-4">
               {[
                 { label: copy.statsPage.wordsAdded, value: totalVocab, dot: 'bg-[#e5e7eb]', text: 'text-[#364153]' },
-                { label: copy.vocabulary.learning, value: learning, dot: 'bg-[#51a2ff]', text: 'text-[#1447e6]' },
+                { label: copy.vocabulary.learning, value: learning, dot: 'bg-[#51a2ff]', text: 'text-g-learning-text' },
                 { label: copy.vocabulary.mastered, value: mastered, dot: 'bg-[#00d492]', text: 'text-[#007a55]' },
               ].map((s) => (
                 <div key={s.label} className="flex items-center gap-3 p-3 bg-[#f9fafb] rounded-[14px]">

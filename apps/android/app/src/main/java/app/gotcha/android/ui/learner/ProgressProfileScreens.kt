@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -209,9 +210,9 @@ fun ProgressScreen() {
                         StatsKpiCard(
                             "${totalMinutes / 60}h ${totalMinutes % 60}m",
                             "Total reading",
-                            Color(0xFF7008E7),
-                            Color(0xFFF5F3FF),
-                            Color(0xFFDDD6FF),
+                            GotchaBlue.B700,
+                            GotchaBlue.B50,
+                            GotchaBlue.B200,
                             Modifier.weight(1f),
                             sub = if (hasActivity) "avg ${avgMinPerDay}m/day" else null,
                         )
@@ -220,8 +221,8 @@ fun ProgressScreen() {
                         StatsKpiCard(
                             "$totalVocab",
                             "Words saved",
-                            Color(0xFF1447E6),
-                            Color(0xFFEFF6FF),
+                            GotchaBlue.LearningText,
+                            GotchaBlue.LearningBg,
                             Color(0xFFBEDBFF),
                             Modifier.weight(1f),
                             sub = "$mastered mastered",
@@ -315,7 +316,7 @@ fun ProgressScreen() {
                     Text("Vocabulary Breakdown", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         VocabBreakdownTile("Total saved", totalVocab, Color(0xFFE5E7EB), Color(0xFF364153), Modifier.weight(1f))
-                        VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), Color(0xFF1447E6), Modifier.weight(1f))
+                        VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), GotchaBlue.LearningText, Modifier.weight(1f))
                         VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
                     }
                     Box(
@@ -376,15 +377,7 @@ private fun StatsKpiCard(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .clip(RoundedCornerShape(14.dp))
-                .background(Color(0xFF2107AA)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Text("G", fontFamily = app.gotcha.android.ui.theme.BagelFatOne, fontSize = 22.sp, color = Color.White)
-        }
+        app.gotcha.android.ui.components.BrandMark(size = 40)
         Column {
             Text(value, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 20.sp, color = textColor)
             Text(label, fontFamily = Inter, fontSize = 12.sp, color = textColor.copy(alpha = 0.7f))

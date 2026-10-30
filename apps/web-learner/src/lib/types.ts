@@ -95,6 +95,8 @@ export interface UserStatsResponse {
 export interface UserPreferences {
   readerFontScale: number;
   readerTheme: 'light' | 'dark' | 'sepia';
+  appTheme?: 'system' | 'light' | 'dark';
+  dailyGoalXp?: number;
   readerLineSpacing: number;
   showKnownWords: boolean;
   ttsEnabled: boolean;
@@ -234,7 +236,7 @@ export type ApiSrsRating = 'again' | 'hard' | 'good' | 'easy';
 
 /** Cover-art gradients matching the Figma book-cover palette (deterministic per content id). */
 export const COVER_GRADIENTS = [
-  'linear-gradient(148deg, #8e51ff 0%, #ad46ff 50%, #4f39f6 100%)',
+  'linear-gradient(148deg, var(--g-blue-500) 0%, var(--g-blue-400) 50%, #4f39f6 100%)',
   'linear-gradient(142deg, #00d492 0%, #00bba7 50%, #0092b8 100%)',
   'linear-gradient(142deg, #fb2c6b 0%, #f6339a 50%, #e60076 100%)',
   'linear-gradient(148deg, #2b7fff 0%, #6a5cff 50%, #4f39f6 100%)',

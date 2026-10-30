@@ -223,7 +223,7 @@ export function GlobalSearch() {
                             )}
                           >
                             <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
-                              <BookOpen className="w-4 h-4 text-[#7f22fe]" />
+                              <BookOpen className="w-4 h-4 text-g-blue-700" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-medium text-gray-900 truncate">{item.title}</div>

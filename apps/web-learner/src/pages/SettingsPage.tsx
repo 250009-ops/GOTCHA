@@ -23,7 +23,9 @@ import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { practiceCopyFor } from '@gotcha/shared';
+import { applyAppTheme } from '../lib/appTheme';
 import {
   CEFR_LEVELS,
   LANGUAGE_META,
@@ -85,7 +87,7 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className={cn('relative inline-flex h-6 w-8 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-[#7c3aed]' : 'bg-[#cbced4]')}
+      className={cn('relative inline-flex h-6 w-8 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}
     >
       <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[15px]' : 'translate-x-[1px]')} />
     </button>
@@ -157,7 +159,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             type={show ? 'text' : 'password'}
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
           />
         </div>
         <div className="flex flex-col gap-1.5">
@@ -168,7 +170,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder={copy.auth.passwordPlaceholderRegister}
-              className="w-full h-9 pl-3 pr-9 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+              className="w-full h-9 pl-3 pr-9 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
             />
             <button
               type="button"
@@ -185,14 +187,14 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
             type={show ? 'text' : 'password'}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
           />
         </div>
         <button
           type="button"
           onClick={() => void submit()}
           disabled={saving}
-          className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.settings.updatePassword}
@@ -283,7 +285,7 @@ function TargetLanguageModal({
           <select
             value={cefrLevel}
             onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe]"
+            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
           >
             {CEFR_LEVELS.map((lvl) => (
               <option key={lvl} value={lvl}>
@@ -300,7 +302,7 @@ function TargetLanguageModal({
           type="button"
           onClick={() => void submit()}
           disabled={saving || (mode === 'add' && available.length === 0)}
-          className="mt-1 h-9 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {mode === 'add' ? copy.settings.addLanguage : copy.settings.saveLanguage}
@@ -314,6 +316,8 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
+  const practiceCopy = useMemo(() => practiceCopyFor(locale), [locale]);
 
   const readerThemes = [
     { value: 'light' as const, label: copy.settings.themeLight, icon: Sun },
@@ -465,7 +469,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => void saveAll()}
           disabled={saving}
-          className="h-9 px-4 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
+          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.common.saveChanges}
@@ -503,14 +507,14 @@ export default function SettingsPage() {
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
             placeholder={copy.settings.displayNamePlaceholder}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           />
         </Row>
         <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
           <select
             value={nativeLanguage}
             onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
@@ -523,7 +527,7 @@ export default function SettingsPage() {
           <select
             value={uiLanguage}
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all"
+            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
@@ -570,7 +574,7 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 {tl.isPrimary && (
-                  <span className="text-[11px] font-semibold text-[#7008e7] bg-[#ede9fe] rounded-full px-2 py-0.5 shrink-0">{copy.common.primary}</span>
+                  <span className="text-[11px] font-semibold text-g-blue-700 bg-g-blue-50 rounded-full px-2 py-0.5 shrink-0">{copy.common.primary}</span>
                 )}
                 {visibleTargetLanguages.length > 1 && (
                   <button
@@ -628,6 +632,28 @@ export default function SettingsPage() {
         <Row label={copy.settings.lineSpacing} description={copy.settings.lineSpacingHint(lineSpacing.toFixed(1))}>
           <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={setLineSpacing} />
         </Row>
+        <Row label={practiceCopy.appTheme}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={practiceCopy.appTheme}>
+            {(['system', 'light', 'dark'] as const).map((t) => (
+              <button
+                key={t}
+                type="button"
+                role="radio"
+                aria-checked={(preferences?.appTheme ?? 'system') === t}
+                onClick={() => {
+                  applyAppTheme(t);
+                  void updatePreferences({ appTheme: t }).catch(() => undefined);
+                }}
+                className={cn(
+                  'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
+                  (preferences?.appTheme ?? 'system') === t ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+                )}
+              >
+                {t === 'system' ? practiceCopy.themeSystem : t === 'light' ? practiceCopy.themeLight : practiceCopy.themeDark}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row label={copy.settings.readerTheme}>
           <div className="flex flex-wrap gap-2">
             {readerThemes.map((t) => (
@@ -637,7 +663,7 @@ export default function SettingsPage() {
                 onClick={() => setTheme(t.value)}
                 className={cn(
                   'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
-                  theme === t.value ? 'border-[#a684ff] bg-[#f5f3ff] text-[#7008e7]' : 'border-[#e5e7eb] text-[#6a7282] hover:border-gray-300',
+                  theme === t.value ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#6a7282] hover:border-gray-300',
                 )}
               >
                 <t.icon className="w-3 h-3" />
@@ -674,12 +700,12 @@ export default function SettingsPage() {
                   Import page). This card reports real usage, not a "plan" tier. */}
               <div
                 className="rounded-[14px] p-4 sm:p-5 min-w-0"
-                style={{ backgroundImage: 'linear-gradient(161deg, #7f22fe 0%, #432dd7 100%)' }}
+                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
               >
                 <div className="rounded-[14px] text-white min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[#ddd6ff]">{copy.settings.freeAllowance}</div>
+                      <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
                       <div className="text-xl sm:text-2xl font-bold mt-1">{copy.settings.payPerImport}</div>
                     </div>
                     <Zap className="w-6 h-6 text-white shrink-0" />
@@ -706,15 +732,15 @@ export default function SettingsPage() {
                       copy.settings.publicLibraryAccess,
                     ].filter(Boolean).map((f) => (
                       <div key={f as string} className="flex items-start gap-2 text-sm">
-                        <Check className="w-3.5 h-3.5 shrink-0 text-[#ddd6ff] mt-0.5" />
-                        <span className="text-[#ddd6ff] break-words">{f}</span>
+                        <Check className="w-3.5 h-3.5 shrink-0 text-g-blue-200 mt-0.5" />
+                        <span className="text-g-blue-200 break-words">{f}</span>
                       </div>
                     ))}
                   </div>
                   <button
                     type="button"
                     onClick={() => navigate('/app/import')}
-                    className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
+                    className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-g-blue-700 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
                   >
                     <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
                   </button>
@@ -728,7 +754,7 @@ export default function SettingsPage() {
                     <span>{lookupsToday}/{quota === 0 || quota >= 1_000_000 ? '∞' : quota}</span>
                   </div>
                   <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                    <div className="h-full bg-[#8e51ff] transition-all" style={{ width: `${quota === 0 || quota >= 1_000_000 ? 4 : usagePct}%` }} />
+                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === 0 || quota >= 1_000_000 ? 4 : usagePct}%` }} />
                   </div>
                 </div>
                 {importAllowance ? (
@@ -739,7 +765,7 @@ export default function SettingsPage() {
                     </div>
                     <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-[#7f22fe] transition-all"
+                        className="h-full bg-g-blue-700 transition-all"
                         style={{
                           width: `${
                             importAllowance.dailyFreeImportsPerUser > 0

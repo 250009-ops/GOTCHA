@@ -54,7 +54,7 @@ function SectionBlock({
       }`}
     >
       <h2 className={`flex items-baseline gap-2 text-[18px] font-bold ${headingFontClass}`}>
-        <span className="text-[#7c3aed]">{section.number}.</span>
+        <span className="text-g-blue-700">{section.number}.</span>
         <span className="text-[#111827]">{section.title}</span>
       </h2>
       <div className="flex w-full flex-col gap-3 font-['Geist',sans-serif] text-[14px] leading-[1.6] text-[#4a5565]">
@@ -64,7 +64,7 @@ function SectionBlock({
           <div className="flex flex-col gap-3">
             {section.bullets.map((b) => (
               <div key={b.label} className="flex items-start gap-2 pl-2">
-                <span className="font-bold text-[#7c3aed]">•</span>
+                <span className="font-bold text-g-blue-700">•</span>
                 <p>
                   <span className="font-semibold text-[#111827]">{b.label}: </span>
                   {b.body}
@@ -75,8 +75,8 @@ function SectionBlock({
         )}
         {section.closing && <p>{section.closing}</p>}
         {section.highlight && (
-          <div className="mt-1 w-full rounded-lg bg-[#f5f3ff] p-4">
-            <p className="text-sm font-semibold text-[#7c3aed]">{section.highlight}</p>
+          <div className="mt-1 w-full rounded-lg bg-g-blue-50 p-4">
+            <p className="text-sm font-semibold text-g-blue-700">{section.highlight}</p>
           </div>
         )}
       </div>
@@ -107,7 +107,7 @@ function TocTerms({
               href={`#${s.id}`}
               className={`truncate rounded-md px-3 py-2 font-['Geist',sans-serif] text-[13px] transition-colors ${
                 isActive
-                  ? 'bg-[#f5f3ff] font-semibold text-[#7c3aed]'
+                  ? 'bg-g-blue-50 font-semibold text-g-blue-700'
                   : 'font-medium text-[#4b5563] hover:bg-[#f9fafb]'
               }`}
             >
@@ -141,10 +141,10 @@ function TocPrivacy({
             key={s.id}
             href={`#${s.id}`}
             className={`flex items-center gap-2 rounded-md px-2 py-1.5 font-['Geist',sans-serif] text-[13px] transition-colors ${
-              isActive ? 'bg-[#f5f3ff] font-semibold text-[#7c3aed]' : 'text-[#4b5563] hover:bg-[#f9fafb]'
+              isActive ? 'bg-g-blue-50 font-semibold text-g-blue-700' : 'text-[#4b5563] hover:bg-[#f9fafb]'
             }`}
           >
-            <span className={`w-[18px] shrink-0 text-[12px] font-semibold ${isActive ? 'text-[#7c3aed]' : 'text-[#9ca3af]'}`}>
+            <span className={`w-[18px] shrink-0 text-[12px] font-semibold ${isActive ? 'text-g-blue-700' : 'text-[#9ca3af]'}`}>
               {s.number}
             </span>
             <span className="flex-1 truncate">{s.tocLabel ?? s.title}</span>
@@ -239,8 +239,8 @@ export function PrivacyPage() {
       <div className="border-b border-[#e5e7eb] bg-[#f9fafb]">
         <div className="mx-auto flex max-w-[1195px] flex-col gap-6 px-5 py-10 md:px-12 lg:px-16 lg:py-16">
           <div className="flex flex-col gap-3">
-            <span className="inline-flex w-fit items-center rounded-full border border-[#ddd6fe] bg-[#f5f3ff] px-3 py-1.5">
-              <span className="font-['Geist',sans-serif] text-xs font-semibold text-[#7c3aed]">
+            <span className="inline-flex w-fit items-center rounded-full border border-g-blue-200 bg-g-blue-50 px-3 py-1.5">
+              <span className="font-['Geist',sans-serif] text-xs font-semibold text-g-blue-700">
                 {doc.lastUpdatedLabel} {doc.lastUpdated}
               </span>
             </span>
@@ -262,7 +262,7 @@ export function PrivacyPage() {
               <p className="font-['Geist',sans-serif] text-xs font-semibold uppercase text-[#9ca3af]">
                 {doc.privacyContactLabel}
               </p>
-              <p className="font-['Sora',sans-serif] text-[15px] font-semibold text-[#7c3aed]">
+              <p className="font-['Sora',sans-serif] text-[15px] font-semibold text-g-blue-700">
                 {doc.privacyContact}
               </p>
             </div>

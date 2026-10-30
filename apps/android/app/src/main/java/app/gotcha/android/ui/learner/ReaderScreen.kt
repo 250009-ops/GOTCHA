@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -713,7 +714,7 @@ fun ReaderScreen(
             val pageBg = when (readerTheme) {
                 "sepia" -> Color(0xFFF4E8D0)
                 "dark" -> Color(0xFF1C1917)
-                else -> Color(0xFFFDFCFF)
+                else -> GotchaBlue.ReaderBg
             }
             val pageInk = when (readerTheme) {
                 "sepia" -> Color(0xFF3D2B1F)
@@ -817,11 +818,11 @@ fun ReaderScreen(
                             Icon(
                                 Icons.Outlined.Visibility,
                                 contentDescription = "Unknown only",
-                                tint = if (showUnknownOnly) Color(0xFF7008E7) else Color(0xFF6A7282),
+                                tint = if (showUnknownOnly) GotchaBlue.B700 else Color(0xFF6A7282),
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (showUnknownOnly) Color(0xFFF5F3FF) else Color.Transparent)
+                                    .background(if (showUnknownOnly) GotchaBlue.B50 else Color.Transparent)
                                     .clickable { showUnknownOnly = !showUnknownOnly }
                                     .padding(6.dp),
                             )
@@ -841,7 +842,7 @@ fun ReaderScreen(
                                 Icon(
                                     Icons.Outlined.School,
                                     contentDescription = "Practice",
-                                    tint = if (hasSegments) Color(0xFF7008E7) else GotchaColors.TextSubtle,
+                                    tint = if (hasSegments) GotchaBlue.B700 else GotchaColors.TextSubtle,
                                     modifier = Modifier.size(14.dp),
                                 )
                             }
@@ -903,12 +904,12 @@ fun ReaderScreen(
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 12.sp,
-                                    color = if (active) Color(0xFF7008E7) else Color(0xFF4A5565),
+                                    color = if (active) GotchaBlue.B700 else Color(0xFF4A5565),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(50))
-                                        .background(if (active) Color(0xFFF5F3FF) else Color.White)
+                                        .background(if (active) GotchaBlue.B50 else Color.White)
                                         .border(
                                             1.dp,
                                             if (active) GotchaColors.WebAccent else Color(0xFFE5E7EB),
@@ -938,7 +939,7 @@ fun ReaderScreen(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
                             letterSpacing = 1.2.sp,
-                            color = Color(0xFF8E51FF),
+                            color = GotchaBlue.B500,
                         )
 
                         Text(
@@ -1514,7 +1515,7 @@ private fun DictionaryBottomSheet(
                                     color = GotchaColors.WebAccent,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFFF5F3FF))
+                                        .background(GotchaBlue.B50)
                                         .padding(horizontal = 6.dp, vertical = 2.dp),
                                 )
                             }
@@ -1542,7 +1543,7 @@ private fun DictionaryBottomSheet(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFF5F3FF))
+                            .background(GotchaBlue.B50)
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -1559,7 +1560,7 @@ private fun DictionaryBottomSheet(
                             if (lookup.contextualMeaning?.isNotBlank() == true && !sentenceLike) {
                                 Modifier.border(1.dp, Color(0xFFE5E8EB), RoundedCornerShape(12.dp)).background(Color(0xFFF9FAFB))
                             } else {
-                                Modifier.background(Color(0xFFF5F3FF))
+                                Modifier.background(GotchaBlue.B50)
                             },
                         )
                         .padding(12.dp),
@@ -1579,7 +1580,7 @@ private fun DictionaryBottomSheet(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val statusColors = when (wordStatus) {
                             "known" -> Color(0xFFD1FAE5) to Color(0xFF047857)
-                            "learning" -> Color(0xFFEFF6FF) to Color(0xFF1447E6)
+                            "learning" -> GotchaBlue.LearningBg to GotchaBlue.LearningText
                             "ignored" -> Color(0xFFF3F4F6) to Color(0xFF6B7280)
                             else -> Color(0xFFFFFBEB) to Color(0xFFBB4D00)
                         }
@@ -1602,8 +1603,8 @@ private fun DictionaryBottomSheet(
                             icon = Icons.Outlined.BookmarkBorder,
                             active = wordStatus == "learning",
                             activeBorder = Color(0xFFBFDBFE),
-                            activeBg = Color(0xFFEFF6FF),
-                            activeColor = Color(0xFF1447E6),
+                            activeBg = GotchaBlue.LearningBg,
+                            activeColor = GotchaBlue.LearningText,
                             enabled = wordStatus != "learning",
                             onClick = onSave,
                             modifier = Modifier.weight(1f),
@@ -1704,10 +1705,10 @@ private object ReaderWordColors {
     val learningText = Color(0xFF193CB8)
     val learningUnderline = Color(0xFF51A2FF)
     val ignoredText = Color(0xFF9CA3AF)
-    val selectionBg = Color(0xFFF5F3FF)
+    val selectionBg = GotchaBlue.B50
     val selectionRing = Color(0x998E51FF)
-    val dragHighlightBg = Color(0xFFF5F3FF)
-    val dragHighlightText = Color(0xFF8E51FF)
+    val dragHighlightBg = GotchaBlue.B50
+    val dragHighlightText = GotchaBlue.B500
 }
 
 private fun readerHighlightStatus(status: String, showUnknownOnly: Boolean): String? {

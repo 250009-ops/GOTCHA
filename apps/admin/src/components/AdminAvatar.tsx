@@ -24,7 +24,7 @@ export function AdminAvatar({
     <div
       className={cn(
         'rounded-full overflow-hidden shrink-0 grid place-items-center text-white font-bold',
-        !showPhoto && 'bg-[#6c1d95]',
+        !showPhoto && 'bg-g-blue-700',
         className,
       )}
       style={{

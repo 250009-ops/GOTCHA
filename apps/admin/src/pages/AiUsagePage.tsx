@@ -190,7 +190,7 @@ export default function AiUsagePage() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            <span className="size-2.5 rounded-full bg-[#6c1d95]" /> AI Lookups
+            <span className="size-2.5 rounded-full bg-g-blue-700" /> AI Lookups
           </div>
         </div>
         <div className="h-56">
@@ -218,7 +218,7 @@ export default function AiUsagePage() {
                 <tr key={row.user.email}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="size-7 rounded-full bg-violet-100 text-[#6c1d95] grid place-items-center text-[10px] font-bold">
+                      <div className="size-7 rounded-full bg-violet-100 text-g-blue-700 grid place-items-center text-[10px] font-bold">
                         {initials(row.user.displayName, row.user.email)}
                       </div>
                       <span className="text-sm font-medium">{row.user.displayName || row.user.email}</span>
@@ -244,7 +244,7 @@ export default function AiUsagePage() {
             <HorizontalBars items={data.featureUsage} />
           )}
           <div className="mt-5 rounded-lg border border-violet-200 bg-violet-50 p-3">
-            <div className="text-[11px] font-semibold uppercase text-[#6c1d95]">Latest Insight</div>
+            <div className="text-[11px] font-semibold uppercase text-g-blue-700">Latest Insight</div>
             <p className="text-sm text-slate-700 mt-1">{data.insight}</p>
           </div>
         </Card>

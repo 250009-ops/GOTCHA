@@ -1,3 +1,4 @@
+import { pluralEn, pluralRu } from './plural';
 /** UI locale codes — keep in sync with UI_LANGUAGES in index.ts */
 export type UiLanguage = 'en' | 'ru' | 'uz';
 
@@ -341,7 +342,7 @@ const EN: LearnerCopy = {
     verified: 'Verified',
     search: 'Search',
     noResults: 'No results',
-    words: (count) => (count >= 1000 ? `${(count / 1000).toFixed(1)}k words` : `${count} words`),
+    words: (count) => (count >= 1000 ? `${(count / 1000).toFixed(1)}k words` : `${count} ${pluralEn(count, 'word', 'words')}`),
     level: (cefr) => `Level: ${cefr.toUpperCase()}`,
     score: (n) => `Score: ${n}/100`,
   },
@@ -391,7 +392,7 @@ const EN: LearnerCopy = {
       { title: 'Track your progress', desc: 'CEFR level tracking, streaks, and reading stats' },
       { title: 'Learn in context', desc: 'Words stick when you learn them from real sentences' },
     ],
-    learnersCount: (n) => `${n} learners`,
+    learnersCount: (n) => `${n} ${pluralEn(Number(String(n).replace(/\D/g, '')), 'learner', 'learners')}`,
     alreadyReading: 'already reading on GOTCHA',
     booksInLanguages: (langs) => `Books, articles, news in ${langs}`,
   },
@@ -532,7 +533,7 @@ const EN: LearnerCopy = {
     easy: 'Easy',
     showAnswer: 'Show answer',
     reviewComplete: 'Review complete!',
-    wordsReviewed: (n) => `${n} words reviewed`,
+    wordsReviewed: (n) => `${n} ${pluralEn(n, 'word', 'words')} reviewed`,
   },
   practice: {
     title: 'Practice',
@@ -648,7 +649,7 @@ const RU: LearnerCopy = {
     verified: 'Подтверждён',
     search: 'Поиск',
     noResults: 'Ничего не найдено',
-    words: (count) => (count >= 1000 ? `${(count / 1000).toFixed(1)}k слов` : `${count} слов`),
+    words: (count) => (count >= 1000 ? `${(count / 1000).toFixed(1)}k слов` : `${count} ${pluralRu(count, 'слово', 'слова', 'слов')}`),
     level: (cefr) => `Уровень: ${cefr.toUpperCase()}`,
     score: (n) => `Балл: ${n}/100`,
   },
@@ -699,7 +700,7 @@ const RU: LearnerCopy = {
       { title: 'Прогресс', desc: 'Уровень CEFR, серии и статистика чтения' },
       { title: 'В контексте', desc: 'Слова запоминаются из реальных предложений' },
     ],
-    learnersCount: (n) => `${n} учеников`,
+    learnersCount: (n) => `${n} ${pluralRu(Number(String(n).replace(/\D/g, '')), 'ученик', 'ученика', 'учеников')}`,
     alreadyReading: 'уже читают в GOTCHA',
     booksInLanguages: (langs) => `Книги, статьи, новости на ${langs}`,
   },
@@ -841,7 +842,7 @@ const RU: LearnerCopy = {
     easy: 'Легко',
     showAnswer: 'Показать ответ',
     reviewComplete: 'Повторение завершено!',
-    wordsReviewed: (n) => `${n} слов повторено`,
+    wordsReviewed: (n) => `${n} ${pluralRu(n, 'слово повторено', 'слова повторено', 'слов повторено')}`,
   },
   practice: {
     title: 'Практика',

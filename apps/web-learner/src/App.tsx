@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { useAuth } from './lib/auth';
+import { useAppTheme } from './lib/appTheme';
 import AuthPage from './pages/AuthPage';
 import ImportPage from './pages/ImportPage';
 import ImportPaymentReturnPage from './pages/ImportPaymentReturnPage';
@@ -17,6 +19,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
 
 export default function App() {
+  const { preferences } = useAuth();
+  useAppTheme(preferences?.appTheme);
   return (
     <Routes>
       <Route path="/" element={<Navigate to="/app" replace />} />

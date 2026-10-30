@@ -123,7 +123,7 @@ export default function ImportPaymentReturnPage() {
 
   return (
     <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-sm text-slate-600">
-      <Loader2 className="w-6 h-6 animate-spin text-[#7f22fe]" />
+      <Loader2 className="w-6 h-6 animate-spin text-g-blue-700" />
       <p>{message}</p>
     </div>
   );

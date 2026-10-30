@@ -186,3 +186,23 @@ export class StreakService {
     return { streakCount, minutesRead: Math.round(todayReadSeconds / 60) };
   }
 }
+
+/** Practice-side streak credit: hitting the daily XP goal counts as an active day. */
+export async function creditStreakDay(
+  prisma: PrismaService,
+  userId: string,
+  now: Date = new Date(),
+): Promise<{ streakCount: number; bestStreak: number }> {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { streakCount: true, streakLastDate: true, bestStreak: true },
+  });
+  if (!user) return { streakCount: 0, bestStreak: 0 };
+  if (user.streakLastDate && diffCalendarDays(user.streakLastDate, now) === 0) {
+    return { streakCount: user.streakCount, bestStreak: user.bestStreak ?? 0 };
+  }
+  const { streakCount, streakLastDate } = nextStreakState(user.streakCount, user.streakLastDate, now);
+  const bestStreak = Math.max(user.bestStreak ?? 0, streakCount);
+  await prisma.user.update({ where: { id: userId }, data: { streakCount, streakLastDate, bestStreak } });
+  return { streakCount, bestStreak };
+}

@@ -156,7 +156,7 @@ function ReviewModal({
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4 text-[#7f22fe]" />
+            <Brain className="w-4 h-4 text-g-blue-700" />
             <span className="text-sm font-semibold text-gray-700">{copy.vocabulary.dueForReview}</span>
           </div>
           <div className="flex items-center gap-3">
@@ -173,7 +173,7 @@ function ReviewModal({
           </div>
         </div>
         <div className="h-1 bg-gray-100">
-          <div className="h-full bg-[#7f22fe] transition-all duration-300" style={{ width: `${progress}%` }} />
+          <div className="h-full bg-g-blue-700 transition-all duration-300" style={{ width: `${progress}%` }} />
         </div>
         {done ? (
           <div className="p-8 text-center">
@@ -182,7 +182,7 @@ function ReviewModal({
             </div>
             <div className="text-xl font-bold text-gray-900 mb-1">{copy.vocabulary.reviewComplete}</div>
             <div className="text-gray-500 text-sm mb-6">{copy.vocabulary.wordsReviewed(reviewed)}</div>
-            <Button onClick={onClose} className="rounded-xl bg-[#7f22fe] hover:bg-[#7008e7]">
+            <Button onClick={onClose} className="rounded-xl bg-g-blue-700 hover:bg-g-blue-700">
               {copy.vocabulary.title}
             </Button>
           </div>
@@ -448,7 +448,7 @@ export default function VocabularyPage() {
           </p>
         </div>
         {dueItems.length > 0 && (
-          <Button onClick={openReview} className="bg-[#7f22fe] hover:bg-[#7008e7] rounded-xl gap-2 shrink-0">
+          <Button onClick={openReview} className="bg-g-blue-700 hover:bg-g-blue-700 rounded-xl gap-2 shrink-0">
             <Brain className="w-4 h-4" />
             {copy.vocabPage.reviewDue(dueItems.length)}
           </Button>
@@ -476,7 +476,7 @@ export default function VocabularyPage() {
             label: copy.vocabulary.learning,
             value: totalLearning,
             icon: Brain,
-            color: 'text-[#1447e6] bg-[#eff6ff] border-[#bedbff]',
+            color: 'text-g-learning-text bg-g-learning-bg border-[#bedbff]',
           },
           {
             label: copy.vocabulary.mastered,
@@ -501,7 +501,7 @@ export default function VocabularyPage() {
             <Sparkles className="w-3.5 h-3.5 text-violet-500" />
             <span className="text-sm font-semibold text-gray-700">{copy.vocabPage.mastery}</span>
           </div>
-          <span className="text-sm font-bold text-[#7f22fe]">{masteredPct}%</span>
+          <span className="text-sm font-bold text-g-blue-700">{masteredPct}%</span>
         </div>
         <Progress value={masteredPct} className="h-1.5" />
       </div>
@@ -526,7 +526,7 @@ export default function VocabularyPage() {
               className={cn(
                 'shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all',
                 filter === f
-                  ? 'bg-[#7f22fe] text-white border-[#7f22fe]'
+                  ? 'bg-g-blue-700 text-white border-g-blue-700'
                   : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300',
               )}
             >

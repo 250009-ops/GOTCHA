@@ -121,7 +121,7 @@ export function UiLanguageDropdown({
           }}
           className={cn(
             'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
-            selected ? 'bg-[#155dfc] text-white' : 'text-[#101828] hover:bg-[#eff6ff]',
+            selected ? 'bg-[#155dfc] text-white' : 'text-[#101828] hover:bg-g-learning-bg',
           )}
         >
           <UiLanguageFlag lang={code} />

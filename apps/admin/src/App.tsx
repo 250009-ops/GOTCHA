@@ -1,11 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import AdminShell from './components/AdminShell';
 import AiUsagePage from './pages/AiUsagePage';
-import AnalyticsPage from './pages/AnalyticsPage';
 import ContentEditorPage from './pages/ContentEditorPage';
 import ContentPage from './pages/ContentPage';
-import DashboardPage from './pages/DashboardPage';
-import GamificationPage from './pages/GamificationPage';
+import OverviewPage from './pages/OverviewPage';
+import PaymentsPage from './pages/PaymentsPage';
 import ImportPricingPage from './pages/ImportPricingPage';
 import LanguagesPage from './pages/LanguagesPage';
 import NotificationsPage from './pages/NotificationsPage';
@@ -19,7 +18,7 @@ import { useAuth } from './lib/auth';
 function HomeRedirect() {
   const { user } = useAuth();
   if (user?.role === 'moderator') return <Navigate to="/content/user-imports" replace />;
-  return <DashboardPage />;
+  return <OverviewPage />;
 }
 
 export default function App() {
@@ -34,22 +33,14 @@ export default function App() {
           <Route path="content/:id/edit" element={<ContentEditorPage />} />
           <Route path="content/:directory" element={<ContentPage />} />
           <Route path="languages" element={<LanguagesPage />} />
-          <Route path="level-tests" element={<Navigate to="/" replace />} />
           <Route path="ai-usage" element={<AiUsagePage />} />
-          <Route path="gamification" element={<GamificationPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="import-pricing" element={<ImportPricingPage />} />
           <Route path="import-pricing/:directory" element={<ImportPricingPage />} />
-          {/* Legacy Subscriptions nav → Import & Pricing */}
-          <Route path="subscriptions" element={<Navigate to="/import-pricing" replace />} />
-          <Route path="subscriptions/:directory" element={<Navigate to="/import-pricing" replace />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="support" element={<Navigate to="/" replace />} />
+          <Route path="payments" element={<PaymentsPage />} />
+          {/* Analytics merged into Overview */}
+          <Route path="analytics" element={<Navigate to="/" replace />} />
           <Route path="settings" element={<SettingsPage />} />
-          {/* Figma IA: ops live under Content → User Imports (not sidebar nav) */}
-          <Route path="licenses" element={<Navigate to="/content/user-imports" replace />} />
-          <Route path="moderation" element={<Navigate to="/content/user-imports" replace />} />
-          <Route path="ingestion" element={<Navigate to="/content/user-imports" replace />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

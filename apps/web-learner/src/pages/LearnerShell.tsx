@@ -25,6 +25,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguagePicker } from '../components/LanguagePicker';
+import { GotchaLogo } from '../components/GotchaLogo';
 
 interface NavItem {
   path: string;
@@ -131,7 +132,7 @@ export default function LearnerShell() {
           'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group relative',
           collapsed ? 'px-0 py-3 justify-center' : 'px-3 py-2.5',
           active
-            ? 'bg-[#7f22fe] text-white shadow-[0_4px_3px_rgba(77,23,154,0.4),0_2px_2px_rgba(77,23,154,0.4)]'
+            ? 'bg-g-blue-700 text-white shadow-[0_4px_3px_rgba(33,7,170,0.4),0_2px_2px_rgba(33,7,170,0.4)]'
             : 'text-white/50 hover:text-white/90 hover:bg-white/[0.07]',
         )}
       >
@@ -170,7 +171,7 @@ export default function LearnerShell() {
   return (
     <TooltipProvider delayDuration={0}>
       {/* Fixed-height shell: sidebar + topbar stay pinned; only main scrolls */}
-      <div className="flex h-screen max-h-dvh bg-[#F5F3FF] overflow-hidden">
+      <div className="flex h-screen max-h-dvh bg-g-blue-50 overflow-hidden">
         {/* Sidebar — always present for web; icon rail on narrow widths */}
         <div
           className={cn(
@@ -178,17 +179,14 @@ export default function LearnerShell() {
             expanded ? 'w-60' : 'w-14',
           )}
         >
-          <aside className="h-full w-full bg-[#0E0B2A] flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]">
+          <aside className="h-full w-full bg-g-sidebar flex flex-col overflow-hidden pb-[env(safe-area-inset-bottom,0px)] pl-[env(safe-area-inset-left,0px)]">
             <div className={cn('flex items-center border-b border-white/[0.06] shrink-0', expanded ? 'px-4 py-[14px] gap-3' : 'px-2 py-[14px] justify-center')}>
-              <div className="w-8 h-8 bg-[#2107aa] rounded-[10px] flex items-center justify-center shrink-0 shadow-[0_10px_7.5px_rgba(77,23,154,0.5),0_4px_3px_rgba(77,23,154,0.5)]">
-                <span className="font-brand text-white text-lg leading-none">G</span>
-              </div>
-              {expanded && (
-                <div>
-                  <div className="font-brand text-white text-lg tracking-tight leading-none">GOTCHA</div>
-                  <div className="text-white/30 text-[10px] leading-none mt-0.5">{copy.shell.tagline}</div>
-                </div>
-              )}
+              <GotchaLogo
+                markOnly={!expanded}
+                tone="light"
+                subtitle={copy.shell.tagline}
+                subtitleClassName="text-white/30 text-[10px] leading-none mt-0.5"
+              />
             </div>
 
             <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
@@ -206,13 +204,13 @@ export default function LearnerShell() {
                 <button
                   type="button"
                   onClick={() => navigate('/app/import')}
-                  className="w-full p-3 bg-gradient-to-r from-[#7008e7] to-[#372aac] rounded-[14px] text-left border border-white/10"
+                  className="w-full p-3 bg-gradient-to-r from-g-blue-700 to-g-blue-900 rounded-[14px] text-left border border-white/10"
                 >
                   <div className="flex items-center gap-2 mb-0.5">
                     <Wallet className="w-3.5 h-3.5 text-amber-300" />
                     <span className="text-white text-xs font-semibold">{copy.shell.payAsYouGo}</span>
                   </div>
-                  <p className="text-[#c4b4ff] text-[11px]">{copy.shell.payAsYouGoHint}</p>
+                  <p className="text-g-blue-200 text-[11px]">{copy.shell.payAsYouGoHint}</p>
                 </button>
               ) : (
                 <Tooltip>
@@ -220,7 +218,7 @@ export default function LearnerShell() {
                     <button
                       type="button"
                       onClick={() => navigate('/app/import')}
-                      className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-[#7008e7] to-[#372aac] border border-white/10"
+                      className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-g-blue-700 to-g-blue-900 border border-white/10"
                     >
                       <Wallet className="w-3.5 h-3.5 text-amber-300" />
                     </button>
@@ -241,7 +239,7 @@ export default function LearnerShell() {
           <button
             type="button"
             aria-label={expanded ? copy.shell.collapseSidebar : copy.shell.expandSidebar}
-            className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-[#7f22fe] shadow-sm z-30 hidden lg:flex"
+            className="absolute -right-3 top-[4.5rem] w-6 h-6 bg-white border border-gray-200 rounded-full items-center justify-center text-gray-500 hover:text-g-blue-700 shadow-sm z-30 hidden lg:flex"
             onClick={() => setExpanded((e) => !e)}
           >
             {expanded ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -270,7 +268,7 @@ export default function LearnerShell() {
                 type="button"
                 aria-label={copy.shell.notificationsAria}
                 onClick={() => navigate('/app/notifications')}
-                className="relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-[#7f22fe] hover:border-violet-200"
+                className="relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-g-blue-700 hover:border-violet-200"
               >
                 <Bell className="w-4 h-4" />
                 {unreadNotifs > 0 && (

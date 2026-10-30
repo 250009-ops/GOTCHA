@@ -11,7 +11,7 @@ import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
 type PayStep = 'price' | 'card' | 'otp' | 'celebrate';
 
-const CONFETTI_COLORS = ['#7008e7', '#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#ec4899', '#facc15'];
+const CONFETTI_COLORS = ['var(--g-blue-700)', '#f59e0b', '#22c55e', '#ef4444', '#3b82f6', '#ec4899', '#facc15'];
 
 function ConfettiBurst() {
   const pieces = useMemo(
@@ -194,7 +194,7 @@ export function CatalogPaywall({
       <div className="relative w-full max-w-md mx-auto rounded-2xl bg-white border border-[#e5e7eb] shadow-xl min-h-[22rem] flex flex-col items-center justify-center gap-4 px-6 py-8 overflow-hidden">
         <ConfettiBurst />
         <div className="relative z-10 w-16 h-16 rounded-2xl bg-violet-50 grid place-items-center">
-          <PartyPopper className="w-8 h-8 text-[#7008e7]" />
+          <PartyPopper className="w-8 h-8 text-g-blue-700" />
         </div>
         <div className="relative z-10 text-center space-y-1">
           <h2 className="text-[#101828] text-2xl font-bold">{copy.paywall.congratulations}</h2>
@@ -203,7 +203,7 @@ export function CatalogPaywall({
         <button
           type="button"
           onClick={onUnlocked}
-          className="relative z-10 w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] text-white text-base font-bold flex items-center justify-center gap-2"
+          className="relative z-10 w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           <BookOpen className="w-5 h-5" />
           {copy.paywall.startReading}
@@ -217,7 +217,7 @@ export function CatalogPaywall({
       {step === 'price' && (
         <>
           <div className="w-16 h-16 rounded-2xl bg-violet-50 grid place-items-center">
-            <Lock className="w-7 h-7 text-[#7008e7]" />
+            <Lock className="w-7 h-7 text-g-blue-700" />
           </div>
           <div className="text-center space-y-1">
             <h2 className="text-[#101828] text-xl font-bold leading-tight">{title}</h2>
@@ -226,7 +226,7 @@ export function CatalogPaywall({
           <div className="w-full border border-[#e4e7ec] rounded-xl p-4 bg-[#f9fafb]">
             <div className="flex justify-between items-center">
               <span className="text-[#101828] text-sm font-semibold">Total</span>
-              <span className="text-[#7008e7] text-lg font-bold">{formatUzs(priceUzs)}</span>
+              <span className="text-g-blue-700 text-lg font-bold">{formatUzs(priceUzs)}</span>
             </div>
           </div>
         </>
@@ -247,7 +247,7 @@ export function CatalogPaywall({
                 onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
                 placeholder="0000 0000 0000 0000"
                 disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] font-mono tracking-wider disabled:opacity-50"
+                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-wider disabled:opacity-50"
               />
             </div>
             <div>
@@ -260,7 +260,7 @@ export function CatalogPaywall({
                 onChange={(e) => setExpiry(formatExpiry(e.target.value))}
                 placeholder="00/00"
                 disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] font-mono tracking-wider disabled:opacity-50"
+                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-wider disabled:opacity-50"
               />
             </div>
           </div>
@@ -283,7 +283,7 @@ export function CatalogPaywall({
               onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
               placeholder="123456"
               disabled={loading}
-              className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] font-mono tracking-[0.3em] disabled:opacity-50"
+              className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-[0.3em] disabled:opacity-50"
             />
           </div>
         </>
@@ -300,7 +300,7 @@ export function CatalogPaywall({
           type="button"
           onClick={handleProceedToCard}
           disabled={loading}
-          className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
+          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <BookOpen className="w-5 h-5" />}
           {loading ? copy.common.loading : copy.paywall.unlockFor(formatUzs(priceUzs))}
@@ -312,7 +312,7 @@ export function CatalogPaywall({
           type="button"
           onClick={handleSubmitCard}
           disabled={loading || !isCardValid}
-          className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
+          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
           {loading ? copy.common.saving : copy.common.continue}
@@ -324,7 +324,7 @@ export function CatalogPaywall({
           type="button"
           onClick={handleSubmitOtp}
           disabled={loading || !isOtpValid}
-          className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
+          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
           {loading ? copy.common.saving : copy.importPage.confirmPayment}
@@ -355,7 +355,7 @@ export function CatalogPaywall({
           type="button"
           onClick={handleResendOtp}
           disabled={loading}
-          className="text-[#7008e7] text-sm font-medium disabled:opacity-50"
+          className="text-g-blue-700 text-sm font-medium disabled:opacity-50"
         >
           {copy.importPage.resendCode}
         </button>

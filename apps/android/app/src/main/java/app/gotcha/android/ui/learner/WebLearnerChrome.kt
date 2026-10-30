@@ -1,5 +1,6 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
@@ -212,7 +213,7 @@ fun PayAsYouGoHomeBanner(onClick: () -> Unit, modifier: Modifier = Modifier) {
             )
             Text(
                 "Import books · Pay per file",
-                color = Color(0xFFC4B4FF),
+                color = GotchaBlue.B200,
                 fontFamily = Inter,
                 fontSize = 12.sp,
             )
@@ -323,7 +324,7 @@ private fun LearnerFrostedTopBar(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
-                    BrandMark(size = 32, cornerRadius = 10, tileColor = GotchaColors.WebMark)
+                    BrandMark(size = 32, elevated = true)
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp),

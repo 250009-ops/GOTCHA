@@ -76,12 +76,12 @@ export function LookupLimitsCard({
               Also under{' '}
               {[
                 showImportPricingLink ? (
-                  <Link key="pricing" to="/import-pricing" className="text-[#6c1d95] font-medium hover:underline">
+                  <Link key="pricing" to="/import-pricing" className="text-g-blue-700 font-medium hover:underline">
                     Import & Pricing
                   </Link>
                 ) : null,
                 showSettingsLink ? (
-                  <Link key="settings" to="/settings" className="text-[#6c1d95] font-medium hover:underline">
+                  <Link key="settings" to="/settings" className="text-g-blue-700 font-medium hover:underline">
                     Settings → AI controls
                   </Link>
                 ) : null,

@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   BadRequestException,
   ForbiddenException,
   Injectable,
@@ -489,36 +490,81 @@ export class ImportCommerceService {
   }
 
   /**
-   * Cancel a pending payment or refund a paid payment.
+   * Learner cancel: only a *pending* payment can be cancelled (BUG-06/07). Paid payments are refunded by an admin
+   * (refundPaidPayment); refunded/failed/expired payments are never rewritten.
    */
   async cancelPayment(
     userId: string,
     paymentId: string,
-    reason?: string,
+    _reason?: string,
   ): Promise<{ paymentId: string; status: string }> {
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
     if (!payment) throw new NotFoundException('Payment not found');
-    
-    if (payment.status === ImportPaymentStatus.paid && payment.providerPaymentId) {
-      // Refund confirmed payment
-      const transactionId = Number(payment.providerPaymentId);
-      await this.atmos.reverseTransaction({ transactionId, reason });
-      await this.prisma.importPayment.update({
-        where: { id: payment.id },
-        data: { status: ImportPaymentStatus.refunded },
+    if (payment.status !== ImportPaymentStatus.pending) {
+      throw new ConflictException({
+        message: payment.status === ImportPaymentStatus.paid
+          ? 'Paid payments can only be refunded by support.'
+          : `Payment is already ${payment.status}.`,
+        code: payment.status === ImportPaymentStatus.paid ? 'refund_requires_support' : 'payment_not_pending',
       });
-      return { paymentId, status: 'refunded' };
     }
-
-    // Cancel pending payment
-    await this.prisma.importPayment.update({
-      where: { id: payment.id },
+    // Conditional update: a webhook may have marked it paid in the meantime.
+    const { count } = await this.prisma.importPayment.updateMany({
+      where: { id: payment.id, status: ImportPaymentStatus.pending },
       data: { status: ImportPaymentStatus.failed },
     });
-
+    if (count === 0) throw new ConflictException({ message: 'Payment status changed; refresh and try again.', code: 'payment_not_pending' });
     return { paymentId, status: 'cancelled' };
+  }
+
+  /**
+   * Admin refund (BUG-06): paid → refunded, reverses the Atmos transaction when there is one, and revokes the
+   * catalog purchase it granted. [sandbox] = Atmos test mode: a payment without a transaction id is refunded
+   * locally only. Outside sandbox a transaction id is required.
+   */
+  async refundPaidPayment(paymentId: string, opts: { reason: string; sandbox: boolean }) {
+    const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== ImportPaymentStatus.paid) {
+      throw new ConflictException({ message: `Only paid payments can be refunded (status: ${payment.status}).`, code: 'payment_not_paid' });
+    }
+    const transactionId = Number(payment.providerPaymentId);
+    const hasTx = Number.isFinite(transactionId) && transactionId > 0;
+    let reversed = false;
+    if (hasTx && this.atmos.configured()) {
+      await this.atmos.reverseTransaction({ transactionId, reason: opts.reason });
+      reversed = true;
+    } else if (!opts.sandbox) {
+      throw new ConflictException({ message: 'No Atmos transaction to reverse; refund in the Atmos cabinet first.', code: 'no_provider_transaction' });
+    }
+    const { count } = await this.prisma.importPayment.updateMany({
+      where: { id: payment.id, status: ImportPaymentStatus.paid },
+      data: { status: ImportPaymentStatus.refunded },
+    });
+    if (count === 0) throw new ConflictException({ message: 'Payment status changed; refresh and try again.', code: 'payment_not_paid' });
+    const revoked = await this.revokeCatalogPurchase(payment);
+    return { paymentId, status: ImportPaymentStatus.refunded, reversedAtAtmos: reversed, accessRevoked: revoked };
+  }
+
+  /** Refund ⇒ the ContentPurchase it created no longer grants access (BUG-06). */
+  private async revokeCatalogPurchase(payment: { userId: string; contentFormat: string; providerPaymentId: string | null }) {
+    const contentId = catalogContentIdFromFormat(payment.contentFormat);
+    if (!contentId) return 0;
+    const where: Prisma.ContentPurchaseWhereInput = {
+      userId: payment.userId,
+      contentId,
+      status: PurchaseStatus.completed,
+      ...(payment.providerPaymentId ? { providerRef: payment.providerPaymentId } : {}),
+    };
+    const { count } = await this.prisma.contentPurchase.updateMany({ where, data: { status: PurchaseStatus.refunded } });
+    if (count > 0) {
+      await this.prisma.contentItem
+        .update({ where: { id: contentId }, data: { salesCount: { decrement: count } } })
+        .catch(() => undefined);
+    }
+    return count;
   }
 
   async getPayment(userId: string, paymentId: string) {
@@ -657,10 +703,12 @@ export class ImportCommerceService {
         where: { id: payment.id },
         data: { status: ImportPaymentStatus.refunded },
       });
+      await this.revokeCatalogPurchase(payment);
       return;
     }
-    await this.prisma.importPayment.update({
-      where: { id: payment.id },
+    // Never overwrite a refunded/expired history (BUG-07): only pending payments become failed.
+    await this.prisma.importPayment.updateMany({
+      where: { id: payment.id, status: ImportPaymentStatus.pending },
       data: { status: ImportPaymentStatus.failed },
     });
   }

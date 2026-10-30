@@ -28,7 +28,7 @@ export function UserAvatar({
         className="rounded-full overflow-hidden w-full h-full flex items-center justify-center text-white font-bold"
         style={{
           fontSize: Math.max(10, Math.round(size * 0.35)),
-          backgroundImage: showPhoto ? undefined : 'linear-gradient(135deg, #8e51ff 0%, #432dd7 100%)',
+          backgroundImage: showPhoto ? undefined : 'linear-gradient(135deg, var(--g-blue-500) 0%, #432dd7 100%)',
           backgroundColor: showPhoto ? '#efe7ff' : undefined,
         }}
       >

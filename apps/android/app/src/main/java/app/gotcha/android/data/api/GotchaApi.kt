@@ -110,6 +110,7 @@ import okhttp3.ResponseBody
 import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
+import retrofit2.http.HTTP
 import retrofit2.http.Multipart
 import retrofit2.http.PATCH
 import retrofit2.http.POST
@@ -295,7 +296,8 @@ interface GotchaApi {
     @PATCH("users/me/password")
     suspend fun changePassword(@Body body: ChangePasswordRequest): OkMessageResponse
 
-    @DELETE("users/me")
+    // Retrofit rejects @Body on @DELETE ("Non-body HTTP method cannot contain @Body"); declare it explicitly.
+    @HTTP(method = "DELETE", path = "users/me", hasBody = true)
     suspend fun deleteAccount(@Body body: DeleteAccountRequest): OkMessageResponse
 
     @POST("users/me/target-languages")

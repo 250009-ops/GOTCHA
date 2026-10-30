@@ -1,3 +1,4 @@
+import { pluralEn, pluralRu } from './plural';
 /** UI locale codes — keep in sync with UI_LANGUAGES in index.ts */
 export type UiLanguage = 'en' | 'ru' | 'uz';
 
@@ -468,7 +469,7 @@ const EXT_EN: LearnerCopyExt = {
     browseTitle: 'Browse Library',
     streak: 'Streak',
     words: 'Words',
-    days: (n) => `${n} days`,
+    days: (n) => `${n} ${pluralEn(n, 'day', 'days')}`,
     trySample: 'Try sample',
     newBadge: 'New',
     percentRead: (n) => `${n}% read`,
@@ -1059,7 +1060,7 @@ const EXT_RU: LearnerCopyExt = {
     remove: 'Удалить',
     noMatchSearch: 'Нет слов по запросу',
     reviewDue: (count) => `Повторить ${count}`,
-    wordCountSummary: (total, learning, mastered) => `${total} слов · ${learning} изучаю · ${mastered} освоено`,
+    wordCountSummary: (total, learning, mastered) => `${total} ${pluralRu(total, 'слово', 'слова', 'слов')} · ${learning} изучаю · ${mastered} освоено`,
     ratedAs: (lemma, rating) => `«${lemma}» — ${rating}`,
     filterAll: 'все',
     filterDue: (count) => `К повтору (${count})`,

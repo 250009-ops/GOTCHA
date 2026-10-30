@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -929,8 +931,8 @@ fun NotificationsListScreen(
 }
 
 private fun notificationVisual(kind: String): Triple<Int, Color, Color> = when (kind.lowercase()) {
-    "content" -> Triple(R.drawable.ic_book_open, Color(0xFFF3E8FF), Color(0xFF7008E7))
-    "message" -> Triple(R.drawable.ic_message, Color(0xFFE0F2FE), Color(0xFF0369A1))
+    "content" -> Triple(R.drawable.ic_book_open, GotchaBlue.B50, GotchaBlue.B700)
+    "message" -> Triple(R.drawable.ic_message, GotchaBlue.InfoBg, GotchaBlue.InfoText)
     "streak" -> Triple(R.drawable.ic_flame, Color(0xFFFFF7ED), Color(0xFFC2410C))
     "goal" -> Triple(R.drawable.ic_target, Color(0xFFECFDF5), Color(0xFF047857))
     "vocab" -> Triple(R.drawable.ic_activity_clock, Color(0xFFEEF2FF), Color(0xFF3730A3))

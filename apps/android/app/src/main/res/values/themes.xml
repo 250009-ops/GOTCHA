@@ -3,8 +3,8 @@
     <!-- Cold-start splash (Android 12+ SplashScreen API). Dark bg → light status icons. -->
     <style name="Theme.Gotcha.Splash" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>
-        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_brand_splash</item>
-        <item name="windowSplashScreenIconBackgroundColor">@android:color/white</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/brand_navy</item>
         <item name="postSplashScreenTheme">@style/Theme.Gotcha</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

@@ -342,8 +342,8 @@ export default function ImportPricingPage() {
             className={cn(
               'rounded-lg px-3 py-2 text-sm font-semibold border transition',
               section === s.id
-                ? 'bg-[#6c1d95] text-white border-[#6c1d95]'
-                : 'bg-white text-slate-600 border-slate-200 hover:border-[#6c1d95]/40',
+                ? 'bg-g-blue-700 text-white border-g-blue-700'
+                : 'bg-white text-slate-600 border-slate-200 hover:border-g-blue-700/40',
             )}
           >
             {s.label}
@@ -355,7 +355,7 @@ export default function ImportPricingPage() {
         <Badge className={data.atmosConfigured ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}>
           Atmos: {data.atmosConfigured ? 'configured' : 'not configured'}
         </Badge>
-        <Badge className={data.paymentGatewayEnabled ? 'bg-violet-50 text-[#6c1d95]' : 'bg-amber-50 text-amber-800'}>
+        <Badge className={data.paymentGatewayEnabled ? 'bg-violet-50 text-g-blue-700' : 'bg-amber-50 text-amber-800'}>
           Gateway: {data.paymentGatewayEnabled ? 'enabled' : 'disabled (imports unlimited)'}
         </Badge>
         <Badge className="bg-slate-50 text-slate-600">Currency: {data.currency || 'UZS'}</Badge>
@@ -514,7 +514,7 @@ export default function ImportPricingPage() {
                 ) : (
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="size-6 rounded-full bg-violet-50 text-[#6c1d95] text-xs font-bold grid place-items-center shrink-0">
+                      <div className="size-6 rounded-full bg-violet-50 text-g-blue-700 text-xs font-bold grid place-items-center shrink-0">
                         {idx + 1}
                       </div>
                       <div className="min-w-0">
@@ -528,7 +528,7 @@ export default function ImportPricingPage() {
                       <span className="text-sm font-semibold mr-1">{formatMoney(tier.priceUzs)}</span>
                       <button
                         type="button"
-                        className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                        className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-g-blue-700"
                         aria-label={`Edit ${tier.label}`}
                         onClick={() => beginEditTier(tier)}
                       >
@@ -549,8 +549,8 @@ export default function ImportPricingPage() {
               </div>
             ))}
             {addingTier && (
-              <div className="rounded-xl border border-dashed border-[#6c1d95]/30 bg-violet-50/40 px-3 py-3">
-                <div className="text-xs font-semibold text-[#6c1d95] mb-2">New range</div>
+              <div className="rounded-xl border border-dashed border-g-blue-700/30 bg-violet-50/40 px-3 py-3">
+                <div className="text-xs font-semibold text-g-blue-700 mb-2">New range</div>
                 {renderTierForm(tierMinPages || 'min')}
               </div>
             )}

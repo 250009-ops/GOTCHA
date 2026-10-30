@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -260,7 +262,7 @@ fun VocabularyReviewModal(
                                         Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(12.dp))
-                                            .background(Color(0xFFF5F3FF))
+                                            .background(GotchaBlue.B50)
                                             .padding(horizontal = 16.dp, vertical = 12.dp),
                                         contentAlignment = Alignment.Center,
                                     ) {

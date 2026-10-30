@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Search, UserMinus, Users, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, StatCard } from '../components/ui';
+import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber, initials, levelBadgeClass, relativeTime } from '../lib/utils';
 
@@ -61,6 +61,7 @@ export default function UsersPage() {
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
   const [confirmHardDelete, setConfirmHardDelete] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const load = useCallback(
     async (query = q, chip = filter) => {
@@ -139,6 +140,43 @@ export default function UsersPage() {
     }
   }
 
+  async function adjustTier(id: string, tier: 'free' | 'premium') {
+    setBusyId(id);
+    setActionMsg(null);
+    setActionErr(null);
+    try {
+      await api(`/admin/users/${id}/adjust-tier`, { method: 'POST', body: JSON.stringify({ tier }) });
+      setActionMsg(`Plan changed to ${tier}.`);
+      await load();
+      setSelected(await api<UserRow>(`/admin/users/${id}`));
+    } catch (e: unknown) {
+      setActionErr(e instanceof Error ? e.message : 'Tier change failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** GDPR-style export: downloads everything we hold about the learner as JSON (audited server-side). */
+  async function exportData(id: string) {
+    setBusyId(id);
+    setActionErr(null);
+    try {
+      const data = await api<unknown>(`/admin/users/${id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gotcha-user-${id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionMsg('Export downloaded.');
+    } catch (e: unknown) {
+      setActionErr(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function hardDelete(id: string) {
     setBusyId(id);
     setActionErr(null);
@@ -196,7 +234,7 @@ export default function UsersPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
         <StatCard label="Total Users" value={formatNumber(data.stats.total)} icon={<Users className="size-5" />} />
-        <StatCard label="Pay as you go" value={formatNumber(paygCount)} accent="bg-violet-50 text-[#6c1d95]" />
+        <StatCard label="Pay as you go" value={formatNumber(paygCount)} accent="bg-violet-50 text-g-blue-700" />
         <StatCard label="Free" value={formatNumber(data.stats.free)} accent="bg-slate-100 text-slate-600" />
         <StatCard
           label="Suspended"
@@ -211,7 +249,7 @@ export default function UsersPage() {
           const selectedChip = filter === chip;
           const isSuspended = chip === 'Suspended';
           const className = selectedChip
-            ? 'bg-[#7008e7] text-white border-[#7008e7]'
+            ? 'bg-g-blue-700 text-white border-g-blue-700'
             : isSuspended
               ? 'bg-[#fee2e2] text-[#ef4444] border-[#fca5a5]'
               : 'bg-white text-slate-600 border-slate-200';
@@ -250,7 +288,7 @@ export default function UsersPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="size-9 rounded-full bg-violet-100 text-[#6c1d95] grid place-items-center text-xs font-bold">
+                        <div className="size-9 rounded-full bg-violet-100 text-g-blue-700 grid place-items-center text-xs font-bold">
                           {initials(u.displayName, u.email)}
                         </div>
                         <div>
@@ -272,7 +310,7 @@ export default function UsersPage() {
                       {u.cefrLevel ? <Badge className={levelBadgeClass(u.cefrLevel)}>{u.cefrLevel.toUpperCase()}</Badge> : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={payg ? 'bg-[#f0e7ff] text-[#7008e7]' : 'bg-slate-100 text-slate-600'}>
+                      <Badge className={payg ? 'bg-g-blue-100 text-g-blue-700' : 'bg-slate-100 text-slate-600'}>
                         {plan}
                       </Badge>
                     </td>
@@ -306,7 +344,7 @@ export default function UsersPage() {
               </button>
             </div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="size-14 rounded-full border-2 border-[#7008e7] bg-violet-100 text-[#6c1d95] grid place-items-center text-lg font-bold">
+              <div className="size-14 rounded-full border-2 border-g-blue-700 bg-violet-100 text-g-blue-700 grid place-items-center text-lg font-bold">
                 {initials(selected.displayName, selected.email)}
               </div>
               <div>
@@ -317,7 +355,7 @@ export default function UsersPage() {
                       selected.isSuspended
                         ? 'bg-rose-50 text-rose-600'
                         : paygSelected
-                          ? 'bg-[#f0e7ff] text-[#7008e7]'
+                          ? 'bg-g-blue-100 text-g-blue-700'
                           : 'bg-slate-100 text-slate-600'
                     }
                   >
@@ -331,7 +369,7 @@ export default function UsersPage() {
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
                 <div className="text-[11px] text-slate-500">Words</div>
-                <div className="text-sm font-extrabold text-[#7008e7]">{formatNumber(selected.vocabCount)}</div>
+                <div className="text-sm font-extrabold text-g-blue-700">{formatNumber(selected.vocabCount)}</div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
                 <div className="text-[11px] text-slate-500">Streak</div>
@@ -391,13 +429,41 @@ export default function UsersPage() {
                       </Button>
                     )}
                   </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Select
+                      aria-label="Plan"
+                      disabled={busyId === selected.id}
+                      value=""
+                      onChange={(e) => {
+                        const v = e.target.value as 'free' | 'premium';
+                        if (v) void adjustTier(selected.id, v);
+                      }}
+                    >
+                      <option value="">Change plan…</option>
+                      <option value="free">Free</option>
+                      <option value="premium">Premium</option>
+                    </Select>
+                    <Button variant="secondary" disabled={busyId === selected.id} onClick={() => exportData(selected.id)}>
+                      Export data
+                    </Button>
+                  </div>
                   {confirmHardDelete ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-2">
                       <p className="text-xs text-rose-700 font-semibold">
-                        Permanently delete this user and all learning data?
+                        Permanently delete this user and all learning data? Type their email to confirm.
                       </p>
+                      <Input
+                        aria-label="Type the user's email to confirm"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder={selected.email ?? ''}
+                      />
                       <div className="flex gap-2">
-                        <Button variant="danger" disabled={busyId === selected.id} onClick={() => hardDelete(selected.id)}>
+                        <Button
+                          variant="danger"
+                          disabled={busyId === selected.id || deleteConfirmText.trim().toLowerCase() !== String(selected.email ?? '').toLowerCase()}
+                          onClick={() => hardDelete(selected.id)}
+                        >
                           {busyId === selected.id ? '…' : 'Confirm delete'}
                         </Button>
                         <Button variant="secondary" disabled={busyId === selected.id} onClick={() => setConfirmHardDelete(false)}>

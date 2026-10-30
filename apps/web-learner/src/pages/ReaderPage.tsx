@@ -144,7 +144,7 @@ function DictionaryPanel({
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
-            <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
+            <Loader2 className="w-6 h-6 text-g-blue-700 animate-spin" />
             <span className="text-sm text-[#99a1af]">{copy.reader.lookingUp}</span>
           </div>
         )}
@@ -158,11 +158,11 @@ function DictionaryPanel({
                       {result.kind === 'sentence' ? result.lemma : (result.phrase?.trim() || result.lemma)}
                     </span>
                     {result.kind !== 'sentence' && result.phrase?.trim() ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-g-blue-50 text-g-blue-700">
                         Phrase
                       </span>
                     ) : result.kind === 'sentence' ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-g-blue-50 text-g-blue-700">
                         Sentence
                       </span>
                     ) : null}
@@ -174,7 +174,7 @@ function DictionaryPanel({
                 <button
                   type="button"
                   onClick={onPronounce}
-                  className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]"
+                  className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-g-blue-700"
                   aria-label={copy.reader.pronounceWord}
                   title={copy.reader.pronounceWord}
                 >
@@ -183,13 +183,13 @@ function DictionaryPanel({
               </div>
             </div>
             {result.kind !== 'sentence' && result.contextualMeaning?.trim() ? (
-              <div className="bg-[#f5f3ff] rounded-xl p-3">
-                <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">{copy.reader.naturalMeaning}</div>
+              <div className="bg-g-blue-50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-g-blue-700 uppercase tracking-wider mb-1">{copy.reader.naturalMeaning}</div>
                 <div className="text-[#1e2939] leading-relaxed">{result.contextualMeaning}</div>
               </div>
             ) : null}
-            <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-[#f5f3ff] rounded-xl p-3'}>
-              <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">{copy.reader.translation}</div>
+            <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-g-blue-50 rounded-xl p-3'}>
+              <div className="text-xs font-semibold text-g-blue-700 uppercase tracking-wider mb-1">{copy.reader.translation}</div>
               <div className="text-[#1e2939] leading-relaxed whitespace-pre-wrap break-words">{result.translation}</div>
             </div>
             {showVocabActions ? (
@@ -197,7 +197,7 @@ function DictionaryPanel({
             <div className="flex items-center gap-2 text-xs">
               <div className={cn('px-2 py-1 rounded-md font-medium', {
                 'bg-[#fffbeb] text-[#bb4d00]': status === 'unknown',
-                'bg-[#eff6ff] text-[#1447e6]': status === 'learning',
+                'bg-g-learning-bg text-g-learning-text': status === 'learning',
                 'bg-emerald-100 text-emerald-700': status === 'known',
                 'bg-gray-100 text-gray-500': status === 'ignored',
               })}>
@@ -212,7 +212,7 @@ function DictionaryPanel({
                 disabled={status === 'learning'}
                 className={cn(
                   'flex flex-col items-center gap-1 p-2.5 rounded-xl border text-xs font-medium transition-all',
-                  status === 'learning' ? 'border-blue-200 bg-blue-50 text-[#1447e6]' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-[#4a5565] hover:text-[#1447e6]',
+                  status === 'learning' ? 'border-blue-200 bg-blue-50 text-g-learning-text' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-[#4a5565] hover:text-g-learning-text',
                 )}
               >
                 <BookmarkPlus className="w-4 h-4" />
@@ -693,15 +693,15 @@ export default function ReaderPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FDFCFF]">
-        <div className="w-8 h-8 border-2 border-violet-300 border-t-[#7f22fe] rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-g-reader-bg">
+        <div className="w-8 h-8 border-2 border-violet-300 border-t-g-blue-700 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (!content) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
           <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
@@ -715,7 +715,7 @@ export default function ReaderPage() {
 
   if (content.accessGranted === false && !isTrial) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
           <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
@@ -739,7 +739,7 @@ export default function ReaderPage() {
 
   if (!pageCount) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
           <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
@@ -766,7 +766,7 @@ export default function ReaderPage() {
       ? 'bg-[#F4E8D0] text-[#3D2B1F]'
       : readerTheme === 'dark'
         ? 'bg-[#1C1917] text-[#F5F5F4]'
-        : 'bg-[#FDFCFF]';
+        : 'bg-g-reader-bg';
 
   return (
     <div className={cn('flex flex-col h-screen max-h-dvh overflow-hidden', pageTone)}>
@@ -791,11 +791,11 @@ export default function ReaderPage() {
             <span className="size-2 rounded bg-[#ffb900]" />
             <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} {copy.reader.unknown}</span>
           </div>
-          <div className="flex items-center gap-1.5 bg-[#eff6ff] border border-[#bedbff] rounded-full px-2.5 py-1">
+          <div className="flex items-center gap-1.5 bg-g-learning-bg border border-[#bedbff] rounded-full px-2.5 py-1">
             <span className="size-2 rounded bg-[#51a2ff]" />
-            <span className="text-xs font-medium text-[#1447e6] whitespace-nowrap">{learningCount} {copy.reader.learning}</span>
+            <span className="text-xs font-medium text-g-learning-text whitespace-nowrap">{learningCount} {copy.reader.learning}</span>
           </div>
-          <span className="bg-[#dbeafe] text-[#1447e6] text-[10px] font-semibold rounded-lg px-1.5 py-0.5 leading-[15px]">
+          <span className="bg-[#dbeafe] text-g-learning-text text-[10px] font-semibold rounded-lg px-1.5 py-0.5 leading-[15px]">
             {content.cefrLevel.toUpperCase()}
           </span>
         </div>
@@ -824,7 +824,7 @@ export default function ReaderPage() {
             onClick={() => setShowUnknownOnly((v) => !v)}
             className={cn(
               'flex items-center gap-1.5 p-1.5 rounded-[10px] text-xs font-medium transition-colors',
-              showUnknownOnly ? 'bg-[#f5f3ff] text-[#7008e7]' : 'hover:bg-gray-100 text-[#6a7282]',
+              showUnknownOnly ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#6a7282]',
             )}
             aria-pressed={showUnknownOnly}
             title={copy.reader.unknownOnlyTitle}
@@ -836,7 +836,7 @@ export default function ReaderPage() {
           <button
             type="button"
             onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment?.id ?? outline[segmentIndex]?.id ?? ''}`)}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-g-blue-700 hover:bg-g-blue-50 transition-colors"
             title={copy.reader.practiceTitle}
           >
             <GraduationCap className="w-3.5 h-3.5" />
@@ -870,14 +870,14 @@ export default function ReaderPage() {
                           onClick={() => goToSegment(group.firstIndex)}
                           className={cn(
                             'w-full text-left px-4 py-2.5 transition-colors',
-                            activeHere ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                            activeHere ? 'bg-g-blue-50 border-r-[1.6px] border-g-blue-700' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
                           )}
                         >
-                          <div className={cn('text-sm font-medium truncate', activeHere ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                          <div className={cn('text-sm font-medium truncate', activeHere ? 'text-g-blue-900' : 'text-[#4a5565]')}>
                             {group.title}
                           </div>
                           {group.pageCount > 1 && (
-                            <div className={cn('text-xs mt-0.5', activeHere ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                            <div className={cn('text-xs mt-0.5', activeHere ? 'text-g-blue-700' : 'text-[#99a1af]')}>
                               {group.pageCount} pages
                             </div>
                           )}
@@ -893,13 +893,13 @@ export default function ReaderPage() {
                           onClick={() => goToSegment(i)}
                           className={cn(
                             'w-full text-left px-4 py-3 transition-colors',
-                            active ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                            active ? 'bg-g-blue-50 border-r-[1.6px] border-g-blue-700' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
                           )}
                         >
-                          <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                          <div className={cn('text-xs font-semibold', active ? 'text-g-blue-700' : 'text-[#99a1af]')}>
                             {pageCount > 1 ? copy.reader.page(i + 1) : copy.reader.content}
                           </div>
-                          <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                          <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-g-blue-900' : 'text-[#4a5565]')}>
                             {displayChapterTitle(seg.chapterTitle || seg.title, i)}
                           </div>
                         </button>
@@ -919,7 +919,7 @@ export default function ReaderPage() {
             <button
               type="button"
               onClick={() => setChaptersOpen(true)}
-              className="flex-1 flex flex-col items-center justify-center gap-2 text-[#99a1af] hover:text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
+              className="flex-1 flex flex-col items-center justify-center gap-2 text-[#99a1af] hover:text-g-blue-700 hover:bg-g-blue-50 transition-colors"
               title={copy.reader.chapters}
             >
               <PanelLeftOpen className="w-4 h-4" />
@@ -946,7 +946,7 @@ export default function ReaderPage() {
                 className={cn(
                   'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors max-w-[12rem] truncate',
                   segmentIndex >= group.firstIndex && segmentIndex < group.firstIndex + group.pageCount
-                    ? 'bg-[#f5f3ff] border-[#7f22fe] text-[#7008e7]'
+                    ? 'bg-g-blue-50 border-g-blue-700 text-g-blue-700'
                     : 'bg-white border-gray-200 text-[#4a5565]',
                 )}
               >
@@ -960,12 +960,12 @@ export default function ReaderPage() {
             style={{ fontSize: `${fontScale}rem` }}
           >
             {isTrial ? (
-              <div className="mb-6 rounded-xl border border-violet-200 bg-[#f5f3ff] px-4 py-3 text-sm text-[#4d179a]">
+              <div className="mb-6 rounded-xl border border-violet-200 bg-g-blue-50 px-4 py-3 text-sm text-g-blue-900">
                 {copy.reader.trialBanner(formatUzs(content.priceUzs ?? 0))}
               </div>
             ) : null}
             <div className="mb-8">
-              <div className="text-xs font-semibold text-[#8e51ff] uppercase tracking-[1.2px] mb-1">
+              <div className="text-xs font-semibold text-g-blue-500 uppercase tracking-[1.2px] mb-1">
                 {chapterGroups
                   ? `Chapter ${(chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1} of ${chapterGroups.length}`
                   : `${segmentIndex + 1} of ${pageCount}`}
@@ -1071,7 +1071,7 @@ export default function ReaderPage() {
             >
               {!segment ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
+                  <Loader2 className="w-6 h-6 text-g-blue-700 animate-spin" />
                 </div>
               ) : tokens.map((token) => {
                 const stanzaBreak = stanzaBreaks.has(token.i) ? (
@@ -1128,7 +1128,7 @@ export default function ReaderPage() {
                       className={cn(
                         'px-px py-0.5',
                         highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
-                        selected && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
+                        selected && 'ring-2 ring-g-blue-500/60 bg-g-blue-50',
                       )}
                     >
                       {token.surface}
@@ -1161,16 +1161,16 @@ export default function ReaderPage() {
                   onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
                   onBlur={commitPageJump}
                   aria-label={copy.reader.goToPage}
-                  className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#8e51ff]/40 focus:border-[#7f22fe]"
+                  className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-g-blue-500/40 focus:border-g-blue-700"
                 />
                 <span className="tabular-nums">/ {pageInChapter.total}</span>
               </form>
               {isTrial && segmentIndex >= trialLimit - 1 ? (
-                <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
+                <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-g-blue-700 hover:bg-g-blue-700">
                   {copy.reader.unlockFullBook}
                 </Button>
               ) : segmentIndex < pageCount - 1 ? (
-                <Button onClick={goNext} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
+                <Button onClick={goNext} className="rounded-xl gap-1.5 bg-g-blue-700 hover:bg-g-blue-700">
                   <span className="hidden sm:inline">{copy.reader.next}</span>
                   <ChevronRight className="w-4 h-4" />
                 </Button>

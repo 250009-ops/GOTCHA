@@ -25,6 +25,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { BrandMark } from '../components/GotchaLogo';
 
 type LearnerCopy = ReturnType<typeof useLearnerCopy>;
 
@@ -87,7 +88,7 @@ function statusBadge(status: string, copy: LearnerCopy) {
     case 'processing':
     case 'tokenizing':
       return (
-        <span className="inline-flex items-center gap-1 text-xs font-semibold text-[#1447e6] bg-[#eff6ff] border border-[#bedbff] rounded-full px-2 py-0.5 shrink-0">
+        <span className="inline-flex items-center gap-1 text-xs font-semibold text-g-learning-text bg-g-learning-bg border border-[#bedbff] rounded-full px-2 py-0.5 shrink-0">
           <Loader2 className="w-3 h-3 animate-spin" />{copy.importPage.statusProcessing}
         </span>
       );
@@ -156,7 +157,7 @@ function SubmitButton({
       type="button"
       onClick={onClick}
       disabled={disabled || loading}
-      className="w-full min-w-0 max-w-full h-10 px-3 rounded-[14px] bg-[#7f22fe] hover:bg-[#7008e7] disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
+      className="w-full min-w-0 max-w-full h-10 px-3 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
     >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
       {children}
@@ -183,7 +184,7 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
             disabled={loading}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={copy.import.urlPlaceholder}
-            className="block w-full min-w-0 max-w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+            className="block w-full min-w-0 max-w-full pl-9 pr-4 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50"
           />
         </div>
         <p className="text-xs text-[#99a1af] mt-1 leading-relaxed [overflow-wrap:anywhere]">{copy.importPage.urlHelp}</p>
@@ -196,7 +197,7 @@ function URLForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { u
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={copy.importPage.autoFromPage}
-          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50"
         />
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
@@ -226,7 +227,7 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={copy.importPage.titlePlaceholder}
-          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50"
         />
       </div>
       <div className="pt-4 min-w-0">
@@ -242,7 +243,7 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
           onChange={(e) => setText(e.target.value)}
           placeholder={copy.importPage.pastePlaceholder}
           rows={8}
-          className="block w-full min-w-0 max-w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 py-2.5 bg-white border border-[#e5e7eb] rounded-[14px] text-sm resize-none outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50"
         />
         {words > 0 && words < MIN_PASTE_WORDS && (
           <p className="text-xs text-amber-600 mt-1">{MIN_PASTE_WORDS - words} {copy.importPage.wordsNeeded}</p>
@@ -349,7 +350,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
           disabled={loading}
           onChange={(e) => setTitle(e.target.value)}
           placeholder={copy.importPage.autoFromFilename}
-          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50"
+          className="block w-full min-w-0 max-w-full px-3 h-10 bg-white border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50"
         />
       </div>
       <LangSelect value={lang} onChange={setLang} disabled={loading} />
@@ -366,11 +367,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
 }
 
 function ImportLogoMark() {
-  return (
-    <div className="bg-[#2107aa] w-9 h-9 rounded-[14px] flex items-center justify-center shrink-0">
-      <span className="font-brand text-white text-lg leading-none">G</span>
-    </div>
-  );
+  return <BrandMark size={36} />;
 }
 
 type PaymentModalState = {
@@ -565,7 +562,7 @@ function PaymentConfirmModal({
           <>
             <div
               className="w-20 h-[110px] rounded-lg flex items-center justify-center"
-              style={{ background: 'linear-gradient(to right, #8b5cf6, #7008e7)', boxShadow: '0 8px 8px rgba(112, 8, 231, 0.2)' }}
+              style={{ background: 'linear-gradient(to right, var(--g-blue-500), var(--g-blue-700))', boxShadow: '0 8px 8px rgba(33, 7, 170, 0.2)' }}
             >
               <FileText className="w-8 h-8 text-white" />
             </div>
@@ -605,7 +602,7 @@ function PaymentConfirmModal({
               <div className="h-px bg-[#e4e7ec]" />
               <div className="flex justify-between items-center">
                 <span className="text-[#101828] text-sm font-semibold">{copy.importPage.total}</span>
-                <span className="text-[#7008e7] text-base font-bold">{formatUzs(quote.amountUzs)}</span>
+                <span className="text-g-blue-700 text-base font-bold">{formatUzs(quote.amountUzs)}</span>
               </div>
             </div>
             {quote.freeLimits && (
@@ -628,8 +625,8 @@ function PaymentConfirmModal({
               type="button"
               onClick={handleProceedToCard}
               disabled={loading || externalLoading || (quote.requiresPayment && (!quote.tier || quote.amountUzs <= 0))}
-              className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
-              style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
+              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
+              style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
             >
               {loading ? (
                 <>
@@ -668,7 +665,7 @@ function PaymentConfirmModal({
                   onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
                   placeholder="0000 0000 0000 0000"
                   disabled={loading}
-                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
+                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
               </div>
               <div>
@@ -681,7 +678,7 @@ function PaymentConfirmModal({
                   onChange={(e) => setExpiry(formatExpiry(e.target.value))}
                   placeholder="00/00"
                   disabled={loading}
-                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-wider"
+                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-wider"
                 />
               </div>
             </div>
@@ -696,8 +693,8 @@ function PaymentConfirmModal({
               type="button"
               onClick={handleSubmitCard}
               disabled={loading || !isCardValid}
-              className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
-              style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
+              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
+              style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
             >
               {loading ? (
                 <>
@@ -741,7 +738,7 @@ function PaymentConfirmModal({
                 onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
                 placeholder="123456"
                 disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] transition-all disabled:opacity-50 font-mono tracking-[0.3em]"
+                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-[0.3em]"
               />
             </div>
 
@@ -755,8 +752,8 @@ function PaymentConfirmModal({
               type="button"
               onClick={handleSubmitOtp}
               disabled={loading || !isOtpValid}
-              className="w-full h-[52px] rounded-[14px] bg-[#7008e7] hover:bg-[#5c06c0] disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
-              style={{ boxShadow: '0 6px 8px rgba(112, 8, 231, 0.25)' }}
+              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
+              style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
             >
               {loading ? (
                 <>
@@ -782,7 +779,7 @@ function PaymentConfirmModal({
                   type="button"
                   onClick={handleResendOtp}
                   disabled={loading}
-                  className="text-[#7008e7] text-sm font-medium hover:text-[#5c06c0] transition-colors disabled:opacity-50"
+                  className="text-g-blue-700 text-sm font-medium hover:text-g-blue-900 transition-colors disabled:opacity-50"
                 >
                   {copy.importPage.resendCode}
                 </button>
@@ -1101,7 +1098,7 @@ export default function ImportPage() {
                 onClick={() => setTab(t.key)}
                 className={cn(
                   'min-w-0 max-w-full flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 sm:py-3 px-1 text-[10px] sm:text-xs font-semibold border-b-2 transition-all disabled:opacity-60',
-                  tab === t.key ? 'border-[#7f22fe] text-[#7008e7] bg-[rgba(245,243,255,0.5)]' : 'border-transparent text-[#99a1af] hover:text-gray-600 hover:bg-gray-50',
+                  tab === t.key ? 'border-g-blue-700 text-g-blue-700 bg-[rgba(245,243,255,0.5)]' : 'border-transparent text-[#99a1af] hover:text-gray-600 hover:bg-gray-50',
                 )}
               >
                 <t.icon className="w-3.5 h-3.5 shrink-0" />
@@ -1122,8 +1119,8 @@ export default function ImportPage() {
               </div>
             )}
             {freeAllowance && (
-              <div className="flex items-start gap-2 p-3 mb-4 bg-[#f5f3ff] border border-[#ddd6ff] rounded-[14px]">
-                <p className="text-xs text-[#5b21b6] leading-relaxed break-words">{formatFreeAllowance(freeAllowance, copy.billing)}</p>
+              <div className="flex items-start gap-2 p-3 mb-4 bg-g-blue-50 border border-g-blue-200 rounded-[14px]">
+                <p className="text-xs text-g-blue-800 leading-relaxed break-words">{formatFreeAllowance(freeAllowance, copy.billing)}</p>
               </div>
             )}
             <p className="text-[11px] text-[#99a1af] mb-3 leading-relaxed break-words">
@@ -1186,7 +1183,7 @@ export default function ImportPage() {
                           {isPendingStatus(item.ingestionStatus) &&
                             item.progressPagesTotal != null &&
                             item.progressPagesTotal > 0 && (
-                              <span className="text-xs text-[#1447e6] tabular-nums">
+                              <span className="text-xs text-g-learning-text tabular-nums">
                                 {copy.importPage.pagesProgress(
                                   Math.min(item.progressPagesDone ?? 0, item.progressPagesTotal),
                                   item.progressPagesTotal,
@@ -1194,12 +1191,12 @@ export default function ImportPage() {
                               </span>
                             )}
                           {isPendingStatus(item.ingestionStatus) && item.progressPhase === 'ocr' && (
-                            <span className="text-xs text-[#5b21b6]">
+                            <span className="text-xs text-g-blue-800">
                               AI is reading scanned pages…
                             </span>
                           )}
                           {isPendingStatus(item.ingestionStatus) && item.progressPhase === 'ai' && (
-                            <span className="text-xs text-[#5b21b6]">
+                            <span className="text-xs text-g-blue-800">
                               AI is cleaning up the text…
                             </span>
                           )}

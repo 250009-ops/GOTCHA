@@ -1,4 +1,4 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsIn, IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
 import { AppLanguage, CefrLevel } from '@prisma/client';
 
 export class UpdateProfileDto {
@@ -27,6 +27,10 @@ export class UpdatePreferencesDto {
   readerTheme?: string;
 
   @IsOptional()
+  @IsIn(['system', 'light', 'dark'])
+  appTheme?: string;
+
+  @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(2.5)
@@ -45,6 +49,16 @@ export class UpdatePreferencesDto {
   @Min(5)
   @Max(120)
   dailyGoalMinutes?: number;
+
+  @IsOptional()
+  @IsIn([30, 60, 120, 200])
+  dailyGoalXp?: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(50)
+  dailyNewWords?: number;
 
   @IsOptional()
   @IsBoolean()

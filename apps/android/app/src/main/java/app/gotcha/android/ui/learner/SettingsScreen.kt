@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -446,11 +448,11 @@ fun SettingsScreen(
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.Medium,
                                 fontSize = 12.sp,
-                                color = if (on) Color(0xFF7008E7) else Color(0xFF6A7282),
+                                color = if (on) GotchaBlue.B700 else Color(0xFF6A7282),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (on) Color(0xFFF5F3FF) else Color.White)
-                                    .border(1.dp, if (on) Color(0xFFA684FF) else Color(0xFFE5E7EB), RoundedCornerShape(10.dp))
+                                    .background(if (on) GotchaBlue.B50 else Color.White)
+                                    .border(1.dp, if (on) GotchaBlue.B300 else Color(0xFFE5E7EB), RoundedCornerShape(10.dp))
                                     .clickable { theme = value }
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                             )
@@ -493,13 +495,13 @@ fun SettingsScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(Brush.linearGradient(listOf(Color(0xFF7F22FE), Color(0xFF432DD7))))
+                            .background(Brush.linearGradient(listOf(GotchaBlue.B700, Color(0xFF432DD7))))
                             .padding(20.dp),
                     ) {
                         Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Column {
-                                    Text("FREE ALLOWANCE", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color(0xFFDDD6FF))
+                                    Text("FREE ALLOWANCE", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B200)
                                     Text("Pay per import", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = Color.White)
                                 }
                                 Icon(Icons.Outlined.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
@@ -513,8 +515,8 @@ fun SettingsScreen(
                                 "Access to the public library",
                             ).forEach { line ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
-                                    Icon(Icons.Outlined.Check, contentDescription = null, tint = Color(0xFFDDD6FF), modifier = Modifier.size(14.dp))
-                                    Text(line, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFDDD6FF))
+                                    Icon(Icons.Outlined.Check, contentDescription = null, tint = GotchaBlue.B200, modifier = Modifier.size(14.dp))
+                                    Text(line, fontFamily = Inter, fontSize = 14.sp, color = GotchaBlue.B200)
                                 }
                             }
                             Text(
@@ -522,7 +524,7 @@ fun SettingsScreen(
                                 fontFamily = Inter,
                                 fontWeight = FontWeight.SemiBold,
                                 fontSize = 14.sp,
-                                color = Color(0xFF7008E7),
+                                color = GotchaBlue.B700,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clip(RoundedCornerShape(14.dp))
@@ -550,7 +552,7 @@ fun SettingsScreen(
                                     .fillMaxWidth(usagePct.coerceAtLeast(4) / 100f)
                                     .height(8.dp)
                                     .clip(RoundedCornerShape(50))
-                                    .background(Color(0xFF8E51FF)),
+                                    .background(GotchaBlue.B500),
                             )
                         }
                     }
@@ -577,7 +579,7 @@ fun SettingsScreen(
                                         .fillMaxWidth(importUsagePct / 100f)
                                         .height(8.dp)
                                         .clip(RoundedCornerShape(50))
-                                        .background(Color(0xFF7F22FE)),
+                                        .background(GotchaBlue.B700),
                                 )
                             }
                         }
@@ -689,7 +691,7 @@ private fun SettingsAvatar(name: String?, url: String?) {
         modifier = Modifier
             .size(48.dp)
             .clip(CircleShape)
-            .background(Color(0xFFEDE9FE)),
+            .background(GotchaBlue.B50),
         contentAlignment = Alignment.Center,
     ) {
         if (!url.isNullOrBlank()) {
@@ -700,7 +702,7 @@ private fun SettingsAvatar(name: String?, url: String?) {
                 contentScale = ContentScale.Crop,
             )
         } else {
-            Text(initials, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF7008E7))
+            Text(initials, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = GotchaBlue.B700)
         }
     }
 }
@@ -807,10 +809,10 @@ private fun TargetLanguageRow(
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 11.sp,
-                    color = Color(0xFF7008E7),
+                    color = GotchaBlue.B700,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(Color(0xFFEDE9FE))
+                        .background(GotchaBlue.B50)
                         .padding(horizontal = 8.dp, vertical = 2.dp),
                 )
             }

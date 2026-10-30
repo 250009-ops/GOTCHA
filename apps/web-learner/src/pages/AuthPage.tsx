@@ -29,7 +29,7 @@ function LegalConsent() {
         href={termsHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
+        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
       >
         {copy.auth.termsOfUse}
       </a>{' '}
@@ -38,7 +38,7 @@ function LegalConsent() {
         href={privacyHref}
         target="_blank"
         rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
+        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
       >
         {copy.auth.privacyPolicy}
       </a>
@@ -259,7 +259,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     : copy.auth.signUpSubtitle}
             </p>
             {!isLogin && !showLanguageStep && plan === 'pay-per-import' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-[#ddd6fe] px-3 py-1 text-xs font-semibold text-[#7f22fe] self-start">
+              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-g-blue-200 px-3 py-1 text-xs font-semibold text-g-blue-700 self-start">
                 <AuthIcon src={a.sparkles} size={16} />
                 {copy.auth.payPerImportBadge}
               </div>
@@ -309,7 +309,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 <Button
                   type="submit"
                   disabled={loading || !nativeLanguage || targetLanguages.length === 0}
-                  className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                  className="flex-1 h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -336,7 +336,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder="Alex Chen"
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                   />
                 </div>
               )}
@@ -353,7 +353,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="you@example.com"
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -367,7 +367,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={isLogin ? copy.auth.passwordPlaceholderLogin : copy.auth.passwordPlaceholderRegister}
-                    className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                    className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                   />
                   <button
                     type="button"
@@ -383,7 +383,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 <div className="flex items-center justify-end">
                   <Link
                     to={forgotPasswordTo}
-                    className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+                    className="text-[13px] font-semibold text-g-blue-700 hover:text-g-blue-800"
                   >
                     {copy.auth.forgotPassword}
                   </Link>
@@ -392,7 +392,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
               >
                 {loading ? (
                     <span className="flex items-center gap-2">
@@ -423,7 +423,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               replace
               to={switchTo}
               state={{ email, name }}
-              className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]"
+              className="text-g-blue-700 font-bold hover:text-g-blue-800"
             >
               {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>

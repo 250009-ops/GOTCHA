@@ -1,12 +1,13 @@
 @import "tailwindcss";
+@import "./gotcha-tokens.css";
 
 @theme {
   --color-brand: #2107aa;
   --color-brand-deep: #101828;
-  --color-brand-purple: #6c1d95;
-  --color-brand-cta-from: #7008e7;
-  --color-brand-cta-mid: #372aac;
-  --color-brand-cta-to: #4d179a;
+  --color-brand-purple: var(--g-blue-700);
+  --color-brand-cta-from: var(--g-blue-700);
+  --color-brand-cta-mid: var(--g-blue-900);
+  --color-brand-cta-to: var(--g-blue-900);
   --color-text: #101828;
   --color-text-muted: #6a7282;
   --color-text-soft: #4a5565;
@@ -17,7 +18,7 @@
   --color-icon-bg: #f3f4f6;
   --color-success: #10b981;
   --color-star: #f59e0b;
-  --color-lavender: #ddd6ff;
+  --color-lavender: var(--g-blue-200);
   --font-family-brand: 'Manrope', sans-serif;
   --font-family-heading: 'Manrope', sans-serif;
   --font-family-body: 'Geist', system-ui, sans-serif;
@@ -26,10 +27,10 @@
 :root {
   --brand: #2107aa;
   --brand-deep: #101828;
-  --brand-purple: #6c1d95;
-  --brand-cta-from: #7008e7;
-  --brand-cta-mid: #372aac;
-  --brand-cta-to: #4d179a;
+  --brand-purple: var(--g-blue-700);
+  --brand-cta-from: var(--g-blue-700);
+  --brand-cta-mid: var(--g-blue-900);
+  --brand-cta-to: var(--g-blue-900);
   --text: #101828;
   --text-muted: #6a7282;
   --text-soft: #4a5565;

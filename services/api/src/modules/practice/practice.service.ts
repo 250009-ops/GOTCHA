@@ -1,3 +1,4 @@
+import { normalize } from '@gotcha/shared';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -15,10 +16,13 @@ export class PracticeService {
   ) {}
 
   async startSession(userId: string, dto: StartPracticeDto) {
-    if (dto.practiceType !== PracticeType.flashcard) {
-      await this.limits.assertQuizAllowed(userId);
+    // BUG-02: chapter sessions never had flashcard questions (0/0 → score null). Word review lives in the
+    // daily engine now (GET /practice/daily); `mixed` is engine-only too.
+    if (dto.practiceType === PracticeType.flashcard || dto.practiceType === PracticeType.mixed) {
+      throw new BadRequestException({ message: 'Use GET /practice/daily for word review', code: 'use_daily_practice' });
     }
-    if (!dto.segmentId && dto.practiceType !== PracticeType.flashcard) {
+    await this.limits.assertQuizAllowed(userId);
+    if (!dto.segmentId) {
       throw new BadRequestException('segmentId required for this practice type');
     }
 
@@ -50,13 +54,10 @@ export class PracticeService {
     const questionLang =
       native && native !== passageLang ? native : ui && ui !== passageLang ? ui : ui ?? native ?? 'uz';
 
-    const questions =
-      dto.practiceType === PracticeType.flashcard
-        ? []
-        : await this.ai.generateQuiz(segmentText, dto.practiceType, {
-            questionLang,
-            passageLang,
-          });
+    const questions = await this.ai.generateQuiz(segmentText, dto.practiceType, {
+      questionLang,
+      passageLang,
+    });
 
     const session = await this.prisma.practiceSession.create({
       data: {
@@ -78,9 +79,7 @@ export class PracticeService {
       include: { questions: { orderBy: { questionIndex: 'asc' } } },
     });
 
-    if (dto.practiceType !== PracticeType.flashcard) {
-      await this.limits.incrementQuizUsage(userId);
-    }
+    await this.limits.incrementQuizUsage(userId);
 
     return redactSession(session);
   }
@@ -92,16 +91,26 @@ export class PracticeService {
     });
     if (!session) throw new NotFoundException('Practice session not found');
     if (session.completedAt) throw new BadRequestException('Session already completed');
+    if (session.questionCount === 0) throw new BadRequestException('Session has no questions');
+
+    // BUG-01 / BUG-03: validate before grading anything. Unknown ids reject the whole submission (nothing is
+    // completed or revealed); duplicate answers for one question are rejected rather than counted twice.
+    const byId = new Map(session.questions.map((q) => [q.id, q]));
+    const seen = new Set<string>();
+    for (const answer of dto.answers) {
+      if (!byId.has(answer.questionId)) throw new BadRequestException(`Unknown questionId: ${answer.questionId}`);
+      if (seen.has(answer.questionId)) throw new BadRequestException(`Duplicate answer for questionId: ${answer.questionId}`);
+      seen.add(answer.questionId);
+    }
 
     let correctCount = 0;
     const results = [];
 
     for (const answer of dto.answers) {
-      const question = session.questions.find((q) => q.id === answer.questionId);
-      if (!question) continue;
+      const question = byId.get(answer.questionId)!;
 
       const isCorrect =
-        answer.userAnswer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
+        normalize(answer.userAnswer) === normalize(question.correctAnswer); // case/punctuation/ё=е/Uzbek apostrophes
       if (isCorrect) correctCount++;
 
       const saved = await this.prisma.practiceAnswer.create({
@@ -120,7 +129,8 @@ export class PracticeService {
       data: { correctCount, completedAt: new Date() },
     });
 
-    return { session: updated, results, score: correctCount / session.questionCount };
+    // Unanswered questions count as wrong; score is always within [0, 1].
+    return { session: updated, results, score: Math.min(1, correctCount / session.questionCount) };
   }
 
   async getSession(userId: string, sessionId: string) {
@@ -128,7 +138,7 @@ export class PracticeService {
       where: { id: sessionId, userId },
       include: { questions: { orderBy: { questionIndex: 'asc' } }, answers: true },
     });
-    if (!session) return session;
+    if (!session) throw new NotFoundException('Practice session not found'); // BUG-04: no 200 + empty body
     // Answers are only revealed once the session has been submitted.
     return session.completedAt ? session : redactSession(session);
   }

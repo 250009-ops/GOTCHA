@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -67,10 +69,10 @@ private val AxisStroke = Color(0xFFE5E7EB)
 
 private val heatmapLevelColors = listOf(
     Color(0xFFF3F4F6),
-    Color(0xFFEDE9FE),
-    Color(0xFFC4B4FF),
-    Color(0xFF8E51FF),
-    Color(0xFF7008E7),
+    GotchaBlue.B50,
+    GotchaBlue.B200,
+    GotchaBlue.B500,
+    GotchaBlue.B700,
 )
 
 fun formatStatsShortDate(iso: String): String {
@@ -144,15 +146,7 @@ fun StatsChartCard(
 
 @Composable
 fun StatsGLogo(size: Int = 32) {
-    Box(
-        modifier = Modifier
-            .size(size.dp)
-            .clip(RoundedCornerShape((size * 0.35f).dp))
-            .background(Color(0xFF2107AA)),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text("G", fontFamily = app.gotcha.android.ui.theme.BagelFatOne, fontSize = (size * 0.6f).sp, color = Color.White)
-    }
+    app.gotcha.android.ui.components.BrandMark(size = size)
 }
 
 @Composable
@@ -176,7 +170,7 @@ fun StatsEmptyState(title: String, description: String, modifier: Modifier = Mod
 @Composable
 fun StatsAreaLineChart(
     data: List<StatsSeriesPoint>,
-    color: Color = Color(0xFF8E51FF),
+    color: Color = GotchaBlue.B500,
     emptyMessage: String = "No activity in this range",
 ) = StatsAxisChart(data, color, emptyMessage, StatsChartKind.Area)
 

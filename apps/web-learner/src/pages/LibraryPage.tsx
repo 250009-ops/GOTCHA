@@ -19,7 +19,7 @@ const cefrStyle: Record<string, string> = {
   a2: 'bg-teal-100 text-teal-700',
   b1: 'bg-blue-100 text-blue-700',
   b2: 'bg-indigo-100 text-indigo-700',
-  c1: 'bg-violet-100 text-[#7008e7]',
+  c1: 'bg-violet-100 text-g-blue-700',
   c2: 'bg-pink-100 text-pink-700',
 };
 const staticFilterIds = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
@@ -67,7 +67,7 @@ function SectionHeading({
         <button
           type="button"
           onClick={onSeeAll}
-          className="flex items-center gap-0.5 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
+          className="flex items-center gap-0.5 text-xs font-semibold text-g-blue-700 hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
         >
           {copy.common.seeAll} <ChevronRight className="w-3.5 h-3.5" />
         </button>
@@ -131,7 +131,7 @@ function ContentCard({
   const open = () => openReader(navigate, item.id, libraryReturn);
   const isProg = (item.progressPct ?? 0) > 0;
   const subtitle = itemSubtitle(item);
-  const highlightClass = highlighted ? 'ring-2 ring-[#7008e7] ring-offset-2' : '';
+  const highlightClass = highlighted ? 'ring-2 ring-g-blue-700 ring-offset-2' : '';
 
   if (view === 'list') {
     return (
@@ -148,7 +148,7 @@ function ContentCard({
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-gray-900 text-sm truncate group-hover:text-[#7008e7] transition-colors">{item.title}</div>
+              <div className="font-semibold text-gray-900 text-sm truncate group-hover:text-g-blue-700 transition-colors">{item.title}</div>
               {subtitle && <div className="text-gray-400 text-xs mt-0.5 line-clamp-1">{subtitle}</div>}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -163,9 +163,9 @@ function ContentCard({
             </span>
             <span className="capitalize">{item.contentType.replace('_', ' ')}</span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
-              <span className="text-[#7008e7] font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
+              <span className="text-g-blue-700 font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
             )}
-            {isProg && <span className="text-[#7f22fe] font-medium">{copy.libraryPage.percentRead(Math.round(item.progressPct ?? 0))}</span>}
+            {isProg && <span className="text-g-blue-700 font-medium">{copy.libraryPage.percentRead(Math.round(item.progressPct ?? 0))}</span>}
           </div>
           {isProg && (
             <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -199,7 +199,7 @@ function ContentCard({
         </div>
         <div className="absolute top-2 right-2 flex items-center gap-1">
           {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
-            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-[#7008e7] shadow-sm">
+            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-g-blue-700 shadow-sm">
               {formatUzs(item.priceUzs ?? 0)}
             </span>
           )}
@@ -207,7 +207,7 @@ function ContentCard({
         </div>
       </div>
       <div className="p-3 flex-1 flex flex-col min-h-0">
-        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-[#7008e7] transition-colors mb-1">{item.title}</div>
+        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-g-blue-700 transition-colors mb-1">{item.title}</div>
         {subtitle ? (
           <div className="text-gray-400 text-xs line-clamp-2 mb-auto">{subtitle}</div>
         ) : (
@@ -221,7 +221,7 @@ function ContentCard({
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
               <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.trySample}</span>
             ) : isProg ? (
-              <span className="font-semibold text-[#7f22fe] shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
+              <span className="font-semibold text-g-blue-700 shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
             ) : item.knownWordRatio != null && item.knownWordRatio > 0 ? (
               <span className="text-gray-400 shrink-0">{copy.libraryPage.percentKnown(Math.round(item.knownWordRatio * 100))}</span>
             ) : (
@@ -646,7 +646,7 @@ export default function LibraryPage() {
             <button
               type="button"
               onClick={() => navigate('/app')}
-              className="hover:text-[#7f22fe] transition-colors font-medium"
+              className="hover:text-g-blue-700 transition-colors font-medium"
             >
               {copy.library.title}
             </button>
@@ -702,7 +702,7 @@ export default function LibraryPage() {
                 onClick={() => setFilter(f)}
                 className={cn(
                   'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all',
-                  activeFilter === f ? 'bg-[#7f22fe] text-white border-[#7f22fe] shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+                  activeFilter === f ? 'bg-g-blue-700 text-white border-g-blue-700 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
                 )}
               >
                 {filterLabel(f, copy)}
@@ -764,7 +764,7 @@ export default function LibraryPage() {
         <div className="flex gap-3 min-w-0 w-full lg:w-auto">
           {[
             { icon: Flame, value: copy.libraryPage.days(streakCount), label: copy.libraryPage.streak, color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
-            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: copy.libraryPage.words, color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
+            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: copy.libraryPage.words, color: 'text-[#155dfc] bg-g-learning-bg border-[#bedbff]' },
           ].map((s) => (
             <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3 py-2.5 min-w-0 flex-1 lg:flex-none lg:min-w-[7.5rem]', s.color)}>
               <s.icon className="w-4 h-4 shrink-0" />
@@ -780,7 +780,7 @@ export default function LibraryPage() {
       {highlightedItem && (
         <section className="space-y-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#7008e7]">{copy.libraryPage.newMaterialLabel}</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-g-blue-700">{copy.libraryPage.newMaterialLabel}</p>
             <h2 className="text-gray-900 font-bold mt-0.5">{highlightedItem.title}</h2>
             <p className="text-gray-400 text-sm">{copy.libraryPage.newMaterialHint}</p>
           </div>
@@ -886,7 +886,7 @@ export default function LibraryPage() {
             <button
               type="button"
               onClick={() => navigate('/app/import')}
-              className="inline-flex items-center gap-2 text-sm text-[#7f22fe] hover:text-violet-800 font-medium"
+              className="inline-flex items-center gap-2 text-sm text-g-blue-700 hover:text-violet-800 font-medium"
             >
               <Upload className="w-4 h-4" />
               {copy.library.importAction}

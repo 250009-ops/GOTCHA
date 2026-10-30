@@ -19,6 +19,7 @@ import { AdminRole, LicenseStatus, ModerationStatus, PublishStatus } from '@pris
 import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
+import { AdminOpsService } from './admin-ops.service';
 import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
@@ -26,7 +27,10 @@ import { MAX_FILE_BYTES } from '../imports/extract-text';
 @Controller('admin')
 @UseGuards(RolesGuard)
 export class AdminController {
-  constructor(private admin: AdminService) {}
+  constructor(
+    private admin: AdminService,
+    private ops: AdminOpsService,
+  ) {}
 
   @Get('me')
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor, AdminRole.moderator)
@@ -72,29 +76,67 @@ export class AdminController {
 
   @Patch('users/:id')
   @Roles(AdminRole.superadmin)
-  updateUser(
+  async updateUser(
+    @CurrentUser() actor: AuthUserPayload,
     @Param('id') id: string,
     @Body() body: { displayName?: string; deleted?: boolean; tier?: string },
   ) {
-    return this.admin.updateUser(id, body);
+    const res = await this.admin.updateUser(id, body);
+    if (body.deleted !== undefined) await this.ops.audit(actor.sub, body.deleted ? 'user.block' : 'user.unblock', 'user', id);
+    return res;
   }
 
   @Post('users/:id/reset-password')
   @Roles(AdminRole.superadmin)
-  resetUserPassword(@Param('id') id: string) {
-    return this.admin.resetUserPassword(id);
+  async resetUserPassword(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string) {
+    const res = await this.admin.resetUserPassword(id);
+    await this.ops.audit(actor.sub, 'user.reset_password', 'user', id);
+    return res;
   }
 
   @Post('users/:id/adjust-tier')
   @Roles(AdminRole.superadmin)
-  adjustUserTier(@Param('id') id: string, @Body() body: { tier?: string }) {
-    return this.admin.adjustUserTier(id, String(body.tier ?? ''));
+  async adjustUserTier(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string, @Body() body: { tier?: string }) {
+    const res = await this.admin.adjustUserTier(id, String(body.tier ?? ''));
+    await this.ops.audit(actor.sub, 'user.adjust_tier', 'user', id, { tier: String(body.tier ?? '') });
+    return res;
+  }
+
+  @Get('users/:id/export')
+  @Roles(AdminRole.superadmin)
+  exportUser(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string) {
+    return this.ops.exportUser(actor.sub, id);
+  }
+
+  @Get('payments')
+  @Roles(AdminRole.superadmin, AdminRole.analyst)
+  payments(
+    @Query('status') status?: string,
+    @Query('q') q?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+  ) {
+    return this.ops.listPayments({ status, q, page: Number(page), pageSize: Number(pageSize) });
+  }
+
+  /** Refund stub — Atmos test mode only (see AdminOpsService.refundPayment). */
+  @Post('payments/:id/refund')
+  @Roles(AdminRole.superadmin)
+  refundPayment(
+    @CurrentUser() actor: AuthUserPayload,
+    @Param('id') id: string,
+    @Body() body: { reason?: string; amountUzs?: number },
+  ) {
+    return this.ops.refundPayment(actor.sub, id, body);
   }
 
   @Delete('users/:id')
   @Roles(AdminRole.superadmin)
-  hardDeleteUser(@Param('id') id: string) {
-    return this.admin.hardDeleteUser(id);
+  async hardDeleteUser(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string) {
+    const res = await this.admin.hardDeleteUser(id);
+    // entityId kept in metadata too: the row is gone, the audit trail is not.
+    await this.ops.audit(actor.sub, 'user.delete', 'user', id, { userId: id });
+    return res;
   }
 
   @Get('content')
@@ -292,12 +334,6 @@ export class AdminController {
     return this.admin.search(q);
   }
 
-  @Get('subscriptions')
-  @Roles(AdminRole.superadmin, AdminRole.analyst)
-  subscriptions(@Query('range') range?: string) {
-    return this.admin.subscriptions(range);
-  }
-
   @Get('import-pricing')
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
   importPricing(@Query('range') range?: string) {
@@ -395,12 +431,6 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
   gamification() {
     return this.admin.gamification();
-  }
-
-  @Post('gamification/achievements')
-  @Roles(AdminRole.superadmin, AdminRole.editor)
-  createAchievement(@Body() body: Record<string, unknown>) {
-    return this.admin.createAchievement(body);
   }
 
   @Patch('gamification/achievements/:id')

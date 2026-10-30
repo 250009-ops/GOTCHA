@@ -430,7 +430,7 @@ export default function ContentEditorPage() {
               <span className="text-sm font-medium text-slate-600">Source PDF</span>
               <div className="mt-2 flex items-center gap-3">
                 <div className="size-20 rounded-xl border border-dashed border-slate-300 overflow-hidden bg-slate-50 grid place-items-center">
-                  <FileText className={`size-6 ${pdfFile ? 'text-[#6c1d95]' : 'text-slate-400'}`} />
+                  <FileText className={`size-6 ${pdfFile ? 'text-g-blue-700' : 'text-slate-400'}`} />
                 </div>
                 <div className="min-w-0">
                   <input
@@ -541,7 +541,7 @@ export default function ContentEditorPage() {
                       <div className="pb-2">
                         {ch.pages.map((p) => (
                           <div key={p.pageIndex} className="pl-10 pr-4 py-1.5">
-                            <div className="text-xs font-medium text-[#6c1d95]">{p.title}</div>
+                            <div className="text-xs font-medium text-g-blue-700">{p.title}</div>
                             <div className="text-[11px] text-slate-500 line-clamp-2">{p.preview}</div>
                           </div>
                         ))}

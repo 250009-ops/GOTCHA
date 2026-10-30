@@ -111,6 +111,7 @@ enum SrsRating {
 }
 
 enum PracticeType {
+  mixed
   comprehension
   cloze
   flashcard
@@ -223,6 +224,10 @@ model User {
   timezone         String    @default("UTC")
   streakCount      Int       @default(0) @map("streak_count")
   bestStreak       Int       @default(0) @map("best_streak")
+  xpTotal          Int       @default(0) @map("xp_total")
+  xpToday          Int       @default(0) @map("xp_today")
+  xpDate           DateTime? @map("xp_date") @db.Date
+  streakFreezes    Int       @default(0) @map("streak_freezes")
   streakLastDate   DateTime? @map("streak_last_date") @db.Date
   emailVerifiedAt  DateTime? @map("email_verified_at")
   emailVerificationToken   String?   @unique @map("email_verification_token")
@@ -279,10 +284,13 @@ model UserPreferences {
   userId               String  @id @map("user_id") @db.Uuid
   readerFontScale      Float   @default(1.0) @map("reader_font_scale")
   readerTheme          String  @default("light") @map("reader_theme")
+  appTheme             String  @default("system") @map("app_theme")
   readerLineSpacing    Float   @default(1.5) @map("reader_line_spacing")
   showKnownWords       Boolean @default(false) @map("show_known_words")
   ttsEnabled           Boolean @default(true) @map("tts_enabled")
   dailyGoalMinutes     Int     @default(15) @map("daily_goal_minutes")
+  dailyGoalXp          Int     @default(60) @map("daily_goal_xp")
+  dailyNewWords        Int     @default(10) @map("daily_new_words")
   notificationsEnabled Boolean @default(true) @map("notifications_enabled")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -617,6 +625,12 @@ model UserVocabulary {
   dueAt             DateTime    @default(now()) @map("due_at")
   lastReviewedAt    DateTime?   @map("last_reviewed_at")
   mastered          Boolean     @default(false)
+  lapses            Int         @default(0)
+  /// FSRS memory state (ts-fsrs). state: 0 new, 1 learning, 2 review, 3 relearning.
+  stability         Float       @default(0)
+  difficulty        Float       @default(0)
+  fsrsState         Int         @default(0) @map("fsrs_state")
+  learningSteps     Int         @default(0) @map("learning_steps")
   createdAt         DateTime    @default(now()) @map("created_at")
 
   user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -636,6 +650,16 @@ model VocabularyReview {
   reviewedAt     DateTime  @default(now()) @map("reviewed_at")
   intervalBefore Int?      @map("interval_before")
   intervalAfter  Int?      @map("interval_after")
+  exerciseType   String?   @map("exercise_type")
+  correct        Boolean?
+  responseMs     Int?      @map("response_ms")
+  /// Client-generated id → idempotent answers (one ReviewLog row per answer).
+  answerId       String?   @unique @map("answer_id")
+  sessionId      String?   @map("session_id") @db.Uuid
+  verdict        String?
+  xp             Int       @default(0)
+  stabilityAfter Float?    @map("stability_after")
+  extra          Boolean   @default(false)
 
   vocab UserVocabulary @relation(fields: [vocabId], references: [id], onDelete: Cascade)
 

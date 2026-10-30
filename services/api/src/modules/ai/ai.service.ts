@@ -590,6 +590,62 @@ export class AiService {
    * Still respects admin AI enabled + platform daily OpenAI budget.
    * Never logs raw message text.
    */
+  /**
+   * Optional AI judge for typed answers the deterministic grader rejected (synonyms,
+   * alternative spellings, valid inflections). Returns null when AI is unavailable,
+   * disabled, slow (3.5s timeout) or unsure — callers must fall back to the strict verdict.
+   */
+  async judgeAnswer(opts: {
+    expected: string;
+    given: string;
+    lang: string;
+    meaning?: string;
+    context?: string | null;
+  }): Promise<boolean | null> {
+    try {
+      const client = this.getClient();
+      if (!client) return null;
+      const settings = await this.getPlatformAiSettings();
+      if (!settings.enabled) return null;
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      try {
+        const res = await client.chat.completions.create(
+          {
+            model: settings.lookupModel,
+            temperature: 0,
+            max_tokens: 20,
+            response_format: { type: 'json_object' },
+            messages: [
+              {
+                role: 'system',
+                content:
+                  'You grade language-learner answers. Reply JSON {"accept": true|false}. Accept only if the learner answer is a correct word/phrase in the target language with the same meaning as the expected answer (synonym, valid variant spelling or correct inflection for the context). Reject different meanings, wrong language, or nonsense.',
+              },
+              {
+                role: 'user',
+                content: JSON.stringify({
+                  targetLanguage: opts.lang,
+                  expected: opts.expected,
+                  meaning: opts.meaning ?? null,
+                  context: opts.context ?? null,
+                  learnerAnswer: opts.given,
+                }),
+              },
+            ],
+          },
+          { signal: controller.signal },
+        );
+        const parsed = JSON.parse(res.choices[0]?.message?.content ?? '{}') as { accept?: unknown };
+        return typeof parsed.accept === 'boolean' ? parsed.accept : null;
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch {
+      return null;
+    }
+  }
+
   async translate(userId: string, dto: TranslateDto) {
     const text = (dto.text ?? '').trim();
     if (!text) {

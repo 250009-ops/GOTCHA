@@ -120,7 +120,7 @@ export function LanguageSearchInput({
       <div
         className={cn(
           'min-h-11 w-full px-2.5 py-1.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] flex flex-wrap items-center gap-1.5',
-          'focus-within:ring-2 focus-within:ring-[#7f22fe]/20 focus-within:border-[#7f22fe] focus-within:bg-white transition-all',
+          'focus-within:ring-2 focus-within:ring-g-blue-700/20 focus-within:border-g-blue-700 focus-within:bg-white transition-all',
         )}
         onClick={() => inputRef.current?.focus()}
       >
@@ -129,13 +129,13 @@ export function LanguageSearchInput({
           return (
             <span
               key={lang.code}
-              className="inline-flex items-center gap-1 max-w-full h-7 pl-1.5 pr-1 rounded-lg bg-[#f5f3ff] border border-[#ddd6fe] text-xs font-semibold text-[#7008e7]"
+              className="inline-flex items-center gap-1 max-w-full h-7 pl-1.5 pr-1 rounded-lg bg-g-blue-50 border border-g-blue-200 text-xs font-semibold text-g-blue-700"
             >
               <span className="leading-none">{flag}</span>
               <span className="truncate">{name}</span>
               <button
                 type="button"
-                className="size-5 grid place-items-center rounded-md text-[#7f22fe] hover:bg-white/80"
+                className="size-5 grid place-items-center rounded-md text-g-blue-700 hover:bg-white/80"
                 aria-label={copy.languageInput.remove(name)}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -185,7 +185,7 @@ export function LanguageSearchInput({
                   type="button"
                   className={cn(
                     'w-full px-3 py-2 flex items-center gap-2 text-left text-sm',
-                    idx === active ? 'bg-[#f5f3ff] text-[#7008e7]' : 'text-[#101828] hover:bg-[#f9fafb]',
+                    idx === active ? 'bg-g-blue-50 text-g-blue-700' : 'text-[#101828] hover:bg-[#f9fafb]',
                   )}
                   onMouseEnter={() => setActive(idx)}
                   onMouseDown={(e) => e.preventDefault()}
