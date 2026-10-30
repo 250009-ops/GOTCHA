@@ -1622,7 +1622,7 @@ data class PracticeQuestion(
     val questionIndex: Int = 0,
     val prompt: String,
     val options: List<String>? = null,
-    val correctAnswer: String,
+    val correctAnswer: String = "",
     val explanation: String? = null,
 )
 
@@ -1654,6 +1654,7 @@ data class PracticeAnswerResult(
     val questionId: String,
     val userAnswer: String,
     val isCorrect: Boolean,
+    val correctAnswer: String? = null,
     val explanation: String? = null,
 )
 

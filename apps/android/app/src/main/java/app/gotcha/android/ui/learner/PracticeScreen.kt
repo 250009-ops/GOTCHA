@@ -620,14 +620,15 @@ private fun PracticeResultsView(
                         )
                         if (r?.isCorrect != true) {
                             Text(
-                                "Correct answer: ${q.correctAnswer}",
+                                "Correct answer: ${r?.correctAnswer?.takeIf { it.isNotBlank() } ?: q.correctAnswer}",
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.SuccessText,
                             )
                         }
-                        if (!q.explanation.isNullOrBlank()) {
-                            Text(q.explanation, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                        val explanation = r?.explanation?.takeIf { it.isNotBlank() } ?: q.explanation
+                        if (!explanation.isNullOrBlank()) {
+                            Text(explanation, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                         }
                     }
                 }

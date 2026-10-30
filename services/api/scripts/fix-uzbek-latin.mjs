@@ -17,7 +17,7 @@ import {
 
 const API = (process.env.API_URL ?? 'https://gotchaa.uz/api/v1').replace(/\/$/, '');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 const UA =
   'GotchaImporter/2.1 (+https://gotcha.app) Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 

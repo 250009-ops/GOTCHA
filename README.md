@@ -110,8 +110,8 @@ API base URL for Android emulator: `http://10.0.2.2:3000/api/v1` (configured in 
 
 | Role | Email | Password |
 |---|---|---|
-| Admin | admin@gotcha.app | GotchaAdmin2026! |
-| Learner | learner@gotcha.app | Learner2026! |
+| Admin | admin@gotcha.app | set via `SEED_ADMIN_PASSWORD` |
+| Learner | learner@gotcha.app | set via `SEED_LEARNER_PASSWORD` |
 
 ## Project structure
 

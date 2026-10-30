@@ -25,6 +25,7 @@ const { history } = buildStatsHistory(
     },
   ],
   30,
+  day('2026-08-22'), // fixed clock so the 30-day window always contains the fixtures
 );
 
 const byDate = new Map(history.daily.map((d) => [d.date, d]));

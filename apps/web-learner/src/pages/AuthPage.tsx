@@ -71,7 +71,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [email, setEmail] = useState(
     seededEmail || (adminReturnUrl && devPrefillEnabled ? 'admin@gotcha.app' : ''),
   );
-  const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? 'GotchaAdmin2026!' : '');
+  const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? (import.meta.env.VITE_DEV_ADMIN_PASSWORD ?? '') : '');
   const [name, setName] = useState(seededName);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);

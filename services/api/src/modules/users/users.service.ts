@@ -637,6 +637,7 @@ export function buildStatsHistory(
   vocab: Array<{ createdAt: Date }>,
   progress: Array<{ contentId: string; completedAt: Date | null; lastReadAt: Date }>,
   heatmapDays: number,
+  now: Date = new Date(),
 ) {
   const dailyMinutes = new Map<string, number>();
   const dailyWordsSaved = new Map<string, number>();
@@ -672,7 +673,7 @@ export function buildStatsHistory(
     weeklyVocab.set(week, (weeklyVocab.get(week) ?? 0) + 1);
   }
 
-  const today = new Date();
+  const today = new Date(now);
   today.setHours(0, 0, 0, 0);
 
   const daily: Array<{ date: string; minutes: number; wordsSaved: number }> = [];

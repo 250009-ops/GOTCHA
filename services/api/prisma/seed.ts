@@ -9,6 +9,18 @@ import { syntheticUserEmailWhere } from '../src/common/production-users';
 
 const prisma = new PrismaClient();
 
+/** Seed passwords come from env; never hardcode. Random fallback is printed once for local dev only. */
+function seedPassword(envKey: string): string {
+  const v = process.env[envKey]?.trim();
+  if (v) return v;
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(`${envKey} must be set when seeding in production.`);
+  }
+  return `dev-${Math.random().toString(36).slice(2, 10)}-${Math.random().toString(36).slice(2, 6)}`;
+}
+const SEED_ADMIN_PASSWORD = seedPassword('SEED_ADMIN_PASSWORD');
+const SEED_LEARNER_PASSWORD = seedPassword('SEED_LEARNER_PASSWORD');
+
 const DEMO_CATALOG_SLUGS = [
   'the-master-and-margarita',
   'sherlock-holmes',
@@ -233,7 +245,7 @@ async function main() {
     },
   });
 
-  const adminPassword = await bcrypt.hash('GotchaAdmin2026!', 12);
+  const adminPassword = await bcrypt.hash(SEED_ADMIN_PASSWORD, 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@gotcha.app' },
     update: {
@@ -279,7 +291,7 @@ async function main() {
     await ensureSubscription(admin.id, freePlan.id, '00000000-0000-4000-8000-000000000010');
   }
 
-  const demoPassword = await bcrypt.hash('Learner2026!', 12);
+  const demoPassword = await bcrypt.hash(SEED_LEARNER_PASSWORD, 12);
   const learnerCreatedAt = new Date('2025-10-12T10:00:00.000Z');
   const demoUser = await prisma.user.upsert({
     where: { email: 'learner@gotcha.app' },
@@ -1114,8 +1126,8 @@ async function main() {
   }
 
   console.log('Seed complete.');
-  console.log('Admin: admin@gotcha.app / GotchaAdmin2026!');
-  console.log('Demo learner: learner@gotcha.app / Learner2026!');
+  console.log(`Admin: admin@gotcha.app / ${process.env.SEED_ADMIN_PASSWORD ? '(from SEED_ADMIN_PASSWORD)' : SEED_ADMIN_PASSWORD}`);
+  console.log(`Demo learner: learner@gotcha.app / ${process.env.SEED_LEARNER_PASSWORD ? '(from SEED_LEARNER_PASSWORD)' : SEED_LEARNER_PASSWORD}`);
   console.log('Production metrics: live user/AI/revenue counts (Figma overlay removed).');
 }
 

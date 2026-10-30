@@ -82,8 +82,9 @@ export class PracticeService {
       await this.limits.incrementQuizUsage(userId);
     }
 
-    return session;
+    return redactSession(session);
   }
+
   async submitAnswers(userId: string, sessionId: string, dto: SubmitPracticeDto) {
     const session = await this.prisma.practiceSession.findFirst({
       where: { id: sessionId, userId },
@@ -111,7 +112,7 @@ export class PracticeService {
           isCorrect,
         },
       });
-      results.push({ ...saved, explanation: question.explanation });
+      results.push({ ...saved, correctAnswer: question.correctAnswer, explanation: question.explanation });
     }
 
     const updated = await this.prisma.practiceSession.update({
@@ -122,10 +123,27 @@ export class PracticeService {
     return { session: updated, results, score: correctCount / session.questionCount };
   }
 
-  getSession(userId: string, sessionId: string) {
-    return this.prisma.practiceSession.findFirst({
+  async getSession(userId: string, sessionId: string) {
+    const session = await this.prisma.practiceSession.findFirst({
       where: { id: sessionId, userId },
-      include: { questions: true, answers: true },
+      include: { questions: { orderBy: { questionIndex: 'asc' } }, answers: true },
     });
+    if (!session) return session;
+    // Answers are only revealed once the session has been submitted.
+    return session.completedAt ? session : redactSession(session);
   }
+}
+
+/**
+ * Strip answer keys from questions before a session is graded. `correctAnswer` is kept as an
+ * empty string (not removed) so already-released Android builds, whose model declares it
+ * non-null, still deserialize. Graded results carry the real answer + explanation.
+ */
+function redactSession<T extends { questions: Array<{ correctAnswer: string; explanation: string | null }> }>(
+  session: T,
+): T {
+  return {
+    ...session,
+    questions: session.questions.map((q) => ({ ...q, correctAnswer: '', explanation: null })),
+  };
 }

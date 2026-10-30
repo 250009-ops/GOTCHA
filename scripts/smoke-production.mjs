@@ -9,6 +9,12 @@ const testEmail = `smoke.${stamp}@gotcha.test`;
 const testPass = 'SmokeTest2026!';
 
 const results = [];
+for (const k of ['ADMIN_PASSWORD', 'LEARNER_PASSWORD']) {
+  if (!process.env[k]) {
+    console.error(`${k} env var is required (no hardcoded credentials).`);
+    process.exit(1);
+  }
+}
 
 function ok(name, pass, detail = '') {
   results.push({ name, pass, detail });
@@ -95,26 +101,26 @@ async function main() {
   let learnerToken = null;
   {
     const r = await req('POST', `${API}/auth/login`, {
-      body: { email: 'learner@gotcha.app', password: 'Learner2026!' },
+      body: { email: 'learner@gotcha.app', password: process.env.LEARNER_PASSWORD },
     });
     const pass = r.status === 201 && !!r.json?.accessToken;
     learnerToken = r.json?.accessToken || null;
     ok('Demo learner login', pass, `status=${r.status}`);
   }
 
-  // Auth: user account
-  {
+  // Auth: optional real-user account (set SMOKE_USER_EMAIL + SMOKE_USER_PASSWORD to enable)
+  if (process.env.SMOKE_USER_EMAIL && process.env.SMOKE_USER_PASSWORD) {
     const r = await req('POST', `${API}/auth/login`, {
-      body: { email: '250009@tmuni.org', password: 'Ja53j9lCrYYJFjW' },
+      body: { email: process.env.SMOKE_USER_EMAIL, password: process.env.SMOKE_USER_PASSWORD },
     });
-    ok('User 250009@tmuni.org login', r.status === 201 && !!r.json?.accessToken, `status=${r.status}`);
+    ok(`User ${process.env.SMOKE_USER_EMAIL} login`, r.status === 201 && !!r.json?.accessToken, `status=${r.status}`);
   }
 
   // Auth: admin
   let adminToken = null;
   {
     const r = await req('POST', `${API}/auth/login`, {
-      body: { email: 'admin@gotcha.app', password: 'GotchaAdmin2026!' },
+      body: { email: 'admin@gotcha.app', password: process.env.ADMIN_PASSWORD },
     });
     const pass = r.status === 201 && !!r.json?.accessToken && r.json?.isAdmin === true;
     adminToken = r.json?.accessToken || null;

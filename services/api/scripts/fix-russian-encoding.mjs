@@ -6,7 +6,7 @@
  */
 const API = (process.env.API_URL ?? 'https://gotchaa.uz/api/v1').replace(/\/$/, '');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 /** Titles imported from az.lib.ru that may have mojibake in production. */
 const FIX_TARGETS = [

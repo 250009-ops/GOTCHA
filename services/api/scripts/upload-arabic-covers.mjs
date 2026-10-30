@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 
 const API = (process.env.API_URL ?? 'https://gotchaa.uz/api/v1').replace(/\/$/, '');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const OUT_DIR = join(ROOT, '.ar-covers-cache');

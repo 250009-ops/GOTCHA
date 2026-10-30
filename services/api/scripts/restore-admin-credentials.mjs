@@ -1,5 +1,5 @@
 /**
- * Restore the default superadmin account (admin@gotcha.app / GotchaAdmin2026!).
+ * Restore the default superadmin account (admin@gotcha.app; password from ADMIN_PASSWORD env).
  * Handles the common failure mode: admin changed email away from admin@gotcha.app
  * (often unverified) and/or a duplicate admin@gotcha.app row was created by a prior restore.
  *
@@ -28,7 +28,7 @@ for (const envFile of ['.env', '.env.local']) {
 }
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'admin@gotcha.app').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const prisma = new PrismaClient();
 

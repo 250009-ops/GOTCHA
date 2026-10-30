@@ -34,6 +34,7 @@ interface AnswerResult {
   questionId: string;
   userAnswer: string;
   isCorrect: boolean;
+  correctAnswer?: string;
   explanation?: string | null;
 }
 
@@ -259,9 +260,11 @@ export default function PracticePage() {
                           </p>
                         ) : null}
                         {!r?.isCorrect && (
-                          <p className="text-xs text-emerald-700 mt-0.5 font-medium">{q.correctAnswer}</p>
+                          <p className="text-xs text-emerald-700 mt-0.5 font-medium">{r?.correctAnswer || q.correctAnswer}</p>
                         )}
-                        {q.explanation && <p className="text-xs text-[#9ca3af] mt-1.5">{q.explanation}</p>}
+                        {(r?.explanation || q.explanation) && (
+                          <p className="text-xs text-[#9ca3af] mt-1.5">{r?.explanation || q.explanation}</p>
+                        )}
                       </div>
                     </div>
                   </div>
