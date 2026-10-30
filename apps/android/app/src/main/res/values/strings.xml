@@ -19,7 +19,7 @@
     <string name="auth_err_email_invalid">Enter a valid email, like name@example.com</string>
     <string name="auth_err_email_required">Enter your email</string>
     <string name="auth_err_name_required">Enter your name</string>
-    <string name="auth_err_network">Can\'t reach GOTCHA. Check your internet connection.</string>
+    <string name="auth_err_network">Couldn\'t reach GOTCHA. Try again in a moment.</string>
     <string name="auth_err_password_mismatch">Passwords do not match</string>
     <string name="auth_err_password_required">Enter a password</string>
     <string name="auth_err_password_short">Password must be at least 8 characters</string>

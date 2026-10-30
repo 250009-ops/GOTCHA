@@ -18,7 +18,7 @@
     <string name="auth_err_email_invalid">Toʻgʻri pochta kiriting, masalan name@example.com</string>
     <string name="auth_err_email_required">Pochtangizni kiriting</string>
     <string name="auth_err_name_required">Ismingizni kiriting</string>
-    <string name="auth_err_network">GOTCHA bilan aloqa yoʻq. Internetni tekshiring.</string>
+    <string name="auth_err_network">GOTCHA bilan bogʻlanib boʻlmadi. Birozdan soʻng qayta urinib koʻring.</string>
     <string name="auth_err_password_mismatch">Parollar mos emas</string>
     <string name="auth_err_password_required">Parol kiriting</string>
     <string name="auth_err_password_short">Parol kamida 8 ta belgidan iborat boʻlsin</string>

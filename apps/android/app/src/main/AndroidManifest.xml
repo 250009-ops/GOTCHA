@@ -34,7 +34,7 @@
             android:documentLaunchMode="never"
             android:taskAffinity="${applicationId}"
             android:theme="@style/Theme.Gotcha.Splash"
-            android:windowSoftInputMode="adjustResize">
+            android:windowSoftInputMode="adjustResize|stateHidden">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

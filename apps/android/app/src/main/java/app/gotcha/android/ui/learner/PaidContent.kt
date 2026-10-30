@@ -25,7 +25,8 @@ import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.Inter
 
 /** UI-26: catalog item that costs money (API `isFree=false` with a price). */
-fun ContentItem.isPaid(): Boolean = hasAnyPrice() && (isFree == false || accessGranted != null)
+// P3b.1 (GOT-QA-P3b-06 / PS-09): an explicitly free item is never paid/"Owned", even with an access grant.
+fun ContentItem.isPaid(): Boolean = isFree != true && hasAnyPrice()
 
 /** Paid and not yet owned — opening it leads to the Reader paywall (Google Play purchase). */
 fun ContentItem.isLocked(): Boolean = needsCatalogPayment()

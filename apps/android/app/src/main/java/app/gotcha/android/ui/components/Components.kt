@@ -499,6 +499,8 @@ fun AuthTextLink(
 fun AuthFooterLink(prompt: String, action: String, onClick: () -> Unit, enabled: Boolean = true) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(prompt, fontFamily = Manrope, fontWeight = FontWeight.Medium, fontSize = 14.sp, color = GotchaColors.TextPlaceholder)
+        // P3b.1 GOT-QA-P3b-04: "account?Sign up" had no gap in en/ru/uz.
+        Spacer(Modifier.width(4.dp))
         AuthTextLink(action, onClick, enabled = enabled)
     }
 }

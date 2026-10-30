@@ -2,6 +2,7 @@
 # Loaded last by gen.py (zz_ prefix), so these win over core/extra/flows/reader/screens and reg_*.json.
 # fmt: off
 S = {
+    'auth_err_network': ("Couldn't reach GOTCHA. Try again in a moment.", 'Не удалось связаться с GOTCHA. Повторите попытку чуть позже.', 'GOTCHA bilan bogʻlanib boʻlmadi. Birozdan soʻng qayta urinib koʻring.'),
     'auth_search_learn': ('Search a language to add…', 'Найдите язык…', 'Til qidiring…'),
     'auth_search_native': ('Search your native language…', 'Найдите родной язык…', 'Ona tilingizni qidiring…'),
     'block_action': ('Block', 'Заблокировать', 'Bloklash'),

@@ -1,7 +1,27 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  P3b.1 (GOT-QA-P3b-01, S1): Android 7.0 (API 24) lacks ISRG Root X1 (added in 7.1.1), so the
+  Let's Encrypt chain for gotchaa.uz failed with "Trust anchor not found". We bundle the
+  ISRG roots and keep the system store. minSdk stays 24.
+  res/raw/isrg_root_x1.pem  SHA-256 96:BC:EC:06:26:49:76:F3:74:60:77:9A:CF:28:C5:A7:CF:E8:A3:C0:AA:E1:1A:8F:FC:EE:05:C0:BD:DF:08:C6
+  res/raw/isrg_root_x2.pem  SHA-256 69:72:9B:8E:15:A8:6E:FC:17:7A:57:AF:B7:17:1D:FC:64:AD:D2:8C:2F:CA:8C:F1:50:7E:34:45:3C:CB:14:70
+  Source: https://letsencrypt.org/certificates/ (fetched 31 Oct 2026); fingerprints cross-checked
+  against Mozilla CCADB, crt.sh (X1) and the Ubuntu CA store. Both expire after 2035.
+-->
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false" />
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+            <certificates src="@raw/isrg_root_x2" />
+        </trust-anchors>
+    </base-config>
     <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">gotchaa.uz</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/isrg_root_x1" />
+            <certificates src="@raw/isrg_root_x2" />
+        </trust-anchors>
     </domain-config>
 </network-security-config>

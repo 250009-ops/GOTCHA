@@ -18,7 +18,7 @@
     <string name="auth_err_email_invalid">Введите корректную почту, например name@example.com</string>
     <string name="auth_err_email_required">Введите почту</string>
     <string name="auth_err_name_required">Введите имя</string>
-    <string name="auth_err_network">Нет связи с GOTCHA. Проверьте интернет.</string>
+    <string name="auth_err_network">Не удалось связаться с GOTCHA. Повторите попытку чуть позже.</string>
     <string name="auth_err_password_mismatch">Пароли не совпадают</string>
     <string name="auth_err_password_required">Введите пароль</string>
     <string name="auth_err_password_short">Пароль должен быть не короче 8 символов</string>

@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.onboarding
 
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.annotation.RawRes
 import androidx.annotation.StringRes
 import androidx.compose.animation.core.animateDpAsState
@@ -229,13 +230,21 @@ fun OnboardingScreen(onDone: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) { i ->
                 val page = pages[i]
+                // P3b.1 GOT-QA-P3b-03: at 360dp / font 1.3 (ru) the body was clipped under the dots. The art
+                // now gives up height first (weight, fill=false) so the title + body always get their full size.
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
+                        .fillMaxHeight()
                         .padding(horizontal = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
                 ) {
-                    OnboardingArt(page, active = pagerState.currentPage == i && !pagerState.isScrollInProgress)
+                    OnboardingArt(
+                        page,
+                        active = pagerState.currentPage == i && !pagerState.isScrollInProgress,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
                     Spacer(Modifier.height(if (compact) 20.dp else 32.dp))
                     Text(
                         stringResource(page.title),

@@ -1,5 +1,12 @@
 ﻿package app.gotcha.android.ui.auth
 
+import app.gotcha.android.data.api.networkUserMessage
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.ime
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.withFrameNanos
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.CancellationException
 import androidx.compose.material3.minimumInteractiveComponentSize
 import android.content.Context
@@ -177,6 +184,16 @@ fun SignInScreen(
                 enabled = !loading,
             )
         },
+        bottomBar = {
+            GotchaPrimaryButton(
+                text = stringResource(R.string.auth_sign_in),
+                loading = loading,
+                enabled = canSubmit,
+                shapeRadius = 14,
+                modifier = Modifier.fillMaxWidth().testTag("sign_in_button"),
+                onClick = submit,
+            )
+        },
     ) {
         FormErrorBanner(error, Modifier.padding(bottom = 16.dp))
         GotchaTextField(
@@ -211,15 +228,6 @@ fun SignInScreen(
             enabled = !loading,
             fontSize = 13.sp,
             modifier = Modifier.align(Alignment.End),
-        )
-        Spacer(Modifier.height(8.dp))
-        GotchaPrimaryButton(
-            text = stringResource(R.string.auth_sign_in),
-            loading = loading,
-            enabled = canSubmit,
-            shapeRadius = 14,
-            modifier = Modifier.fillMaxWidth().testTag("sign_in_button"),
-            onClick = submit,
         )
     }
 }
@@ -308,7 +316,8 @@ fun SignUpScreen(
             title = stringResource(R.string.auth_learn_title),
             subtitle = stringResource(R.string.auth_learn_sub),
             caption = stringResource(R.string.auth_step_of, 2, 2),
-            footer = {
+            footer = null,
+            bottomBar = {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     GotchaPrimaryButton(
                         text = stringResource(R.string.auth_back),
@@ -367,7 +376,8 @@ fun SignUpScreen(
                                             error = ctx.getString(R.string.auth_err_account_exists)
                                         }
                                         else -> error = if (e is IOException) {
-                                            ctx.getString(R.string.auth_err_network)
+                                            // P3b.1 GOT-QA-P3b-05: same wording as forgot-password; TLS shown as TLS.
+                                            e.networkUserMessage() ?: ctx.getString(R.string.auth_err_network)
                                         } else {
                                             e.apiErrorMessage(ctx.getString(R.string.auth_err_registration_failed))
                                         }
@@ -441,6 +451,15 @@ fun SignUpScreen(
                 enabled = !loading,
             )
         },
+        bottomBar = {
+            GotchaPrimaryButton(
+                text = stringResource(R.string.auth_continue),
+                enabled = name.isNotBlank() && email.isNotBlank() && password.isNotEmpty(),
+                shapeRadius = 14,
+                modifier = Modifier.fillMaxWidth().testTag("sign_up_continue_button"),
+                onClick = continueToLanguages,
+            )
+        },
     ) {
         GotchaTextField(
             label = stringResource(R.string.auth_name_label),
@@ -477,14 +496,6 @@ fun SignUpScreen(
             imeAction = ImeAction.Next,
             keyboardActions = KeyboardActions(onNext = { continueToLanguages() }),
             autofill = ContentType.NewPassword,
-        )
-        Spacer(Modifier.height(20.dp))
-        GotchaPrimaryButton(
-            text = stringResource(R.string.auth_continue),
-            enabled = name.isNotBlank() && email.isNotBlank() && password.isNotEmpty(),
-            shapeRadius = 14,
-            modifier = Modifier.fillMaxWidth(),
-            onClick = continueToLanguages,
         )
     }
     }
@@ -1146,21 +1157,36 @@ private fun AuthLanguageSearchField(
 private fun AuthScaffold(
     title: String,
     subtitle: String,
-    footer: @Composable () -> Unit,
+    footer: (@Composable () -> Unit)?,
     caption: String? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     GotchaSystemBars()
-    // Figma 41:797: brand + form + CTA, then flexible gap, then footer pinned to the bottom (§B #1).
-    // Single scroll keeps the CTA measurable with the IME open on S21+; heightIn(min = maxHeight)
-    // lets the weighted spacer push the footer down on tall phones.
-    BoxWithConstraints(
+    // P3b.1 GOT-QA-P3b-02/07: the primary CTA lives in [bottomBar], a fixed bar laid out *below* the
+    // scrolling form inside the imePadding/navigationBarsPadding container, so it always sits directly
+    // above the IME (or nav bar) no matter how error text, font scale, locale or focus changes the form
+    // height. The form scrolls on its own; focused fields are kept visible by the text field's own
+    // bring-into-view. Replaces the one-shot 250 ms bringIntoView from p3b.1 rev 1.
+    // API 24 gives the first text field initial focus and pops the IME on its own (sign-up "Full name").
+    // Drop that initial focus; a tap still focuses normally.
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        focusManager.clearFocus()
+    }
+    Column(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.surface)
             .statusBarsPadding()
             .navigationBarsPadding()
             .imePadding(),
+    ) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxWidth()
+            .weight(1f),
     ) {
         val minHeight = maxHeight
         Column(
@@ -1218,20 +1244,36 @@ private fun AuthScaffold(
                 Spacer(Modifier.height(12.dp))
             }
             content()
-            Spacer(Modifier.weight(1f).heightIn(min = 48.dp))
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                footer()
+            Spacer(Modifier.weight(1f).heightIn(min = if (footer != null) 48.dp else 16.dp))
+            if (footer != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    footer()
+                }
             }
         }
+    }
+    if (bottomBar != null) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface)
+                .padding(horizontal = 24.dp, vertical = 12.dp)
+                .testTag("auth_bottom_bar"),
+        ) {
+            bottomBar()
+        }
+    }
     }
 }
 
 private fun Exception.toSignInMessage(ctx: Context): String = when (this) {
-    is IOException -> ctx.getString(R.string.auth_err_network)
+    // P3b.1 GOT-QA-P3b-05: one offline wording app-wide (err_offline, as forgot-password), and a TLS
+    // failure is reported as a secure-connection error (err_ssl) instead of "check your internet".
+    is IOException -> networkUserMessage() ?: ctx.getString(R.string.auth_err_network)
     else -> apiErrorMessage(ctx.getString(R.string.auth_err_sign_in_failed))
 }
