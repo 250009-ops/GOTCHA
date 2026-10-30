@@ -10,6 +10,7 @@ import {
 } from '../../common/dev-auth/dev-content.data';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StreakService } from '../../services/streak.service';
+import { recordReadingActivity } from '../reading/reading-activity';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 import {
   catalogAccessGranted,
@@ -533,7 +534,14 @@ export class ContentService {
     };
 
     if (dto.readSeconds && dto.readSeconds > 0) {
-      await this.streak.recordActivity(userId, Math.round(dto.readSeconds / 60));
+      await this.streak.recordActivity(userId, dto.readSeconds ?? 0);
+      await recordReadingActivity(
+        this.prisma,
+        userId,
+        contentId,
+        dto.segmentId,
+        dto.readSeconds,
+      );
     }
 
     return this.prisma.readingProgress.upsert({

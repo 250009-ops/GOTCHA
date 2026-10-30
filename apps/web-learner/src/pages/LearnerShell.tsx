@@ -258,8 +258,8 @@ export default function LearnerShell() {
               <div className="min-w-0" data-global-search="hidden" />
             )}
 
-            <div className="flex items-center h-9 gap-2 sm:gap-2.5 shrink-0">
-              <LanguagePicker compact className="inline-flex shrink-0" />
+            <div className="flex items-center h-9 gap-2 sm:gap-2.5 shrink-0 ml-auto">
+              <LanguagePicker className="inline-flex shrink-0" />
 
               <div className="h-9 flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5">
                 <Flame className="w-3.5 h-3.5 text-[#fe9a00]" />

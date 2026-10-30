@@ -186,12 +186,6 @@ fun ReaderScreen(
         try {
             val freshContent = container.contentRepository.getFetch(targetId).data
             if (targetId == contentId) content = freshContent
-            if (freshContent.needsCatalogPayment()) {
-                if (targetId == contentId) segments = emptyList()
-                return
-            }
-            val freshSegments = container.contentRepository.segmentsFetch(targetId).data.segments
-            if (targetId == contentId) segments = freshSegments
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -211,23 +205,55 @@ fun ReaderScreen(
         preparedAnnotated = annotated
     }
 
-    LaunchedEffect(loadProgress) {
-        while (smoothProgress < loadProgress) {
-            smoothProgress = (smoothProgress + 1).coerceAtMost(loadProgress)
-            delay(10)
-        }
-    }
-
     suspend fun stepProgress(target: Int, pauseMs: Long = 90) {
         if (loadProgress < target) loadProgress = target
+        while (smoothProgress < target) {
+            smoothProgress = (smoothProgress + 2).coerceAtMost(target)
+            delay(10)
+        }
         delay(pauseMs)
     }
 
-    suspend fun finishLoader() {
-        loadProgress = 100
-        while (smoothProgress < 100) delay(16)
-        delay(400)
+    suspend fun finishLoader(fast: Boolean = false) {
+        val milestones = listOf(25, 50, 75, 92, 100)
+        val tickMs = if (fast) 6L else 12L
+        val stepMs = if (fast) 18L else 50L
+        val tailMs = if (fast) 100L else 350L
+        val step = if (fast) 5 else 2
+        for (milestone in milestones) {
+            if (loadProgress < milestone) loadProgress = milestone
+            while (smoothProgress < milestone) {
+                smoothProgress = (smoothProgress + step).coerceAtMost(milestone)
+                delay(tickMs)
+            }
+            if (milestone < 100) delay(stepMs)
+        }
+        delay(tailMs)
         loaderDone = true
+    }
+
+    /** Content + first page already warm (e.g. Telegram re-open). */
+    suspend fun openWarmReader(
+        targetId: String,
+        warmContent: ContentItem,
+        warmSegments: List<Segment>,
+        fastLoader: Boolean,
+    ) {
+        if (targetId != contentId) return
+        content = warmContent
+        segments = warmSegments
+        segmentIndex = segmentIndex.coerceIn(0, warmSegments.lastIndex.coerceAtLeast(0))
+        val pageText = warmSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
+            .ifBlank { readerBodyText(warmSegments, FIRST_PAGE_CHAR_LIMIT) }
+        loadProgress = 75
+        smoothProgress = 75
+        if (pageText.isNotBlank()) {
+            applyPreparedPage(targetId, pageText)
+        }
+        loadProgress = 92
+        smoothProgress = 92
+        lastProgressAtMs = System.currentTimeMillis()
+        finishLoader(fast = fastLoader)
     }
 
     LaunchedEffect(contentId, reloadKey) {
@@ -240,34 +266,62 @@ fun ReaderScreen(
         fetchError = false
         stepProgress(8, 80)
 
-        container.userRepository.mePeek()?.data?.let { me ->
-            targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            fontScale = me.preferences?.readerFontScale ?: 1.0
-            readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-        }
         runCatching {
-            val me = container.userRepository.me()
-            targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            fontScale = me.preferences?.readerFontScale ?: 1.0
-            readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-        }
-        runCatching {
-            wordStatuses = container.contentRepository.knownWords()
-                .associate { kw ->
-                    kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
-                }
+            container.userRepository.mePeek()?.data?.let { me ->
+                targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
+                fontScale = me.preferences?.readerFontScale ?: 1.0
+                readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
+            }
         }
 
         val peekedContent = container.contentRepository.getPeek(targetId)?.data
+        val memSegments = container.contentRepository.segmentsMemory(targetId).orEmpty()
         val peekedSegments = container.contentRepository.segmentsPeek(targetId)?.data?.segments.orEmpty()
-        if (peekedContent != null) stepProgress(25, 70)
+        val warmSegments = when {
+            memSegments.any { !it.plainText.isNullOrBlank() } -> memSegments
+            peekedSegments.any { !it.plainText.isNullOrBlank() } -> peekedSegments
+            else -> emptyList()
+        }
+        val warmOpen = peekedContent != null && warmSegments.isNotEmpty()
+
+        if (!warmOpen) {
+            runCatching {
+                val me = container.userRepository.me()
+                targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
+                fontScale = me.preferences?.readerFontScale ?: 1.0
+                readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
+            }
+            runCatching {
+                wordStatuses = container.contentRepository.knownWords()
+                    .associate { kw ->
+                        kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
+                    }
+            }
+        } else {
+            runCatching {
+                wordStatuses = container.contentRepository.knownWords()
+                    .associate { kw ->
+                        kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
+                    }
+            }
+            if (peekedContent != null) stepProgress(25, if (warmOpen) 20 else 70)
+        }
+
         if (peekedContent?.needsCatalogPayment() == true) {
             if (targetId != contentId) return@LaunchedEffect
             content = peekedContent
             segments = emptyList()
-            finishLoader()
+            finishLoader(fast = warmOpen)
             return@LaunchedEffect
         }
+
+        if (warmOpen && peekedContent != null) {
+            openWarmReader(targetId, peekedContent, warmSegments, fastLoader = true)
+            refreshInBackground(targetId)
+            return@LaunchedEffect
+        }
+
+        if (peekedContent != null) stepProgress(25, 70)
         if (peekedSegments.isNotEmpty()) stepProgress(50, 70)
 
         val bothCached = peekedContent != null && peekedSegments.isNotEmpty()
@@ -285,7 +339,7 @@ fun ReaderScreen(
             stepProgress(92, 100)
             lastProgressAtMs = System.currentTimeMillis()
             refreshInBackground(targetId)
-            finishLoader()
+            finishLoader(fast = false)
             return@LaunchedEffect
         }
 
@@ -302,13 +356,20 @@ fun ReaderScreen(
                 return@LaunchedEffect
             }
 
-            val fetchedSegments = if (peekedSegments.isNotEmpty()) {
+            val resumeIndex = fetchedContent.outline
+                ?.indexOfFirst { it.id == fetchedContent.currentSegmentId }
+                ?.takeIf { it >= 0 } ?: segmentIndex
+
+            val fetchedSegments = if (peekedSegments.isNotEmpty() &&
+                peekedSegments.any { !it.plainText.isNullOrBlank() }
+            ) {
                 peekedSegments
             } else {
-                container.contentRepository.segmentsFetch(targetId).data.segments
+                container.contentRepository.segmentsForReaderOpen(fetchedContent, resumeIndex)
             }
             if (targetId != contentId) return@LaunchedEffect
             segments = fetchedSegments
+            segmentIndex = resumeIndex.coerceIn(0, fetchedSegments.lastIndex.coerceAtLeast(0))
             stepProgress(60, 90)
 
             if (fetchedSegments.isEmpty()) {
@@ -325,11 +386,14 @@ fun ReaderScreen(
                 applyPreparedPage(targetId, pageText)
             }
             if (targetId != contentId) return@LaunchedEffect
-            finishLoader()
+            finishLoader(fast = false)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            if (coroutineContext.isActive && targetId == contentId) fetchError = true
+            if (coroutineContext.isActive && targetId == contentId) {
+                fetchError = true
+                finishLoader()
+            }
         } finally {
             if (coroutineContext.isActive && targetId == contentId) {
                 isFetching = false
@@ -341,6 +405,18 @@ fun ReaderScreen(
 
     LaunchedEffect(contentId, segmentIndex, segments, showUnknownOnly, wordStatuses) {
         if (content == null || segments.isEmpty()) return@LaunchedEffect
+        val seg = segments.getOrNull(segmentIndex) ?: return@LaunchedEffect
+        if (seg.plainText.isNullOrBlank()) {
+            preparingText = true
+            val loaded = runCatching {
+                container.contentRepository.fetchSegmentBody(contentId, seg)
+            }.getOrNull()
+            if (loaded != null && loaded.plainText.isNullOrBlank().not()) {
+                segments = segments.mapIndexed { i, s -> if (i == segmentIndex) loaded else s }
+            }
+            preparingText = false
+            if (loaded?.plainText.isNullOrBlank()) return@LaunchedEffect
+        }
         val pageText = segments.getOrNull(segmentIndex)?.plainText?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         preparingText = true
         applyPreparedPage(contentId, pageText)
@@ -398,7 +474,7 @@ fun ReaderScreen(
     val currentSegment = segments.getOrNull(segmentIndex)
     val currentPageText = currentSegment?.plainText?.takeIf { it.isNotBlank() }.orEmpty()
     val paymentRequired = content?.needsCatalogPayment() == true
-    val readerReady = !paymentRequired && content != null && segments.isNotEmpty() &&
+    val readerReady = loaderDone && !paymentRequired && content != null && segments.isNotEmpty() &&
         currentPageText.isNotBlank() && preparedAnnotated != null
     val showGlassLoader = !paymentRequired && !fetchError && !loaderDone
 

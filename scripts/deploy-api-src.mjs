@@ -110,7 +110,7 @@ try {
       'rm -f services/api/*.tsbuildinfo',
       'npm run build --workspace=services/api',
       'test -f services/api/dist/main.js',
-      'grep -q sendNewMessageEmail services/api/dist/common/mail/mail.service.js && echo OK_MESSAGE_EMAIL',
+      'cd services/api && npx prisma migrate deploy && cd "$APP"',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',
     ].join(' && '),

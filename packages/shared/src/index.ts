@@ -201,3 +201,11 @@ export interface CatalogLanguage {
 
 /** Type-only re-exports — runtime import via `@gotcha/shared/learner-copy`. */
 export type { LearnerCopy, FullLearnerCopy, LearnerCopyExt, UiLanguage as LearnerUiLanguage } from './learnerCopy';
+
+export {
+  formatNotification,
+  localizeNotificationItem,
+  normalizeNotificationLocale,
+  parseNotificationParams,
+  type NotificationParams,
+} from './notificationCopy';

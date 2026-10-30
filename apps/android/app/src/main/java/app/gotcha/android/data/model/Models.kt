@@ -89,6 +89,8 @@ data class VerifyEmailResponse(
 data class OkMessageResponse(
     val sent: Boolean = false,
     val message: String? = null,
+    val changed: Boolean = false,
+    val ok: Boolean = false,
 )
 
 /**
@@ -214,6 +216,10 @@ data class ContentItem(
     val accessGranted: Boolean? = null,
     val salesCount: Int? = null,
     val viewCount: Int? = null,
+    /** Segment metadata without plainText — from GET /content/{id}. */
+    val outline: List<Segment>? = null,
+    val trialSegmentCount: Int? = null,
+    val currentSegmentId: String? = null,
 ) {
     fun resolvedStatus(): String = (publishStatus ?: status ?: "draft").lowercase()
     fun catalogPriceUzs(): Double = priceUzs ?: priceUsd ?: 0.0
@@ -593,6 +599,7 @@ data class StatsHistoryWeek(
 data class StatsHeatmapDay(
     val date: String,
     val count: Int = 0,
+    val finished: Int = 0,
 )
 
 @Serializable

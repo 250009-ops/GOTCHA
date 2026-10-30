@@ -219,9 +219,10 @@ model User {
   displayName      String?   @map("display_name")
   avatarUrl        String?   @map("avatar_url")
   nativeLanguage   AppLanguage @map("native_language")
-  uiLanguage       AppLanguage @default(en) @map("ui_language")
+  uiLanguage       AppLanguage @default(uz) @map("ui_language")
   timezone         String    @default("UTC")
   streakCount      Int       @default(0) @map("streak_count")
+  bestStreak       Int       @default(0) @map("best_streak")
   streakLastDate   DateTime? @map("streak_last_date") @db.Date
   emailVerifiedAt  DateTime? @map("email_verified_at")
   emailVerificationToken   String?   @unique @map("email_verification_token")

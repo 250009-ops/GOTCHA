@@ -11,7 +11,8 @@ import {
 } from 'lucide-react';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { localizeNotificationItem } from '@gotcha/shared';
 
 type LearnerNotification = {
   id: string;
@@ -96,6 +97,7 @@ export function notificationHref(href?: string | null) {
 export default function NotificationsPage() {
   const navigate = useNavigate();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const np = copy.notificationsPage;
   const [inbox, setInbox] = useState<Inbox>({ items: [], unreadCount: 0 });
   const [loading, setLoading] = useState(true);
@@ -215,6 +217,7 @@ export default function NotificationsPage() {
           {filtered.map((item) => {
             const v = visual(item.kind);
             const Icon = v.icon;
+            const localized = localizeNotificationItem(locale, item);
             return (
               <button
                 key={item.id}
@@ -233,11 +236,11 @@ export default function NotificationsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-3">
                     <div className={cn('text-sm truncate', item.unread ? 'font-bold text-gray-900' : 'font-semibold text-gray-800')}>
-                      {item.title}
+                      {localized.title}
                     </div>
                     <div className="text-[11px] text-gray-400 shrink-0">{relativeTime(item.createdAt, np, copy.commonExt)}</div>
                   </div>
-                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{item.body}</p>
+                  <p className="text-sm text-gray-500 mt-1 line-clamp-2">{localized.body}</p>
                 </div>
               </button>
             );

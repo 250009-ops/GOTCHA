@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">GOTCHA</string>
+    <string name="open_with_gotcha">Read in GOTCHA</string>
 </resources>

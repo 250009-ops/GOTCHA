@@ -327,7 +327,7 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
-  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'en');
+  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'uz');
   const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
@@ -350,7 +350,7 @@ export default function SettingsPage() {
     if (user) {
       setDisplayName(user.displayName ?? '');
       setNativeLanguage(user.nativeLanguage ?? 'en');
-      setUiLanguage(user.uiLanguage ?? 'en');
+      setUiLanguage(user.uiLanguage ?? 'uz');
     }
   }, [user]);
 

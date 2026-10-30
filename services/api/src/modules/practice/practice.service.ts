@@ -22,7 +22,13 @@ export class PracticeService {
       throw new BadRequestException('segmentId required for this practice type');
     }
 
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { nativeLanguage: true, uiLanguage: true },
+    });
+
     let segmentText = '';
+    let passageLang = user?.nativeLanguage ?? user?.uiLanguage ?? 'uz';
     if (dto.segmentId) {
       const segment = await this.prisma.contentSegment.findUnique({
         where: { id: dto.segmentId },
@@ -36,12 +42,21 @@ export class PracticeService {
         }
       }
       segmentText = segment.plainText;
+      if (item?.language) passageLang = item.language;
     }
+
+    const native = user?.nativeLanguage?.trim();
+    const ui = user?.uiLanguage?.trim();
+    const questionLang =
+      native && native !== passageLang ? native : ui && ui !== passageLang ? ui : ui ?? native ?? 'uz';
 
     const questions =
       dto.practiceType === PracticeType.flashcard
         ? []
-        : await this.ai.generateQuiz(segmentText, dto.practiceType);
+        : await this.ai.generateQuiz(segmentText, dto.practiceType, {
+            questionLang,
+            passageLang,
+          });
 
     const session = await this.prisma.practiceSession.create({
       data: {

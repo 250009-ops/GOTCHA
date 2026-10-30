@@ -189,6 +189,8 @@ export interface LearnerCopyExt {
     deleteForEveryone: string;
     deleteConfirm: string;
     chatTipTitle: string;
+    suggestedFromReadings: string;
+    learner: string;
   };
   practicePage: {
     practiceWhatYouRead: string;
@@ -558,6 +560,8 @@ const EXT_EN: LearnerCopyExt = {
     deleteForEveryone: 'Delete this message for everyone?',
     deleteConfirm: 'Delete this message?',
     chatTipTitle: 'Tap a word, or hold and drag a phrase',
+    suggestedFromReadings: 'SUGGESTED FROM READINGS',
+    learner: 'Learner',
   },
   practicePage: {
     practiceWhatYouRead: 'Practice what you read',
@@ -931,6 +935,8 @@ const EXT_RU: LearnerCopyExt = {
     deleteForEveryone: 'Удалить для всех?',
     deleteConfirm: 'Удалить сообщение?',
     chatTipTitle: 'Нажмите на слово или выделите фразу',
+    suggestedFromReadings: 'ИЗ ВАШИХ ЧТЕНИЙ',
+    learner: 'Ученик',
   },
   practicePage: {
     practiceWhatYouRead: 'Практика по прочитанному',
@@ -1304,6 +1310,8 @@ const EXT_UZ: LearnerCopyExt = {
     deleteForEveryone: 'Hammaga o‘chirilsinmi?',
     deleteConfirm: 'Xabar o‘chirilsinmi?',
     chatTipTitle: 'So‘zni bosing yoki iborani belgilab ushlab turing',
+    suggestedFromReadings: 'O‘QISH BO‘YICHA TAVSIYA',
+    learner: 'O‘quvchi',
   },
   practicePage: {
     practiceWhatYouRead: 'O‘qiganingizni mashq qiling',

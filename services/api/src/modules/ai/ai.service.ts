@@ -668,6 +668,7 @@ export class AiService {
   async generateQuiz(
     segmentText: string,
     practiceType: PracticeType,
+    langs?: { questionLang?: string | null; passageLang?: string | null },
   ): Promise<
     Array<{
       prompt: string;
@@ -681,13 +682,29 @@ export class AiService {
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
 
+    const questionLang = langs?.questionLang?.trim() || 'uz';
+    const passageLang = langs?.passageLang?.trim() || questionLang;
+    const questionLabel = languagePromptLabel(questionLang);
+    const passageLabel = languagePromptLabel(passageLang);
+
     const client = this.getClient();
     if (!client) {
       return [
         {
-          prompt: 'What is the main topic of the passage?',
-          options: ['Daily life', 'Travel', 'Science', 'History'],
-          correctAnswer: 'Daily life',
+          prompt:
+            questionLang === 'uz'
+              ? 'Matn qaysi mavzuda?'
+              : questionLang === 'ru'
+                ? 'О чём этот отрывок?'
+                : 'What is the main topic of the passage?',
+          options:
+            questionLang === 'uz'
+              ? ['Kundalik hayot', 'Sayohat', 'Fan', 'Tarix']
+              : questionLang === 'ru'
+                ? ['Быт', 'Путешествия', 'Наука', 'История']
+                : ['Daily life', 'Travel', 'Science', 'History'],
+          correctAnswer:
+            questionLang === 'uz' ? 'Kundalik hayot' : questionLang === 'ru' ? 'Быт' : 'Daily life',
           explanation:
             'Demo question — set OPENAI_API_KEY in .env and restart the API for AI-generated quizzes.',
         },
@@ -697,8 +714,21 @@ export class AiService {
     const model = settings.quizModel;
     const typeHint =
       practiceType === PracticeType.cloze
-        ? 'Create 5 cloze-fill questions with single-word answers.'
-        : 'Create 5 multiple-choice comprehension questions with 4 options each.';
+        ? `Create 5 cloze-fill questions. Each prompt is a sentence about the passage with one "___" blank. The missing word must come from the ${passageLabel} passage text.`
+        : practiceType === PracticeType.writing
+          ? `Create 5 short-answer questions. Each correctAnswer is a brief phrase (1–8 words).`
+          : `Create 5 multiple-choice comprehension questions with exactly 4 options each.`;
+
+    const languageRules = [
+      `Write every question prompt, every answer option, every correctAnswer, and every explanation in ${questionLabel} only.`,
+      `The source passage is in ${passageLabel}. Questions must test understanding of that ${passageLabel} text.`,
+      `Do not default to English unless ${questionLabel} is English.`,
+      practiceType === PracticeType.cloze
+        ? `Cloze blanks must be ${passageLabel} words copied from the passage; surrounding prompt text stays in ${questionLabel}.`
+        : practiceType === PracticeType.writing
+          ? `Short-answer prompts are in ${questionLabel}; acceptable answers may be in ${questionLabel} or ${passageLabel} as appropriate for comprehension.`
+          : `Multiple-choice distractors must also be in ${questionLabel}.`,
+    ].join('\n');
 
     try {
       const response = await client.chat.completions.create({
@@ -709,11 +739,11 @@ export class AiService {
           {
             role: 'system',
             content:
-              'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}',
+              'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}. For cloze/writing types, options may be empty arrays.',
           },
           {
             role: 'user',
-            content: `${typeHint}\n\nPassage:\n${segmentText.slice(0, 4000)}`,
+            content: `${typeHint}\n${languageRules}\n\nPassage (${passageLabel}):\n${segmentText.slice(0, 4000)}`,
           },
         ],
       });

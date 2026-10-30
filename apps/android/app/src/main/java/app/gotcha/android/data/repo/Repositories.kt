@@ -342,14 +342,17 @@ class ContentRepository(
         }
     }
 
-    /** Warm content|{id} + segments|{id} so the next Reader open can peek instantly. */
+    /** Warm content + first readable page only — for Telegram re-open and reader launch. */
     suspend fun prefetchReader(id: String) {
         if (id.isBlank()) return
-        val hasContent = getPeek(id) != null
-        val hasSegments = segmentsPeek(id)?.data?.segments?.isNotEmpty() == true
-        if (hasContent && hasSegments) return
-        if (!hasContent) runCatching { getFetch(id) }
-        if (!hasSegments) runCatching { segmentsFetch(id) }
+        val cachedContent = getPeek(id)?.data
+        val hasReadablePage = segmentsMemory(id)?.any { !it.plainText.isNullOrBlank() } == true
+        if (cachedContent != null && hasReadablePage) return
+        val content = cachedContent ?: runCatching { getFetch(id).data }.getOrNull() ?: return
+        putMemContent(content)
+        if (hasReadablePage) return
+        val segs = runCatching { segmentsForReaderOpen(content, 0) }.getOrElse { emptyList() }
+        if (segs.isNotEmpty()) putMemSegments(id, segs)
     }
 
     suspend fun prefetchReaders(ids: List<String>, limit: Int = 8) {
@@ -376,6 +379,34 @@ class ContentRepository(
         }
         return SegmentsResponse(contentId = contentId, segments = all)
     }
+
+    /** Single paginated segments request (mirrors web-learner reader). */
+    suspend fun segmentsPage(id: String, from: Int, limit: Int = 1): SegmentsResponse =
+        api.segments(id, from = from, limit = limit)
+
+    /**
+     * Fast reader open: use content outline + fetch only the starting page body.
+     * Avoids downloading every chapter for large imports (900+ pages).
+     */
+    suspend fun segmentsForReaderOpen(content: ContentItem, startIndex: Int = 0): List<Segment> {
+        val id = content.id
+        val skeleton = content.outline?.takeIf { it.isNotEmpty() }
+            ?: segmentsPage(id, from = 0, limit = 200).segments
+        if (skeleton.isEmpty()) return emptyList()
+        val idx = startIndex.coerceIn(0, skeleton.lastIndex)
+        val loaded = segmentsPage(id, from = skeleton[idx].segmentIndex, limit = 1)
+            .segments.firstOrNull() ?: return skeleton
+        val result = skeleton.mapIndexed { i, seg -> if (i == idx) loaded else seg }
+        if (loaded.plainText.isNullOrBlank().not()) {
+            putMemSegments(id, result)
+        }
+        return result
+    }
+
+    /** Load plainText for one outline slot when the user turns the page. */
+    suspend fun fetchSegmentBody(contentId: String, segment: Segment): Segment? =
+        segmentsPage(contentId, from = segment.segmentIndex, limit = 1)
+            .segments.firstOrNull()
 
     private suspend fun seedContentItems(items: List<ContentItem>) {
         items.forEach { item ->
@@ -1022,18 +1053,25 @@ class UserRepository(
             app.gotcha.android.data.model.DeleteAccountRequest(currentPassword = currentPassword),
         )
 
-    suspend fun addTargetLanguage(targetLanguage: String, cefrLevel: String? = null, isPrimary: Boolean? = null) =
+    suspend fun addTargetLanguage(targetLanguage: String, cefrLevel: String? = null, isPrimary: Boolean? = null) {
         api.addTargetLanguage(
             app.gotcha.android.data.model.AddTargetLanguageRequest(targetLanguage, cefrLevel, isPrimary),
         )
+        meFetch()
+    }
 
-    suspend fun updateTargetLanguage(lang: String, cefrLevel: String? = null, isPrimary: Boolean? = null) =
+    suspend fun updateTargetLanguage(lang: String, cefrLevel: String? = null, isPrimary: Boolean? = null) {
         api.updateTargetLanguage(
             lang,
             app.gotcha.android.data.model.UpdateTargetLanguageRequest(cefrLevel, isPrimary),
         )
+        meFetch()
+    }
 
-    suspend fun removeTargetLanguage(lang: String) = api.removeTargetLanguage(lang)
+    suspend fun removeTargetLanguage(lang: String) {
+        api.removeTargetLanguage(lang)
+        meFetch()
+    }
 
     suspend fun notifications(): NotificationsInboxResponse = notificationsFetch().data
 

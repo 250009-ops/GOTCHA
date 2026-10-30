@@ -23,7 +23,16 @@ const REGION_HINTS: Record<string, UiLanguage> = {
 export function domainDefaultLocale(hostname = typeof window !== 'undefined' ? window.location.hostname : ''): UiLanguage | null {
   const host = hostname.trim().toLowerCase();
   if (!host) return null;
-  if (host === 'gotcha.uz' || host === 'www.gotcha.uz' || host.endsWith('.gotcha.uz')) return 'uz';
+  if (
+    host === 'gotcha.uz' ||
+    host === 'www.gotcha.uz' ||
+    host.endsWith('.gotcha.uz') ||
+    host === 'gotchaa.uz' ||
+    host === 'www.gotchaa.uz' ||
+    host.endsWith('.gotchaa.uz')
+  ) {
+    return 'uz';
+  }
   if (host.endsWith('.uz')) return 'uz';
   if (host.endsWith('.ru') || host.includes('gotcha.ru')) return 'ru';
   return null;
@@ -56,16 +65,14 @@ function browserRuUzHint(): UiLanguage | null {
   return null;
 }
 
-/** Detect UI locale: ?lang= → saved choice → domain → RU/UZ browser hint → Uzbek default. */
+/** Detect UI locale: ?lang= → learner saved → domain → shared marketing saved → RU/UZ browser → Uzbek. */
 export function detectLearnerLocale(searchParams?: URLSearchParams): UiLanguage {
   const fromQuery = searchParams?.get('lang')?.trim().toLowerCase();
   if (fromQuery && isUiLanguage(fromQuery)) return fromQuery;
 
   try {
-    const stored =
-      localStorage.getItem(LEARNER_LOCALE_STORAGE) ??
-      localStorage.getItem(SHARED_LOCALE_STORAGE);
-    if (stored && isUiLanguage(stored)) return stored;
+    const learnerStored = localStorage.getItem(LEARNER_LOCALE_STORAGE);
+    if (learnerStored && isUiLanguage(learnerStored)) return learnerStored;
   } catch {
     /* ignore */
   }
@@ -73,10 +80,37 @@ export function detectLearnerLocale(searchParams?: URLSearchParams): UiLanguage 
   const fromDomain = domainDefaultLocale();
   if (fromDomain) return fromDomain;
 
+  try {
+    const sharedStored = localStorage.getItem(SHARED_LOCALE_STORAGE);
+    if (sharedStored && isUiLanguage(sharedStored)) return sharedStored;
+  } catch {
+    /* ignore */
+  }
+
   const fromBrowser = browserRuUzHint();
   if (fromBrowser) return fromBrowser;
 
   return 'uz';
+}
+
+export function readStoredLearnerLocale(): UiLanguage | null {
+  try {
+    const learnerStored = localStorage.getItem(LEARNER_LOCALE_STORAGE);
+    if (learnerStored && isUiLanguage(learnerStored)) return learnerStored;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** DB default was English — treat unset profiles on .uz as following domain locale. */
+export function isLegacyDefaultEnglishUiLanguage(
+  uiLanguage: string | undefined | null,
+  explicitLearnerLocale: UiLanguage | null = readStoredLearnerLocale(),
+): boolean {
+  if (uiLanguage !== 'en') return false;
+  if (domainDefaultLocale() !== 'uz') return false;
+  return explicitLearnerLocale !== 'en';
 }
 
 export function persistLearnerLocale(code: UiLanguage) {

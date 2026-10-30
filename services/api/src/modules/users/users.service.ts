@@ -10,7 +10,7 @@ import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { effectiveStreakCount } from '../../services/streak.service';
+import { calendarDateKey, effectiveStreakCount, STREAK_TIMEZONE } from '../../services/streak.service';
 
 import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
@@ -185,14 +185,28 @@ export class UsersService {
 
 
 
-    const [vocabCount, masteredCount, progress, sessions, dueCount, recentSessions, recentVocab, userStreak] =
+    const [vocabCount, masteredCount, allProgress, recentProgress, sessions, dueCount, recentSessions, recentVocab, userStreak] =
       await Promise.all([
 
       this.prisma.userVocabulary.count({ where: { userId } }),
 
       this.prisma.userVocabulary.count({ where: { userId, mastered: true } }),
 
-      this.prisma.readingProgress.findMany({ where: { userId } }),
+      this.prisma.readingProgress.findMany({
+        where: { userId },
+        select: { totalReadSeconds: true, completedAt: true },
+      }),
+
+      this.prisma.readingProgress.findMany({
+        where: {
+          userId,
+          OR: [
+            { lastReadAt: { gte: historyStart } },
+            { completedAt: { gte: historyStart } },
+          ],
+        },
+        select: { contentId: true, completedAt: true, lastReadAt: true },
+      }),
 
       this.prisma.readingSession.aggregate({
 
@@ -212,7 +226,7 @@ export class UsersService {
 
         where: { userId, startedAt: { gte: historyStart } },
 
-        select: { startedAt: true, durationSeconds: true, wordsSaved: true },
+        select: { startedAt: true, durationSeconds: true, wordsSaved: true, contentId: true },
 
       }),
 
@@ -226,30 +240,29 @@ export class UsersService {
 
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { streakCount: true, streakLastDate: true },
+        select: { streakCount: true, streakLastDate: true, bestStreak: true },
       }),
 
     ]);
 
 
 
-    const totalReadSeconds = progress.reduce((s, p) => s + p.totalReadSeconds, 0);
+    const totalReadSeconds = allProgress.reduce((s, p) => s + p.totalReadSeconds, 0);
 
-    const completedCount = progress.filter((p) => p.completedAt).length;
-    const inProgressCount = progress.filter((p) => !p.completedAt).length;
+    const completedCount = allProgress.filter((p) => p.completedAt).length;
+    const inProgressCount = allProgress.filter((p) => !p.completedAt).length;
 
-    const history = buildStatsHistory(recentSessions, recentVocab, HEATMAP_DAYS);
+    const historyResult = buildStatsHistory(recentSessions, recentVocab, recentProgress, HEATMAP_DAYS);
     const streakCount = effectiveStreakCount(
       userStreak?.streakCount ?? 0,
       userStreak?.streakLastDate,
     );
-    // Best never below current; heatmap may miss older days outside the window.
-    const bestStreak = Math.max(history.bestStreak, streakCount);
+    const bestStreak = Math.max(userStreak?.bestStreak ?? 0, streakCount);
 
-    const todayKey = dateKey(new Date());
-    const todaySessions = recentSessions.filter((s) => dateKey(s.startedAt) === todayKey);
+    const todayKey = calendarDateKey(new Date());
+    const todaySessions = recentSessions.filter((s) => calendarDateKey(s.startedAt) === todayKey);
     const todayReadMinutes =
-      history.history.daily.find((d) => d.date === todayKey)?.minutes ??
+      historyResult.history.daily.find((d) => d.date === todayKey)?.minutes ??
       Math.round(todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60);
     const todayWordsSaved = todaySessions.reduce((s, row) => s + row.wordsSaved, 0);
 
@@ -279,7 +292,7 @@ export class UsersService {
 
       bestStreak,
 
-      history: history.history,
+      history: historyResult.history,
 
     };
 
@@ -602,43 +615,59 @@ export class UsersService {
 
 }
 
-function dateKey(d: Date): string {
-  // Local calendar day — avoid UTC ISO shifting activity off the heatmap.
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function dayKey(d: Date): string {
+  return calendarDateKey(d, STREAK_TIMEZONE);
 }
 
 function isoWeekStart(d: Date): string {
   const copy = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const day = copy.getUTCDay() || 7;
   if (day !== 1) copy.setUTCDate(copy.getUTCDate() - (day - 1));
-  return dateKey(copy);
+  return dayKey(copy);
 }
 
+export type StatsHeatmapDay = { date: string; count: number; finished: number };
+
 /**
- * Buckets a user's real reading sessions and saved vocabulary into the
- * daily/weekly/heatmap series consumed by the Statistics page charts.
+ * Buckets reading sessions and progress into daily/weekly/heatmap series for Statistics.
+ * Heatmap count = distinct contents read per day; finished = contents completed that day.
  */
 export function buildStatsHistory(
-  sessions: Array<{ startedAt: Date; durationSeconds: number | null; wordsSaved: number }>,
+  sessions: Array<{ startedAt: Date; durationSeconds: number | null; contentId: string }>,
   vocab: Array<{ createdAt: Date }>,
+  progress: Array<{ contentId: string; completedAt: Date | null; lastReadAt: Date }>,
   heatmapDays: number,
 ) {
   const dailyMinutes = new Map<string, number>();
   const dailyWordsSaved = new Map<string, number>();
-  const dailySessionCount = new Map<string, number>();
+  const dailyContents = new Map<string, Set<string>>();
+  const dailyFinished = new Map<string, number>();
 
   for (const s of sessions) {
-    const key = dateKey(s.startedAt);
+    const key = dayKey(s.startedAt);
     dailyMinutes.set(key, (dailyMinutes.get(key) ?? 0) + Math.round((s.durationSeconds ?? 0) / 60));
-    dailyWordsSaved.set(key, (dailyWordsSaved.get(key) ?? 0) + s.wordsSaved);
-    dailySessionCount.set(key, (dailySessionCount.get(key) ?? 0) + 1);
+    if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+    dailyContents.get(key)!.add(s.contentId);
+  }
+
+  for (const row of progress) {
+    if (row.lastReadAt) {
+      const key = dayKey(row.lastReadAt);
+      if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+      dailyContents.get(key)!.add(row.contentId);
+    }
+    if (row.completedAt) {
+      const key = dayKey(row.completedAt);
+      dailyFinished.set(key, (dailyFinished.get(key) ?? 0) + 1);
+      if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+      dailyContents.get(key)!.add(row.contentId);
+    }
   }
 
   const weeklyVocab = new Map<string, number>();
   for (const v of vocab) {
+    const dayKeyVal = dayKey(v.createdAt);
+    dailyWordsSaved.set(dayKeyVal, (dailyWordsSaved.get(dayKeyVal) ?? 0) + 1);
     const week = isoWeekStart(v.createdAt);
     weeklyVocab.set(week, (weeklyVocab.get(week) ?? 0) + 1);
   }
@@ -647,19 +676,26 @@ export function buildStatsHistory(
   today.setHours(0, 0, 0, 0);
 
   const daily: Array<{ date: string; minutes: number; wordsSaved: number }> = [];
-  const heatmap: Array<{ date: string; count: number }> = [];
-  for (let i = heatmapDays - 1; i >= 0; i--) {
+  const heatmap: StatsHeatmapDay[] = [];
+  for (let i = heatmapDays - 1; i >= 0; i -= 1) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const key = dateKey(d);
-    heatmap.push({ date: key, count: dailySessionCount.get(key) ?? 0 });
+    const key = dayKey(d);
+    const minutes = dailyMinutes.get(key) ?? 0;
+    const wordsSaved = dailyWordsSaved.get(key) ?? 0;
+    const count = dailyContents.get(key)?.size ?? 0;
+    heatmap.push({
+      date: key,
+      count,
+      finished: dailyFinished.get(key) ?? 0,
+    });
     if (i < 30) {
-      daily.push({ date: key, minutes: dailyMinutes.get(key) ?? 0, wordsSaved: dailyWordsSaved.get(key) ?? 0 });
+      daily.push({ date: key, minutes, wordsSaved });
     }
   }
 
   const weekly: Array<{ weekStart: string; wordsSaved: number }> = [];
-  for (let w = 5; w >= 0; w--) {
+  for (let w = 5; w >= 0; w -= 1) {
     const d = new Date(today);
     d.setDate(d.getDate() - w * 7);
     const weekStart = isoWeekStart(d);
@@ -668,18 +704,7 @@ export function buildStatsHistory(
     }
   }
 
-  let bestStreak = 0;
-  let current = 0;
-  for (const entry of heatmap) {
-    if (entry.count > 0) {
-      current += 1;
-      bestStreak = Math.max(bestStreak, current);
-    } else {
-      current = 0;
-    }
-  }
-
-  return { history: { daily, weekly, heatmap }, bestStreak };
+  return { history: { daily, weekly, heatmap } };
 }
 
 

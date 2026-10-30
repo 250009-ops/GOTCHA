@@ -1278,7 +1278,7 @@ export default function MessagesPage() {
         {suggestions.length > 0 && (
           <div className="px-4 pt-4 pb-2 shrink-0">
             <div className="text-[11px] font-bold tracking-wide text-[#99a1af] mb-3">
-              SUGGESTED FROM READINGS
+              {mp.suggestedFromReadings}
             </div>
             <div className="flex gap-3 overflow-x-auto pb-2">
               {suggestions.slice(0, 6).map((s) => (
@@ -1300,7 +1300,7 @@ export default function MessagesPage() {
                       </span>
                     </div>
                     <div className="text-[10px] text-[#99a1af] truncate w-full text-center">
-                      {s.reading?.title ?? 'Learner'}
+                      {s.reading?.title ?? mp.learner}
                     </div>
                   </div>
                 </button>

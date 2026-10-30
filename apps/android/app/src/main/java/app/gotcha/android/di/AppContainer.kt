@@ -23,6 +23,9 @@ import app.gotcha.android.data.repo.ContentRepository
 
 import app.gotcha.android.data.repo.ImportRepository
 
+import app.gotcha.android.data.import.ExternalImportController
+import app.gotcha.android.data.import.ExternalImportRegistry
+
 import app.gotcha.android.data.messaging.MessagingRealtimeHub
 
 import app.gotcha.android.data.repo.MessagingRepository
@@ -339,6 +342,14 @@ class AppContainer(context: Context) {
 
     val importRepository = ImportRepository(api)
 
+    val externalImportRegistry = ExternalImportRegistry(context.applicationContext)
+
+    val externalImportController = ExternalImportController(
+        importRepository,
+        contentRepository,
+        externalImportRegistry,
+    )
+
     val userRepository = UserRepository(api, contentCacheStore, json)
 
     val messagingRepository = MessagingRepository(api, contentCacheStore, json)
@@ -362,6 +373,7 @@ class AppContainer(context: Context) {
     /** Clears tokens, cached learner data, and live messaging when signing out or switching accounts. */
     suspend fun endSession() {
         messagingRealtime.stop()
+        externalImportController.reset()
         tokenStore.clear()
         contentCacheStore.clearAll()
     }

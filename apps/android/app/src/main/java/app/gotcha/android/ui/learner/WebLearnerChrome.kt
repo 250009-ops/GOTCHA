@@ -853,13 +853,9 @@ fun isWebNavActive(currentRoute: String?, itemRoute: String): Boolean {
     val route = currentRoute?.substringBefore("?") ?: return false
     return when (itemRoute) {
         "library" -> route == "library" || route == "browse" || route.startsWith("content/")
-        "vocabulary" -> route == "vocabulary" || route == "words" ||
-            route.startsWith("word/") || route == "vocab_review" || route == "vocab_filter" ||
-            route == "review_complete"
+        "vocabulary" -> route == "vocabulary" || route == "words"
         "import" -> route == "import"
-        "stats" -> route == "stats" || route == "progress" || route == "streak" ||
-            route == "achievements" || route == "history" || route == "cefr" ||
-            route.startsWith("language/")
+        "stats" -> route == "stats" || route == "progress"
         "settings" -> route == "settings" || route == "profile" ||
             route == "edit_profile" || route == "change_password" ||
             route == "native_language" || route == "app_language" ||
@@ -871,10 +867,8 @@ fun isWebNavActive(currentRoute: String?, itemRoute: String): Boolean {
 
 fun webChromeRoute(route: String?): String = when {
     route.isNullOrBlank() -> "library"
-    route == "words" || route.startsWith("word/") || route == "vocab_review" ||
-        route == "vocab_filter" || route == "review_complete" -> "vocabulary"
-    route == "progress" || route == "streak" || route == "achievements" ||
-        route == "history" || route == "cefr" || route.startsWith("language/") -> "stats"
+    route == "words" -> "vocabulary"
+    route == "progress" -> "stats"
     route == "profile" || route == "edit_profile" || route == "change_password" ||
         route == "native_language" || route == "app_language" ||
         route == "reading_preferences" || route == "reading_settings" ||

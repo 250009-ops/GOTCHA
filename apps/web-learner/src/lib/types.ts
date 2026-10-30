@@ -70,6 +70,7 @@ export interface StatsHistoryWeek {
 export interface StatsHeatmapDay {
   date: string;
   count: number;
+  finished?: number;
 }
 
 export interface UserStatsResponse {
@@ -79,6 +80,7 @@ export interface UserStatsResponse {
   contentInProgress: number;
   contentCompleted: number;
   totalReadMinutes: number;
+  todayReadMinutes?: number;
   wordsSaved: number;
   wordsTapped: number;
   streakCount: number;

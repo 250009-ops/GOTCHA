@@ -20,6 +20,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import app.gotcha.android.data.model.ImportQuoteFreeLimits
@@ -47,6 +53,40 @@ fun formatCardExpiryInput(raw: String): String {
     return if (digits.length >= 3) "${digits.take(2)}/${digits.drop(2)}" else digits
 }
 
+/** Maps cursor positions between digit-only storage and formatted display. */
+private class DigitGroupingOffsetMapping(private val formatted: String) : OffsetMapping {
+    override fun originalToTransformed(offset: Int): Int {
+        if (offset <= 0) return 0
+        var digitsSeen = 0
+        for (i in formatted.indices) {
+            if (formatted[i].isDigit()) {
+                digitsSeen++
+                if (digitsSeen == offset) return i + 1
+            }
+        }
+        return formatted.length
+    }
+
+    override fun transformedToOriginal(offset: Int): Int =
+        formatted.take(offset.coerceIn(0, formatted.length)).count { it.isDigit() }
+}
+
+private class CardNumberVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text.filter(Char::isDigit).take(19)
+        val formatted = digits.chunked(4).joinToString(" ")
+        return TransformedText(AnnotatedString(formatted), DigitGroupingOffsetMapping(formatted))
+    }
+}
+
+private class CardExpiryVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val digits = text.text.filter(Char::isDigit).take(4)
+        val formatted = if (digits.length >= 3) "${digits.take(2)}/${digits.drop(2)}" else digits
+        return TransformedText(AnnotatedString(formatted), DigitGroupingOffsetMapping(formatted))
+    }
+}
+
 fun pageWindowLabel(resetCycle: String?): String = when (resetCycle?.lowercase()) {
     "daily" -> "today"
     "yearly" -> "this year"
@@ -64,12 +104,52 @@ fun formatFreeAllowanceText(allowance: ImportQuoteFreeLimits): String {
 
 fun importQuoteFooterText(quote: ImportQuoteResponse): String? {
     val limits = quote.freeLimits ?: return null
+    val pagesWindow = pageWindowLabel(limits.resetCycle)
     return when {
-        quote.freeReason == "Within free import allowance" -> "Covered by your free import allowance."
+        quote.freeReason == "Within free import allowance" ->
+            "Covered by your free import allowance."
+        quote.requiresPayment && quote.amountUzs > 0 &&
+            quote.estimatedPages > limits.monthlyPagesRemaining ->
+            "This book is ~${quote.estimatedPages} pages but you have " +
+                "${limits.monthlyPagesRemaining} free pages left $pagesWindow. " +
+                "Pay once to import it to your library."
         quote.requiresPayment && quote.tier == null ->
             "This length is not priced yet. Try a shorter document or try again later."
         else -> formatFreeAllowanceText(limits)
     }
+}
+
+/** True when the user must confirm payment (non-zero charge). */
+fun ImportQuoteResponse.needsPaymentWall(): Boolean =
+    gatewayEnabled && requiresPayment && tier != null && amountUzs > 0
+
+/** True when checkout can proceed without showing a purchase step. */
+fun ImportQuoteResponse.isEffectivelyFree(): Boolean =
+    !gatewayEnabled || !requiresPayment || isFree
+
+/** Block import before checkout — mirrors web disabled purchase button cases. */
+fun ImportQuoteResponse.importBlockingError(): String? {
+    if (!gatewayEnabled || !requiresPayment) return null
+    if (tier == null) {
+        return freeReason?.takeIf { it.isNotBlank() }
+            ?: "This import length is not priced yet. Try a shorter document or try again later."
+    }
+    if (amountUzs > 0) return null
+    val limits = freeLimits
+    if (limits != null && estimatedPages > limits.monthlyPagesRemaining) {
+        val window = pageWindowLabel(limits.resetCycle)
+        return "This document is ~$estimatedPages pages but you only have " +
+            "${limits.monthlyPagesRemaining} free pages left $window. " +
+            "Try a shorter file or wait for your allowance to reset."
+    }
+    return "Payment is required but no price is set for this document length. " +
+        "Try again later or contact support."
+}
+
+fun importQuotePrimaryLabel(quote: ImportQuoteResponse, loading: Boolean): String = when {
+    loading -> "Processing…"
+    quote.isEffectivelyFree() -> "Open book"
+    else -> "Continue · ${formatSom(quote.amountUzs)}"
 }
 
 suspend fun ImportRepository.importLimitMessage(): String? {
@@ -94,16 +174,30 @@ fun ImportQuoteStepUi(
     error: String?,
     onProceed: () -> Unit,
     onCancel: () -> Unit,
+    fileName: String? = null,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 displayTitle,
                 fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
-                fontSize = 18.sp,
+                fontSize = 17.sp,
+                lineHeight = 22.sp,
                 color = GotchaColors.Ink,
+                maxLines = 3,
+                overflow = TextOverflow.Ellipsis,
             )
+            if (!fileName.isNullOrBlank() && fileName != displayTitle) {
+                Text(
+                    fileName,
+                    fontFamily = Inter,
+                    fontSize = 12.sp,
+                    color = GotchaColors.TextMuted,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
             Text(
                 typeLabel,
                 fontFamily = Inter,
@@ -179,16 +273,24 @@ fun ImportQuoteStepUi(
         }
 
         importQuoteFooterText(quote)?.let { hint ->
-            Text(hint, fontFamily = Inter, fontSize = 11.sp, lineHeight = 16.sp, color = Color(0xFF6A7282))
+            Text(
+                hint,
+                fontFamily = Inter,
+                fontSize = 12.sp,
+                lineHeight = 17.sp,
+                color = Color(0xFF6A7282),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         if (error != null) {
             Text(error, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
         }
 
-        val canPurchase = !(quote.requiresPayment && (quote.tier == null || quote.amountUzs <= 0))
+        val canPurchase = quote.needsPaymentWall()
         GotchaPrimaryButton(
-            text = if (loading) "Processing…" else "Purchase for ${formatSom(quote.amountUzs)}",
+            text = importQuotePrimaryLabel(quote, loading),
             loading = loading,
             enabled = canPurchase,
             onClick = onProceed,
@@ -252,16 +354,20 @@ fun ImportPaymentStepUi(
         "card" -> {
             GotchaTextField(
                 label = "Card Number",
-                value = cardNumber,
-                onValueChange = { onCardNumberChange(formatCardNumberInput(it)) },
+                value = cardNumber.filter(Char::isDigit).take(19),
+                onValueChange = { digits -> onCardNumberChange(formatCardNumberInput(digits)) },
+                inputFilter = { it.filter(Char::isDigit).take(19) },
+                visualTransformation = CardNumberVisualTransformation(),
                 placeholder = "0000 0000 0000 0000",
                 keyboardType = KeyboardType.Number,
             )
             Spacer(Modifier.height(12.dp))
             GotchaTextField(
                 label = "Expiry (MM/YY)",
-                value = cardExpiry,
-                onValueChange = { onCardExpiryChange(formatCardExpiryInput(it)) },
+                value = cardExpiry.filter(Char::isDigit).take(4),
+                onValueChange = { digits -> onCardExpiryChange(formatCardExpiryInput(digits)) },
+                inputFilter = { it.filter(Char::isDigit).take(4) },
+                visualTransformation = CardExpiryVisualTransformation(),
                 placeholder = "00/00",
                 keyboardType = KeyboardType.Number,
             )

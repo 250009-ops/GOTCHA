@@ -1,5 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
+import {
+  formatNotification,
+  normalizeNotificationLocale,
+  type NotificationParams,
+} from '@gotcha/shared';
 import { campaignAudienceMatches, PUSH_CAMPAIGN_CHANNELS } from '../../common/campaign-audience';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -142,7 +147,13 @@ export class NotificationsService {
     const [user, prefs, dueCount, todaySeconds, campaigns, participations, newContent, paidImport] = await Promise.all([
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { streakCount: true, streakLastDate: true, displayName: true, createdAt: true },
+        select: {
+          streakCount: true,
+          streakLastDate: true,
+          displayName: true,
+          createdAt: true,
+          uiLanguage: true,
+        },
       }),
       this.prisma.userPreferences.findUnique({
         where: { userId },
@@ -196,6 +207,7 @@ export class NotificationsService {
     ]);
 
     const drafts: Draft[] = [];
+    const locale = normalizeNotificationLocale(user?.uiLanguage);
     const firstName = (user?.displayName ?? 'there').split(/\s+/)[0] || 'there';
     const streakLast = user?.streakLastDate
       ? user.streakLastDate.toISOString().slice(0, 10)
@@ -203,10 +215,11 @@ export class NotificationsService {
     const streakCount = user?.streakCount ?? 0;
     const remindersOn = prefs?.notificationsEnabled !== false;
     if (remindersOn && streakCount > 0 && streakLast !== today) {
+      const text = formatNotification(locale, 'streak', { streakCount, firstName });
       drafts.push({
         kind: 'streak',
-        title: `Don't lose your ${streakCount}-day streak!`,
-        body: `Hi ${firstName} — read a few minutes today to keep your streak alive.`,
+        title: text.title,
+        body: text.body,
         href: 'streak',
         dedupeKey: `streak:${today}`,
       });
@@ -216,23 +229,22 @@ export class NotificationsService {
     const todayMinutes = Math.round(todaySeconds / 60);
     if (remindersOn && goal > 0 && todayMinutes < goal) {
       const left = Math.max(1, goal - todayMinutes);
+      const text = formatNotification(locale, 'goal', { goalLeft: left, goalMinutes: goal });
       drafts.push({
         kind: 'goal',
-        title: 'Daily reading goal',
-        body: `${left} min left to hit today's ${goal}-minute goal.`,
+        title: text.title,
+        body: text.body,
         href: 'daily_goal',
         dedupeKey: `goal:${today}`,
       });
     }
 
     if (dueCount > 0) {
+      const text = formatNotification(locale, 'vocab', { vocabCount: dueCount });
       drafts.push({
         kind: 'vocab',
-        title: 'Vocabulary review ready',
-        body:
-          dueCount === 1
-            ? 'You have 1 word due for review.'
-            : `You have ${dueCount} words ready for your SRS review.`,
+        title: text.title,
+        body: text.body,
         href: 'vocab_review',
         dedupeKey: 'vocab:due',
       });
@@ -249,10 +261,14 @@ export class NotificationsService {
         peer?.displayName?.trim() ||
         peer?.email?.split('@')[0] ||
         'A learner';
+      const text = formatNotification(locale, 'message', {
+        peerName,
+        messagePreview: last.body.slice(0, 160),
+      });
       drafts.push({
         kind: 'message',
-        title: `New message from ${peerName}`,
-        body: last.body.slice(0, 160),
+        title: text.title,
+        body: text.body,
         href: `chat/${part.conversationId}`,
         refId: part.conversationId,
         dedupeKey: `message:${part.conversationId}`,
@@ -279,18 +295,22 @@ export class NotificationsService {
     }
 
     for (const item of newContent) {
-      const kindLabel =
+      const contentKind =
         item.contentType === 'news'
-          ? 'news piece'
+          ? 'news'
           : item.contentType === 'article'
             ? 'article'
             : item.contentType === 'story'
               ? 'story'
               : 'book';
+      const text = formatNotification(locale, 'content', {
+        contentKind: contentKind as NotificationParams['contentKind'],
+        contentTitle: item.title,
+      });
       drafts.push({
         kind: 'content',
-        title: `New ${kindLabel} in the library`,
-        body: `${item.title} is now available to read.`,
+        title: text.title,
+        body: text.body,
         href: `home?item=${item.id}`,
         refId: item.id,
         dedupeKey: `content:${item.id}`,

@@ -47,11 +47,20 @@ export function marketingLocaleFor(detected: WebLocale): MarketingLocale {
   return 'uz';
 }
 
-/** gotcha.uz and other Uzbekistan domains default to Uzbek. */
+/** gotcha.uz / gotchaa.uz and other Uzbekistan domains default to Uzbek. */
 export function domainDefaultLocale(hostname = typeof window !== 'undefined' ? window.location.hostname : ''): WebLocale | null {
   const host = hostname.trim().toLowerCase();
   if (!host) return null;
-  if (host === 'gotcha.uz' || host === 'www.gotcha.uz' || host.endsWith('.gotcha.uz')) return 'uz';
+  if (
+    host === 'gotcha.uz' ||
+    host === 'www.gotcha.uz' ||
+    host.endsWith('.gotcha.uz') ||
+    host === 'gotchaa.uz' ||
+    host === 'www.gotchaa.uz' ||
+    host.endsWith('.gotchaa.uz')
+  ) {
+    return 'uz';
+  }
   if (host.endsWith('.uz')) return 'uz';
   if (host.endsWith('.ru') || host.includes('gotcha.ru')) return 'ru';
   return null;

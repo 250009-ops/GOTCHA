@@ -379,8 +379,14 @@ fun SettingsScreen(
                             canRemove = visibleTargets.size > 1,
                             onRemove = {
                                 scope.launch {
-                                    runCatching { container.userRepository.removeTargetLanguage(tl.targetLanguage) }
-                                    applyMe(container.userRepository.meFetch().data)
+                                    saveError = null
+                                    try {
+                                        container.userRepository.removeTargetLanguage(tl.targetLanguage)
+                                        applyMe(container.userRepository.meFetch().data)
+                                        onProfileUpdated()
+                                    } catch (e: Exception) {
+                                        saveError = e.apiErrorMessage("Could not remove language")
+                                    }
                                 }
                             },
                             onEdit = { langModal = TargetLangModalState(mode = "edit", existing = tl) },
@@ -617,6 +623,7 @@ fun SettingsScreen(
             onSaved = {
                 scope.launch {
                     applyMe(container.userRepository.meFetch().data)
+                    onProfileUpdated()
                     langModal = null
                 }
             },

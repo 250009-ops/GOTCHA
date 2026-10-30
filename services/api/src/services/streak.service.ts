@@ -99,27 +99,90 @@ export function streakFromActivityDays(
   return { streakCount: count, streakLastDate: dateFromCalendarKey(last) };
 }
 
+/** Minimum reading minutes required before a calendar day counts toward the streak. */
+export function streakQualifyingMinutes(dailyGoalMinutes: number | null | undefined): number {
+  return Math.max(1, dailyGoalMinutes ?? 15);
+}
+
+export function shouldCreditStreakToday(opts: {
+  todayReadSeconds: number;
+  qualifyingMinutes: number;
+  streakLastDate: Date | string | null | undefined;
+  now?: Date | string;
+}): boolean {
+  const now = opts.now ?? new Date();
+  const todayKey = calendarDateKey(now);
+  if (opts.streakLastDate && calendarDateKey(opts.streakLastDate, STREAK_TIMEZONE) === todayKey) {
+    return false;
+  }
+  return opts.todayReadSeconds >= opts.qualifyingMinutes * 60;
+}
+
 @Injectable()
 export class StreakService {
   constructor(private prisma: PrismaService) {}
 
-  async recordActivity(userId: string, minutesRead = 0) {
-    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+  private async sumTodayReadSeconds(userId: string, extraSeconds: number, now: Date): Promise<number> {
+    const todayKey = calendarDateKey(now);
+    const dayStart = dateFromCalendarKey(todayKey);
+    const sessions = await this.prisma.readingSession.findMany({
+      where: { userId, startedAt: { gte: dayStart } },
+      select: { startedAt: true, durationSeconds: true },
+    });
+    let total = extraSeconds;
+    for (const row of sessions) {
+      if (calendarDateKey(row.startedAt) === todayKey) {
+        total += row.durationSeconds ?? 0;
+      }
+    }
+    return total;
+  }
+
+  async recordActivity(userId: string, readSeconds = 0) {
+    if (readSeconds <= 0) return;
+
+    const now = new Date();
+    const [user, prefs, todayReadSeconds] = await Promise.all([
+      this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { streakCount: true, streakLastDate: true, bestStreak: true },
+      }),
+      this.prisma.userPreferences.findUnique({
+        where: { userId },
+        select: { dailyGoalMinutes: true },
+      }),
+      this.sumTodayReadSeconds(userId, readSeconds, now),
+    ]);
     if (!user) return;
+
+    const qualifyingMinutes = streakQualifyingMinutes(prefs?.dailyGoalMinutes);
+    if (
+      !shouldCreditStreakToday({
+        todayReadSeconds,
+        qualifyingMinutes,
+        streakLastDate: user.streakLastDate,
+        now,
+      })
+    ) {
+      return { streakCount: user.streakCount, minutesRead: Math.round(todayReadSeconds / 60) };
+    }
 
     const { streakCount, streakLastDate } = nextStreakState(
       user.streakCount,
       user.streakLastDate,
+      now,
     );
+    const bestStreak = Math.max(user.bestStreak ?? 0, streakCount);
 
     await this.prisma.user.update({
       where: { id: userId },
       data: {
         streakCount,
         streakLastDate,
+        bestStreak,
       },
     });
 
-    return { streakCount, minutesRead };
+    return { streakCount, minutesRead: Math.round(todayReadSeconds / 60) };
   }
 }

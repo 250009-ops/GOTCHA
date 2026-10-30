@@ -101,6 +101,7 @@ import app.gotcha.android.data.model.UpdateProgressRequest
 import app.gotcha.android.data.model.UserImport
 import app.gotcha.android.data.model.UserPreferences
 import app.gotcha.android.data.model.SubscriptionInfo
+import app.gotcha.android.data.model.UserTargetLanguage
 import app.gotcha.android.data.model.UserStats
 import app.gotcha.android.data.model.VocabItem
 import okhttp3.MultipartBody
@@ -298,16 +299,16 @@ interface GotchaApi {
     suspend fun deleteAccount(@Body body: DeleteAccountRequest): OkMessageResponse
 
     @POST("users/me/target-languages")
-    suspend fun addTargetLanguage(@Body body: app.gotcha.android.data.model.AddTargetLanguageRequest): MeResponse
+    suspend fun addTargetLanguage(@Body body: app.gotcha.android.data.model.AddTargetLanguageRequest): UserTargetLanguage
 
     @PATCH("users/me/target-languages/{lang}")
     suspend fun updateTargetLanguage(
         @Path("lang") lang: String,
         @Body body: app.gotcha.android.data.model.UpdateTargetLanguageRequest,
-    ): MeResponse
+    ): UserTargetLanguage
 
     @DELETE("users/me/target-languages/{lang}")
-    suspend fun removeTargetLanguage(@Path("lang") lang: String): MeResponse
+    suspend fun removeTargetLanguage(@Path("lang") lang: String): OkMessageResponse
 
     @GET("users/me/stats")
     suspend fun stats(): UserStats

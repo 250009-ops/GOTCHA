@@ -16,7 +16,12 @@ import {
 } from '@gotcha/shared';
 import { learnerCopyFor } from '@gotcha/shared/learner-copy';
 import { useAuth } from './auth';
-import { detectLearnerLocale, persistLearnerLocale } from './learnerLocale';
+import {
+  detectLearnerLocale,
+  isLegacyDefaultEnglishUiLanguage,
+  persistLearnerLocale,
+  readStoredLearnerLocale,
+} from './learnerLocale';
 
 interface LearnerLocaleContextValue {
   locale: UiLanguage;
@@ -36,15 +41,36 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
     if (!user) setGuestLocale(detectLearnerLocale(searchParams));
   }, [searchParams, user]);
 
-  const locale: UiLanguage = user?.uiLanguage && UI_LANGUAGES.includes(user.uiLanguage as UiLanguage)
-    ? (user.uiLanguage as UiLanguage)
-    : guestLocale;
+  const locale: UiLanguage = useMemo(() => {
+    const stored = readStoredLearnerLocale();
+    if (stored) return stored;
+
+    const profileUi = user?.uiLanguage;
+    if (
+      profileUi &&
+      UI_LANGUAGES.includes(profileUi as UiLanguage) &&
+      !isLegacyDefaultEnglishUiLanguage(profileUi, stored)
+    ) {
+      return profileUi as UiLanguage;
+    }
+
+    return guestLocale;
+  }, [user?.uiLanguage, guestLocale]);
 
   const copy = useMemo(() => learnerCopyFor(locale), [locale]);
 
   useEffect(() => {
     document.documentElement.lang = locale;
   }, [locale]);
+
+  useEffect(() => {
+    if (!user?.uiLanguage) return;
+    const stored = readStoredLearnerLocale();
+    if (!isLegacyDefaultEnglishUiLanguage(user.uiLanguage, stored)) return;
+    const resolved = detectLearnerLocale(searchParams);
+    persistLearnerLocale(resolved);
+    void updateProfile({ uiLanguage: resolved }).catch(() => undefined);
+  }, [user?.id, user?.uiLanguage, searchParams, updateProfile]);
 
   const setLocale = useCallback(
     (code: UiLanguage) => {
@@ -91,8 +117,15 @@ export function useGuestLocale(): UiLanguage {
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const [guestLocale] = useState<UiLanguage>(() => detectLearnerLocale(searchParams));
-  if (user?.uiLanguage && UI_LANGUAGES.includes(user.uiLanguage as UiLanguage)) {
-    return user.uiLanguage as UiLanguage;
+  const stored = readStoredLearnerLocale();
+  if (stored) return stored;
+  const profileUi = user?.uiLanguage;
+  if (
+    profileUi &&
+    UI_LANGUAGES.includes(profileUi as UiLanguage) &&
+    !isLegacyDefaultEnglishUiLanguage(profileUi, stored)
+  ) {
+    return profileUi as UiLanguage;
   }
   return guestLocale;
 }

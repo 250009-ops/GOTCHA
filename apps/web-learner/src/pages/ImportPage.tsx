@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   AlertCircle,
   CheckCircle2,
-  ChevronDown,
   Clipboard,
   Clock,
   ExternalLink,
@@ -23,6 +22,7 @@ import { api } from '../lib/api';
 import { formatUzs, formatFreeAllowance, inspectImportFile, type ImportQuote, type ImportFreeAllowance } from '../lib/importBilling';
 import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
+import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
@@ -123,22 +123,17 @@ function LangSelect({ value, onChange, disabled }: { value: string; onChange: (v
   const { langs } = useCatalogLanguages();
   const { user } = useAuth();
   const options = langs.filter((l) => l.code !== user?.nativeLanguage);
+
   return (
     <div className="py-4 min-w-0 max-w-full">
       <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">{copy.importPage.language}</label>
-      <div className="relative min-w-0 max-w-full">
-        <select
-          value={value}
-          disabled={disabled}
-          onChange={(e) => onChange(e.target.value)}
-          className="block w-full min-w-0 max-w-full h-10 pl-3 pr-8 bg-white border border-[#e5e7eb] rounded-[14px] text-sm text-[#364153] outline-none focus:ring-2 focus:ring-violet-200 focus:border-[#7f22fe] appearance-none transition-all disabled:opacity-50"
-        >
-          {options.map((l) => (
-            <option key={l.code} value={l.code}>{l.flagEmoji} {l.name}</option>
-          ))}
-        </select>
-        <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
-      </div>
+      <CatalogLanguageDropdown
+        value={value}
+        onChange={onChange}
+        options={options.map((l) => ({ code: l.code, name: l.name, nativeName: l.nativeName }))}
+        ariaLabel={copy.importPage.language}
+        disabled={disabled}
+      />
     </div>
   );
 }

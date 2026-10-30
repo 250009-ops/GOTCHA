@@ -599,7 +599,7 @@ private fun SimilarBookCard(
     }
 }
 
-// Words directory screens live in VocabularyDirectoryScreens.kt (Figma 30:202 / 34:192 / 34:284 / 36:9).
+// Vocabulary tab lives in VocabularyScreen.kt (matches web-learner VocabularyPage).
 
 @Composable
 fun LibraryCategoryScreen(category: String, onBack: () -> Unit, onOpenReader: (String) -> Unit) {
@@ -842,7 +842,11 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
                                 contentFormat = "article",
                                 textLength = 6000,
                             )
-                            if (quote.gatewayEnabled && quote.requiresPayment) {
+                            quote.importBlockingError()?.let {
+                                error = it
+                                return@launch
+                            }
+                            if (quote.needsPaymentWall()) {
                                 pendingQuote = quote
                                 amountLabel = formatSom(quote.amountUzs)
                                 paymentStep = "price"
@@ -1106,7 +1110,11 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                                         textLength = text.length,
                                         wordCount = words,
                                     )
-                                    if (quote.gatewayEnabled && quote.requiresPayment) {
+                                    quote.importBlockingError()?.let {
+                                        error = it
+                                        return@launch
+                                    }
+                                    if (quote.needsPaymentWall()) {
                                         pendingQuote = quote
                                         amountLabel = formatSom(quote.amountUzs)
                                         paymentStep = "price"

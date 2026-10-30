@@ -29,9 +29,10 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.PendingLearnerRoute
+import app.gotcha.android.PendingReaderReturn
+import app.gotcha.android.ReaderReturnContext
 import app.gotcha.android.PendingWordNavigation
 import app.gotcha.android.data.ChatLangs
-import app.gotcha.android.data.model.VocabItem
 import app.gotcha.android.ui.components.ReconnectionFlashOverlay
 import app.gotcha.android.ui.i18n.LocalUiCopy
 import app.gotcha.android.ui.i18n.uiCopyFor
@@ -94,15 +95,19 @@ fun LearnerShell(
                 if (enabled.isNotEmpty()) ChatLangs.setEnabled(enabled)
             }
     }
+    val pendingBrowseRestore = remember {
+        PendingReaderReturn.value?.also { PendingReaderReturn.value = null }
+    }
+
     var uiLanguage by remember { mutableStateOf("en") }
     var notifUnread by remember { mutableIntStateOf(0) }
     var streakCount by remember { mutableIntStateOf(0) }
     var displayName by remember { mutableStateOf<String?>(null) }
     var email by remember { mutableStateOf<String?>(null) }
     var avatarUrl by remember { mutableStateOf<String?>(null) }
-    var librarySearch by remember { mutableStateOf("") }
-    var browseFilter by remember { mutableStateOf<String?>(null) }
-    var browseCollection by remember { mutableStateOf<String?>(null) }
+    var librarySearch by remember { mutableStateOf(pendingBrowseRestore?.librarySearch.orEmpty()) }
+    var browseFilter by remember { mutableStateOf(pendingBrowseRestore?.browseFilter) }
+    var browseCollection by remember { mutableStateOf(pendingBrowseRestore?.browseCollection) }
     var highlightContentId by remember { mutableStateOf<String?>(null) }
     var unreadMessages by remember { mutableIntStateOf(0) }
     var searchExpanded by remember { mutableStateOf(false) }
@@ -171,11 +176,15 @@ fun LearnerShell(
         }
     }
 
+    var pendingVocabSearch by remember { mutableStateOf<String?>(null) }
+    var pendingVocabReview by remember { mutableStateOf(false) }
+
     LaunchedEffect(Unit) {
         PendingWordNavigation.collectLatest { lemma ->
             if (!lemma.isNullOrBlank()) {
                 PendingWordNavigation.value = null
-                nav.navigate("word/$lemma")
+                pendingVocabSearch = lemma
+                navigateLearnerTab(nav, "words")
             }
         }
     }
@@ -188,24 +197,23 @@ fun LearnerShell(
             }
         }
     }
-
-    var vocabFilter by remember { mutableStateOf(VocabFilterCriteria()) }
-    var lastReviewSession by remember { mutableStateOf<ReviewSessionResult?>(null) }
-    var pendingReviewQueue by remember { mutableStateOf<List<VocabItem>?>(null) }
-    var vocabSourceTitles by remember { mutableStateOf<List<String>>(emptyList()) }
-    LaunchedEffect(current) {
-        if (current == "words" || current == "vocab_filter") {
-            vocabSourceTitles = runCatching {
-                container.vocabRepository.listFetch()
-            }.getOrNull()?.data?.mapNotNull { it.content?.title?.takeIf(String::isNotBlank) }
-                ?.distinct()
-                ?.sorted()
-                ?: container.vocabRepository.listPeek()?.data
-                    ?.mapNotNull { it.content?.title?.takeIf(String::isNotBlank) }
-                    ?.distinct()
-                    ?.sorted()
-                ?: emptyList()
+    LaunchedEffect(pendingBrowseRestore) {
+        if (pendingBrowseRestore != null) {
+            nav.navigate("browse") { launchSingleTop = true }
         }
+    }
+
+    val openReaderFromLearner: (String) -> Unit = { id ->
+        if (current == "browse") {
+            PendingReaderReturn.value = ReaderReturnContext(
+                browseFilter = browseFilter,
+                browseCollection = browseCollection,
+                librarySearch = librarySearch,
+            )
+        } else {
+            PendingReaderReturn.value = null
+        }
+        onOpenReader(id)
     }
 
     val uiCopy = remember(uiLanguage) { uiCopyFor(uiLanguage) }
@@ -265,7 +273,7 @@ fun LearnerShell(
                 ) {
                     learnerTabComposable("library") {
                         LibraryScreen(
-                            onOpenReader = onOpenReader,
+                            onOpenReader = openReaderFromLearner,
                             onImport = { navigateLearnerTab(nav, "import") },
                             onBrowse = { filter, collection ->
                                 browseFilter = filter
@@ -283,7 +291,7 @@ fun LearnerShell(
                             headerQuery = librarySearch,
                             onHeaderSearchChange = { librarySearch = it },
                             highlightContentId = highlightContentId,
-                            onOpenReader = onOpenReader,
+                            onOpenReader = openReaderFromLearner,
                             onImport = { navigateLearnerTab(nav, "import") },
                             onBrowse = { filter, collection ->
                                 browseFilter = filter
@@ -293,10 +301,14 @@ fun LearnerShell(
                         )
                     }
                     learnerTabComposable("words") {
+                        val initialSearch = pendingVocabSearch
+                        val openReview = pendingVocabReview
+                        if (initialSearch != null) pendingVocabSearch = null
+                        if (openReview) pendingVocabReview = false
                         VocabularyScreen(
-                            filter = vocabFilter,
-                            onOpenWord = { lemma -> nav.navigate("word/${lemma}") },
-                            onOpenFilter = { nav.navigate("vocab_filter") },
+                            initialSearch = initialSearch,
+                            openReviewOnLaunch = openReview,
+                            onGoToLibrary = { navigateLearnerTab(nav, "library") },
                         )
                     }
                     learnerTabComposable("import") {
@@ -307,24 +319,26 @@ fun LearnerShell(
                             onOpenUrl = onOpenImportUrl,
                             onOpenPaste = onOpenImportPaste,
                             onOpenFile = onOpenImportFile,
-                            onRead = onOpenReader,
+                            onRead = openReaderFromLearner,
                         )
                     }
                     learnerTabComposable("progress") {
-                        ProgressScreen(
-                            onOpenAchievements = { nav.navigate("achievements") },
-                            onOpenHistory = { nav.navigate("history") },
-                            onOpenCefr = { nav.navigate("cefr") },
-                            onOpenLanguage = { code -> nav.navigate("language/$code") },
-                            onOpenStreak = { nav.navigate("streak") },
-                        )
+                        ProgressScreen()
                     }
                     learnerSlideComposable("notifications") {
                         NotificationsListScreen(
                             onBack = { nav.popBackStack() },
                             onOpenSettings = { nav.navigate("notification_settings") },
                             onOpenHref = { href ->
-                                openNotificationHref(nav, href) { id -> highlightContentId = id }
+                                openNotificationHref(
+                                    nav = nav,
+                                    href = href,
+                                    onHighlightContent = { id -> highlightContentId = id },
+                                    onOpenVocabReview = {
+                                        pendingVocabReview = true
+                                        navigateLearnerTab(nav, "words")
+                                    },
+                                )
                             },
                         )
                     }
@@ -364,76 +378,8 @@ fun LearnerShell(
                         ContentDetailScreen(
                             contentId = id,
                             onBack = { nav.popBackStack() },
-                            onRead = onOpenReader,
+                            onRead = openReaderFromLearner,
                             onOpenContent = { other -> nav.navigate("content/$other") },
-                        )
-                    }
-                    learnerSlideComposable("streak") {
-                        StreakDetailScreen(
-                            onBack = { nav.popBackStack() },
-                            onStartReading = { navigateLearnerTab(nav, "library") },
-                        )
-                    }
-                    learnerSlideComposable("daily_goal") { DailyGoalScreen(onBack = { nav.popBackStack() }) }
-                    learnerSlideComposable("vocab_review") {
-                        val seed = pendingReviewQueue
-                        VocabularyReviewScreen(
-                            seedQueue = seed,
-                            onBack = {
-                                pendingReviewQueue = null
-                                nav.popBackStack()
-                            },
-                            onComplete = { result ->
-                                lastReviewSession = result
-                                pendingReviewQueue = null
-                                nav.navigate("review_complete") {
-                                    popUpTo("words") { inclusive = false }
-                                }
-                            },
-                        )
-                    }
-                    learnerSlideComposable("review_complete") {
-                        ReviewCompleteScreen(
-                            result = lastReviewSession,
-                            onBack = {
-                                nav.navigate("words") { popUpTo("library") { inclusive = false } }
-                            },
-                            onReviewWeak = {
-                                val weak = lastReviewSession?.weak.orEmpty()
-                                pendingReviewQueue = weak.map { w ->
-                                    VocabItem(
-                                        id = w.id,
-                                        lemma = w.lemma,
-                                        translation = w.translation,
-                                        sourceLang = w.sourceLang,
-                                        contextSentence = w.contextSentence,
-                                        content = w.contentTitle?.let {
-                                            app.gotcha.android.data.model.VocabContentRef(id = w.id, title = it)
-                                        },
-                                    )
-                                }
-                                nav.navigate("vocab_review") {
-                                    popUpTo("words") { inclusive = false }
-                                }
-                            },
-                        )
-                    }
-                    learnerSlideComposable(
-                        "word/{lemma}",
-                        arguments = listOf(navArgument("lemma") { type = NavType.StringType }),
-                    ) { entry ->
-                        val lemma = entry.arguments?.getString("lemma") ?: return@learnerSlideComposable
-                        WordDetailScreen(lemma = lemma, onBack = { nav.popBackStack() })
-                    }
-                    learnerSlideComposable("vocab_filter") {
-                        VocabularyFilterScreen(
-                            initial = vocabFilter,
-                            sourceTitles = vocabSourceTitles,
-                            onBack = { nav.popBackStack() },
-                            onApply = { criteria ->
-                                vocabFilter = criteria
-                                nav.popBackStack()
-                            },
                         )
                     }
                     learnerSlideComposable(
@@ -444,7 +390,7 @@ fun LearnerShell(
                         LibraryCategoryScreen(
                             category = name,
                             onBack = { nav.popBackStack() },
-                            onOpenReader = onOpenReader,
+                            onOpenReader = openReaderFromLearner,
                         )
                     }
                     learnerSlideComposable(
@@ -455,34 +401,7 @@ fun LearnerShell(
                         TopicResultsScreen(
                             topic = name,
                             onBack = { nav.popBackStack() },
-                            onOpenReader = onOpenReader,
-                        )
-                    }
-                    learnerSlideComposable("cefr") {
-                        CefrLevelScreen(
-                            onBack = { nav.popBackStack() },
-                            onTakeTest = { nav.navigate("level_test") },
-                        )
-                    }
-                    learnerSlideComposable(
-                        "language/{code}",
-                        arguments = listOf(navArgument("code") { type = NavType.StringType }),
-                    ) { entry ->
-                        val code = entry.arguments?.getString("code") ?: "EN"
-                        LanguageDetailScreen(
-                            code = code,
-                            onBack = { nav.popBackStack() },
-                            onOpenContent = { id ->
-                                if (id.isBlank()) navigateLearnerTab(nav, "library")
-                                else onOpenReader(id)
-                            },
-                        )
-                    }
-                    learnerSlideComposable("achievements") { AchievementsScreen(onBack = { nav.popBackStack() }) }
-                    learnerSlideComposable("history") {
-                        ReadingHistoryScreen(
-                            onBack = { nav.popBackStack() },
-                            onOpenReader = onOpenReader,
+                            onOpenReader = openReaderFromLearner,
                         )
                     }
                     learnerSlideComposable("bookmarks") { BookmarksScreen(onBack = { nav.popBackStack() }) }
@@ -565,17 +484,19 @@ private fun openNotificationHref(
     nav: NavHostController,
     href: String,
     onHighlightContent: (String?) -> Unit = {},
+    onOpenVocabReview: () -> Unit = {},
 ) {
     val route = href.trim().trimStart('/')
     val path = route.substringBefore('?')
     when {
         route.isBlank() -> return
-        path == "streak" -> nav.navigate("streak")
-        path == "daily_goal" -> nav.navigate("daily_goal")
-        path == "vocab_review" -> nav.navigate("vocab_review")
-        path == "words" || path == "vocabulary" -> navigateLearnerTab(nav, "words")
+        path == "streak" || path == "daily_goal" || path == "achievements" || path == "history" ||
+            path == "cefr" || path.startsWith("language/") || path == "stats" || path == "progress" ->
+            navigateLearnerTab(nav, "progress")
+        path == "vocab_review" || path == "words" || path == "vocabulary" -> {
+            if (path == "vocab_review") onOpenVocabReview() else navigateLearnerTab(nav, "words")
+        }
         path == "messages" -> nav.navigate("messages")
-        path == "achievements" -> nav.navigate("achievements")
         path == "library" || path == "home" || path.startsWith("content/") -> {
             onHighlightContent(notificationContentId(route))
             navigateLearnerTab(nav, "library")

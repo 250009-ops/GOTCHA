@@ -126,9 +126,8 @@ function MarketingPanel() {
         className="pointer-events-none absolute left-[260px] top-[420px] size-[260px] rounded-full bg-white/[0.05] blur-[40px]"
       />
 
-      <div className="relative z-10 flex items-center justify-between gap-3">
+      <div className="relative z-10 flex items-center shrink-0">
         <AuthBrandMark light />
-        <LanguagePicker variant="light" compact menuPlacement="bottom" />
       </div>
 
       <div className="relative z-10 flex-1 flex flex-col gap-6">
@@ -195,14 +194,15 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb] overflow-x-hidden">
+      <div className="fixed top-4 right-4 z-[60] sm:top-6 sm:right-6">
+        <LanguagePicker compact />
+      </div>
+
       <MarketingPanel />
 
       <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-[#7008e7] via-[#372aac] via-[55%] to-[#4d179a]">
-        <div className="flex items-center justify-between gap-3">
-          <AuthBrandMark light />
-          <LanguagePicker variant="light" compact menuPlacement="bottom" />
-        </div>
-        <p className="text-[#ddd6ff] text-sm leading-5">
+        <AuthBrandMark light />
+        <p className="text-[#ddd6ff] text-sm leading-5 pr-24">
           {copy.auth.readYourWay} {copy.auth.readYourWayBold}
         </p>
       </div>

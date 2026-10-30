@@ -53,7 +53,6 @@ import app.gotcha.android.R
 import app.gotcha.android.data.api.apiErrorMessage
 import app.gotcha.android.data.resolveMediaUrl
 import app.gotcha.android.data.model.MeResponse
-import app.gotcha.android.data.model.StatsHistoryDay
 import app.gotcha.android.data.model.UserStats
 import app.gotcha.android.data.model.VocabItem
 import app.gotcha.android.ui.components.LangChip
@@ -73,7 +72,6 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 import java.text.NumberFormat
 import java.time.LocalDate
-import java.time.YearMonth
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.roundToInt
@@ -89,13 +87,7 @@ private data class LangProgress(
 
 /** Statistics tab — matches web-learner StatsPage. */
 @Composable
-fun ProgressScreen(
-    onOpenAchievements: () -> Unit = {},
-    onOpenHistory: () -> Unit = {},
-    onOpenCefr: () -> Unit = {},
-    onOpenLanguage: (String) -> Unit = {},
-    onOpenStreak: () -> Unit = {},
-) {
+fun ProgressScreen() {
     val container = LocalAppContainer.current
     var stats by remember { mutableStateOf<UserStats?>(null) }
     var me by remember { mutableStateOf<MeResponse?>(null) }
@@ -104,7 +96,6 @@ fun ProgressScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableIntStateOf(0) }
-    val offline = rememberOfflineInteraction(container.connectivityObserver)
 
     LaunchedEffect(reloadKey) {
         loading = stats == null
@@ -128,16 +119,38 @@ fun ProgressScreen(
     val s = stats
     val statsLoading = loading && s == null
     val streak = s?.streakCount ?: me?.streakCount ?: 0
+    val bestStreak = s?.bestStreak?.takeIf { it > 0 } ?: streak
     val totalMinutes = s?.totalReadMinutes ?: 0
     val todayMinutes = s?.todayReadMinutes ?: 0
     val totalVocab = s?.vocabularyTotal ?: vocab.size
-    val mastered = vocab.count { it.mastered } .takeIf { it > 0 } ?: s?.vocabularyMastered ?: 0
+    val mastered = vocab.count { it.mastered }.takeIf { it > 0 } ?: s?.vocabularyMastered ?: 0
     val learning = (totalVocab - mastered).coerceAtLeast(0)
     val rangeDays = if (range7d) 7 else 30
+    val hasActivity = totalMinutes > 0 || (s?.wordsSaved ?: 0) > 0 || vocab.isNotEmpty()
     val avgMinPerDay = if (rangeDays > 0) totalMinutes / rangeDays else 0
+    val dailyGoalMinutes = me?.preferences?.dailyGoalMinutes ?: 15
+    val streakGoalSub = if (todayMinutes >= dailyGoalMinutes) {
+        "Daily goal met"
+    } else {
+        "${(dailyGoalMinutes - todayMinutes).coerceAtLeast(0)}m left for streak"
+    }
     val languages = remember(me, vocab) { buildLanguageProgress(me, vocab) }
     val masteredPct = if (totalVocab > 0) (mastered * 100 / totalVocab) else 0
     val learningPct = if (totalVocab > 0) 100 - masteredPct else 0
+    val dailySlice = remember(s, rangeDays) {
+        buildStatsDailySlice(s?.history?.daily.orEmpty(), rangeDays)
+    }
+    val readingSeries = remember(dailySlice) {
+        dailySlice.map { StatsSeriesPoint(formatStatsShortDate(it.date), it.minutes.toFloat()) }
+    }
+    val wordsSeries = remember(dailySlice) {
+        dailySlice.map { StatsSeriesPoint(formatStatsShortDate(it.date), it.wordsSaved.toFloat()) }
+    }
+    val weeklySeries = remember(s) { buildStatsWeeklySeries(s?.history?.weekly.orEmpty()) }
+    val readingInPeriod = dailySlice.sumOf { it.minutes }
+    val wordsInPeriod = dailySlice.sumOf { it.wordsSaved }
+    val avgReadingInPeriod = if (rangeDays > 0) readingInPeriod / rangeDays else 0
+    val heatmap = s?.history?.heatmap.orEmpty()
 
     WebCenteredColumn(
         maxWidth = WebMaxWidth.W6xl,
@@ -185,7 +198,14 @@ fun ProgressScreen(
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        StatsKpiCard("$streak days", "Current streak", Color(0xFFBB4D00), Color(0xFFFFFBEB), Color(0xFFFEE685), Modifier.weight(1f))
+                        StatsKpiCard(
+                            "${formatStatsStreakCount(streak)} days",
+                            "Current streak",
+                            Color(0xFFBB4D00),
+                            Color(0xFFFFFBEB),
+                            Color(0xFFFEE685),
+                            Modifier.weight(1f),
+                        )
                         StatsKpiCard(
                             "${totalMinutes / 60}h ${totalMinutes % 60}m",
                             "Total reading",
@@ -193,12 +213,28 @@ fun ProgressScreen(
                             Color(0xFFF5F3FF),
                             Color(0xFFDDD6FF),
                             Modifier.weight(1f),
-                            sub = "avg ${avgMinPerDay}m/day",
+                            sub = if (hasActivity) "avg ${avgMinPerDay}m/day" else null,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        StatsKpiCard("$totalVocab", "Words saved", Color(0xFF1447E6), Color(0xFFEFF6FF), Color(0xFFBEDBFF), Modifier.weight(1f), sub = "$mastered mastered")
-                        StatsKpiCard("${todayMinutes}m", "Read today", Color(0xFF364153), Color(0xFFF9FAFB), Color(0xFFE5E7EB), Modifier.weight(1f))
+                        StatsKpiCard(
+                            "$totalVocab",
+                            "Words saved",
+                            Color(0xFF1447E6),
+                            Color(0xFFEFF6FF),
+                            Color(0xFFBEDBFF),
+                            Modifier.weight(1f),
+                            sub = "$mastered mastered",
+                        )
+                        StatsKpiCard(
+                            "${todayMinutes}m",
+                            "Read today",
+                            Color(0xFF364153),
+                            Color(0xFFF9FAFB),
+                            Color(0xFFE5E7EB),
+                            Modifier.weight(1f),
+                            sub = streakGoalSub,
+                        )
                     }
                 }
             }
@@ -217,43 +253,87 @@ fun ProgressScreen(
                     Text("Language progress appears as you save words while reading.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
                 } else {
                     languages.forEach { lang ->
-                        Box(modifier = Modifier.clickable(onClick = offline.guardClick { onOpenLanguage(lang.code) })) {
-                            LanguageProgressCard(lang)
-                        }
+                        LanguageProgressCard(lang)
                     }
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
-                    .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
-                    .padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text("Vocabulary Breakdown", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    VocabBreakdownTile("Total saved", totalVocab, Color(0xFFE5E7EB), Color(0xFF364153), Modifier.weight(1f))
-                    VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), Color(0xFF1447E6), Modifier.weight(1f))
-                    VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
-                }
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .height(10.dp)
-                        .clip(RoundedCornerShape(50))
-                        .background(Color(0xFFF3F4F6)),
+            if (!hasActivity) {
+                StatsEmptyState(
+                    title = "No activity yet",
+                    description = "Your reading time, word saves, and streak charts will appear here once you start learning.",
+                )
+            } else {
+                StatsChartCard(
+                    title = "Reading Time",
+                    subtitle = "$readingInPeriod min in this period · avg $avgReadingInPeriod min/day",
+                    trailing = { StatsGLogo(size = 32) },
                 ) {
-                    Row(Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxWidth(masteredPct / 100f).fillMaxHeight().background(Color(0xFF00D492)))
-                        Box(Modifier.fillMaxWidth(learningPct / 100f).fillMaxHeight().background(Color(0xFF51A2FF)))
-                    }
+                    StatsAreaLineChart(
+                        data = readingSeries,
+                        emptyMessage = "No reading time in this range",
+                    )
                 }
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
-                    Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+
+                StatsChartCard(
+                    title = "New Words",
+                    subtitle = "$wordsInPeriod words in this period",
+                    trailing = { StatsGLogo(size = 32) },
+                ) {
+                    StatsBarChart(
+                        data = wordsSeries,
+                        emptyMessage = "No words saved in this range",
+                    )
+                }
+
+                StatsChartCard(
+                    title = "Weekly Word Saves",
+                    subtitle = "New vocabulary per week",
+                ) {
+                    StatsDotLineChart(
+                        data = weeklySeries,
+                        emptyMessage = "No weekly word saves yet",
+                    )
+                }
+
+                StatsActivityCard(
+                    heatmap = heatmap,
+                    currentStreak = streak,
+                    bestStreak = bestStreak,
+                    formatStreak = ::formatStatsStreakCount,
+                )
+
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color.White)
+                        .border(1.dp, Color(0xFFF3F4F6), RoundedCornerShape(16.dp))
+                        .padding(20.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("Vocabulary Breakdown", fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color(0xFF111827))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        VocabBreakdownTile("Total saved", totalVocab, Color(0xFFE5E7EB), Color(0xFF364153), Modifier.weight(1f))
+                        VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), Color(0xFF1447E6), Modifier.weight(1f))
+                        VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
+                    }
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(10.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(Color(0xFFF3F4F6)),
+                    ) {
+                        Row(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxWidth(masteredPct / 100f).fillMaxHeight().background(Color(0xFF00D492)))
+                            Box(Modifier.fillMaxWidth(learningPct / 100f).fillMaxHeight().background(Color(0xFF51A2FF)))
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                        Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                    }
                 }
             }
             Spacer(Modifier.height(learnerScrollBottomInset()))
@@ -1006,29 +1086,6 @@ private fun buildLanguageProgress(me: MeResponse?, vocab: List<VocabItem>): List
                 wordCount = words,
             )
         }
-}
-
-private fun weekMinuteSeries(daily: List<StatsHistoryDay>): List<Float> {
-    val byDate = daily.associateBy { it.date }
-    val today = LocalDate.now()
-    val monday = today.minusDays((today.dayOfWeek.value - 1).toLong())
-    return (0 until 7).map { offset ->
-        val key = monday.plusDays(offset.toLong()).toString()
-        (byDate[key]?.minutes ?: 0).toFloat()
-    }
-}
-
-private fun monthHourSeries(daily: List<StatsHistoryDay>): List<Float> {
-    val byMonth = mutableMapOf<YearMonth, Int>()
-    daily.forEach { day ->
-        val date = runCatching { LocalDate.parse(day.date) }.getOrNull() ?: return@forEach
-        val ym = YearMonth.from(date)
-        byMonth[ym] = (byMonth[ym] ?: 0) + day.minutes
-    }
-    val cursor = YearMonth.now().minusMonths(11)
-    return (0 until 12).map { i ->
-        ((byMonth[cursor.plusMonths(i.toLong())] ?: 0) / 60f)
-    }
 }
 
 private fun buildEarnedAchievementPreviews(streak: Int, words: Int, articles: Int): List<AchievementPreview> {

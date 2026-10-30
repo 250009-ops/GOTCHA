@@ -6,13 +6,7 @@ import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
 import { isWebLocale, type WebLocale } from '../lib/webLocale';
 
-function LanguagePicker({
-  className,
-  menuPlacement = 'top',
-}: {
-  className?: string;
-  menuPlacement?: 'bottom' | 'top';
-}) {
+function LanguagePicker({ className }: { className?: string }) {
   const { copyLocale, setLocale } = useWebLocale();
   const copy = useMarketingCopy();
 
@@ -24,7 +18,6 @@ function LanguagePicker({
       }}
       ariaLabel={copy.nav.language}
       className={className}
-      menuPlacement={menuPlacement}
     />
   );
 }
@@ -104,7 +97,7 @@ export function SiteNav() {
         </div>
 
         <div className="flex items-center gap-3 sm:gap-4">
-          <LanguagePicker className="inline-flex shrink-0 max-[359px]:hidden" menuPlacement="top" />
+          <LanguagePicker className="inline-flex shrink-0" />
           <a
             className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
             href={loginUrl()}
@@ -145,7 +138,6 @@ export function SiteNav() {
 
       {open && (
         <div className="flex flex-col gap-5 border-b border-[#e2e8f0] bg-white px-5 py-6 shadow-[0_12px_24px_rgba(15,23,42,0.08)] lg:hidden">
-          <LanguagePicker className="w-full sm:w-auto [&_button]:w-full sm:[&_button]:w-auto" menuPlacement="bottom" />
           <div className="flex flex-col gap-1">
             <NavLinks
               onNavigate={() => setOpen(false)}

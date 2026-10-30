@@ -202,11 +202,17 @@ fun GotchaTextField(
     placeholder: String = "",
     isPassword: Boolean = false,
     keyboardType: KeyboardType = KeyboardType.Text,
+    visualTransformation: VisualTransformation = VisualTransformation.None,
+    inputFilter: ((String) -> String)? = null,
 ) {
     var visible by remember { mutableStateOf(false) }
     val resolvedType = if (isPassword) KeyboardType.Password else keyboardType
     val disableSuggestions =
         isPassword || resolvedType == KeyboardType.Password || resolvedType == KeyboardType.Email
+    val resolvedVisualTransformation = when {
+        isPassword && !visible -> PasswordVisualTransformation()
+        else -> visualTransformation
+    }
     Column(modifier = modifier.fillMaxWidth()) {
         Text(
             text = label,
@@ -218,7 +224,7 @@ fun GotchaTextField(
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(
             value = value,
-            onValueChange = onValueChange,
+            onValueChange = { raw -> onValueChange(inputFilter?.invoke(raw) ?: raw) },
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -226,7 +232,7 @@ fun GotchaTextField(
             placeholder = {
                 Text(placeholder, color = GotchaColors.TextPlaceholder, fontSize = 15.sp)
             },
-            visualTransformation = if (isPassword && !visible) PasswordVisualTransformation() else VisualTransformation.None,
+            visualTransformation = resolvedVisualTransformation,
             trailingIcon = if (isPassword) {
                 {
                     IconButton(onClick = { visible = !visible }) {
@@ -475,11 +481,9 @@ fun GlassLoadingScreen(
         fallbackTint = HazeTint(GotchaColors.BrandPurpleSoft.copy(alpha = 0.35f)),
     )
     val clamped = progress.coerceIn(0, 100)
-    val animatedProgress by animateFloatAsState(
-        targetValue = clamped / 100f,
-        animationSpec = tween(durationMillis = 450, easing = LinearEasing),
-        label = "glassLoadProgress",
-    )
+    // Ring uses the same value as the center label — ReaderScreen already smooths progress.
+    // animateFloatAsState lagged behind rapid updates (100% label, ~50% arc).
+    val ringFraction = clamped / 100f
 
     Box(
         modifier = modifier
@@ -549,7 +553,7 @@ fun GlassLoadingScreen(
                         drawArc(
                             color = GotchaColors.BrandPurple,
                             startAngle = -90f,
-                            sweepAngle = 360f * animatedProgress,
+                            sweepAngle = 360f * ringFraction,
                             useCenter = false,
                             style = Stroke(width = stroke, cap = StrokeCap.Round),
                         )
