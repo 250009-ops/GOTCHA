@@ -93,13 +93,19 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
         val params = QueryProductDetailsParams.newBuilder().setProductList(
             listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(type).build()),
         ).build()
+        var code = BillingClient.BillingResponseCode.OK
         val res: QueryProductDetailsResult? = suspendCancellableCoroutine { cont ->
             client.queryProductDetailsAsync(params) { br, r ->
+                code = br.responseCode
                 if (br.responseCode != BillingClient.BillingResponseCode.OK) {
                     android.util.Log.w("PlayBilling", "queryProductDetails $sku failed: ${br.responseCode} ${br.debugMessage}")
                 }
                 if (cont.isActive) cont.resume(r)
             }
+        }
+        // REVIEW-p2d nit: a Play/service failure is not "not available in your country".
+        if (code != BillingClient.BillingResponseCode.OK) {
+            throw PlayBillingException("Google Play is unavailable right now. Please try again.")
         }
         res?.unfetchedProductList?.forEach { u ->
             android.util.Log.w("PlayBilling", "unfetched product ${u.productId}: statusCode=${u.statusCode} (check Play Console: product active, country, app version)")
