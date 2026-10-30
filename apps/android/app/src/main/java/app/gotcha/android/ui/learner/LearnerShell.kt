@@ -217,6 +217,8 @@ fun LearnerShell(
     }
 
     val uiCopy = remember(uiLanguage) { uiCopyFor(uiLanguage) }
+    // QA N8: non-composable error mapping (rate limits) follows the interface language.
+    androidx.compose.runtime.SideEffect { app.gotcha.android.data.api.ApiErrorLanguage.current = uiLanguage }
     val (chromeTopInset, chromeBottomInset) = rememberLearnerChromeInsets(showChrome, searchExpanded)
     CompositionLocalProvider(
         LocalLearnerBottomInset provides chromeBottomInset,

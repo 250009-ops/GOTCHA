@@ -25,8 +25,8 @@ async function main() {
       update: async ({ where, data }: any) => { const p = promos.find((x) => x.id === where.id); p.redemptions += data.redemptions.increment; return p; },
     },
     importPayment: {
-      count: async ({ where }: any) => (where.status ? payments.filter((p) => p.promoCodeId === where.promoCodeId && p.status === 'pending').length
-        : payments.filter((p) => p.userId === where.userId && where.OR.some((w: any) => p.promoCodeId === w.promoCodeId && (w.promoRedeemed ? p.promoRedeemed : p.status === 'pending'))).length),
+      count: async ({ where }: any) => (where.status ? payments.filter((p) => p.promoCodeId === where.promoCodeId && p.status === 'pending' && p.userId !== where.NOT?.userId).length
+        : payments.filter((p) => p.userId === where.userId && p.promoCodeId === where.promoCodeId && p.promoRedeemed).length),
       findUnique: async ({ where }: any) => payments.find((p) => p.id === where.id),
       updateMany: async ({ where, data }: any) => { const p = payments.find((x) => x.id === where.id && x.promoRedeemed === where.promoRedeemed); if (!p) return { count: 0 }; Object.assign(p, data); return { count: 1 }; },
       update: async ({ where, data }: any) => Object.assign(payments.find((x) => x.id === where.id), data),
@@ -56,6 +56,8 @@ async function main() {
   promos[0].redemptions = 1;
   payments.push({ id: 'pay2', userId: 'u3', promoCodeId: 'p1', promoRedeemed: false, status: 'pending' });
   assert.equal(await code('LAUNCH', 'imports', 'u4'), 'promo_exhausted', 'pending checkout holds the last slot');
+  // n-7: the holder's own abandoned checkout doesn't block them.
+  assert.equal(await code('LAUNCH', 'imports', 'u3'), 'ok', 'own pending checkout does not block a retry');
   promos[0].redemptions = 2;
   assert.equal(await svc.redeemForPayment('pay2'), false);
   assert.equal(promos[0].redemptions, 2, 'cap never exceeded');

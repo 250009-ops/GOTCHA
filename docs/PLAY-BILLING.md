@@ -21,7 +21,7 @@ PLAY_PACKAGE_NAME=app.gotcha.android
 PLAY_SERVICE_ACCOUNT_JSON=/run/secrets/play-sa.json   # or the inline JSON
 PLAY_RTDN_AUDIENCE=https://api.gotchaa.uz/api/v1/billing/play/rtdn
 PLAY_RTDN_SA_EMAIL=play-rtdn@<gcp-project>.iam.gserviceaccount.com   # REQUIRED with the audience
-PLAY_TOKEN_KEY=<32+ random bytes>          # REQUIRED in production: AES-256-GCM key for purchase tokens at rest
+PLAY_TOKEN_KEY=<32+ random bytes>          # REQUIRED whenever PLAY_SERVICE_ACCOUNT_JSON is set (no fallback key); AES-256-GCM for tokens at rest
 PLAY_ACCOUNT_PEPPER=<random>               # optional: salts obfuscatedAccountId (set once, never change)
 # PLAY_RTDN_TOKEN=<long random>  (only if OIDC push auth is not used)
 ```
@@ -63,3 +63,12 @@ Import tiers: a Play import purchase can be verified without a quote (e.g. recov
 ## Rolling back
 
 Before rolling back migration 0021 (Play tables), `pg_dump` `play_purchases`, `store_products` and `entitlements`: the down migration drops them and the purchase history cannot be rebuilt otherwise. 0020's down migration restores plan values from `subscription_plans_backup_0020`.
+
+## p2c changes
+
+- **Play Billing Library 9.1.0** (`billing-ktx`), Kotlin 2.2.10 (PBL 8+ ships Kotlin 2.2 metadata). `enableAutoServiceReconnection()`; product details come from `QueryProductDetailsResult` (unfetched products are reported, not silently missing); one-time prices/offers use `oneTimePurchaseOfferDetailsList`.
+- Purchase-flow decisions (response codes, verify status, resync filter, credit reuse, base-plan offer, resume debounce) live in `PlayPurchaseLogic` and are unit-tested (`PlayPurchaseLogicTest`).
+- Resume sync: only unacknowledged purchases and owned import consumables are re-verified, at most every 5 minutes.
+- Unconfirmed voids answer 503 (Pub/Sub retries) and the 15-min job sweeps `voidedpurchases` as a backstop.
+- Existing plaintext tokens: run `npx ts-node --transpile-only scripts/backfill-play-tokens.ts` once after setting `PLAY_TOKEN_KEY`.
+- Debug builds can target a test API: `./gradlew assembleDebug -PapiBaseUrl=http://10.0.2.2:3000/api/v1/` (or `GOTCHA_API_BASE_URL`); cleartext is allowed only in debug.

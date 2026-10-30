@@ -42,7 +42,9 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
     private val client: BillingClient = BillingClient.newBuilder(context.applicationContext)
         .setListener(this)
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
+        .enableAutoServiceReconnection() // PBL 8+: reconnects transparently when the Play service drops
         .build()
+    @Volatile private var lastSyncMs = 0L
     private var activityRef: WeakReference<Activity>? = null
     private var pending: CompletableDeferred<List<Purchase>>? = null
     private val flowLock = Mutex()
@@ -70,27 +72,40 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
 
     override fun onPurchasesUpdated(result: BillingResult, purchases: MutableList<Purchase>?) {
         val d = pending ?: return
-        when (result.responseCode) {
-            BillingClient.BillingResponseCode.OK -> d.complete(purchases.orEmpty())
-            BillingClient.BillingResponseCode.USER_CANCELED -> d.completeExceptionally(PlayBillingException("Purchase cancelled.", cancelled = true))
-            BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED -> d.complete(emptyList())
-            else -> d.completeExceptionally(PlayBillingException("Purchase failed. Please try again."))
+        when (outcome(result.responseCode)) {
+            PlayPurchaseLogic.Launch.PURCHASED -> d.complete(purchases.orEmpty())
+            PlayPurchaseLogic.Launch.CANCELLED -> d.completeExceptionally(PlayBillingException("Purchase cancelled.", cancelled = true))
+            PlayPurchaseLogic.Launch.ALREADY_OWNED -> d.complete(emptyList()) // launch() falls back to the owned token
+            PlayPurchaseLogic.Launch.FAILED -> d.completeExceptionally(PlayBillingException("Purchase failed. Please try again."))
         }
+    }
+
+    private fun outcome(code: Int) = PlayPurchaseLogic.launchOutcome(
+        code, BillingClient.BillingResponseCode.OK, BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED, BillingClient.BillingResponseCode.USER_CANCELED,
+    )
+
+    /** PBL 8+: products Play couldn't return come back in unfetchedProductList instead of silently missing. */
+    private suspend fun productDetails(sku: String, type: String): ProductDetails? {
+        connect()
+        val res = client.queryProductDetails(
+            QueryProductDetailsParams.newBuilder().setProductList(
+                listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(type).build()),
+            ).build(),
+        )
+        return res.productDetailsList?.firstOrNull { it.productId == sku }
     }
 
     private suspend fun launch(sku: String, type: String): Purchase? = flowLock.withLock {
         connect()
         val activity = activityRef?.get() ?: throw PlayBillingException("Open Gotcha to complete the purchase.")
-        val details: ProductDetails = client.queryProductDetails(
-            QueryProductDetailsParams.newBuilder().setProductList(
-                listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(type).build()),
-            ).build(),
-        ).productDetailsList?.firstOrNull() ?: throw PlayBillingException("This item is not available in your country yet.")
+        val details: ProductDetails = productDetails(sku, type) ?: throw PlayBillingException("This item is not available in your country yet.")
         val pp = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details).apply {
             // m-p2-6: pick the plain base-plan offer (no offerId) explicitly, never a promo/trial offer by position.
             details.subscriptionOfferDetails?.let { offers ->
-                (offers.firstOrNull { it.offerId == null } ?: offers.firstOrNull())?.offerToken?.let { setOfferToken(it) }
+                PlayPurchaseLogic.baseOffer(offers) { it.offerId }?.offerToken?.let { setOfferToken(it) }
             }
+            // PBL 8+: one-time products can carry several offers; buy the default (first) one.
+            details.oneTimePurchaseOfferDetailsList?.firstOrNull()?.offerToken?.let { setOfferToken(it) }
         }.build()
         val params = BillingFlowParams.newBuilder()
             .setProductDetailsParamsList(listOf(pp))
@@ -99,7 +114,8 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
         val d = CompletableDeferred<List<Purchase>>()
         pending = d
         val r = client.launchBillingFlow(activity, params)
-        if (r.responseCode != BillingClient.BillingResponseCode.OK && r.responseCode != BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED) {
+        val lo = outcome(r.responseCode)
+        if (lo != PlayPurchaseLogic.Launch.PURCHASED && lo != PlayPurchaseLogic.Launch.ALREADY_OWNED) {
             pending = null
             throw PlayBillingException("Purchase failed. Please try again.")
         }
@@ -118,22 +134,17 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
         if (purchase.purchaseState == Purchase.PurchaseState.PENDING) throw PlayBillingException(PENDING_MSG, pending = true)
         val r = api.playVerify(PlayVerifyRequest(sku, purchase.purchaseToken, importQuote))
         // PM3: only "granted" unlocks anything; pending / expired are surfaced instead of a false success.
-        when (r.status) {
-            "granted" -> return r
-            "pending" -> throw PlayBillingException(PENDING_MSG, pending = true)
-            else -> throw PlayBillingException("Google Play didn't confirm this purchase. If you were charged, it will be refunded automatically.")
+        when (PlayPurchaseLogic.verifyOutcome(r.status)) {
+            PlayPurchaseLogic.Verify.GRANTED -> return r
+            PlayPurchaseLogic.Verify.PENDING -> throw PlayBillingException(PENDING_MSG, pending = true)
+            PlayPurchaseLogic.Verify.NOT_CONFIRMED -> throw PlayBillingException("Google Play didn't confirm this purchase. If you were charged, it will be refunded automatically.")
         }
     }
 
     /** PM3: the localized price Google Play will actually charge (null if Play is unavailable). */
     suspend fun bookPrice(contentId: String): String? = runCatching {
         val sku = api.playBookSku(contentId)?.sku ?: return null
-        connect()
-        client.queryProductDetails(
-            QueryProductDetailsParams.newBuilder().setProductList(
-                listOf(QueryProductDetailsParams.Product.newBuilder().setProductId(sku).setProductType(BillingClient.ProductType.INAPP).build()),
-            ).build(),
-        ).productDetailsList?.firstOrNull()?.oneTimePurchaseOfferDetails?.formattedPrice
+        productDetails(sku, BillingClient.ProductType.INAPP)?.oneTimePurchaseOfferDetailsList?.firstOrNull()?.formattedPrice
     }.getOrNull()
 
     /** Pays for one import with the Play SKU mapped to the quoted page tier; returns the server payment id. */
@@ -142,9 +153,7 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
             ?: throw PlayBillingException("This import size can't be purchased in the app yet. Try a shorter document.")
         // PB2: reuse an unused Play credit that covers this tier (bought earlier, verify finished but import never ran).
         val ents = runCatching { api.entitlements() }.getOrNull()
-        val needed = maxPages ?: Int.MAX_VALUE
-        ents?.importCredits?.firstOrNull { !it.used && it.source == "google_play" && (it.tierId == tierId || (it.maxPages ?: -1) >= needed) }
-            ?.let { return it.paymentId }
+        ents?.importCredits?.let { PlayPurchaseLogic.reusableCredit(it, tierId, maxPages) }?.let { return it.paymentId }
         // On ITEM_ALREADY_OWNED, launch() falls back to the owned token; the server verifies it without needing a quote.
         val purchase = launch(sku, BillingClient.ProductType.INAPP) ?: throw PlayBillingException("Purchase failed. Please try again.")
         return verify(sku, purchase, quote).paymentId ?: throw PlayBillingException("Purchase could not be confirmed. Please try again.")
@@ -169,18 +178,19 @@ class PlayBilling(context: Context, private val api: GotchaApi) : PurchasesUpdat
      * After login / on resume: re-send any Play purchase the server hasn't confirmed (app killed mid-flow,
      * pending payment completed), then return the unified entitlements (web + Play).
      */
-    suspend fun syncAtLogin(): EntitlementsResponse? {
+    suspend fun syncAtLogin(force: Boolean = true): EntitlementsResponse? {
+        val now = System.currentTimeMillis()
+        if (!PlayPurchaseLogic.syncDue(lastSyncMs, now, force)) return null // N-M4: resume syncs at most every 5 min
+        lastSyncMs = now
         runCatching {
             connect()
             val known = products().products.associateBy { it.sku }
             for (type in listOf(BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS)) {
                 client.queryPurchasesAsync(QueryPurchasesParams.newBuilder().setProductType(type).build()).purchasesList
-                    // PB2: unacknowledged purchases AND every still-owned INAPP item (an owned consumable means
-                    // the server never consumed it). Import tiers verify without a quote and become a tier credit.
-                    .filter { it.purchaseState == Purchase.PurchaseState.PURCHASED && (!it.isAcknowledged || type == BillingClient.ProductType.INAPP) }
                     .forEach { p ->
                         val sku = p.products.firstOrNull() ?: return@forEach
-                        if (known[sku] == null) return@forEach
+                        // N-M4: only unacknowledged purchases and owned import consumables; owned books aren't re-verified.
+                        if (!PlayPurchaseLogic.shouldResync(p.purchaseState == Purchase.PurchaseState.PURCHASED, p.isAcknowledged, known[sku]?.kind)) return@forEach
                         runCatching { api.playVerify(PlayVerifyRequest(sku, p.purchaseToken, null)) }
                     }
             }

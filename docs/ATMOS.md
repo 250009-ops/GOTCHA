@@ -195,3 +195,9 @@ The Android app (`ImportScreen.kt`) uses the same API endpoints:
   - `OK` → finalize (`refunded`, access revoked, audited).
   - Anything else → the payment stays `refunding` with `needsAttention` and the Atmos message saved in `cancel_reason`. Support checks the transaction in the Atmos cabinet and finishes the refund by hand.
 - It **never** rolls back to `paid`. Before this fix, rolling back could undo a refund that was still going through.
+
+### p2c: ambiguous failures, bounded retries, manual close
+
+- A refund is rolled back to `paid` only when Atmos answers with an explicit non-OK `result.code`. Timeouts, network errors, 5xx and unparsable answers leave it `refunding` + `needsAttention` (Atmos may have reversed).
+- The reconciler claims each row (`reconcile_attempts` compare-and-increment) and asks Atmos at most twice per refund; after that only support can close it.
+- Support closes a stuck refund after checking the Atmos cabinet: admin Payments → "Mark refunded" (`POST /admin/payments/:id/refund/finalize`, superadmin, reason required, audited as `payment.refund.finalized_manually`). It does not call Atmos.

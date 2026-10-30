@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { join } from 'path';
 import { APP_GUARD } from '@nestjs/core';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { GotchaThrottlerGuard } from './common/gotcha-throttler.guard';
 import { DevAuthModule } from './common/dev-auth/dev-auth.module';
 import { clientIp } from './common/runtime-security';
 import { MailModule } from './common/mail/mail.module';
@@ -51,6 +52,6 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     MessagingModule,
     NotificationsModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: GotchaThrottlerGuard }],
 })
 export class AppModule {}

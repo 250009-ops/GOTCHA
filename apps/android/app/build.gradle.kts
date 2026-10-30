@@ -26,6 +26,10 @@ val derivedVersionCode: Int = (
     providers.exec { commandLine("git", "rev-list", "--count", "HEAD") }
         .standardOutput.asText.get().trim().toInt()
 }.getOrDefault(1).coerceAtLeast(VERSION_CODE_FLOOR)
+val debugApiBaseUrl: String = ((project.findProperty("apiBaseUrl") as String?) ?: System.getenv("GOTCHA_API_BASE_URL")
+    ?: "https://gotchaa.uz/api/v1/").trim().let { if (it.endsWith("/")) it else "$it/" }
+val debugWebBaseUrl: String = ((project.findProperty("webBaseUrl") as String?) ?: System.getenv("GOTCHA_WEB_BASE_URL")
+    ?: "https://gotchaa.uz").trim().trimEnd('/')
 val derivedVersionName: String =
     (project.findProperty("versionName") as String?) ?: System.getenv("VERSION_NAME") ?: "1.0.$derivedVersionCode"
 
@@ -73,8 +77,10 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             isDebuggable = true
-            buildConfigField("String", "API_BASE_URL", "\"https://gotchaa.uz/api/v1/\"")
-            buildConfigField("String", "WEB_BASE_URL", "\"https://gotchaa.uz\"")
+            // N10: debug can target a test API: -PapiBaseUrl=http://10.0.2.2:3000/api/v1/ (or GOTCHA_API_BASE_URL).
+            // Cleartext is allowed only in debug (src/debug/res/xml/network_security_config.xml).
+            buildConfigField("String", "API_BASE_URL", "\"$debugApiBaseUrl\"")
+            buildConfigField("String", "WEB_BASE_URL", "\"$debugWebBaseUrl\"")
         }
     }
 
@@ -106,7 +112,7 @@ dependencies {
 
     implementation("androidx.core:core-ktx:1.15.0")
     // All in-app digital purchases (imports, catalog books, Plus) — Play payments policy.
-    implementation("com.android.billingclient:billing-ktx:7.1.1")
+    implementation("com.android.billingclient:billing-ktx:9.1.0")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

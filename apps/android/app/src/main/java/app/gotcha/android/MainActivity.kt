@@ -242,7 +242,7 @@ class MainActivity : ComponentActivity() {
         // Google Play purchase sheet needs a foreground Activity.
         (application as GotchaApp).container.playBilling.attach(this)
         // m-p2-7: pending purchases completed while backgrounded are verified as soon as the app returns.
-        lifecycleScope.launch { runCatching { (application as GotchaApp).container.playBilling.syncAtLogin() } }
+        lifecycleScope.launch { runCatching { (application as GotchaApp).container.playBilling.syncAtLogin(force = false) } }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -260,9 +260,6 @@ class MainActivity : ComponentActivity() {
                 AndroidColor.TRANSPARENT,
             ),
         )
-        // Ensure OEM 3-button nav stays transparent so learner glass can blend under it.
-        window.statusBarColor = AndroidColor.TRANSPARENT
-        window.navigationBarColor = AndroidColor.TRANSPARENT
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false

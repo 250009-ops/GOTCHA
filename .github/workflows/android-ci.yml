@@ -29,7 +29,7 @@ jobs:
           java-version: 17
       - uses: android-actions/setup-android@v3
         with:
-          packages: 'platforms;android-35 build-tools;35.0.0 platform-tools'
+          packages: 'platforms;android-36 build-tools;36.0.0 platform-tools'
       - uses: gradle/actions/setup-gradle@v4
       - run: chmod +x gradlew
       - name: Unit tests
@@ -38,6 +38,9 @@ jobs:
         run: ./gradlew --no-daemon lintDebug
       - name: Debug APK
         run: ./gradlew --no-daemon assembleDebug
+      # N-M5: also prove the bundle task (API 36, PBL 9) builds; release signing is only in android-release.yml.
+      - name: Debug AAB
+        run: ./gradlew --no-daemon bundleDebug
       - uses: actions/upload-artifact@v4
         if: always()
         with:

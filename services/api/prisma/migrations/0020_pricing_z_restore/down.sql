@@ -1,4 +1,4 @@
--- Manual rollback for 0020_pricing (Prisma has no down migrations). pg_dump promo_codes first if it has data.
+-- Manual rollback for 0020_pricing + 0020_pricing_z_restore + 0019_z_pricing_snapshot (Prisma has no down migrations). pg_dump promo_codes first if it has data.
 ALTER TABLE "import_payments" DROP COLUMN IF EXISTS "promo_code_id", DROP COLUMN IF EXISTS "list_amount_tiyins", DROP COLUMN IF EXISTS "promo_redeemed";
 DROP TABLE IF EXISTS "promo_codes";
 ALTER TABLE "import_page_tiers" DROP COLUMN IF EXISTS "active";

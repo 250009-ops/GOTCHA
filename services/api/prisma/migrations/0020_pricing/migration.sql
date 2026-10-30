@@ -1,9 +1,5 @@
 -- DB-driven pricing: plan display/period/features/active, page-tier active flag, promo codes.
--- Seeds ONLY the non-PROPOSAL rows of team/PRICING.md §7 (v0.2). Non-destructive (REVIEW-p2 PM7):
--- existing plan rows keep their admin-configured name/price/quota/limits; only the NEW columns are filled,
--- and only where they are still empty. A snapshot of subscription_plans is kept for rollback.
-CREATE TABLE IF NOT EXISTS "subscription_plans_backup_0020" AS SELECT * FROM "subscription_plans";
-
+-- Seeds ONLY the non-PROPOSAL rows of team/PRICING.md §7 (v0.2). Safe to re-run.
 ALTER TABLE "subscription_plans"
   ADD COLUMN IF NOT EXISTS "name_i18n" JSONB,
   ADD COLUMN IF NOT EXISTS "period" TEXT NOT NULL DEFAULT 'month',
@@ -52,10 +48,9 @@ VALUES
   (gen_random_uuid(),'premium','Plus',34990,1000000,1000000,false,'{"en":"Plus","ru":"Plus","uz":"Plus"}','month',
    '["reader","library","ai_lookup_unlimited","translate","tts","vocabulary","srs_review","practice","imports_free_pool","stats","messaging"]',true,1)
 ON CONFLICT ("tier") DO UPDATE SET
-  "name_i18n" = COALESCE("subscription_plans"."name_i18n", EXCLUDED."name_i18n"),
-  "features" = COALESCE("subscription_plans"."features", EXCLUDED."features"),
-  "sort_order" = EXCLUDED."sort_order";
--- name / price_monthly / ai_daily_quota / import_limit / offline_enabled / period are NOT touched on existing rows.
+  "name" = EXCLUDED."name", "price_monthly" = EXCLUDED."price_monthly", "ai_daily_quota" = EXCLUDED."ai_daily_quota",
+  "import_limit" = EXCLUDED."import_limit", "offline_enabled" = EXCLUDED."offline_enabled", "name_i18n" = EXCLUDED."name_i18n",
+  "period" = EXCLUDED."period", "features" = EXCLUDED."features", "sort_order" = EXCLUDED."sort_order";
 -- Page tiers: PRICING says keep current values; seed only when the table is empty.
 INSERT INTO "import_page_tiers" ("id","label","min_pages","max_pages","price_usd","sort_order","updated_at")
 SELECT gen_random_uuid(), v.label, v.min_pages, v.max_pages, v.price, v.sort, CURRENT_TIMESTAMP

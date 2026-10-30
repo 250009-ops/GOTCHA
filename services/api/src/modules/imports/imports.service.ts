@@ -422,8 +422,9 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
     }
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
-    await this.importCommerce.assertPaymentCoversPages(userId, payment, actualPages, importType);
+    const offered = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
+    // n-1: returns null when the document is free, so a Play credit is not spent on it.
+    const payment = await this.importCommerce.assertPaymentCoversPages(userId, offered, actualPages, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';
     const title =
       (dto.title?.trim() ||

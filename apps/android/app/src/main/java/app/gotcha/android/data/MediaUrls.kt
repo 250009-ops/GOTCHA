@@ -15,6 +15,14 @@ private val LOCAL_OR_LAN_ORIGIN = Regex(
 fun resolveMediaUrl(raw: String?): String? {
     val value = raw?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     val origin = productionOrigin()
+    // N10: a debug build pointed at a cleartext test API keeps its media on that host as-is.
+    if (BuildConfig.DEBUG && origin.startsWith("http://", ignoreCase = true)) {
+        return when {
+            value.contains("://") -> value
+            value.startsWith("/") -> "$origin$value"
+            else -> "$origin/$value"
+        }
+    }
     val rewritten = LOCAL_OR_LAN_ORIGIN.replace(value, origin)
     return when {
         rewritten.startsWith("https://", ignoreCase = true) -> rewritten
@@ -30,7 +38,7 @@ fun productionOrigin(): String {
     val cut = base.indexOf("/api/")
     val origin = if (cut > 0) base.substring(0, cut) else base.trimEnd('/')
     val normalized = origin.trimEnd('/').ifBlank { "https://gotchaa.uz" }
-    return if (normalized.startsWith("http://", ignoreCase = true)) {
+    return if (normalized.startsWith("http://", ignoreCase = true) && !BuildConfig.DEBUG) {
         "https://${normalized.substring(7)}"
     } else {
         normalized

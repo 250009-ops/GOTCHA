@@ -1,7 +1,8 @@
 // REVIEW-p1 B2, B3, M1, M2, M3 + QA BUG-06/07 on an in-memory Prisma fake that honours conditional writes.
 import * as assert from 'node:assert/strict';
 import { ImportPaymentStatus as S, PurchaseStatus, Prisma } from '@prisma/client';
-import { ImportCommerceService } from './import-commerce.service';
+import { ImportCommerceService, REFUND_RECONCILE_MAX_ATTEMPTS } from './import-commerce.service';
+import { AtmosReverseError } from './atmos.client';
 
 type Row = Record<string, any>;
 const match = (r: Row, w: Row = {}) =>
@@ -21,7 +22,9 @@ function fakeDb(payment: Row) {
     findMany: async ({ where }: any) => rows.filter((r) => match(r, where)),
     updateMany: async ({ where, data }: any) => {
       const hit = rows.filter((r) => match(r, where));
-      hit.forEach((r) => Object.assign(r, data));
+      hit.forEach((r) => {
+        for (const [k, v] of Object.entries(data)) r[k] = v && typeof v === 'object' && 'increment' in (v as Row) ? (r[k] ?? 0) + (v as Row).increment : v;
+      });
       return { count: hit.length };
     },
     update: async ({ where, data }: any) => Object.assign(rows.find((r) => match(r, where))!, data),
@@ -55,7 +58,8 @@ function fakeDb(payment: Row) {
     configured: () => true,
     reverseFails: false,
     confirmed: true,
-    reverseTransaction: async () => { atmosCalls.push('reverse'); if (atmos.reverseFails) throw new Error('atmos down'); return {}; },
+    reverseDefinite: false,
+    reverseTransaction: async () => { atmosCalls.push('reverse'); if (atmos.reverseFails) throw new AtmosReverseError('atmos down', atmos.reverseDefinite, atmos.reverseDefinite ? 'STPIMS-ERR-050' : null); return {}; },
     applyTransaction: async () => { atmosCalls.push('apply'); return { confirmed: atmos.confirmed, raw: {} }; },
     getTransaction: async () => ({ confirmed: atmos.confirmed, raw: {} }),
   };
@@ -92,14 +96,25 @@ async function main() {
     assert.equal(again.alreadyRefunded, true, 'retry returns existing result');
     assert.deepEqual(f.atmosCalls, ['reverse']);
   }
-  // B2: Atmos failure rolls the claim back to paid (+ flagged), nothing revoked, no audit
+  // N-M1: a DEFINITE Atmos rejection rolls the claim back to paid (+ flagged), nothing revoked, no audit
   {
     const f = fakeDb(pay());
     f.atmos.reverseFails = true;
+    f.atmos.reverseDefinite = true;
     await assert.rejects(f.svc.refundPaidPayment('p1', { reason: 'x1x', actorId: 'a' }), /atmos down/);
     assert.equal(f.payments[0].status, S.paid);
     assert.equal(f.payments[0].needsAttention, true);
     assert.equal(f.audit.length, 0);
+  }
+  // N-M1: an AMBIGUOUS failure (timeout / 5xx) stays refunding + flagged; never back to paid, no second refund
+  {
+    const f = fakeDb(pay());
+    f.atmos.reverseFails = true;
+    await assert.rejects(f.svc.refundPaidPayment('p1', { reason: 'x1x', actorId: 'a' }), (e: any) => e.getStatus() === 503 && e.getResponse().code === 'refund_outcome_unknown');
+    assert.equal(f.payments[0].status, S.refunding);
+    assert.equal(f.payments[0].needsAttention, true);
+    await assert.rejects(f.svc.refundPaidPayment('p1', { reason: 'again', actorId: 'a' }), (e: any) => e.getStatus() === 409);
+    assert.deepEqual(f.atmosCalls, ['reverse']);
   }
   // B2: audit failure rolls back the finalize (stays refunding → reconciler)
   {
@@ -153,10 +168,11 @@ async function main() {
     await Promise.all([f.svc.markPaid('acc1', {}), f.svc.markPaid('acc1', {}), f.svc.getPayment('u1', 'p1')]);
     assert.equal(f.purchases.length, 1);
   }
-  // M2: page-count void with a failed reverse stays paid + flagged
+  // M2: page-count void with a definitely rejected reverse stays paid + flagged
   {
     const f = fakeDb(pay());
     f.atmos.reverseFails = true;
+    f.atmos.reverseDefinite = true;
     await (f.svc as any).voidUnusedPayment('p1');
     assert.equal(f.payments[0].status, S.paid);
     assert.equal(f.payments[0].needsAttention, true);
@@ -186,6 +202,36 @@ async function main() {
     f.db.importPayment.findMany = async ({ where }: any) => { cutoff = where.refundRequestedAt.lt; return []; };
     await f.svc.reconcileStaleRefunds(0);
     assert.ok(cutoff! <= new Date(Date.now() - 10 * 60_000 + 1000));
+  }
+  // N-M2: claim per row + attempt cap; a lost claim (other instance) skips Atmos
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundReason: 'x', reconcileAttempts: 0 }));
+    f.atmos.reverseFails = true;
+    let filter: any = null;
+    f.db.importPayment.findMany = async ({ where }: any) => { filter = where; return f.payments.filter((p) => p.status === S.refunding && p.reconcileAttempts < REFUND_RECONCILE_MAX_ATTEMPTS); };
+    for (let i = 0; i < REFUND_RECONCILE_MAX_ATTEMPTS + 2; i++) await f.svc.reconcileStaleRefunds(0);
+    assert.deepEqual(filter.reconcileAttempts, { lt: REFUND_RECONCILE_MAX_ATTEMPTS });
+    assert.equal(f.atmosCalls.length, REFUND_RECONCILE_MAX_ATTEMPTS, 'Atmos asked at most MAX times');
+    assert.equal(f.payments[0].status, S.refunding);
+    // stale snapshot (another instance already incremented) ⇒ claim fails ⇒ no Atmos call
+    const g = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), reconcileAttempts: 1 }));
+    g.db.importPayment.findMany = async () => [{ ...g.payments[0], reconcileAttempts: 0 }];
+    const r = await g.svc.reconcileStaleRefunds(0);
+    assert.equal(r.skipped, 1);
+    assert.equal(g.atmosCalls.length, 0);
+  }
+  // N-M2: manual finalize closes a stuck refund without calling Atmos; reason required; only from refunding
+  {
+    const f = fakeDb(pay({ status: S.refunding, needsAttention: true }));
+    f.purchases.push({ importPaymentId: 'p1', status: PurchaseStatus.completed });
+    await assert.rejects(f.svc.finalizeRefundManually('p1', { actorId: 'admin', reason: ' ' }), (e: any) => e.getStatus() === 400);
+    const r = await f.svc.finalizeRefundManually('p1', { actorId: 'admin', reason: 'checked Atmos cabinet' });
+    assert.equal(r.status, S.refunded);
+    assert.equal(f.payments[0].needsAttention, false);
+    assert.equal(f.purchases[0].status, PurchaseStatus.refunded);
+    assert.equal(f.atmosCalls.length, 0);
+    assert.equal(f.audit[0].action, 'payment.refund.finalized_manually');
+    await assert.rejects(f.svc.finalizeRefundManually('p1', { actorId: 'admin', reason: 'again' }), (e: any) => e.getStatus() === 409);
   }
   console.log('review-p1 payments: all passed');
 }

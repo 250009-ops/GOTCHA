@@ -608,22 +608,32 @@ export class AtmosClient {
     };
     if (params.reason) payload.reason = params.reason;
 
-    const res = await fetch(`${this.baseUrl()}/merchant/pay/reverse`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
+    let res: Response;
+    try {
+      res = await fetch(`${this.baseUrl()}/merchant/pay/reverse`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(30_000),
+      });
+    } catch (e) {
+      // Network error / timeout: Atmos may or may not have reversed. NOT a definite rejection (N-M1).
+      throw new AtmosReverseError(`Unable to cancel transaction (${e instanceof Error ? e.message : 'network error'}).`, false);
+    }
+    const parsed = (await res.json().catch(() => null)) as AtmosMerchantResponse | null;
+    const raw = parsed ?? {};
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
 
     if (!res.ok || resultCode !== 'OK') {
       this.logger.error(`Atmos merchant/pay/reverse failed: ${res.status} ${JSON.stringify(raw)}`);
       const detail = raw.result?.description || `HTTP ${res.status}`;
-      throw new ServiceUnavailableException(`Unable to cancel transaction (${detail}).`);
+      // Definite only when Atmos answered (non-5xx) with an explicit non-OK result code.
+      const definite = res.status < 500 && parsed !== null && resultCode !== '';
+      throw new AtmosReverseError(`Unable to cancel transaction (${detail}).`, definite, resultCode || null);
     }
 
     return {
@@ -687,5 +697,15 @@ export class AtmosClient {
     if (!/^[0-9a-f]{32}$/.test(providedHex)) return false;
     const provided = Buffer.from(providedHex, 'hex');
     return provided.length === expected.length && timingSafeEqual(provided, expected);
+  }
+}
+
+/**
+ * reverseTransaction failure. `definite` = Atmos answered with an explicit non-OK result code, so the charge was
+ * certainly NOT reversed. Timeouts, network errors, 5xx and unparsable bodies are ambiguous (REVIEW-p2b N-M1).
+ */
+export class AtmosReverseError extends ServiceUnavailableException {
+  constructor(message: string, readonly definite: boolean, readonly atmosCode: string | null = null) {
+    super(message);
   }
 }

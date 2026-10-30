@@ -22,6 +22,7 @@ Object.assign(BY_CODE, {
   payment_not_paid: { en: 'This payment cannot be refunded.', ru: 'Этот платёж нельзя вернуть.', uz: 'Bu toʻlovni qaytarib boʻlmaydi.' },
   item_answered: { en: 'This exercise was already answered.', ru: 'На это задание уже ответили.', uz: 'Bu mashqqa allaqachon javob berilgan.' },
   item_not_issued: { en: 'This exercise is no longer available. Start a new session.', ru: 'Задание недоступно. Начните новую сессию.', uz: 'Mashq mavjud emas. Yangi sessiyani boshlang.' },
+  rate_limited: { en: 'Too many requests. Please wait a moment and try again.', ru: 'Слишком много запросов. Подождите немного и попробуйте снова.', uz: 'Soʻrovlar juda koʻp. Biroz kuting va qayta urinib koʻring.' },
   session_completed: { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
 });
 
@@ -72,6 +73,8 @@ export function localizeApiError(
   const raw = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? '').trim();
   const hit = (err.code && BY_CODE[err.code]) || BY_MESSAGE[raw] || BY_MESSAGE[raw.replace(/\.$/, '')];
   if (hit) return hit[l];
+  // QA N8: never show the raw ThrottlerException text, in any language.
+  if (err.status === 429 || /ThrottlerException|Too Many Requests/i.test(raw)) return BY_CODE.rate_limited[l];
   if (l === 'en' && raw && !Array.isArray(err.message)) return raw;
   const s = err.status ?? 0;
   const key = s >= 500 ? '5xx' : s === 0 ? 'network' : String(s);

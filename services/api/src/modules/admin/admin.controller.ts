@@ -127,7 +127,8 @@ export class AdminController {
   }
 
   /**
-   * Full refund: claim → Atmos reverse (idempotency key) → finalize + audit. Local-only (no money moved) only when
+   * Full refund: claim → Atmos reverse (Atmos has no idempotency key; the claim dedupes) → finalize + audit. The
+   * Idempotency-Key header is only recorded in the audit log. Local-only (no money moved) only when
    * ATMOS_SANDBOX is explicitly true. Repeating the call for a refunded payment returns the existing result.
    */
   @Post('payments/:id/refund')
@@ -146,6 +147,20 @@ export class AdminController {
   @Roles(AdminRole.superadmin)
   reconcilePayments() {
     return this.ops.reconcileRefunds();
+  }
+
+  /**
+   * N-M2: close a stuck `refunding` payment after checking the Atmos cabinet (money already returned by reverse or
+   * manual transfer). Does NOT call Atmos. Reason required; audited as payment.refund.finalized_manually.
+   */
+  @Post('payments/:id/refund/finalize')
+  @Roles(AdminRole.superadmin)
+  finalizeRefund(
+    @CurrentUser() actor: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+  ) {
+    return this.ops.finalizeRefund(actor.sub, id, body.reason ?? '');
   }
 
   @Delete('users/:id')

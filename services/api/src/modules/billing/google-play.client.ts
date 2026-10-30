@@ -10,7 +10,7 @@ import { readFileSync } from 'fs';
  *  - PLAY_SERVICE_ACCOUNT_JSON            service-account key JSON, or a path to it (Play Console → API access)
  *  - PLAY_RTDN_AUDIENCE + PLAY_RTDN_SA_EMAIL  Pub/Sub push OIDC check (both REQUIRED for OIDC)
  *  - PLAY_RTDN_TOKEN                      deprecated ?token= secret; only honoured when OIDC is NOT configured
- *  - PLAY_TOKEN_KEY                       key for encrypting stored purchase tokens (required in production)
+ *  - PLAY_TOKEN_KEY                       key for encrypting stored purchase tokens (REQUIRED; no fallback)
  */
 export interface PlayProductPurchase {
   purchaseState?: number; // 0 purchased, 1 canceled, 2 pending
@@ -48,6 +48,8 @@ export class GooglePlayClient implements OnModuleInit {
   /** PB1: fail closed at boot when Play is configured in production without a valid RTDN auth setup. */
   onModuleInit() {
     if (!this.configured()) return;
+    // p2b n-3: no public fallback key in ANY environment once Play is configured.
+    if (!process.env.PLAY_TOKEN_KEY?.trim()) throw new Error('PLAY_TOKEN_KEY is required when PLAY_SERVICE_ACCOUNT_JSON is set');
     const problem = this.rtdnConfigProblem();
     if (!problem) return;
     if (process.env.NODE_ENV === 'production') throw new Error(`Google Play RTDN misconfigured: ${problem}`);
@@ -59,7 +61,7 @@ export class GooglePlayClient implements OnModuleInit {
     const email = process.env.PLAY_RTDN_SA_EMAIL?.trim();
     if (aud && !email) return 'PLAY_RTDN_SA_EMAIL is required with PLAY_RTDN_AUDIENCE';
     if (!aud && !process.env.PLAY_RTDN_TOKEN?.trim()) return 'set PLAY_RTDN_AUDIENCE + PLAY_RTDN_SA_EMAIL';
-    if (process.env.NODE_ENV === 'production' && !process.env.PLAY_TOKEN_KEY?.trim()) return 'PLAY_TOKEN_KEY is required';
+    if (!process.env.PLAY_TOKEN_KEY?.trim()) return 'PLAY_TOKEN_KEY is required';
     return null;
   }
 
@@ -181,10 +183,10 @@ export class GooglePlayClient implements OnModuleInit {
   private warnedToken = false;
 
   /** Voided purchases (refunds, chargebacks, revocations) since `sinceMs`, incl. subscriptions (type=1). */
-  async voidedPurchases(sinceMs: number): Promise<Array<{ purchaseToken: string; orderId?: string; voidedTimeMillis?: string }>> {
+  async voidedPurchases(sinceMs: number, maxPages = 10): Promise<Array<{ purchaseToken: string; orderId?: string; voidedTimeMillis?: string }>> {
     const out: Array<{ purchaseToken: string; orderId?: string; voidedTimeMillis?: string }> = [];
     let page: string | undefined;
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < maxPages; i++) {
       const q = new URLSearchParams({ startTime: String(sinceMs), type: '1', maxResults: '1000', ...(page ? { token: page } : {}) });
       const r = await this.call<{ voidedPurchases?: typeof out; tokenPagination?: { nextPageToken?: string } }>(`/purchases/voidedpurchases?${q}`);
       if (!r) throw new ServiceUnavailableException('Google Play voided purchases unavailable');
@@ -213,8 +215,9 @@ function timingSafeEq(a: string, b: string): boolean {
 // ---- m-p2-1: purchase tokens at rest (AES-256-GCM). Hash stays the lookup key. ----
 function tokenKey(): Buffer {
   const k = process.env.PLAY_TOKEN_KEY?.trim();
-  if (!k && process.env.NODE_ENV === 'production') throw new Error('PLAY_TOKEN_KEY is required');
-  return createHash('sha256').update(k || 'gotcha-dev-play-token-key').digest();
+  // No built-in fallback (REVIEW-p2b n-3): tests set their own key; everything else must configure it.
+  if (!k) throw new ServiceUnavailableException('PLAY_TOKEN_KEY is not configured');
+  return createHash('sha256').update(k).digest();
 }
 
 export function sealToken(token: string): string {

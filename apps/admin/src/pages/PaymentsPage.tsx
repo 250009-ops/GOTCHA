@@ -55,6 +55,8 @@ export default function PaymentsPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [refund, setRefund] = useState<PaymentRow | null>(null);
+  // N-M2: true = close a stuck `refunding` payment after checking the Atmos cabinet (no Atmos call).
+  const [finalizeMode, setFinalizeMode] = useState(false);
   const [reason, setReason] = useState('');
   const [idemKey, setIdemKey] = useState('');
   const [confirmText, setConfirmText] = useState('');
@@ -85,13 +87,13 @@ export default function PaymentsPage() {
     setBusy(true);
     setMsg(null);
     try {
-      const res = await api<{ note?: string }>(`/admin/payments/${refund.id}/refund`, {
+      const res = await api<{ note?: string }>(`/admin/payments/${refund.id}/refund${finalizeMode ? '/finalize' : ''}`, {
         method: 'POST',
         // Full refunds only; the same key is reused if the admin retries this dialog.
         headers: { 'Idempotency-Key': idemKey },
         body: JSON.stringify({ reason }),
       });
-      setMsg(res.note ?? 'Refund recorded.');
+      setMsg(res.note ?? (finalizeMode ? 'Refund closed as completed.' : 'Refund recorded.'));
       setRefund(null);
       await load();
     } catch (e) {
@@ -165,8 +167,13 @@ export default function PaymentsPage() {
                 <td className="px-4 py-2.5 text-slate-500 font-mono text-xs">{p.providerPaymentId ?? '—'}</td>
                 <td className="px-4 py-2.5 text-slate-500 whitespace-nowrap">{tashkent(p.createdAt)}</td>
                 <td className="px-4 py-2.5 text-right">
+                  {p.status === 'refunding' && (
+                    <Button variant="secondary" onClick={() => { setFinalizeMode(true); setRefund(p); setReason(''); setIdemKey(crypto.randomUUID()); setConfirmText(''); setMsg(null); }}>
+                      Mark refunded
+                    </Button>
+                  )}
                   {p.status === 'paid' && (
-                    <Button variant="secondary" onClick={() => { setRefund(p); setReason(''); setIdemKey(crypto.randomUUID()); setConfirmText(''); setMsg(null); }}>
+                    <Button variant="secondary" onClick={() => { setFinalizeMode(false); setRefund(p); setReason(''); setIdemKey(crypto.randomUUID()); setConfirmText(''); setMsg(null); }}>
                       <RotateCcw className="size-4" /> Refund
                     </Button>
                   )}
@@ -190,11 +197,14 @@ export default function PaymentsPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <button type="button" className="absolute inset-0 bg-black/40" aria-label="Close" onClick={() => setRefund(null)} />
           <div className="relative w-full max-w-md p-5 space-y-3 bg-white border border-slate-200/80 rounded-2xl shadow-xl" role="dialog" aria-modal="true" aria-labelledby="refund-title">
-            <h2 id="refund-title" className="text-lg font-bold text-slate-900">Full refund · {formatMoney(refund.amountUzs)}</h2>
+            <h2 id="refund-title" className="text-lg font-bold text-slate-900">{finalizeMode ? 'Mark refund completed' : 'Full refund'} · {formatMoney(refund.amountUzs)}</h2>
             <p className="text-sm text-slate-500">
               {refund.user.email} · {refund.account}
               {data.sandbox && !refund.providerPaymentId && ' · Test mode, no Atmos transaction: recorded locally only.'}
             </p>
+            {finalizeMode && (
+              <p className="text-sm text-rose-700">Only after you confirmed in the Atmos cabinet that the money was returned. Atmos is NOT called; access is revoked.</p>
+            )}
             <label className="block text-xs font-semibold text-slate-600">
               Reason
               <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. duplicate charge" />

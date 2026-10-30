@@ -15,7 +15,7 @@ import { createHash, randomUUID } from 'crypto';
 import { formatIsAllowed, normalizeAllowedFormats, normalizeImportFormat } from '../../common/import-format';
 import { MAX_BILLABLE_PAGES } from '../imports/pdf-page-count';
 import { PrismaService } from '../../prisma/prisma.service';
-import { AtmosClient, validateCardForAtmos } from './atmos.client';
+import { AtmosClient, AtmosReverseError, validateCardForAtmos } from './atmos.client';
 import { PricingService, promoDiscountTiyins } from './pricing.service';
 import {
   catalogAccessGranted,
@@ -92,6 +92,8 @@ export type CheckoutResult = {
 
 /** A refund younger than this is assumed in flight and never reconciled (REVIEW-p2 P1-R1). */
 export const REFUND_RECONCILE_MIN_AGE_MS = 10 * 60_000;
+/** N-M2: Atmos is re-asked at most this many times per stuck refund; then only support can close it. */
+export const REFUND_RECONCILE_MAX_ATTEMPTS = 2;
 
 @Injectable()
 export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
@@ -613,11 +615,20 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       try {
         await this.atmos.reverseTransaction({ transactionId, reason: opts.reason });
       } catch (e) {
+        if (e instanceof AtmosReverseError && e.definite) {
+          // Atmos explicitly refused: the money did not move, so the payment is paid again.
+          await this.prisma.importPayment.updateMany({
+            where: { id: paymentId, status: ImportPaymentStatus.refunding },
+            data: { status: ImportPaymentStatus.paid, needsAttention: true, cancelReason: `refund rejected: ${e.atmosCode ?? ''}`.slice(0, 300) },
+          });
+          throw e;
+        }
+        // N-M1: timeout / network / 5xx: Atmos may have reversed. Stay `refunding` for the reconciler / support.
         await this.prisma.importPayment.updateMany({
           where: { id: paymentId, status: ImportPaymentStatus.refunding },
-          data: { status: ImportPaymentStatus.paid, needsAttention: true },
+          data: { needsAttention: true, cancelReason: `refund outcome unknown: ${e instanceof Error ? e.message : 'error'}`.slice(0, 300) },
         });
-        throw e;
+        throw new ServiceUnavailableException({ message: 'Atmos did not confirm the refund. It stays in progress; check the Atmos cabinet before retrying.', code: 'refund_outcome_unknown' });
       }
     }
     const revoked = await this.finalizeRefund(payment, {
@@ -662,22 +673,30 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * B2 reconciler (REVIEW-p2 P1-R1): refunds stuck in `refunding` for at least REFUND_RECONCILE_MIN_AGE_MS (the
-   * process died between reverse and finalize). It NEVER rolls back to `paid`:
-   *  - retry the reverse: Atmos accepts it (first reverse never landed) or returns OK → finalize;
-   *  - any other answer (incl. "already reversed", whose code Atmos doesn't document) → stay `refunding`,
-   *    set needsAttention, record the Atmos result; support checks the Atmos cabinet and finalizes by hand.
-   * The minimum age also applies to the admin endpoint, so an in-flight refund is never touched.
+   * B2 reconciler (REVIEW-p2 P1-R1, p2b N-M2): refunds stuck in `refunding` for at least
+   * REFUND_RECONCILE_MIN_AGE_MS. It NEVER rolls back to `paid` and calls Atmos at most
+   * REFUND_RECONCILE_MAX_ATTEMPTS times per payment:
+   *  - each row is claimed first (reconcile_attempts compare-and-increment), so two API instances can't both
+   *    reverse the same row;
+   *  - reverse OK → finalize; anything else → needsAttention + the Atmos result;
+   *  - once attempts are used up it is left alone. Support checks the Atmos cabinet and closes it with
+   *    finalizeRefundManually (POST /admin/payments/:id/refund/finalize).
    */
   async reconcileStaleRefunds(olderThanMs = REFUND_RECONCILE_MIN_AGE_MS) {
     const age = Math.max(olderThanMs, REFUND_RECONCILE_MIN_AGE_MS);
     const stale = await this.prisma.importPayment.findMany({
-      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - age) } },
+      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - age) }, reconcileAttempts: { lt: REFUND_RECONCILE_MAX_ATTEMPTS } },
       take: 50,
     });
     let finalized = 0;
     let flagged = 0;
+    let skipped = 0;
     for (const p of stale) {
+      const claim = await this.prisma.importPayment.updateMany({
+        where: { id: p.id, status: ImportPaymentStatus.refunding, reconcileAttempts: p.reconcileAttempts },
+        data: { reconcileAttempts: { increment: 1 } },
+      });
+      if (claim.count !== 1) { skipped++; continue; } // another instance / support got it
       const tx = Number(p.providerPaymentId);
       const hasTx = Number.isFinite(tx) && tx > 0 && p.amountTiyins > 0;
       let ok = !hasTx && this.atmos.mode() === 'test';
@@ -699,7 +718,28 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         flagged++;
       }
     }
-    return { checked: stale.length, finalized, flagged, rolledBack: 0 };
+    return { checked: stale.length, finalized, flagged, skipped };
+  }
+
+  /**
+   * N-M2 manual exit: support verified in the Atmos cabinet that the money went back (reverse or manual
+   * transfer) and closes the refund WITHOUT calling Atmos. Superadmin only (controller), reason required, audited.
+   */
+  async finalizeRefundManually(paymentId: string, opts: { actorId: string; reason: string }) {
+    const reason = opts.reason?.trim();
+    if (!reason) throw new BadRequestException({ message: 'A reason is required.', code: 'reason_required' });
+    const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status !== ImportPaymentStatus.refunding) {
+      throw new ConflictException({ message: 'Only a refund in progress can be finalized.', code: 'not_refunding' });
+    }
+    const revoked = await this.finalizeRefund(payment, {
+      actorId: opts.actorId,
+      action: 'payment.refund.finalized_manually',
+      metadata: { reason, userId: payment.userId, amountUzs: Math.round(payment.amountTiyins / 100), reconcileAttempts: payment.reconcileAttempts },
+    });
+    await this.prisma.importPayment.updateMany({ where: { id: paymentId }, data: { needsAttention: false } });
+    return { paymentId, status: ImportPaymentStatus.refunded, accessRevoked: revoked };
   }
 
   async getPayment(userId: string, paymentId: string) {
@@ -817,13 +857,13 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
    * After the real PDF/EPUB page count is known, refuse imports that were
    * quoted too cheaply (file-size estimates used to under-count pages).
    */
-  async assertPaymentCoversPages(
+  async assertPaymentCoversPages<P extends { id: string; amountTiyins: number; estimatedPages: number; userImportId?: string | null; provider?: string; tierId?: string | null }>(
     userId: string,
-    payment: { id: string; amountTiyins: number; estimatedPages: number; userImportId?: string | null; provider?: string; tierId?: string | null } | null,
+    payment: P | null,
     actualPages: number,
     importType: ImportType,
-  ) {
-    if (!this.gatewayEnabled()) return;
+  ): Promise<P | null> {
+    if (!this.gatewayEnabled()) return payment;
     if (!payment) {
       throw new ForbiddenException('Payment required for this import. Get a quote and checkout first.');
     }
@@ -839,6 +879,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     // tier is not larger than the purchased tier. It is never auto-refunded (Google owns Play refunds): a
     // document that is too big leaves the credit unused for a later, smaller import.
     if (payment.provider === 'google_play') {
+      // REVIEW-p2b n-1: the free pool covers this document, so the credit stays unused for a paid import.
+      if (!needed.requiresPayment) return null;
       const bought = payment.tierId ? await this.prisma.importPageTier.findUnique({ where: { id: payment.tierId } }) : null;
       const neededMax = needed.tier?.maxPages ?? Number.POSITIVE_INFINITY;
       const boughtMax = bought ? (bought.maxPages ?? Number.POSITIVE_INFINITY) : 0;
@@ -848,7 +890,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       if (payment.estimatedPages !== pages) {
         await this.prisma.importPayment.update({ where: { id: payment.id }, data: { estimatedPages: pages } });
       }
-      return;
+      return payment;
     }
 
     const covers =
@@ -869,6 +911,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         data: { estimatedPages: pages },
       });
     }
+    return payment;
   }
 
   private async voidUnusedPayment(paymentId: string) {
@@ -876,7 +919,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (!payment || payment.userImportId) return;
     if (payment.provider === 'google_play') return; // Play credits are refunded by Google only (PB2)
     if (payment.status === ImportPaymentStatus.paid) {
-      // M2: same claim/reverse/finalize flow as an admin refund. A failed reverse leaves it paid + flagged.
+      // M2: same claim/reverse/finalize flow as an admin refund. A definitely rejected reverse leaves it paid + flagged;
+      // an ambiguous one (timeout/5xx) leaves it refunding + flagged for the reconciler (N-M1).
       await this.refundPaidPayment(payment.id, { reason: 'Page count mismatch', actorId: null, action: 'payment.refund.auto' }).catch((e) => {
         this.logger.error(`Auto-refund failed for ${payment.id}: ${(e as Error).message}`);
         return this.prisma.importPayment.update({ where: { id: payment.id }, data: { needsAttention: true } }).catch(() => undefined);

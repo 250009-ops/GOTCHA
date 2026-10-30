@@ -39,8 +39,6 @@ fun GotchaSystemBars(darkIcons: Boolean = true) {
                 },
             )
         }
-        window.statusBarColor = AndroidColor.TRANSPARENT
-        window.navigationBarColor = AndroidColor.TRANSPARENT
         // Kill OEM contrast scrims so Telegram-style glass can blend into system nav.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             window.isStatusBarContrastEnforced = false

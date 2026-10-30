@@ -64,10 +64,13 @@ export class PricingService {
     // m-p2-5: open (pending, unexpired) checkouts hold a slot, so concurrent checkouts can't overshoot the cap.
     const holding = { promoCodeId: promo.id, status: ImportPaymentStatus.pending, expiresAt: { gt: now } };
     if (promo.maxRedemptions != null) {
-      const open = await this.prisma.importPayment.count({ where: holding });
+      // n-7: the caller's own abandoned checkouts don't block them (a retry replaces them).
+      const open = await this.prisma.importPayment.count({ where: { ...holding, NOT: { userId } } });
       if (promo.redemptions + open >= promo.maxRedemptions) throw bad('promo_exhausted', 'This promo code has been used up.');
     }
-    const used = await this.prisma.importPayment.count({ where: { userId, OR: [{ promoCodeId: promo.id, promoRedeemed: true }, { ...holding }] } });
+    // Only completed redemptions count per user; if two of their own checkouts both get paid, redeemForPayment's
+    // conditional increment flags the overshoot.
+    const used = await this.prisma.importPayment.count({ where: { userId, promoCodeId: promo.id, promoRedeemed: true } });
     if (used >= promo.perUserLimit) throw bad('promo_used', 'You have already used this promo code.');
     return promo;
   }

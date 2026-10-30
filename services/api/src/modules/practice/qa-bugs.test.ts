@@ -87,6 +87,14 @@ async function main() {
   // BUG-10 localized API errors
   assert.equal(localizeApiError('ru', { message: 'Invalid or expired email verification token.', status: 400 }), 'Ссылка подтверждения недействительна или устарела.');
   assert.equal(localizeApiError('uz', { message: 'Some new english error', status: 500 }), 'Server xatosi. Keyinroq urinib koʻring.');
+  // QA N8: rate limits are friendly + localized, never the raw ThrottlerException text.
+  assert.equal(localizeApiError('en', { message: 'ThrottlerException: Too Many Requests', status: 429 }), 'Too many requests. Please wait a moment and try again.');
+  assert.equal(localizeApiError('ru', { message: 'x', code: 'rate_limited', status: 429 }), 'Слишком много запросов. Подождите немного и попробуйте снова.');
+  {
+    const { GotchaThrottlerGuard } = require('../../common/gotcha-throttler.guard');
+    const g = Object.create(GotchaThrottlerGuard.prototype);
+    await assert.rejects(g.throwThrottlingException(), (e: any) => e.getStatus() === 429 && e.getResponse().code === 'rate_limited');
+  }
   assert.equal(localizeApiError('ru', { message: ['email must be an email'], status: 400 }), 'Проверьте введённые данные.');
   assert.equal(localizeApiError('en', { message: 'Some new english error', status: 400 }), 'Some new english error');
   assert.equal(localizeApiError('ru', { message: 'Invalid credentials', status: 401 }), 'Неверный email или пароль.');

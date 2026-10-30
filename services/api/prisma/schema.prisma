@@ -532,6 +532,7 @@ model ImportPayment {
   cancelReason        String?   @map("cancel_reason")
   /// Money state may disagree with Atmos (failed reverse, confirm after cancel); needs a human.
   needsAttention      Boolean   @default(false) @map("needs_attention")
+  reconcileAttempts   Int       @default(0) @map("reconcile_attempts")
   promoCodeId         String?   @map("promo_code_id") @db.Uuid
   /// List price before the promo, in tiyins (amountTiyins is what is charged).
   listAmountTiyins    Int?      @map("list_amount_tiyins")

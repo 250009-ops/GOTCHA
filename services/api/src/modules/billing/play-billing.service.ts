@@ -214,16 +214,24 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
    */
   async handleRtdn(body: { message?: { data?: string; messageId?: string; message_id?: string } }) {
     const messageId = body?.message?.messageId ?? body?.message?.message_id;
-    if (messageId && (await this.prisma.playRtdnMessage.findUnique({ where: { messageId } }))) return { ignored: 'duplicate' };
-    const result = await this.processRtdn(body).catch(async (e) => {
-      if (e instanceof ServiceUnavailableException || !(e instanceof HttpException)) throw e; // retry
+    // n-5: insert first; the unique key decides which concurrent delivery processes the message.
+    if (messageId) {
+      try {
+        await this.prisma.playRtdnMessage.create({ data: { messageId } });
+      } catch (e) {
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return { ignored: 'duplicate' };
+        throw e;
+      }
+    }
+    return this.processRtdn(body).catch(async (e) => {
+      if (e instanceof ServiceUnavailableException || !(e instanceof HttpException)) {
+        // Retriable: forget the id so Pub/Sub's redelivery is processed again (N-M3).
+        if (messageId) await this.prisma.playRtdnMessage.deleteMany({ where: { messageId } }).catch(() => undefined);
+        throw e;
+      }
       await this.prisma.auditLog.create({ data: { actorId: null, action: 'play.rtdn.rejected', entityType: 'play_rtdn', entityId: null, metadata: { messageId: messageId ?? null, error: e.message } } }).catch(() => undefined);
       return { ignored: 'domain_error' };
     });
-    if (messageId) {
-      await this.prisma.playRtdnMessage.create({ data: { messageId } }).catch(() => undefined);
-    }
-    return result;
   }
 
   private async processRtdn(body: { message?: { data?: string } }) {
@@ -250,9 +258,13 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     if (!rec) return { ignored: 'unknown_token' };
 
     if (n.voidedPurchaseNotification) {
-      // PB1: never trust the payload. Confirm with Play's voided list (last 30 days) before revoking.
-      const voided = await this.play.voidedPurchases(Date.now() - 30 * DAY);
-      if (!voided.some((v) => v.purchaseToken === token)) return { ignored: 'void_not_confirmed' };
+      // PB1: never trust the payload. Confirm with Play's voided list before revoking. N-M3: a short window
+      // (2 days, 1 page) keeps it cheap; if Play's list hasn't caught up, answer 503 so Pub/Sub redelivers with
+      // backoff (the message id is forgotten), and the runJobs voided sweep is the backstop.
+      const voided = await this.play.voidedPurchases(Date.now() - 2 * DAY, 1);
+      if (!voided.some((v) => v.purchaseToken === token)) {
+        throw new ServiceUnavailableException({ message: 'Void not visible in voidedpurchases yet', code: 'void_not_confirmed' });
+      }
       await this.revoke(rec, 'play_voided');
       return { ok: 'voided' };
     }
@@ -327,9 +339,13 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     const now = Date.now();
     const pending = await this.prisma.playPurchase.findMany({
       where: {
-        state: 'purchased',
         createdAt: { gt: new Date(now - 3 * DAY) },
-        OR: [{ acknowledged: false }, { kind: StoreProductKind.import_tier, consumed: false }],
+        // n-4: a subscription cancelled before it was acknowledged still auto-refunds; acknowledge it too.
+        OR: [
+          { state: 'purchased', acknowledged: false },
+          { state: 'purchased', kind: StoreProductKind.import_tier, consumed: false },
+          { state: 'canceled', kind: StoreProductKind.subscription, acknowledged: false },
+        ],
       },
       take: 200,
     });
@@ -349,7 +365,24 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     });
     for (const r of expiring) await this.refreshSubscription(r.tokenHash, 6 * 60 * 60_000);
     await this.prisma.playRtdnMessage.deleteMany({ where: { receivedAt: { lt: new Date(now - 7 * DAY) } } });
-    return { pending: pending.length, settled, refreshed: expiring.length };
+    const voided = await this.sweepVoided(now).catch((e) => { this.log.warn(`voided sweep failed: ${e}`); return 0; });
+    return { pending: pending.length, settled, refreshed: expiring.length, voided };
+  }
+
+  /** N-M3 backstop: voids Play lists since the last sweep (1 h overlap; 3 days after a restart) get revoked. */
+  private lastVoidSweepMs = 0;
+  async sweepVoided(now = Date.now()) {
+    const since = this.lastVoidSweepMs ? this.lastVoidSweepMs - 60 * 60_000 : now - 3 * DAY;
+    const list = await this.play.voidedPurchases(since);
+    let revoked = 0;
+    for (const v of list) {
+      const rec = await this.prisma.playPurchase.findUnique({ where: { tokenHash: tokenHash(v.purchaseToken) } });
+      if (!rec || rec.state === 'revoked') continue;
+      await this.revoke(rec, 'play_voided');
+      revoked++;
+    }
+    this.lastVoidSweepMs = now;
+    return revoked;
   }
 
   private assertAccount(userId: string, obfuscated: string | undefined) {

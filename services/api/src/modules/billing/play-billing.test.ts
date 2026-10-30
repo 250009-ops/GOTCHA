@@ -1,5 +1,7 @@
 // Google Play verification + unified entitlements (mocked Play API and an in-memory Prisma).
+process.env.PLAY_TOKEN_KEY = process.env.PLAY_TOKEN_KEY || 'test-only-key';
 import * as assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { PlayBillingService, playAccountId } from './play-billing.service';
 import { EntitlementsService } from './entitlements.service';
 import { GooglePlayClient } from './google-play.client';
@@ -27,7 +29,7 @@ function fakeDb() {
     findFirst: async ({ where }: any = {}) => t[name].find((r) => match(r, where)) ?? null,
     findMany: async ({ where }: any = {}) => t[name].filter((r) => match(r, where)),
     create: async ({ data }: any) => {
-      if (name === 'importPayment' && t[name].some((r) => r.account === data.account)) throw Object.assign(new (require('@prisma/client').Prisma.PrismaClientKnownRequestError)('dup', { code: 'P2002', clientVersion: 'x' }));
+      if ((name === 'importPayment' && t[name].some((r) => r.account === data.account)) || (name === 'playRtdnMessage' && t[name].some((r) => r.messageId === data.messageId))) throw Object.assign(new (require('@prisma/client').Prisma.PrismaClientKnownRequestError)('dup', { code: 'P2002', clientVersion: 'x' }));
       const row = { id: `${name}-${++n}`, createdAt: new Date(), status: 'active', userImportId: null, ...data }; t[name].push(row); return row;
     },
     createMany: async ({ data }: any) => { for (const d of data) if (!t[name].some((r) => r.sourceRef === d.sourceRef && r.kind === d.kind)) t[name].push({ id: `${name}-${++n}`, status: 'active', createdAt: new Date(), ...d }); return { count: 1 }; },
@@ -116,14 +118,16 @@ async function main() {
   // RTDN: wrong package ignored; voided purchase revokes exactly that book.
   const push = (o: unknown) => ({ message: { data: Buffer.from(JSON.stringify(o)).toString('base64') } });
   assert.deepEqual(await svc.handleRtdn(push({ packageName: 'evil.app', voidedPurchaseNotification: { purchaseToken: 'tok-book-u1' } })), { ignored: 'package' });
-  // PB1: a void Play doesn't confirm is ignored (forged/replayed payload can't revoke).
-  await svc.handleRtdn({ message: { messageId: 'm1', ...push({ packageName: 'app.gotcha.android', voidedPurchaseNotification: { purchaseToken: 'tok-book-u1' } }).message } });
+  // PB1 + N-M3: a void Play doesn't confirm yet revokes nothing, answers 503 (Pub/Sub retries) and the
+  // message id is NOT recorded, so the redelivery is processed.
+  const vm = { message: { messageId: 'm1', ...push({ packageName: 'app.gotcha.android', voidedPurchaseNotification: { purchaseToken: 'tok-book-u1' } }).message } };
+  await assert.rejects(svc.handleRtdn(vm), (e: any) => e.getStatus() === 503);
   assert.equal(t.contentPurchase[0].status, 'completed');
+  assert.equal(t.playRtdnMessage.length, 0, 'unconfirmed void not marked processed');
   voided = ['tok-book-u1'];
-  // PB1: same messageId again is deduped, even though Play would now confirm the void.
-  assert.deepEqual(await svc.handleRtdn({ message: { messageId: 'm1', ...push({ packageName: 'app.gotcha.android', voidedPurchaseNotification: { purchaseToken: 'tok-book-u1' } }).message } }), { ignored: 'duplicate' });
-  assert.equal(t.contentPurchase[0].status, 'completed');
-  await svc.handleRtdn({ message: { messageId: 'm2', ...push({ packageName: 'app.gotcha.android', voidedPurchaseNotification: { purchaseToken: 'tok-book-u1', orderId: 'GPA.2' } }).message } });
+  await svc.handleRtdn(vm); // redelivery, now confirmed
+  // n-5: a processed message id is deduped (insert-first).
+  assert.deepEqual(await svc.handleRtdn(vm), { ignored: 'duplicate' });
   assert.equal(t.contentPurchase[0].status, 'refunded');
   assert.equal(t.importPayment[0].status, 'refunded');
   assert.equal((await ents.forUser('u1')).books.length, 0);
@@ -169,6 +173,34 @@ async function main() {
   const job = await svc.runJobs();
   assert.ok(job.settled >= 1);
   assert.equal(pp.consumed, true);
+
+  // n-4: a subscription cancelled before acknowledgement is still acknowledged by the job.
+  t.playPurchase.push({ tokenHash: 'h-canceled', purchaseToken: 'tok-c', userId: 'u1', sku: 'plus_monthly', kind: 'subscription', state: 'canceled', acknowledged: false, consumed: false, createdAt: new Date() });
+  calls.length = 0;
+  await svc.runJobs();
+  assert.ok(calls.includes('ackSub'), 'canceled-but-unacked subscription acknowledged');
+  // N-M3 backstop: the voided sweep revokes a purchase whose RTDN never got through.
+  const sweepHash = createHash('sha256').update('tok-sweep').digest('hex');
+  t.playPurchase.push({ tokenHash: sweepHash, purchaseToken: 'tok-sweep', userId: 'u1', sku: 'book_1', kind: 'catalog_book', state: 'purchased', acknowledged: true, createdAt: new Date() });
+  voided = ['tok-sweep'];
+  assert.equal(await svc.sweepVoided(), 1);
+  assert.equal(t.playPurchase.find((x) => x.tokenHash === sweepHash).state, 'revoked');
+  assert.equal(await svc.sweepVoided(), 0, 'already revoked rows skipped');
+
+  // PM5: an upgrade's linkedPurchaseToken revokes the linked Plus of THIS user only.
+  const linkedHash = createHash('sha256').update('tok-old').digest('hex');
+  t.entitlement.push(
+    { id: 'e-u2', userId: 'u2', kind: 'plus', source: 'google_play', sourceRef: linkedHash, status: 'active' },
+    { id: 'e-u1', userId: 'u1', kind: 'plus', source: 'google_play', sourceRef: linkedHash, status: 'active' },
+  );
+  const origSub = play.getSubscription;
+  play.getSubscription = async (tok: string) => (tok === 'tok-sub2-u1'
+    ? { subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', latestOrderId: 'GPA.9', linkedPurchaseToken: 'tok-old', acknowledgementState: 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED', externalAccountIdentifiers: { obfuscatedExternalAccountId: playAccountId('u1') }, lineItems: [{ productId: 'plus_monthly', expiryTime: future }] }
+    : origSub(tok));
+  await svc.verify('u1', { sku: 'plus_monthly', purchaseToken: 'tok-sub2-u1' });
+  assert.equal(t.entitlement.find((e) => e.id === 'e-u1').status, 'revoked');
+  assert.equal(t.entitlement.find((e) => e.id === 'e-u2').status, 'active', 'other user untouched');
+  play.getSubscription = origSub;
 
   // m-p2-8: unpublished books expose no SKU.
   assert.equal(await svc.skuForBook('book2'), null);

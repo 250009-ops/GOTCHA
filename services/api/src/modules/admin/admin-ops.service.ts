@@ -120,4 +120,9 @@ export class AdminOpsService {
   reconcileRefunds() {
     return this.commerce.reconcileStaleRefunds(); // min age enforced inside (P1-R1)
   }
+
+  finalizeRefund(actorId: string, id: string, reason: string) {
+    if (reason.trim().length < 3) throw new BadRequestException('A reason is required.');
+    return this.commerce.finalizeRefundManually(id, { actorId, reason });
+  }
 }
