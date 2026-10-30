@@ -446,7 +446,7 @@ private fun PracticeQuizView(
                         .fillMaxWidth((questionIdx + 1f) / session.questions.size)
                         .height(6.dp)
                         .clip(RoundedCornerShape(3.dp))
-                        .background(GotchaColors.WebAccent),
+                        .background(GotchaColors.BrandFill),
                 )
             }
             Text(
@@ -656,7 +656,7 @@ private fun PracticeResultsView(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(GotchaColors.WebAccent)
+                    .background(GotchaColors.BrandFill)
                     .clickable(onClick = onBackToReader)
                     .padding(vertical = 14.dp),
                 contentAlignment = Alignment.Center,

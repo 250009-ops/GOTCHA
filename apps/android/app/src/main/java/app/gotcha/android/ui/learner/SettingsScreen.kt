@@ -1,5 +1,8 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
+import app.gotcha.android.R
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -164,13 +167,13 @@ fun SettingsScreen(
             try {
                 val mime = context.contentResolver.getType(uri) ?: "image/jpeg"
                 if (mime !in setOf("image/jpeg", "image/png", "image/webp")) {
-                    saveError = "Use JPG, PNG, or WebP"
+                    saveError = uiString(R.string.settings_photo_type)
                     return@launch
                 }
                 val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
                     ?: error("Could not read image")
                 if (bytes.size > 2 * 1024 * 1024) {
-                    saveError = "Photo must be 2 MB or smaller"
+                    saveError = uiString(R.string.settings_photo_size)
                     return@launch
                 }
                 val name = when {
@@ -182,7 +185,7 @@ fun SettingsScreen(
                 applyMe(container.userRepository.meFetch().data)
                 onProfileUpdated()
             } catch (e: Exception) {
-                saveError = e.apiErrorMessage("Upload failed")
+                saveError = e.apiErrorMessage(R.string.err_upload_failed)
             } finally {
                 uploadingPhoto = false
             }
@@ -428,7 +431,7 @@ fun SettingsScreen(
                                         applyMe(container.userRepository.meFetch().data)
                                         onProfileUpdated()
                                     } catch (e: Exception) {
-                                        saveError = e.apiErrorMessage("Could not remove language")
+                                        saveError = e.apiErrorMessage(R.string.err_language_remove)
                                     }
                                 }
                             },
@@ -550,12 +553,12 @@ fun SettingsScreen(
                                 Icon(Icons.Outlined.Bolt, contentDescription = null, tint = Color.White, modifier = Modifier.size(24.dp))
                             }
                             listOfNotNull(
-                                "AI lookups: $lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota} today",
-                                allowance?.let { "${it.dailyFreeRemaining} of ${it.dailyFreeImportsPerUser} free imports left today" }
-                                    ?: plan?.importLimit?.takeIf { it in 1 until 1_000_000 }?.let { "Up to $it free imports per day" }
-                                    ?: "Free import allowance from admin Import & Pricing",
-                                allowance?.let { "${it.monthlyPagesRemaining} of ${it.monthlyFreePageLimit} free pages left $pagesWindow" },
-                                "Access to the public library",
+                                uiString(R.string.settings_ai_lookups_line, "$lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota}"),
+                                allowance?.let { uiString(R.string.settings_free_imports_left, it.dailyFreeRemaining, it.dailyFreeImportsPerUser) }
+                                    ?: plan?.importLimit?.takeIf { it in 1 until 1_000_000 }?.let { uiString(R.string.settings_up_to_imports, it) }
+                                    ?: uiString(R.string.settings_free_allowance_admin),
+                                allowance?.let { uiString(R.string.settings_free_pages_left, it.monthlyPagesRemaining, it.monthlyFreePageLimit, pagesWindow) },
+                                uiString(R.string.settings_public_library),
                             ).forEach { line ->
                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Top) {
                                     Icon(Icons.Outlined.Check, contentDescription = null, tint = GotchaBlue.B200, modifier = Modifier.size(14.dp))
@@ -581,7 +584,7 @@ fun SettingsScreen(
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_ai_lookups_today), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
-                            Text("$lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota}", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted)
+                            Text("$lookupsToday/${if (quota <= 0 || quota >= 1_000_000) "∞" else quota}", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextMuted) // i18n-ok: numbers only
                         }
                         Box(
                             Modifier
@@ -875,7 +878,7 @@ private fun TargetLanguageRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(catalog?.englishLabel ?: tl.targetLanguage.uppercase(), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 14.sp)
                 Text(
-                    "Level: ${(tl.cefrLevel ?: "a1").uppercase()}",
+                    uiString(R.string.settings_level, (tl.cefrLevel ?: "a1").uppercase()),
                     fontFamily = Inter,
                     fontSize = 12.sp,
                     color = GotchaColors.TextSubtle,
@@ -1046,7 +1049,7 @@ private fun TargetLanguageModal(
                         try {
                             if (state.mode == "add") {
                                 if (targetLanguage.equals(nativeLanguage, true)) {
-                                    error = "Target language cannot match your native language"
+                                    error = uiString(R.string.settings_target_eq_native)
                                     return@launch
                                 }
                                 container.userRepository.addTargetLanguage(
@@ -1064,7 +1067,7 @@ private fun TargetLanguageModal(
                             }
                             onSaved()
                         } catch (e: Exception) {
-                            error = e.apiErrorMessage("Could not save language")
+                            error = e.apiErrorMessage(R.string.err_language_save)
                         } finally {
                             saving = false
                         }

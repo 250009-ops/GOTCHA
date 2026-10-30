@@ -467,7 +467,7 @@ private fun LearnerFrostedBottomBar(
                                         modifier = Modifier
                                             .fillMaxSize()
                                             .clip(CircleShape)
-                                            .background(GotchaColors.BrandPurple),
+                                            .background(GotchaColors.BrandFill),
                                     )
                                 }
                                 Icon(

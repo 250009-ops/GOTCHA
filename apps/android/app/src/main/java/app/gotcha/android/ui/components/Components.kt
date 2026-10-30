@@ -124,8 +124,8 @@ fun GotchaPrimaryButton(
     loading: Boolean = false,
     enabled: Boolean = true,
     // DESIGN §B #5: CTA is Blue700 (logo blue), not Blue800.
-    containerColor: Color = GotchaColors.BrandPurple,
-    contentColor: Color = Color.White,
+    containerColor: Color = GotchaColors.BrandFill,
+    contentColor: Color = GotchaColors.OnBrandFill,
     shapeRadius: Int = 14,
 ) {
     val shape = RoundedCornerShape(shapeRadius.dp)
@@ -385,7 +385,8 @@ fun GotchaTextField(
                         IconButton(
                             onClick = { visible = !visible },
                             enabled = enabled,
-                            modifier = Modifier.size(40.dp),
+                            // Touch target: 48 dp (was 40 dp; M3 minimum).
+                            modifier = Modifier.size(48.dp),
                         ) {
                             Icon(
                                 imageVector = if (visible) Icons.Outlined.Visibility else Icons.Outlined.VisibilityOff,
@@ -521,7 +522,7 @@ fun BrandMark(
     val shape = RoundedCornerShape((size * 0.3125f).dp)
     androidx.compose.foundation.Image(
         painter = androidx.compose.ui.res.painterResource(app.gotcha.android.R.drawable.ic_gotcha_mark),
-        contentDescription = "GOTCHA",
+        contentDescription = "GOTCHA", // i18n-ok: brand name
         modifier = Modifier
             .then(
                 if (elevated && size >= 32) {
@@ -832,7 +833,7 @@ fun SkeletonBox(
             animation = tween(1200, easing = LinearEasing),
             repeatMode = RepeatMode.Restart,
         ),
-        label = "shimmer",
+        label = "shimmer", // i18n-ok: animation label
     )
     val brush = Brush.linearGradient(
         colors = listOf(skeletonBase, skeletonHighlight, skeletonBase),

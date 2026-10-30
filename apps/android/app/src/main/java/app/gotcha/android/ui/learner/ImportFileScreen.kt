@@ -2,6 +2,10 @@ package app.gotcha.android.ui.learner
 
 
 
+import app.gotcha.android.BuildConfig
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
+import app.gotcha.android.R
 import androidx.activity.compose.rememberLauncherForActivityResult
 
 import androidx.activity.result.contract.ActivityResultContracts
@@ -325,7 +329,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
         } catch (e: Exception) {
 
-            error = e.apiErrorMessage("Upload failed")
+            error = e.apiErrorMessage(R.string.err_upload_failed)
 
         } finally {
 
@@ -377,7 +381,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                         Text(
 
-                            fileName ?: "Choose a PDF or EPUB",
+                            fileName ?: uiString(R.string.import_choose_file),
 
                             fontFamily = Inter,
 
@@ -391,7 +395,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                         Text(
 
-                            if (fileUri != null) "${fileSizeBytes / 1024} KB · tap to change" else "Max 100 MB · PDF and EPUB",
+                            if (fileUri != null) uiString(R.string.import_file_meta, (fileSizeBytes / 1024).toInt()) else uiString(R.string.import_file_limits),
 
                             fontFamily = Inter,
 
@@ -411,7 +415,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                 GotchaPrimaryButton(
 
-                    text = if (loading) "Importing…" else "Upload File",
+                    text = if (loading) uiString(R.string.import_importing) else uiString(R.string.x_upload_file),
 
                     onClick = { scope.launch { performUpload() } },
 
@@ -427,7 +431,7 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                     quote = pendingQuote!!,
 
-                    displayTitle = title.ifBlank { fileName ?: "Your Import" },
+                    displayTitle = title.ifBlank { fileName ?: uiString(R.string.import_your_import) },
 
                     typeLabel = (pendingImportType ?: "pdf").uppercase(),
 
@@ -469,13 +473,14 @@ fun ImportFileForm(onImported: () -> Unit, embedded: Boolean = false) {
 
                                     paymentId = checkout.paymentId
 
-                                    paymentStep = "card"
+                                    // Atmos card checkout is web-only; the Play build never shows a card step.
+                                    if (BuildConfig.ATMOS_CHECKOUT_ENABLED) paymentStep = "card" else error = uiString(R.string.err_payment_start)
 
                                 }
 
                             } catch (e: Exception) {
 
-                                error = e.apiErrorMessage("Failed to start payment")
+                                error = e.apiErrorMessage(R.string.err_payment_start)
 
                             } finally {
 

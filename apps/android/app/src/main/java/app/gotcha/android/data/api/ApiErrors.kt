@@ -1,6 +1,9 @@
 package app.gotcha.android.data.api
 
+import androidx.annotation.StringRes
+import app.gotcha.android.R
 import app.gotcha.android.data.model.ApiErrorBody
+import app.gotcha.android.util.uiString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
@@ -86,16 +89,21 @@ fun Throwable.networkUserMessage(): String? {
     val chain = generateSequence(this) { it.cause }
     return when {
         chain.any { it is SocketTimeoutException } ->
-            "The connection timed out. Check your internet and try again."
+            uiString(R.string.err_timeout, englishFallback = "The connection timed out. Check your internet and try again.")
         chain.any { it is SSLException } ->
-            "Couldn't establish a secure connection. Try again."
+            uiString(R.string.err_ssl, englishFallback = "Couldn't establish a secure connection. Try again.")
         else ->
-            "You're offline. Connect to the internet and try again."
+            uiString(R.string.err_offline, englishFallback = "You're offline. Connect to the internet and try again.")
     }
 }
 
 /** Human-readable message from the API body, falling back to a safe user-facing string. */
-fun Throwable.apiErrorMessage(fallback: String = "Something went wrong"): String {
+fun Throwable.apiErrorMessage(@StringRes fallbackRes: Int): String =
+    apiErrorMessage(uiString(fallbackRes, englishFallback = "Something went wrong"))
+
+fun Throwable.apiErrorMessage(
+    fallback: String = uiString(R.string.err_generic, englishFallback = "Something went wrong"),
+): String {
     networkUserMessage()?.let { return it }
     val http = this as? HttpException
     val fromBody = http?.body()?.message?.let { el ->
@@ -108,7 +116,7 @@ fun Throwable.apiErrorMessage(fallback: String = "Something went wrong"): String
     }
     val raw = fromBody ?: message
     return if (looksLikeNetworkFailure(raw)) {
-        "You're offline. Connect to the internet and try again."
+        uiString(R.string.err_offline, englishFallback = "You're offline. Connect to the internet and try again.")
     } else {
         raw ?: fallback
     }

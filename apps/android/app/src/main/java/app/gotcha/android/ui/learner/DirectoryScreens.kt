@@ -1,5 +1,8 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.BuildConfig
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -164,7 +167,7 @@ private fun TopicResultRow(item: ContentItem, onClick: () -> Unit) {
         CoverThumb(item.coverImageUrl, Modifier.size(width = 56.dp, height = 78.dp), corner = 8)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                item.title ?: "Untitled",
+                item.title ?: uiString(R.string.common_untitled),
                 fontFamily = Inter,
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
@@ -264,7 +267,7 @@ fun ContentDetailScreen(
     val navBottom = max(WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding(), 48.dp)
     val bottomPad = navBottom + 40.dp + 16.dp
 
-    val title = item?.title?.takeIf { it.isNotBlank() } ?: "Untitled"
+    val title = item?.title?.takeIf { it.isNotBlank() } ?: uiString(R.string.common_untitled)
     val author = item?.authorName?.takeIf { it.isNotBlank() }
     val lang = item?.language?.takeIf { it.isNotBlank() }?.uppercase()
     val levelLabel = item?.cefrLevel?.takeIf { it.isNotBlank() }?.uppercase()
@@ -278,17 +281,17 @@ fun ContentDetailScreen(
     }
     val readTime = wordCount?.let { words ->
         val mins = (words / 200).coerceAtLeast(1)
-        "~$mins min read"
+        uiString(R.string.dir_min_read, mins)
     }
     val progressLabel = when {
-        progressPct <= 0.0 -> "Not started"
+        progressPct <= 0.0 -> uiString(R.string.dir_not_started)
         segmentCount != null -> {
             val chapterOf = kotlin.math.ceil(progress * segmentCount).toInt().coerceIn(1, segmentCount)
-            "Segment $chapterOf of $segmentCount (${progressPct.toInt()}% completed)"
+            uiString(R.string.dir_segment_progress, chapterOf, segmentCount, progressPct.toInt())
         }
-        else -> "${progressPct.toInt()}% completed"
+        else -> uiString(R.string.dir_pct_completed, progressPct.toInt())
     }
-    val cta = if (progressPct > 0.0) "Continue Reading" else "Start Reading"
+    val cta = if (progressPct > 0.0) uiString(R.string.home_continue_reading) else uiString(R.string.reader_start_reading)
 
     Column(
         Modifier
@@ -327,7 +330,7 @@ fun ContentDetailScreen(
             GlassLoadingScreen(
                 progress = loadProgress.coerceAtLeast(10),
                 title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_loading_book_details),
-                subtitle = if (loadProgress < 60) "Fetching metadata" else "Preparing your library",
+                subtitle = if (loadProgress < 60) uiString(R.string.dir_fetching_metadata) else uiString(R.string.dir_preparing_library),
                 modifier = Modifier.fillMaxSize(),
             )
         } else if (item == null) {
@@ -365,7 +368,7 @@ fun ContentDetailScreen(
                                 CoverThumb(item!!.coverImageUrl, Modifier.fillMaxSize(), corner = 12)
                             } else {
                                 Box(
-                                    Modifier.fillMaxSize().background(GotchaColors.BrandPurple),
+                                    Modifier.fillMaxSize().background(GotchaColors.BrandFill),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Text(
@@ -485,7 +488,7 @@ fun ContentDetailScreen(
                                         .fillMaxWidth(progress)
                                         .height(6.dp)
                                         .clip(RoundedCornerShape(3.dp))
-                                        .background(GotchaColors.BrandPurple),
+                                        .background(GotchaColors.BrandFill),
                                 )
                             }
                         }
@@ -495,7 +498,7 @@ fun ContentDetailScreen(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(GotchaColors.BrandPurple)
+                            .background(GotchaColors.BrandFill)
                             .clickable { onRead(contentId) }
                             .padding(vertical = 14.dp),
                         contentAlignment = Alignment.Center,
@@ -525,7 +528,7 @@ fun ContentDetailScreen(
                         ) {
                             similar.take(6).forEach { s ->
                                 SimilarBookCard(
-                                    title = s.title ?: "Untitled",
+                                    title = s.title ?: uiString(R.string.common_untitled),
                                     author = s.authorName ?: "",
                                     lang = s.language?.uppercase() ?: "",
                                     level = s.cefrLevel?.take(2)?.uppercase() ?: "",
@@ -620,7 +623,7 @@ fun LibraryCategoryScreen(category: String, onBack: () -> Unit, onOpenReader: (S
         body = {
             LazyColumn(contentPadding = PaddingValues(horizontal = 24.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item {
-                    Text("${results.size} items found", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
+                    Text(uiPlural(R.plurals.dir_items_found, results.size), fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp, modifier = Modifier.padding(bottom = 8.dp))
                 }
                 items(results, key = { it.id }) { item ->
                     TopicResultRow(item) { onOpenReader(item.id) }
@@ -643,7 +646,7 @@ fun TopicResultsScreen(topic: String, onBack: () -> Unit, onOpenReader: (String)
         body = {
             LazyColumn(contentPadding = PaddingValues(horizontal = 20.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 item {
-                    Text("${results.size} items found", fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp)
+                    Text(uiPlural(R.plurals.dir_items_found, results.size), fontFamily = Inter, color = GotchaColors.TextMuted, fontSize = 13.sp)
                 }
                 items(results, key = { it.id }) { item ->
                     TopicResultRow(item) { onOpenReader(item.id) }
@@ -697,7 +700,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
             theme = prefs?.readerTheme?.lowercase() ?: "light"
         } catch (e: Exception) {
             if (!hadCache) {
-                error = e.apiErrorMessage("Failed to load settings")
+                error = e.apiErrorMessage(R.string.err_load_settings)
             }
         } finally {
             loading = false
@@ -724,7 +727,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                                 text = label,
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (on) GotchaColors.BrandPurple else Color.White)
+                                    .background(if (on) GotchaColors.BrandFill else Color.White)
                                     .border(1.dp, if (on) GotchaColors.BrandPurple else GotchaColors.Border, RoundedCornerShape(10.dp))
                                     .clickable {
                                         fontScale = scale
@@ -749,7 +752,7 @@ fun ReadingSettingsScreen(onBack: () -> Unit) {
                                 text = t.replaceFirstChar(Char::titlecase),
                                 modifier = Modifier
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (on) GotchaColors.BrandPurple else Color.White)
+                                    .background(if (on) GotchaColors.BrandFill else Color.White)
                                     .border(1.dp, if (on) GotchaColors.BrandPurple else GotchaColors.Border, RoundedCornerShape(10.dp))
                                     .clickable {
                                         theme = t
@@ -823,11 +826,11 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
 
     val formContent: @Composable () -> Unit = {
         if (paymentStep == null) {
-            GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_article_url), value = url, onValueChange = { url = it }, placeholder = "https://…")
+            GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_article_url), value = url, onValueChange = { url = it }, placeholder = "https://…") // i18n-ok: label is a string resource
             GotchaTextField(label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_title_optional), value = title, onValueChange = { title = it })
             if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
             GotchaPrimaryButton(
-                text = if (loading) "Importing…" else "Import from URL",
+                text = if (loading) uiString(R.string.import_importing) else uiString(R.string.x_import_from_url),
                 onClick = {
                     scope.launch {
                         loading = true
@@ -862,7 +865,7 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
                             }
                             finishImport(payId)
                         } catch (e: Exception) {
-                            error = e.apiErrorMessage("Import failed")
+                            error = e.apiErrorMessage(R.string.err_import_failed)
                         } finally {
                             loading = false
                         }
@@ -874,7 +877,7 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
         } else if (paymentStep == "price" && pendingQuote != null) {
             ImportQuoteStepUi(
                 quote = pendingQuote!!,
-                displayTitle = title.ifBlank { url.trim() }.ifBlank { "Your Import" },
+                displayTitle = title.ifBlank { url.trim() }.ifBlank { uiString(R.string.import_your_import) },
                 typeLabel = "URL",
                 loading = loading,
                 error = error,
@@ -894,10 +897,11 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
                                 finishImport(checkout.paymentId)
                             } else {
                                 paymentId = checkout.paymentId
-                                paymentStep = "card"
+                                // Atmos card checkout is web-only; the Play build never shows a card step.
+                                if (BuildConfig.ATMOS_CHECKOUT_ENABLED) paymentStep = "card" else error = uiString(R.string.err_payment_start)
                             }
                         } catch (e: Exception) {
-                            error = e.apiErrorMessage("Failed to start payment")
+                            error = e.apiErrorMessage(R.string.err_payment_start)
                         } finally {
                             loading = false
                         }
@@ -966,7 +970,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
     }
 
     suspend fun finishImport(withPaymentId: String?) {
-        container.importRepository.paste(title.ifBlank { "Pasted text" }, text, null, withPaymentId)
+        container.importRepository.paste(title.ifBlank { uiString(R.string.import_pasted_text) }, text, null, withPaymentId)
         onImported()
     }
 
@@ -981,11 +985,11 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                         label = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_text),
                         value = text,
                         onValueChange = { text = it },
-                        placeholder = "Paste your text here… (minimum $MIN_PASTE_WORDS words; long texts are split into reader pages)",
+                        placeholder = uiString(R.string.import_paste_placeholder, MIN_PASTE_WORDS),
                         minHeight = 200.dp,
                         labelTrailing = {
                             Text(
-                                text = "$words words",
+                                text = uiPlural(R.plurals.vocab_n_words, words),
                                 fontFamily = Inter,
                                 fontWeight = if (words >= MIN_PASTE_WORDS && !tooLong) FontWeight.Bold else FontWeight.Medium,
                                 fontSize = 12.sp,
@@ -995,7 +999,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                     )
                     if (words > 0 && words < MIN_PASTE_WORDS) {
                         Text(
-                            "${MIN_PASTE_WORDS - words} more words needed",
+                            uiPlural(R.plurals.import_more_words, MIN_PASTE_WORDS - words),
                             color = Color(0xFFD97706),
                             fontFamily = Inter,
                             fontSize = 12.sp,
@@ -1003,7 +1007,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                     }
                     if (tooLong) {
                         Text(
-                            "Text exceeds the ${"%,d".format(MAX_PASTE_CHARS)}-character maximum. Split into multiple imports.",
+                            uiString(R.string.import_too_long, "%,d".format(MAX_PASTE_CHARS)),
                             color = GotchaColors.Danger,
                             fontFamily = Inter,
                             fontSize = 12.sp,
@@ -1011,7 +1015,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                     }
                     if (error != null) Text(error!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                     GotchaPrimaryButton(
-                        text = if (loading) "Importing…" else "Import Text",
+                        text = if (loading) uiString(R.string.import_importing) else uiString(R.string.import_text_cta),
                         onClick = {
                             scope.launch {
                                 loading = true
@@ -1048,7 +1052,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                                     }
                                     finishImport(payId)
                                 } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Import failed")
+                                    error = e.apiErrorMessage(R.string.err_import_failed)
                                 } finally {
                                     loading = false
                                 }
@@ -1060,8 +1064,8 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                 } else if (paymentStep == "price" && pendingQuote != null) {
                     ImportQuoteStepUi(
                         quote = pendingQuote!!,
-                        displayTitle = title.ifBlank { "Your Import" },
-                        typeLabel = "Text",
+                        displayTitle = title.ifBlank { uiString(R.string.import_your_import) },
+                        typeLabel = uiString(R.string.import_text_type),
                         loading = loading,
                         error = error,
                         onProceed = {
@@ -1080,10 +1084,11 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                                         finishImport(checkout.paymentId)
                                     } else {
                                         paymentId = checkout.paymentId
-                                        paymentStep = "card"
+                                        // Atmos card checkout is web-only; the Play build never shows a card step.
+                                        if (BuildConfig.ATMOS_CHECKOUT_ENABLED) paymentStep = "card" else error = uiString(R.string.err_payment_start)
                                     }
                                 } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Failed to start payment")
+                                    error = e.apiErrorMessage(R.string.err_payment_start)
                                 } finally {
                                     loading = false
                                 }

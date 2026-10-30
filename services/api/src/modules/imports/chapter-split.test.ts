@@ -577,3 +577,23 @@ console.log('chapter-split tests passed');
   assert.ok(!titles.some((t) => /L E I P Z I G|^Chapter L\b/i.test(t)), `no letter-spaced chapter: ${titles.join(' | ')}`);
   if (titles.length >= 3) assert.match(titles[0], /^Chapter I\b/, `front matter becomes Chapter I: ${titles.join(' | ')}`);
 }
+
+// PS-05: letter-spaced chapter headings are recognised; letter-spaced display words are not.
+{
+  const { unspaceChapterHeading } = require('./chapter-split') as typeof import('./chapter-split');
+  assert.equal(unspaceChapterHeading('C H A P T E R I'), 'CHAPTER I');
+  assert.equal(unspaceChapterHeading('C H A P T E R  1 2'), 'CHAPTER 12');
+  assert.equal(unspaceChapterHeading('Г Л А В А  2'), 'ГЛАВА 2');
+  assert.equal(unspaceChapterHeading('L E I P Z I G'), null);
+  assert.equal(unspaceChapterHeading('I I I'), null);
+  const filler = (w: string) => Array.from({ length: 120 }, () => w).join(' ');
+  const text = [
+    'C H A P T E R I', '', `${filler('alpha')}.`, '',
+    'C H A P T E R II', '', `${filler('beta')}.`, '',
+    'L O N D O N', '', `${filler('gamma')}.`,
+  ].join('\n');
+  const titles = splitAccurateChapters(text, 'Book').map((c) => c.title);
+  assert.ok(titles.length >= 2, `two spaced chapters: ${titles.join(' | ')}`);
+  assert.ok(!titles.some((t) => /L O N D O N|LONDON/.test(t)), `no display-word chapter: ${titles.join(' | ')}`);
+  console.log('PS-05 letter-spaced chapter tests passed');
+}

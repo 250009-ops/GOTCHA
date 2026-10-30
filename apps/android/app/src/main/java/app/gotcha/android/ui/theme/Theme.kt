@@ -33,7 +33,8 @@ private fun gotchaLightScheme() = lightColorScheme(
 
 /** Dark M3 scheme (DESIGN-practice.md §0): ink ramp surfaces, Blue300 primary, Blue500 containers. */
 private fun gotchaDarkScheme() = darkColorScheme(
-    primary = GotchaBlue.B400,
+    // M2: B500 so white labels on filled M3 buttons reach 5.61:1 (B400 was 3.43:1).
+    primary = GotchaBlue.B500,
     onPrimary = Color.White,
     primaryContainer = GotchaBlue.B500,
     onPrimaryContainer = Color.White,

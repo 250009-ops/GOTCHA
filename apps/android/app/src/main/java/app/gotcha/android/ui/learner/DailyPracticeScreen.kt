@@ -479,7 +479,7 @@ private fun FeedbackSheet(c: PracticePalette, t: PracticeCopy, r: PracticeAnswer
             "uz_apostrophe" -> Text(t.uzApostropheNote, color = c.text2, fontSize = 13.sp)
             "real_word" -> Text(t.realWordNote, color = c.text2, fontSize = 13.sp)
         }
-        if (r.xpGained > 0) Text("+${r.xpGained} XP", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+        if (r.xpGained > 0) Text("+${r.xpGained} XP", color = c.accent, fontWeight = FontWeight.Bold, fontSize = 13.sp) // i18n-ok: XP is a unit used in all locales
         if (r.requeue) Text(t.willRetry, color = c.text2, fontSize = 12.sp)
         Cta(t.continueLabel(), if (r.verdict == "wrong") c.bad else if (r.verdict == "almost") c.cta else c.ok, onNext)
     }
@@ -645,7 +645,7 @@ private fun GoalRing(c: PracticePalette, xp: Int, goal: Int, sizeDp: Int) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("$xp", color = c.text, fontWeight = FontWeight.Bold, fontSize = (sizeDp / 4).sp)
-            Text("/ $goal XP", color = c.text3, fontSize = 10.sp)
+            Text("/ $goal XP", color = c.text3, fontSize = 10.sp) // i18n-ok: XP unit
         }
     }
 }

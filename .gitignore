@@ -33,3 +33,7 @@ apps/android/*.txt
 apps/android/**/build/
 apps/android/.gradle/
 apps/android/local.properties
+
+# m6: Python bytecode (apps/android/i18n tooling)
+__pycache__/
+*.pyc

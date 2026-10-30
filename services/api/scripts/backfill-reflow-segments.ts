@@ -7,7 +7,13 @@
  * Apply (writes plain_text + re-tokenised token_map / sentence_map / word_count per segment):
  *   npx ts-node --transpile-only scripts/backfill-reflow-segments.ts --apply [--content <uuid>]
  *
- * Segment ids, indexes and pagination are kept, so reading progress and vocabulary links stay valid.
+ * Segment ids, indexes and pagination are kept, so progress and vocabulary rows still point at the right
+ * segment. Known drift (m3 / PS-04): within a changed segment the text gets shorter (removed "-\n" and
+ * "\n"), so reading_progress.char_offset resumes slightly *later* than where the reader stopped, by at most
+ * the number of removed characters before that offset (typically a few words). Saved-word contexts keep their
+ * old sentence text. Accepted for P3; a proportional char_offset rescale is a follow-up if QA flags it.
+ * Known heuristic limits (PS-03): a real compound broken at a line end ("well-\nknown") loses its hyphen,
+ * and German lines whose continuation starts with a capitalised noun are not unwrapped.
  * A word hyphenated across two segments is left as is. Idempotent: reflowProse is a no-op on reflowed text.
  * Take a DB snapshot before --apply on production.
  */

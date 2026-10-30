@@ -1,5 +1,8 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.R
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.compose.foundation.background
@@ -80,9 +83,9 @@ private class CardExpiryVisualTransformation : VisualTransformation {
 }
 
 fun pageWindowLabel(resetCycle: String?): String = when (resetCycle?.lowercase()) {
-    "daily" -> "today"
-    "yearly" -> "this year"
-    else -> "this month"
+    "daily" -> uiString(R.string.window_today)
+    "yearly" -> uiString(R.string.window_year)
+    else -> uiString(R.string.window_month)
 }
 
 fun formatFreeAllowanceText(allowance: ImportQuoteFreeLimits): String {
@@ -90,7 +93,8 @@ fun formatFreeAllowanceText(allowance: ImportQuoteFreeLimits): String {
     return if (!allowance.gatewayEnabled) {
         "Imports are currently free (payments paused). Configured pool: ${allowance.dailyFreeImportsPerUser} imports/day · ${allowance.monthlyFreePageLimit} pages $pagesWindow."
     } else {
-        "${allowance.dailyFreeRemaining} of ${allowance.dailyFreeImportsPerUser} free imports left today · ${allowance.monthlyPagesRemaining} of ${allowance.monthlyFreePageLimit} free pages left $pagesWindow."
+        uiString(R.string.settings_free_imports_left, allowance.dailyFreeRemaining, allowance.dailyFreeImportsPerUser) + " · " +
+            uiString(R.string.settings_free_pages_left, allowance.monthlyPagesRemaining, allowance.monthlyFreePageLimit, pagesWindow) + "."
     }
 }
 
@@ -99,14 +103,12 @@ fun importQuoteFooterText(quote: ImportQuoteResponse): String? {
     val pagesWindow = pageWindowLabel(limits.resetCycle)
     return when {
         quote.freeReason == "Within free import allowance" ->
-            "Covered by your free import allowance."
+            uiString(R.string.import_covered_free)
         quote.requiresPayment && quote.amountUzs > 0 &&
             quote.estimatedPages > limits.monthlyPagesRemaining ->
-            "This book is ~${quote.estimatedPages} pages but you have " +
-                "${limits.monthlyPagesRemaining} free pages left $pagesWindow. " +
-                "Pay once to import it to your library."
+            uiPlural(R.plurals.import_pages_left, limits.monthlyPagesRemaining, quote.estimatedPages, limits.monthlyPagesRemaining, pagesWindow)
         quote.requiresPayment && quote.tier == null ->
-            "This length is not priced yet. Try a shorter document or try again later."
+            uiString(R.string.import_not_priced)
         else -> formatFreeAllowanceText(limits)
     }
 }
@@ -124,7 +126,7 @@ fun ImportQuoteResponse.importBlockingError(): String? {
     if (!gatewayEnabled || !requiresPayment) return null
     if (tier == null) {
         return freeReason?.takeIf { it.isNotBlank() }
-            ?: "This import length is not priced yet. Try a shorter document or try again later."
+            ?: uiString(R.string.import_not_priced)
     }
     if (amountUzs > 0) return null
     val limits = freeLimits
@@ -139,9 +141,9 @@ fun ImportQuoteResponse.importBlockingError(): String? {
 }
 
 fun importQuotePrimaryLabel(quote: ImportQuoteResponse, loading: Boolean): String = when {
-    loading -> "Processing…"
-    quote.isEffectivelyFree() -> "Open book"
-    else -> "Continue · ${formatSom(quote.amountUzs)}"
+    loading -> uiString(R.string.import_processing)
+    quote.isEffectivelyFree() -> uiString(R.string.import_open_book)
+    else -> uiString(R.string.import_continue_price, formatSom(quote.amountUzs))
 }
 
 suspend fun ImportRepository.importLimitMessage(): String? {
@@ -151,9 +153,9 @@ suspend fun ImportRepository.importLimitMessage(): String? {
     if (remaining > 0) return null
     val limit = res.importLimit
     return if (limit != null) {
-        "Import limit reached ($limit). Delete an import or pay for a new import."
+        uiString(R.string.import_limit_n, limit)
     } else {
-        "Import limit reached. Delete an import or pay for a new import."
+        uiString(R.string.import_limit)
     }
 }
 
@@ -209,7 +211,7 @@ fun ImportQuoteStepUi(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "~${"%,d".format(Locale.US, quote.estimatedPages)} ${if (quote.estimatedPages == 1) "page" else "pages"}",
+                uiPlural(R.plurals.import_n_pages, quote.estimatedPages, "%,d".format(Locale.US, quote.estimatedPages)),
                 fontFamily = Inter,
                 fontWeight = FontWeight.SemiBold,
                 fontSize = 13.sp,
@@ -233,7 +235,7 @@ fun ImportQuoteStepUi(
             quote.tier?.let { tier ->
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     Text(
-                        "Page tier (${tier.label.orEmpty()})",
+                        uiString(R.string.import_page_tier, tier.label.orEmpty()),
                         fontFamily = Inter,
                         fontSize = 14.sp,
                         color = GotchaColors.TextMuted,

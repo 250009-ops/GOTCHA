@@ -112,8 +112,8 @@ S = {
  'onb_2_body': ('Tap any word to instantly translate and add it to your smart spaced repetition deck.','Нажмите на слово — получите перевод и добавьте его в умную колоду интервальных повторений.','Istalgan soʻzni bosing — darhol tarjima qiling va aqlli takrorlash toʻplamiga qoʻshing.'),
  'onb_3_title': ('Track your journey','Следите за прогрессом','Yoʻlingizni kuzating'),
  'onb_3_body': ('Monitor your progress with CEFR levels, daily reading streaks, and real-time comprehension statistics.','Отслеживайте уровень CEFR, серию дней чтения и статистику понимания в реальном времени.','CEFR darajalari, kunlik oʻqish seriyasi va tushunish statistikasi bilan rivojingizni kuzating.'),
- 'onb_4_title': ('Join 12,840+ learners','Присоединяйтесь к 12 840+ ученикам','12 840+ oʻquvchiga qoʻshiling'),
- 'onb_4_body': ('Be part of a thriving global community learning languages through content they actually love.','Станьте частью сообщества, которое учит языки по любимым текстам.','Sevimli matnlar orqali til oʻrganayotgan hamjamiyatning bir qismi boʻling.'),
+ 'onb_4_title': ('Learn alongside others','Учитесь вместе с другими','Boshqalar bilan birga oʻrganing'),  # SPEC-v2 §2.8: no invented learner count
+ 'onb_4_body': ('Chat one-on-one with other learners.','Общайтесь с другими учениками в личном чате.','Boshqa oʻrganuvchilar bilan shaxsiy chatda suhbatlashing.'),
  'onb_next': ('Next','Далее','Keyingi'),
  'onb_get_started': ('Get Started','Начать','Boshlash'),
  'onb_skip': ('Skip','Пропустить','Oʻtkazib yuborish'),

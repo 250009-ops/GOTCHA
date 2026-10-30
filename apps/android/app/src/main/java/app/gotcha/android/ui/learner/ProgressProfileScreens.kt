@@ -1,5 +1,7 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -41,7 +43,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -111,7 +113,7 @@ fun ProgressScreen() {
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (stats == null) error = e.apiErrorMessage("Failed to load statistics")
+            if (stats == null) error = e.apiErrorMessage(R.string.err_stats_load)
         } finally {
             loading = false
         }
@@ -131,9 +133,9 @@ fun ProgressScreen() {
     val avgMinPerDay = if (rangeDays > 0) totalMinutes / rangeDays else 0
     val dailyGoalMinutes = me?.preferences?.dailyGoalMinutes ?: 15
     val streakGoalSub = if (todayMinutes >= dailyGoalMinutes) {
-        "Daily goal met"
+        uiString(R.string.progress_daily_goal_met)
     } else {
-        "${(dailyGoalMinutes - todayMinutes).coerceAtLeast(0)}m left for streak"
+        uiString(R.string.progress_min_left, (dailyGoalMinutes - todayMinutes).coerceAtLeast(0))
     }
     val languages = remember(me, vocab) { buildLanguageProgress(me, vocab) }
     val masteredPct = if (totalVocab > 0) (mastered * 100 / totalVocab) else 0
@@ -181,8 +183,8 @@ fun ProgressScreen() {
                         .background(GotchaColors.SurfaceMuted)
                         .padding(4.dp),
                 ) {
-                    StatsRangeChip("Last 7 days", range7d) { range7d = true }
-                    StatsRangeChip("Last 30 days", !range7d) { range7d = false }
+                    StatsRangeChip(uiString(R.string.progress_last_7), range7d) { range7d = true }
+                    StatsRangeChip(uiString(R.string.progress_last_30), !range7d) { range7d = false }
                 }
             }
 
@@ -201,7 +203,7 @@ fun ProgressScreen() {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         StatsKpiCard(
                             "${formatStatsStreakCount(streak)} days",
-                            "Current streak",
+                            uiString(R.string.x_current_streak),
                             GotchaColors.WebStreakText,
                             GotchaColors.WebStreakBg,
                             GotchaColors.WebStreakBorder,
@@ -209,18 +211,18 @@ fun ProgressScreen() {
                         )
                         StatsKpiCard(
                             "${totalMinutes / 60}h ${totalMinutes % 60}m",
-                            "Total reading",
+                            uiString(R.string.progress_total_reading),
                             GotchaBlue.B700,
                             GotchaBlue.B50,
                             GotchaBlue.B200,
                             Modifier.weight(1f),
-                            sub = if (hasActivity) "avg ${avgMinPerDay}m/day" else null,
+                            sub = if (hasActivity) uiString(R.string.progress_avg_per_day, avgMinPerDay) else null,
                         )
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         StatsKpiCard(
                             "$totalVocab",
-                            "Words saved",
+                            uiString(R.string.x_words_saved),
                             GotchaBlue.LearningText,
                             GotchaBlue.LearningBg,
                             Color(0xFFBEDBFF),
@@ -229,7 +231,7 @@ fun ProgressScreen() {
                         )
                         StatsKpiCard(
                             "${todayMinutes}m",
-                            "Read today",
+                            uiString(R.string.progress_read_today),
                             GotchaColors.TextMuted,
                             GotchaColors.Surface,
                             GotchaColors.Border,
@@ -262,28 +264,28 @@ fun ProgressScreen() {
             if (!hasActivity) {
                 StatsEmptyState(
                     title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_no_activity_yet),
-                    description = "Your reading time, word saves, and streak charts will appear here once you start learning.",
+                    description = uiString(R.string.progress_empty_desc),
                 )
             } else {
                 StatsChartCard(
                     title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_reading_time),
-                    subtitle = "$readingInPeriod min in this period · avg $avgReadingInPeriod min/day",
+                    subtitle = uiString(R.string.progress_reading_period, readingInPeriod, avgReadingInPeriod),
                     trailing = { StatsGLogo(size = 32) },
                 ) {
                     StatsAreaLineChart(
                         data = readingSeries,
-                        emptyMessage = "No reading time in this range",
+                        emptyMessage = uiString(R.string.progress_no_reading_range),
                     )
                 }
 
                 StatsChartCard(
                     title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_new_words),
-                    subtitle = "$wordsInPeriod words in this period",
+                    subtitle = uiPlural(R.plurals.progress_words_period, wordsInPeriod),
                     trailing = { StatsGLogo(size = 32) },
                 ) {
                     StatsBarChart(
                         data = wordsSeries,
-                        emptyMessage = "No words saved in this range",
+                        emptyMessage = uiString(R.string.progress_no_words_range),
                     )
                 }
 
@@ -293,7 +295,7 @@ fun ProgressScreen() {
                 ) {
                     StatsDotLineChart(
                         data = weeklySeries,
-                        emptyMessage = "No weekly word saves yet",
+                        emptyMessage = uiString(R.string.progress_no_weekly_saves),
                     )
                 }
 
@@ -315,9 +317,9 @@ fun ProgressScreen() {
                 ) {
                     Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_vocabulary_breakdown), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 18.sp, color = GotchaColors.Ink)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        VocabBreakdownTile("Total saved", totalVocab, GotchaColors.Border, GotchaColors.TextMuted, Modifier.weight(1f))
-                        VocabBreakdownTile("Still learning", learning, Color(0xFF51A2FF), GotchaBlue.LearningText, Modifier.weight(1f))
-                        VocabBreakdownTile("Mastered", mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
+                        VocabBreakdownTile(uiString(R.string.progress_total_saved), totalVocab, GotchaColors.Border, GotchaColors.TextMuted, Modifier.weight(1f))
+                        VocabBreakdownTile(uiString(R.string.progress_still_learning), learning, Color(0xFF51A2FF), GotchaBlue.LearningText, Modifier.weight(1f))
+                        VocabBreakdownTile(uiString(R.string.x_mastered), mastered, Color(0xFF00D492), Color(0xFF007A55), Modifier.weight(1f))
                     }
                     Box(
                         Modifier
@@ -332,8 +334,8 @@ fun ProgressScreen() {
                         }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                        Text("$masteredPct% mastered", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
-                        Text("$learningPct% in progress", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                        Text(uiString(R.string.progress_mastered_pct, masteredPct), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                        Text(uiString(R.string.progress_in_progress_pct, learningPct), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                     }
                 }
             }
@@ -450,7 +452,7 @@ fun ProfileScreen(
             isAdmin = container.authRepository.isAdmin()
         } catch (e: Exception) {
             if (me == null) {
-                error = e.apiErrorMessage("Failed to load profile")
+                error = e.apiErrorMessage(R.string.profile_load_failed)
             }
         } finally {
             loading = false
@@ -574,7 +576,7 @@ fun ProfileScreen(
                     }
                     if (memberSince != null) {
                         Text(
-                            "Member since $memberSince",
+                            uiString(R.string.profile_member_since, memberSince),
                             fontFamily = Manrope,
                             color = GotchaColors.TextSubtle,
                             fontSize = 11.sp,
@@ -590,9 +592,9 @@ fun ProfileScreen(
                     .padding(bottom = 20.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ProfileMiniStat("$streak Days", "Reading streak", R.drawable.ic_flame, Modifier.weight(1f))
-                ProfileMiniStat(formatCount(words), "Words learned", R.drawable.ic_nav_words, Modifier.weight(1f))
-                ProfileMiniStat("$articles", "Articles read", R.drawable.ic_nav_book, Modifier.weight(1f))
+                ProfileMiniStat("$streak Days", uiString(R.string.profile_reading_streak), R.drawable.ic_flame, Modifier.weight(1f))
+                ProfileMiniStat(formatCount(words), uiString(R.string.vocab_words_learned), R.drawable.ic_nav_words, Modifier.weight(1f))
+                ProfileMiniStat("$articles", uiString(R.string.profile_articles_read), R.drawable.ic_nav_book, Modifier.weight(1f))
             }
 
             if (languages.isNotEmpty()) {
@@ -825,7 +827,7 @@ private fun LanguageProgressCard(lang: LangProgress) {
         Spacer(Modifier.height(10.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_words_saved), fontFamily = Manrope, color = GotchaColors.TextSubtle, fontSize = 12.sp)
-            Text("${lang.wordCount} words", fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text(uiPlural(R.plurals.vocab_n_words, lang.wordCount), fontFamily = Manrope, fontWeight = FontWeight.Bold, fontSize = 12.sp)
         }
     }
 }
@@ -836,7 +838,7 @@ private fun PeriodChip(label: String, selected: Boolean, onClick: () -> Unit) {
         label,
         modifier = Modifier
             .clip(RoundedCornerShape(999.dp))
-            .background(if (selected) GotchaColors.BrandPurple else Color.Transparent)
+            .background(if (selected) GotchaColors.BrandFill else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 6.dp),
         fontFamily = Manrope,

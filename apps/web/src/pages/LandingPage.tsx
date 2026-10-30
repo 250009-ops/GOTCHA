@@ -8,7 +8,7 @@ import {
   fetchMarketingStats,
   type LandingPayload,
 } from '../lib/api';
-import { libraryUrl, registerUrl } from '../lib/links';
+import { libraryUrl, registerUrl, safeLearnerCount } from '../lib/links';
 import { resolveMediaUrl } from '../lib/media';
 import { useMarketingCopy } from '../lib/webLocaleContext';
 
@@ -233,7 +233,7 @@ export default function LandingPage() {
       fetchMarketingStats()
         .then((stats) => {
           if (cancelled) return;
-          const learnerCount = Number(stats.learnerCount) || 0;
+          const learnerCount = safeLearnerCount(stats.learnerCount);
           if (!learnerCount) return;
           setPayload((prev) =>
             prev ? { ...prev, stats: { learnerCount } } : prev,
@@ -290,7 +290,7 @@ export default function LandingPage() {
     setSelectedLang(payload.languages[0].code);
   }, [payload, selectedLang]);
 
-  const learnerCount = payload?.stats.learnerCount ?? 0;
+  const learnerCount = safeLearnerCount(payload?.stats.learnerCount);
   const languages = payload?.languages ?? [];
   const catalogItems = payload?.catalog.items ?? [];
   const pricing = payload?.importPricing;

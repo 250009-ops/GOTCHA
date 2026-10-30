@@ -289,6 +289,16 @@ export class AuthService {
     return { user: this.sanitizeUser(user), ...tokens };
   }
 
+  /** m4: server-side sign-out. Unknown or already-revoked tokens are a no-op (no oracle). */
+  async logout(refreshToken: string) {
+    if (isDevAuthEnabled()) return { ok: true };
+    await this.prisma.authRefreshToken.updateMany({
+      where: { tokenHash: this.hashToken(refreshToken), revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
   async refresh(refreshToken: string) {
     if (isDevAuthEnabled()) {
       return this.devAuth.refresh(refreshToken);

@@ -1,5 +1,9 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.BuildConfig
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
+import app.gotcha.android.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -119,7 +123,7 @@ fun ExternalImportScreen(
                     )
                     CircularProgressIndicator(color = GotchaColors.BrandPurple)
                     Text(
-                        if (current is ExternalImportState.Working) current.message else "Opening your book…",
+                        if (current is ExternalImportState.Working) current.message else uiString(R.string.import_opening_book),
                         fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 16.sp,
@@ -179,10 +183,11 @@ fun ExternalImportScreen(
                                         } else {
                                             paymentId = checkout.paymentId
                                             amountLabel = formatSom(current.quote.amountUzs)
-                                            paymentStep = "card"
+                                            // Atmos card checkout is web-only; the Play build never shows a card step.
+                                            if (BuildConfig.ATMOS_CHECKOUT_ENABLED) paymentStep = "card" else paymentError = uiString(R.string.err_payment_start)
                                         }
                                     } catch (e: Exception) {
-                                        paymentError = e.apiErrorMessage("Failed to start payment")
+                                        paymentError = e.apiErrorMessage(R.string.err_payment_start)
                                     } finally {
                                         paymentLoading = false
                                     }

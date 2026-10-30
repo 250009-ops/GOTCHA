@@ -144,7 +144,7 @@ fun MessagingChatFab(
                     .offset(x = 2.dp, y = (-2).dp)
                     .size(20.dp)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(GotchaColors.BrandPurple),
+                    .background(GotchaColors.BrandFill),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
@@ -165,7 +165,7 @@ fun MessagingChatFab(
                     spotColor = GotchaColors.BrandPurple.copy(alpha = 0.35f),
                 )
                 .clip(CircleShape)
-                .background(GotchaColors.BrandPurple)
+                .background(GotchaColors.BrandFill)
                 .border(3.dp, Color.White, CircleShape)
                 .clickable(
                     interactionSource = remember { MutableInteractionSource() },

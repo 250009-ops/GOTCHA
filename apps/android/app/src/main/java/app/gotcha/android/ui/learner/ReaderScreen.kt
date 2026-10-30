@@ -1,5 +1,8 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.BuildConfig
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -36,12 +39,12 @@ import androidx.compose.material.icons.outlined.Check
 import androidx.compose.material.icons.outlined.ChevronLeft
 import androidx.compose.material.icons.outlined.ChevronRight
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.MenuBook
+import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Remove
 import androidx.compose.material.icons.outlined.School
 import androidx.compose.material.icons.outlined.Visibility
 import androidx.compose.material.icons.outlined.VisibilityOff
-import androidx.compose.material.icons.outlined.VolumeUp
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
@@ -209,14 +212,12 @@ fun ReaderScreen(
     }
 
     // UI-25: progress reflects real work only — no artificial per-tick / milestone delays.
-    @Suppress("UNUSED_PARAMETER")
-    fun stepProgress(target: Int, pauseMs: Long = 0) {
+    fun stepProgress(target: Int) {
         if (loadProgress < target) loadProgress = target
         if (smoothProgress < target) smoothProgress = target
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    fun finishLoader(fast: Boolean = false) {
+    fun finishLoader() {
         loadProgress = 100
         smoothProgress = 100
         loaderDone = true
@@ -227,7 +228,6 @@ fun ReaderScreen(
         targetId: String,
         warmContent: ContentItem,
         warmSegments: List<Segment>,
-        fastLoader: Boolean,
     ) {
         if (targetId != contentId) return
         content = warmContent
@@ -243,7 +243,7 @@ fun ReaderScreen(
         loadProgress = 92
         smoothProgress = 92
         lastProgressAtMs = System.currentTimeMillis()
-        finishLoader(fast = fastLoader)
+        finishLoader()
     }
 
     LaunchedEffect(contentId, reloadKey) {
@@ -254,7 +254,7 @@ fun ReaderScreen(
         isFetching = false
         preparingText = false
         fetchError = false
-        stepProgress(8, 80)
+        stepProgress(8)
 
         runCatching {
             container.userRepository.mePeek()?.data?.let { me ->
@@ -294,25 +294,26 @@ fun ReaderScreen(
                         kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
                     }
             }
-            if (peekedContent != null) stepProgress(25, if (warmOpen) 20 else 70)
+            stepProgress(25) // warm path: peekedContent is non-null here (nit: was an always-true check)
         }
 
         if (peekedContent?.needsCatalogPayment() == true) {
             if (targetId != contentId) return@LaunchedEffect
             content = peekedContent
             segments = emptyList()
-            finishLoader(fast = warmOpen)
+            finishLoader()
             return@LaunchedEffect
         }
 
-        if (warmOpen && peekedContent != null) {
-            openWarmReader(targetId, peekedContent, warmSegments, fastLoader = true)
+        val warmContent = peekedContent?.takeIf { warmOpen }
+        if (warmContent != null) {
+            openWarmReader(targetId, warmContent, warmSegments)
             refreshInBackground(targetId)
             return@LaunchedEffect
         }
 
-        if (peekedContent != null) stepProgress(25, 70)
-        if (peekedSegments.isNotEmpty()) stepProgress(50, 70)
+        if (peekedContent != null) stepProgress(25)
+        if (peekedSegments.isNotEmpty()) stepProgress(50)
 
         val bothCached = peekedContent != null && peekedSegments.isNotEmpty()
         if (bothCached) {
@@ -322,24 +323,24 @@ fun ReaderScreen(
             segmentIndex = segmentIndex.coerceIn(0, peekedSegments.lastIndex)
             val pageText = peekedSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
                 .ifBlank { readerBodyText(peekedSegments, FIRST_PAGE_CHAR_LIMIT) }
-            stepProgress(75, 80)
+            stepProgress(75)
             if (pageText.isNotBlank()) {
                 applyPreparedPage(targetId, pageText)
             }
-            stepProgress(92, 100)
+            stepProgress(92)
             lastProgressAtMs = System.currentTimeMillis()
             refreshInBackground(targetId)
-            finishLoader(fast = false)
+            finishLoader()
             return@LaunchedEffect
         }
 
         isFetching = true
-        stepProgress(15, 60)
+        stepProgress(15)
         try {
             val fetchedContent = peekedContent ?: container.contentRepository.getFetch(targetId).data
             if (targetId != contentId) return@LaunchedEffect
             content = fetchedContent
-            stepProgress(35, 80)
+            stepProgress(35)
             if (fetchedContent.needsCatalogPayment()) {
                 segments = emptyList()
                 finishLoader()
@@ -360,7 +361,7 @@ fun ReaderScreen(
             if (targetId != contentId) return@LaunchedEffect
             segments = fetchedSegments
             segmentIndex = resumeIndex.coerceIn(0, fetchedSegments.lastIndex.coerceAtLeast(0))
-            stepProgress(60, 90)
+            stepProgress(60)
 
             if (fetchedSegments.isEmpty()) {
                 finishLoader()
@@ -371,12 +372,12 @@ fun ReaderScreen(
             preparingText = true
             val pageText = fetchedSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
                 .ifBlank { readerBodyText(fetchedSegments, FIRST_PAGE_CHAR_LIMIT) }
-            stepProgress(85, 100)
+            stepProgress(85)
             if (pageText.isNotBlank()) {
                 applyPreparedPage(targetId, pageText)
             }
             if (targetId != contentId) return@LaunchedEffect
-            finishLoader(fast = false)
+            finishLoader()
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -479,7 +480,8 @@ fun ReaderScreen(
     when {
         paymentRequired -> {
             val book = content!!
-            val amount = book.catalogPriceUzs()
+            // m1: Play build hides our list price (the Play sheet shows the real localized price).
+            val amount = book.catalogPriceUzs()?.takeIf { BuildConfig.ATMOS_CHECKOUT_ENABLED }
             Box(Modifier.fillMaxSize().background(Color.White)) {
                 Column(
                     modifier = Modifier
@@ -541,7 +543,7 @@ fun ReaderScreen(
                         fontSize = 14.sp,
                         color = GotchaColors.TextMuted,
                     )
-                    Text(
+                    if (amount != null) Text(
                         formatSom(amount),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
@@ -553,7 +555,7 @@ fun ReaderScreen(
                             Text(payError!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                         }
                         GotchaPrimaryButton(
-                            text = "Unlock for ${formatSom(amount)}",
+                            text = if (amount != null) uiString(R.string.reader_unlock_for, formatSom(amount)) else uiString(R.string.reader_unlock_book),
                             loading = payLoading,
                             onClick = {
                                 scope.launch {
@@ -565,7 +567,8 @@ fun ReaderScreen(
                                             payStep = "celebrate"
                                         } else {
                                             paymentId = checkout.paymentId
-                                            payStep = "card"
+                                            // Atmos card checkout is web-only; the Play build never shows a card step.
+                                            if (BuildConfig.ATMOS_CHECKOUT_ENABLED) payStep = "card" else payError = uiString(R.string.err_payment_start)
                                         }
                                     } catch (e: CancellationException) {
                                         throw e
@@ -591,7 +594,7 @@ fun ReaderScreen(
             val chapterTitle = (currentSegment?.chapterTitle?.takeIf { it.isNotBlank() }
                 ?: currentSegment?.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() })
                 ?.let(::tidyChapterTitle)
-            val chapterFallback = stringResource(R.string.reader_chapter_n)
+            val chapterRes = androidx.compose.ui.platform.LocalContext.current.resources
             val bookTitle = content?.title?.takeIf { it.isNotBlank() } ?: stringResource(R.string.reader_untitled)
             // Honest API progress only — never invent a Figma % (same rule as Content Detail).
             val pageInChapter = remember(segments, segmentIndex, currentSegment) {
@@ -608,7 +611,7 @@ fun ReaderScreen(
                         val title = (seg.chapterTitle?.takeIf { it.isNotBlank() }
                             ?: seg.title?.substringBefore(" · ")?.takeIf { it.isNotBlank() })
                             ?.let(::tidyChapterTitle)
-                            ?: chapterFallback.format(key + 1)
+                            ?: chapterRes.getString(R.string.reader_chapter_n, key + 1)
                         groups[key] = Triple(index, title, 1)
                     } else {
                         val current = groups.getValue(key)
@@ -790,7 +793,7 @@ fun ReaderScreen(
                             verticalArrangement = Arrangement.Center,
                         ) {
                             Icon(
-                                Icons.Outlined.MenuBook,
+                                Icons.AutoMirrored.Outlined.MenuBook,
                                 contentDescription = null,
                                 tint = GotchaColors.TextSubtle,
                                 modifier = Modifier.size(40.dp),
@@ -804,7 +807,7 @@ fun ReaderScreen(
                                 color = GotchaColors.TextMuted,
                             )
                             Text(
-                                "It may still be processing — check back soon.",
+                                uiString(R.string.reader_still_processing),
                                 fontFamily = Inter,
                                 fontSize = 13.sp,
                                 color = GotchaColors.TextSubtle,
@@ -1004,7 +1007,7 @@ fun ReaderScreen(
                                 Row(
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(12.dp))
-                                        .background(GotchaColors.WebAccent)
+                                        .background(GotchaColors.BrandFill)
                                         .clickable { goToSegment(segmentIndex + 1) }
                                         .padding(horizontal = 12.dp, vertical = 8.dp),
                                     verticalAlignment = Alignment.CenterVertically,
@@ -1176,7 +1179,7 @@ fun ReaderScreen(
                             color = GotchaColors.TextMuted,
                         )
                         Text(
-                            "It may still be processing — check back soon.",
+                            uiString(R.string.reader_still_processing),
                             fontFamily = Inter,
                             fontSize = 13.sp,
                             color = GotchaColors.TextSubtle,
@@ -1395,7 +1398,7 @@ private fun DictionaryBottomSheet(
                 Icon(Icons.Outlined.Close, contentDescription = stringResource(R.string.reader_close), tint = Color(0xFF99A1AF), modifier = Modifier.size(16.dp))
             }
         }
-        HorizontalDivider(color = Color(0xFFF3F4F6))
+        HorizontalDivider(color = GotchaColors.Divider)
 
         Column(
             Modifier
@@ -1415,7 +1418,7 @@ private fun DictionaryBottomSheet(
                     Text(stringResource(R.string.reader_looking_up), fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF99A1AF))
                 }
             } else if (error != null) {
-                Text(error, fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFDC2626))
+                Text(error, fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.DangerText)
             } else if (lookup != null) {
                 val sentenceLike = lookup.kind == "sentence"
                 val headline = if (sentenceLike) word else lookup.phrase?.takeIf { it.isNotBlank() } ?: lookup.lemma ?: word
@@ -1462,7 +1465,7 @@ private fun DictionaryBottomSheet(
                             .clickable(onClick = onSpeak),
                         contentAlignment = Alignment.Center,
                     ) {
-                        Icon(Icons.Outlined.VolumeUp, contentDescription = stringResource(R.string.reader_pronounce), tint = Color(0xFF99A1AF), modifier = Modifier.size(18.dp))
+                        Icon(Icons.AutoMirrored.Outlined.VolumeUp, contentDescription = stringResource(R.string.reader_pronounce), tint = Color(0xFF99A1AF), modifier = Modifier.size(18.dp))
                     }
                 }
 
@@ -1476,7 +1479,7 @@ private fun DictionaryBottomSheet(
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
                         Text(stringResource(R.string.reader_natural_meaning), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = GotchaColors.WebAccent)
-                        Text(meaning, fontFamily = Inter, fontSize = 15.sp, lineHeight = 22.sp, color = Color(0xFF1E2939))
+                        Text(meaning, fontFamily = Inter, fontSize = 15.sp, lineHeight = 22.sp, color = GotchaColors.Ink)
                     }
                 }
 
@@ -1523,14 +1526,14 @@ private fun DictionaryBottomSheet(
                                 .background(statusColors.first)
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                         )
-                        Text("→ Mark as:", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
+                        Text(uiString(R.string.reader_mark_as), fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF99A1AF))
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         DictionaryActionButton(
                             label = stringResource(R.string.reader_save),
                             icon = Icons.Outlined.BookmarkBorder,
                             active = wordStatus == "learning",
-                            activeBorder = Color(0xFFBFDBFE),
+                            activeBorder = GotchaBlue.B400,
                             activeBg = GotchaBlue.LearningBg,
                             activeColor = GotchaBlue.LearningText,
                             enabled = wordStatus != "learning",
@@ -1541,7 +1544,7 @@ private fun DictionaryBottomSheet(
                             label = stringResource(R.string.reader_known),
                             icon = Icons.Outlined.Check,
                             active = wordStatus == "known",
-                            activeBorder = Color(0xFFA7F3D0),
+                            activeBorder = GotchaColors.SuccessText,
                             activeBg = Color(0xFFD1FAE5),
                             activeColor = Color(0xFF059669),
                             enabled = wordStatus != "known",
@@ -1552,7 +1555,7 @@ private fun DictionaryBottomSheet(
                             label = stringResource(R.string.reader_ignore),
                             icon = Icons.Outlined.VisibilityOff,
                             active = wordStatus == "ignored",
-                            activeBorder = Color(0xFFD1D5DB),
+                            activeBorder = GotchaColors.TextSubtle,
                             activeBg = Color(0xFFF3F4F6),
                             activeColor = Color(0xFF6B7280),
                             enabled = wordStatus != "ignored",

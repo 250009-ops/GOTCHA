@@ -8,7 +8,8 @@ export const ADMIN_METRICS_KEY = 'adminConsoleMetrics';
 export const FIGMA_ADMIN_METRICS = {
   version: 1,
   dashboard: {
-    users: 12840,
+    // P3b: the Figma mock user count is removed; real admin user counts come from the DB, never a design figure.
+    users: 0,
     activeSubscribers: 3420,
     mrr: 30780,
     mrrGrowthPct: 12.4,
@@ -17,14 +18,7 @@ export const FIGMA_ADMIN_METRICS = {
     aiLookupsToday: 45230,
     aiLimit: 150000,
     aiUsagePct: 30,
-    userGrowth: [
-      { month: 'Jan', users: 7200 },
-      { month: 'Feb', users: 8100 },
-      { month: 'Mar', users: 9200 },
-      { month: 'Apr', users: 10400 },
-      { month: 'May', users: 11600 },
-      { month: 'Jun', users: 12840 },
-    ],
+    userGrowth: [] as { month: string; users: number }[],
     revenueTrend: [
       { month: 'Jan', mrr: 18000 },
       { month: 'Feb', mrr: 19500 },
@@ -287,10 +281,11 @@ export const FIGMA_ADMIN_METRICS = {
     ],
     insight: 'Word Lookup continues to dominate API billing, driving 65% of total OpenAI token spend.',
   },
+  // P3b: no invented user totals; real counts come from the DB (admin users API).
   users: {
-    total: 12840,
-    premium: 3420,
-    free: 9420,
+    total: 0,
+    premium: 0,
+    free: 0,
     suspended: 0,
   },
 } as const;

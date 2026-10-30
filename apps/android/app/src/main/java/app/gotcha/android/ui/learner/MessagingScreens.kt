@@ -1,5 +1,9 @@
 package app.gotcha.android.ui.learner
 
+import kotlinx.coroutines.CancellationException
+import app.gotcha.android.ui.theme.badgeTone
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.compose.foundation.background
@@ -137,7 +141,7 @@ private fun langChipColors(code: String): Pair<Color, Color> = when (code.upperc
     "EN" -> GotchaBlue.InfoBg to GotchaBlue.InfoText
     "UZ" -> GotchaColors.SuccessBg to GotchaColors.SuccessText
     "FR" -> GotchaColors.WarningBg to GotchaColors.WarningText
-    "JA" -> Color(0xFFFFE4E6) to Color(0xFFBE123C)
+    "JA" -> badgeTone(0xFFFFE4E6, 0xFFBE123C, 0xFF3A1219, 0xFFFDA4AF).let { it.bg to it.fg }
     else -> GotchaColors.SurfaceMuted to GotchaColors.TextMuted
 }
 
@@ -255,11 +259,11 @@ private fun relativeAgo(iso: String?): String {
         val then = Instant.parse(iso).toEpochMilli()
         val mins = ((System.currentTimeMillis() - then) / 60000).toInt()
         when {
-            mins < 1 -> "now"
-            mins < 60 -> "${mins}m ago"
-            mins < 1440 -> "${mins / 60}h ago"
-            mins < 2880 -> "Yesterday"
-            else -> "${mins / 1440}d ago"
+            mins < 1 -> uiString(R.string.time_now)
+            mins < 60 -> uiString(R.string.time_min_ago, mins)
+            mins < 1440 -> uiString(R.string.time_h_ago, mins / 60)
+            mins < 2880 -> uiString(R.string.common_yesterday)
+            else -> uiString(R.string.time_d_ago, mins / 1440)
         }
     } catch (_: Exception) {
         ""
@@ -286,25 +290,25 @@ private fun canEditMessage(msg: ChatMessageDto): Boolean {
 }
 
 private fun messageSnippet(body: String?, deleted: Boolean, fallback: String = "Message"): String {
-    if (deleted) return "Message deleted"
+    if (deleted) return uiString(R.string.msg_deleted_snippet)
     val text = body?.trim().orEmpty()
     if (text.isBlank()) return fallback
     return if (text.length > 80) text.take(80) + "…" else text
 }
 
 private fun presenceLabel(online: Boolean, lastSeenAt: String?, typing: Boolean): String {
-    if (typing) return "typing…"
-    if (online) return "online"
-    if (lastSeenAt.isNullOrBlank()) return "last seen recently"
+    if (typing) return uiString(R.string.msg_typing)
+    if (online) return uiString(R.string.msg_online)
+    if (lastSeenAt.isNullOrBlank()) return uiString(R.string.msg_last_seen_recently)
     val ms = runCatching {
         System.currentTimeMillis() - Instant.parse(lastSeenAt).toEpochMilli()
-    }.getOrNull() ?: return "last seen recently"
+    }.getOrNull() ?: return uiString(R.string.msg_last_seen_recently)
     val mins = (ms / 60_000L).toInt()
-    if (mins < 1) return "last seen just now"
-    if (mins < 60) return "last seen ${mins}m ago"
+    if (mins < 1) return uiString(R.string.msg_last_seen_just_now)
+    if (mins < 60) return uiString(R.string.msg_last_seen, uiString(R.string.time_min_ago, mins))
     val hours = mins / 60
-    if (hours < 24) return "last seen ${hours}h ago"
-    return "last seen ${hours / 24}d ago"
+    if (hours < 24) return uiString(R.string.msg_last_seen, uiString(R.string.time_h_ago, hours))
+    return uiString(R.string.msg_last_seen, uiString(R.string.time_d_ago, hours / 24))
 }
 
 private fun applyReadReceipts(messages: List<ChatMessageDto>, peerLastReadAt: String?): List<ChatMessageDto> {
@@ -411,7 +415,7 @@ fun MessagesInboxScreen(
                     .getOrDefault(suggestions)
             } catch (e: Exception) {
                 if (conversations.isEmpty() && suggestions.isEmpty()) {
-                    error = e.apiErrorMessage("Failed to load messages")
+                    error = e.apiErrorMessage(R.string.err_messages_load)
                 }
             } finally {
                 loading = false
@@ -577,7 +581,7 @@ fun MessagesInboxScreen(
                                             )
                                             onOpenChat(detail.id)
                                         } catch (e: Exception) {
-                                            error = e.apiErrorMessage("Couldn't start this chat")
+                                            error = e.apiErrorMessage(R.string.err_chat_start)
                                         }
                                     }
                                 }()
@@ -646,7 +650,7 @@ fun MessagesInboxScreen(
 private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
     val first = peer.displayName.orEmpty().split(" ").filter { it.isNotBlank() }
     val shortName = buildString {
-        append(first.firstOrNull() ?: "Learner")
+        append(first.firstOrNull() ?: uiString(R.string.common_learner))
         first.getOrNull(1)?.firstOrNull()?.let { append(" $it.") }
     }
     Column(
@@ -675,7 +679,7 @@ private fun SuggestedCard(peer: MessagingPeer, onClick: () -> Unit) {
             MsgLangChip(peer.primaryLanguage ?: peer.nativeLanguage ?: "en")
         }
         Text(
-            peer.reading?.title ?: "Learner",
+            peer.reading?.title ?: uiString(R.string.common_learner),
             fontFamily = Inter,
             fontSize = 10.sp,
             color = GotchaColors.TextSubtle,
@@ -714,7 +718,7 @@ private fun ChatRow(
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        conversation.peer?.displayName ?: "Learner",
+                        conversation.peer?.displayName ?: uiString(R.string.common_learner),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 15.sp,
@@ -761,7 +765,7 @@ private fun ChatRow(
                     modifier = Modifier
                         .size(20.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(GotchaColors.BrandPurple),
+                        .background(GotchaColors.BrandFill),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -795,6 +799,7 @@ fun MessagingChatScreen(
     var loading by remember(conversationId) { mutableStateOf(seeded == null) }
     var error by remember(conversationId) { mutableStateOf<String?>(null) }
     var actionError by remember(conversationId) { mutableStateOf<String?>(null) }
+    var reportMsg by remember(conversationId) { mutableStateOf<ChatMessageDto?>(null) }
     var translateHint by remember(conversationId) { mutableStateOf<String?>(null) }
     var tipVisible by remember(conversationId) { mutableStateOf(true) }
     var selectedWord by remember(conversationId) { mutableStateOf<String?>(null) }
@@ -896,7 +901,7 @@ fun MessagingChatScreen(
                 runCatching { container.messagingRepository.markRead(conversationId) }
             } catch (e: Exception) {
                 if (detail == null) {
-                    error = e.apiErrorMessage("Failed to load chat")
+                    error = e.apiErrorMessage(R.string.err_chat_load)
                 }
             } finally {
                 loading = false
@@ -944,7 +949,7 @@ fun MessagingChatScreen(
             try {
                 replaceMessage(container.messagingRepository.delete(conversationId, msg.id))
             } catch (e: Exception) {
-                actionError = e.apiErrorMessage("Failed to delete")
+                actionError = e.apiErrorMessage(R.string.err_delete_failed)
             }
         }
     }
@@ -993,7 +998,7 @@ fun MessagingChatScreen(
                 } catch (e: Exception) {
                     draft = text
                     editing = editingMsg
-                    actionError = e.apiErrorMessage("Failed to edit")
+                    actionError = e.apiErrorMessage(R.string.err_message_edit)
                 }
             }
             return
@@ -1078,7 +1083,7 @@ fun MessagingChatScreen(
             } catch (e: Exception) {
                 pending = pending.filter { it.id != localId }
                 replyTo = replyTarget
-                actionError = e.apiErrorMessage("Failed to send message")
+                actionError = e.apiErrorMessage(R.string.err_message_send)
             }
         }
     }
@@ -1210,7 +1215,7 @@ fun MessagingChatScreen(
                     ),
                 )
             } catch (e: Exception) {
-                lookupError = e.apiErrorMessage("Lookup failed. Try again when you're online.")
+                lookupError = e.apiErrorMessage(R.string.err_lookup_offline)
             } finally {
                 lookupLoading = false
             }
@@ -1270,7 +1275,7 @@ fun MessagingChatScreen(
                         lookupError!!,
                         fontFamily = Inter,
                         fontSize = 15.sp,
-                        color = Color(0xFFB42318),
+                        color = GotchaColors.DangerText,
                     )
                     lookup != null -> {
                         val pos = lookup?.partOfSpeech
@@ -1328,7 +1333,7 @@ fun MessagingChatScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp))
-                                .background(GotchaColors.BrandPurple)
+                                .background(GotchaColors.BrandFill)
                                 .clickable(enabled = !lookupLoading && lookup?.translation?.isNotBlank() == true) {
                                     val l = lookup ?: return@clickable
                                     val word = selectedWord ?: return@clickable
@@ -1351,9 +1356,9 @@ fun MessagingChatScreen(
                                             runCatching {
                                                 container.contentRepository.markKnownWord(lemma, source, "learning")
                                             }
-                                            savedMsg = "Saved to vocabulary"
+                                            savedMsg = uiString(R.string.reader_saved_vocab)
                                         } catch (e: Exception) {
-                                            savedMsg = e.message ?: "Save failed"
+                                            savedMsg = e.message ?: uiString(R.string.reader_save_failed)
                                         }
                                     }
                                 }
@@ -1445,17 +1450,17 @@ fun MessagingChatScreen(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .background(Color(0xFFF4EFFF))
+                    .background(GotchaColors.BrandPurpleTint)
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "💡 Tap words to learn their meaning.",
+                    uiString(R.string.msg_tip_tap_words),
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 13.sp,
-                    color = GotchaColors.BrandPurple,
+                    color = GotchaColors.BrandText,
                     modifier = Modifier.weight(1f),
                 )
                 Icon(
@@ -1503,7 +1508,7 @@ fun MessagingChatScreen(
                                 msg = msg,
                                 presented = presented,
                                 selectedWord = highlightWord,
-                                peerName = detail?.peer?.displayName ?: "Learner",
+                                peerName = detail?.peer?.displayName ?: uiString(R.string.common_learner),
                                 onWordTap = { word, sentence, lineLang ->
                                     selectedSentence = sentence
                                     selectedNativeLine = presented.secondary.ifBlank {
@@ -1515,12 +1520,13 @@ fun MessagingChatScreen(
                                 onReply = { startReply(msg) },
                                 onEdit = { startEdit(msg) },
                                 onDelete = { confirmDelete = msg },
+                                onReport = if (msg.mine) null else ({ reportMsg = msg }),
                             )
                         }
                         if (detail?.peer?.typing == true) {
                             item(key = "typing") {
                                 Text(
-                                    "typing…",
+                                    uiString(R.string.msg_typing),
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(16.dp))
                                         .background(GotchaColors.SurfaceMuted)
@@ -1546,11 +1552,11 @@ fun MessagingChatScreen(
                     msg,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFFFEBEE))
+                        .background(GotchaColors.DangerBg)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     fontFamily = Inter,
                     fontSize = 13.sp,
-                    color = Color(0xFFB42318),
+                    color = GotchaColors.DangerText,
                 )
             }
             translateHint?.let { msg ->
@@ -1558,7 +1564,7 @@ fun MessagingChatScreen(
                     msg,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(Color(0xFFFFF7ED))
+                        .background(GotchaColors.WarningBg)
                         .padding(horizontal = 16.dp, vertical = 8.dp),
                     fontFamily = Inter,
                     fontSize = 13.sp,
@@ -1582,8 +1588,8 @@ fun MessagingChatScreen(
                             .padding(start = 4.dp),
                     ) {
                         Text(
-                            if (editing != null) "Editing message"
-                            else "Reply to ${if (replyTo?.mine == true) "yourself" else (detail?.peer?.displayName ?: "learner")}",
+                            if (editing != null) uiString(R.string.msg_editing)
+                            else uiString(R.string.msg_reply_to, if (replyTo?.mine == true) uiString(R.string.msg_yourself) else (detail?.peer?.displayName ?: uiString(R.string.common_learner))),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
@@ -1649,7 +1655,7 @@ fun MessagingChatScreen(
                         decorationBox = { inner ->
                             if (draft.isBlank()) {
                                 Text(
-                                    if (editing != null) "Edit message..." else "Type a message...",
+                                    if (editing != null) uiString(R.string.msg_edit_placeholder) else uiString(R.string.msg_type_placeholder),
                                     fontFamily = Inter,
                                     fontSize = 14.sp,
                                     color = GotchaColors.TextSubtle,
@@ -1678,6 +1684,20 @@ fun MessagingChatScreen(
                     )
                 }
             }
+            reportMsg?.let { msg ->
+                ReportUserDialog(
+                    reportedUserId = msg.senderId ?: detail?.peer?.id.orEmpty(),
+                    peerName = detail?.peer?.displayName ?: uiString(R.string.common_learner),
+                    messageId = msg.id,
+                    conversationId = conversationId,
+                    onDismiss = { reportMsg = null },
+                    onDone = { blocked ->
+                        reportMsg = null
+                        actionError = uiString(R.string.report_sent)
+                        if (blocked) onBack()
+                    },
+                )
+            }
             confirmDelete?.let { msg ->
                 AlertDialog(
                     onDismissRequest = { confirmDelete = null },
@@ -1685,7 +1705,7 @@ fun MessagingChatScreen(
                     text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_this_message_will_be_deleted_for_everyon), fontFamily = Inter) },
                     confirmButton = {
                         TextButton(onClick = { deleteConfirmed(msg) }) {
-                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), color = Color(0xFFB42318), fontFamily = Inter)
+                            Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), color = GotchaColors.DangerText, fontFamily = Inter)
                         }
                     },
                     dismissButton = {
@@ -1777,17 +1797,18 @@ private fun MessageBubble(
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onReport: (() -> Unit)? = null,
 ) {
     var menuOpen by remember(msg.id) { mutableStateOf(false) }
     val bodyColor = if (msg.mine) Color.White else GotchaColors.Ink
-    val secondaryColor = if (msg.mine) Color.White.copy(alpha = 0.8f) else GotchaColors.TextMuted
+    val secondaryColor = if (msg.mine) Color.White else GotchaColors.TextMuted
     val primaryText = presented.primary.ifBlank { "…" }
     val parent = msg.replyTo
     val replyName = when {
         parent == null -> null
-        parent.senderId.isNotBlank() && parent.senderId == msg.senderId -> if (msg.mine) "You" else peerName
+        parent.senderId.isNotBlank() && parent.senderId == msg.senderId -> if (msg.mine) uiString(R.string.msg_you) else peerName
         msg.mine -> peerName
-        else -> "You"
+        else -> uiString(R.string.msg_you)
     }
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -1824,8 +1845,8 @@ private fun MessageBubble(
                         when {
                             msg.deleted -> Modifier
                                 .background(GotchaColors.SurfaceCard)
-                                .border(1.dp, Color(0xFFD1D5DC), RoundedCornerShape(16.dp))
-                            msg.mine -> Modifier.background(GotchaColors.WebAccent)
+                                .border(1.dp, GotchaColors.BorderInput, RoundedCornerShape(16.dp))
+                            msg.mine -> Modifier.background(GotchaColors.BrandFill)
                             else -> Modifier.background(GotchaColors.SurfaceCard).border(1.dp, GotchaColors.Border, RoundedCornerShape(16.dp))
                         },
                     )
@@ -1858,7 +1879,7 @@ private fun MessageBubble(
                                 messageSnippet(parent.body, parent.deleted),
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
-                                color = if (msg.mine) Color.White.copy(alpha = 0.8f) else GotchaColors.TextMuted,
+                                color = if (msg.mine) Color.White else GotchaColors.TextMuted,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -1904,6 +1925,7 @@ private fun MessageBubble(
                     onReply = onReply,
                     onEdit = onEdit,
                     onDelete = onDelete,
+                    onReport = onReport,
                 )
             }
         }
@@ -1935,7 +1957,7 @@ private fun MessageSendStatus(status: String?) {
             strokeWidth = 1.4.dp,
             color = GotchaColors.TextSubtle,
         )
-        "failed" -> Text("!", fontFamily = Inter, fontSize = 10.sp, color = Color(0xFFB42318))
+        "failed" -> Text("!", fontFamily = Inter, fontSize = 10.sp, color = GotchaColors.DangerText)
         "read" -> Icon(
             Icons.Outlined.DoneAll,
             contentDescription = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_read),
@@ -1960,6 +1982,7 @@ private fun MessageActionsButton(
     onReply: () -> Unit,
     onEdit: () -> Unit,
     onDelete: () -> Unit,
+    onReport: (() -> Unit)? = null,
 ) {
     Box {
         Icon(
@@ -1994,10 +2017,19 @@ private fun MessageActionsButton(
             }
             if (canDelete) {
                 DropdownMenuItem(
-                    text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), fontFamily = Inter, fontSize = 14.sp, color = Color(0xFFB42318)) },
+                    text = { Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_delete), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.DangerText) },
                     onClick = {
                         onExpandedChange(false)
                         onDelete()
+                    },
+                )
+            }
+            if (onReport != null) {
+                DropdownMenuItem(
+                    text = { Text(androidx.compose.ui.res.stringResource(R.string.report_action), fontFamily = Inter, fontSize = 14.sp, color = GotchaColors.DangerText) },
+                    onClick = {
+                        onExpandedChange(false)
+                        onReport()
                     },
                 )
             }
@@ -2168,7 +2200,7 @@ fun FindLearnersScreen(
             } catch (e: Exception) {
                 if (peeked == null) {
                     peers = emptyList()
-                    error = e.apiErrorMessage("Search failed")
+                    error = e.apiErrorMessage(R.string.err_search_failed)
                 }
             } finally {
                 loading = false
@@ -2241,7 +2273,7 @@ fun FindLearnersScreen(
                     label,
                     modifier = Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (selected) GotchaColors.BrandPurple else Color.White)
+                        .background(if (selected) GotchaColors.BrandFill else GotchaColors.SurfaceCard)
                         .border(1.dp, if (selected) GotchaColors.BrandPurple else GotchaColors.Border, RoundedCornerShape(10.dp))
                         .clickable { filter = key }
                         .padding(horizontal = 16.dp, vertical = 8.dp),
@@ -2387,7 +2419,7 @@ private fun LearnerMatchCard(peer: MessagingPeer, onOpen: () -> Unit) {
                         Modifier.size(width = 18.dp, height = 26.dp),
                         corner = 3,
                     )
-                    Text("Reading:", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
+                    Text(uiString(R.string.msg_reading_label), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
                     Text(
                         peer.reading.title.orEmpty(),
                         fontFamily = Inter,
@@ -2415,6 +2447,8 @@ fun MessagingPeerProfileScreen(
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
+    var showReport by remember(peerId) { mutableStateOf(false) }
+    var showBlock by remember(peerId) { mutableStateOf(false) }
     val bottomPad = messagingBottomPad()
 
     LaunchedEffect(peerId, reloadKey) {
@@ -2430,7 +2464,7 @@ fun MessagingPeerProfileScreen(
             peer = container.messagingRepository.peerFetch(peerId).data
         } catch (e: Exception) {
             if (peer == null) {
-                error = e.apiErrorMessage("Failed to load profile")
+                error = e.apiErrorMessage(R.string.profile_load_failed)
             }
         } finally {
             loading = false
@@ -2493,21 +2527,21 @@ fun MessagingPeerProfileScreen(
                         Text(p.displayName.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.ExtraBold, fontSize = 20.sp, color = GotchaColors.Ink)
                         Text(p.handle.orEmpty(), fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.TextMuted)
                         formatMemberSince(p.createdAt)?.let { since ->
-                            Text("Member since $since", fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                            Text(uiString(R.string.profile_member_since, since), fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                         }
                     }
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(14.dp))
-                            .background(GotchaColors.BrandPurple)
+                            .background(GotchaColors.BrandFill)
                             .clickable {
                                 scope.launch {
                                     try {
                                         val d = container.messagingRepository.start(p.id, p.currentlyReading?.id ?: p.reading?.id)
                                         onMessage(d.id)
                                     } catch (e: Exception) {
-                                        error = e.apiErrorMessage("Couldn't start this chat")
+                                        error = e.apiErrorMessage(R.string.err_chat_start)
                                     }
                                 }
                             }
@@ -2523,7 +2557,7 @@ fun MessagingPeerProfileScreen(
                             modifier = Modifier.size(16.dp),
                         )
                         Text(
-                            "Message ${p.displayName?.split(" ")?.firstOrNull() ?: "learner"}",
+                            uiString(R.string.msg_message_peer, p.displayName?.split(" ")?.firstOrNull() ?: uiString(R.string.common_learner)),
                             fontFamily = Inter,
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
@@ -2531,10 +2565,59 @@ fun MessagingPeerProfileScreen(
                         )
                         Spacer(Modifier.weight(1f))
                     }
+                    // P3b report & block.
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        TextButton(onClick = { showReport = true }) {
+                            Text(uiString(R.string.report_action), color = GotchaColors.DangerText, fontFamily = Inter)
+                        }
+                        TextButton(onClick = { showBlock = true }) {
+                            Text(
+                                uiString(if (p.blockedByMe) R.string.unblock_action else R.string.block_action),
+                                color = GotchaColors.DangerText,
+                                fontFamily = Inter,
+                            )
+                        }
+                    }
+                    if (showReport) {
+                        ReportUserDialog(
+                            reportedUserId = p.id,
+                            peerName = p.displayName ?: uiString(R.string.common_learner),
+                            onDismiss = { showReport = false },
+                            onDone = { blocked ->
+                                showReport = false
+                                if (blocked) onBack() else error = uiString(R.string.report_sent)
+                            },
+                        )
+                    }
+                    if (showBlock) {
+                        BlockUserDialog(
+                            peerName = p.displayName ?: uiString(R.string.common_learner),
+                            unblock = p.blockedByMe,
+                            onDismiss = { showBlock = false },
+                            onConfirm = {
+                                showBlock = false
+                                scope.launch {
+                                    try {
+                                        if (p.blockedByMe) {
+                                            container.messagingRepository.unblock(p.id)
+                                            peer = p.copy(blockedByMe = false)
+                                        } else {
+                                            container.messagingRepository.block(p.id)
+                                            onBack()
+                                        }
+                                    } catch (e: CancellationException) {
+                                        throw e
+                                    } catch (e: Exception) {
+                                        error = e.apiErrorMessage(R.string.block_failed)
+                                    }
+                                }
+                            },
+                        )
+                    }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        PeerStat("${p.stats?.booksRead ?: 0}", "Books read", R.drawable.ic_book_open, Modifier.weight(1f))
-                        PeerStat("${p.stats?.wordsLearned ?: 0}", "Words learned", R.drawable.ic_nav_words, Modifier.weight(1f))
-                        PeerStat("${p.stats?.chats ?: 0}", "Chats", R.drawable.ic_message, Modifier.weight(1f))
+                        PeerStat("${p.stats?.booksRead ?: 0}", uiString(R.string.profile_articles_read), R.drawable.ic_book_open, Modifier.weight(1f))
+                        PeerStat("${p.stats?.wordsLearned ?: 0}", uiString(R.string.vocab_words_learned), R.drawable.ic_nav_words, Modifier.weight(1f))
+                        PeerStat("${p.stats?.chats ?: 0}", uiString(R.string.profile_messages), R.drawable.ic_message, Modifier.weight(1f))
                     }
                     if (p.targetLanguages.isNotEmpty() || p.nativeLanguage != null) {
                         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2607,7 +2690,7 @@ fun MessagingPeerProfileScreen(
                                             .fillMaxWidth(fraction = (book.progressPct / 100.0).toFloat().coerceIn(0f, 1f))
                                             .height(6.dp)
                                             .clip(RoundedCornerShape(3.dp))
-                                            .background(GotchaColors.BrandPurple),
+                                            .background(GotchaColors.BrandFill),
                                     )
                                 }
                             }

@@ -1,5 +1,8 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
+import app.gotcha.android.R
 import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,7 +31,7 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.ErrorOutline
 import androidx.compose.material.icons.outlined.Explore
 import androidx.compose.material.icons.outlined.Link
-import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.automirrored.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Schedule
 import androidx.compose.material.icons.outlined.Upload
 import androidx.compose.material.icons.outlined.UploadFile
@@ -124,7 +127,7 @@ fun ImportScreen(
         historyLoading = true
         historyError = null
         runCatching { loadHistory(1) }
-            .onFailure { historyError = it.apiErrorMessage("Could not load import history") }
+            .onFailure { historyError = it.apiErrorMessage(R.string.err_import_history_load) }
         historyLoading = false
     }
 
@@ -146,7 +149,7 @@ fun ImportScreen(
                 val nextPage = if (imports.size <= 1 && page > 1) page - 1 else page
                 loadHistory(nextPage)
             } catch (e: Exception) {
-                historyError = e.apiErrorMessage("Delete failed")
+                historyError = e.apiErrorMessage(R.string.err_delete_failed)
             } finally {
                 deletingId = null
             }
@@ -181,7 +184,7 @@ fun ImportScreen(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        if (embedded) "Import Content" else "Add Content",
+                        if (embedded) uiString(R.string.import_content) else uiString(R.string.import_add_content),
                         fontFamily = Inter,
                         fontWeight = FontWeight.Bold,
                         fontSize = 24.sp,
@@ -227,16 +230,16 @@ fun ImportScreen(
                         scope.launch {
                             historyLoading = true
                             runCatching { loadHistory(1) }
-                                .onFailure { historyError = it.apiErrorMessage("Could not refresh import history") }
+                                .onFailure { historyError = it.apiErrorMessage(R.string.err_import_history_refresh) }
                             historyLoading = false
                         }
                     },
                 )
             } else {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ImportOption(Icons.Outlined.Link, "Import from URL", "Paste a link to any article or web page", onOpenUrl)
-                    ImportOption(Icons.Outlined.ContentPaste, "Paste Text", "Paste any text and start reading with translations", onOpenPaste)
-                    ImportOption(Icons.Outlined.UploadFile, "Upload File", "Import a PDF or EPUB from your device", onOpenFile)
+                    ImportOption(Icons.Outlined.Link, uiString(R.string.x_import_from_url), uiString(R.string.import_from_url_sub), onOpenUrl)
+                    ImportOption(Icons.Outlined.ContentPaste, uiString(R.string.x_paste_text), uiString(R.string.import_paste_sub), onOpenPaste)
+                    ImportOption(Icons.Outlined.UploadFile, uiString(R.string.x_upload_file), uiString(R.string.import_file_sub), onOpenFile)
                 }
             }
 
@@ -327,7 +330,7 @@ fun ImportScreen(
                                 Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_previous), fontFamily = Inter, fontSize = 12.sp)
                             }
                             Text(
-                                "Page $page of ${maxOf(1, (total + PAGE_SIZE - 1) / PAGE_SIZE)}",
+                                uiString(R.string.import_page_of, page, maxOf(1, (total + PAGE_SIZE - 1) / PAGE_SIZE)),
                                 fontFamily = Inter,
                                 color = GotchaColors.TextSubtle,
                                 fontSize = 12.sp,
@@ -360,9 +363,9 @@ private fun importHistorySummary(
     importsUnlimited: Boolean,
     total: Int,
 ): String {
-    val countLabel = "$total import${if (total == 1) "" else "s"}"
+    val countLabel = uiPlural(R.plurals.import_n_imports, total)
     return when {
-        allowance != null -> "${allowance.dailyFreeRemaining} free left today · $countLabel"
+        allowance != null -> uiString(R.string.import_free_left_today, allowance.dailyFreeRemaining, countLabel)
         importsUnlimited || importRemaining == null -> countLabel
         else -> countLabel
     }
@@ -377,16 +380,16 @@ private fun importRelativeTime(iso: String?): String {
         val created = Instant.parse(iso)
         val mins = ChronoUnit.MINUTES.between(created, Instant.now())
         when {
-            mins < 1 -> "just now"
-            mins < 60 -> "${mins}m ago"
-            mins < 24 * 60 -> "${mins / 60}h ago"
-            else -> "${mins / (24 * 60)}d ago"
+            mins < 1 -> uiString(R.string.time_just_now)
+            mins < 60 -> uiString(R.string.time_min_ago, mins.toInt())
+            mins < 24 * 60 -> uiString(R.string.time_h_ago, (mins / 60).toInt())
+            else -> uiString(R.string.time_d_ago, (mins / (24 * 60)).toInt())
         }
     }.getOrDefault("")
 }
 
 private fun formatImportWordCount(count: Int): String =
-    "%,d words".format(Locale.US, count)
+    uiPlural(R.plurals.vocab_n_words, count)
 
 @Composable
 private fun FreeAllowanceBanner(allowance: ImportQuoteFreeLimits) {
@@ -425,7 +428,7 @@ private fun ImportWebTabPanel(
                 .border(width = 1.dp, color = GotchaColors.SurfaceMuted, shape = RoundedCornerShape(0.dp)),
         ) {
             ImportWebTabButton(
-                label = "URL",
+                label = "URL", // i18n-ok: URL is universal
                 icon = Icons.Outlined.Link,
                 selected = selectedTab == ImportTab.Url,
                 onClick = { onTab(ImportTab.Url) },
@@ -461,9 +464,9 @@ private fun ImportWebTabPanel(
                 ) {
                     Text(
                         if (gatewayEnabled) {
-                            "Import allowance reached. Delete an old import or buy this import in the app."
+                            uiString(R.string.import_limit_gw)
                         } else {
-                            "Import allowance reached. Delete an old import to free up space — paid imports are not available right now."
+                            uiString(R.string.import_limit_nogw)
                         },
                         fontFamily = Inter,
                         color = GotchaColors.WebStreakText,
@@ -474,9 +477,9 @@ private fun ImportWebTabPanel(
             }
             Text(
                 if (gatewayEnabled) {
-                    "Paid imports are priced by page count and bought with Google Play."
+                    uiString(R.string.import_paid_play)
                 } else {
-                    "Imports are free right now."
+                    uiString(R.string.import_free_now)
                 },
                 fontFamily = Inter,
                 color = GotchaColors.TextSubtle,
@@ -716,7 +719,7 @@ private fun ImportHistoryRow(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.size(14.dp), tint = GotchaColors.Ink)
+                        Icon(Icons.AutoMirrored.Outlined.OpenInNew, null, modifier = Modifier.size(14.dp), tint = GotchaColors.Ink)
                         Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_read), fontFamily = Inter, fontWeight = FontWeight.Medium, fontSize = 12.sp, color = GotchaColors.Ink)
                     }
                 }

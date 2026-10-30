@@ -141,6 +141,10 @@ interface GotchaApi {
     @POST("auth/refresh")
     suspend fun refresh(@Body body: RefreshRequest): AuthResponse
 
+    /** m4: revoke this device's refresh token server-side. */
+    @POST("auth/logout")
+    suspend fun logout(@Body body: RefreshRequest): OkMessageResponse
+
     @POST("auth/forgot-password")
     suspend fun forgotPassword(@Body body: ForgotPasswordRequest): OkMessageResponse
 
@@ -417,6 +421,16 @@ interface GotchaApi {
 
     @GET("messaging/peers/{id}")
     suspend fun messagingPeer(@Path("id") id: String): MessagingPeer
+
+    // P3b report & block (Play UGC policy).
+    @POST("messaging/reports")
+    suspend fun messagingReport(@Body body: app.gotcha.android.data.model.ReportUserRequest): app.gotcha.android.data.model.ReportUserResponse
+
+    @POST("messaging/blocks/{userId}")
+    suspend fun messagingBlock(@Path("userId") userId: String): app.gotcha.android.data.model.BlockResponse
+
+    @DELETE("messaging/blocks/{userId}")
+    suspend fun messagingUnblock(@Path("userId") userId: String): app.gotcha.android.data.model.BlockResponse
 
     @GET("admin/me")
     suspend fun adminMe(): AdminMe

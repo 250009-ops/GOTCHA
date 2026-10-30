@@ -143,7 +143,24 @@ class AuthRepository(
             app.gotcha.android.data.model.ResetPasswordRequest(token, password),
         )
 
-    suspend fun logout() = tokenStore.clear()
+    /**
+     * m4: revoke the refresh token server-side (best effort, 5 s cap; offline sign-out still works),
+     * then clear local tokens and reset device UI prefs so they don't leak into the next account.
+     */
+    suspend fun logout() {
+        val refresh = tokenStore.refreshToken()?.trim().orEmpty()
+        if (refresh.isNotEmpty()) {
+            try {
+                kotlinx.coroutines.withTimeoutOrNull(5_000) { api.logout(RefreshRequest(refresh)) }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                // Network/server failure: the token still expires on its own; never block sign-out.
+            }
+        }
+        tokenStore.clear()
+        app.gotcha.android.ui.theme.AppUiPrefs.resetForSignOut()
+    }
 
     /** Validates stored tokens on cold start; clears stale sessions so users land on sign-in. */
     suspend fun restoreSessionOnLaunch(): Pair<Boolean, Boolean> {
@@ -816,6 +833,16 @@ class MessagingRepository(
     }
 
     suspend fun markRead(conversationId: String) = api.messagingMarkRead(conversationId)
+
+    // P3b report & block. A block hides the peer from inbox/discovery server-side, so drop local caches.
+    suspend fun report(req: app.gotcha.android.data.model.ReportUserRequest) =
+        api.messagingReport(req).also { if (it.blocked) forgetPeer(req.reportedUserId) }
+    suspend fun block(userId: String) = api.messagingBlock(userId).also { forgetPeer(userId) }
+    suspend fun unblock(userId: String) = api.messagingUnblock(userId)
+    private fun forgetPeer(userId: String) = synchronized(memLock) {
+        memInbox = memInbox.filter { it.peer?.id != userId }
+        memPeers.remove(userId)
+    }
 
     suspend fun heartbeat() = api.messagingPresence()
 

@@ -1,0 +1,19 @@
+name: Web/API guards
+
+on:
+  pull_request:
+    paths: ['apps/web/**', 'apps/web-learner/**', 'apps/admin/**', 'services/**', 'apps/android/**', 'scripts/check-no-invented-counts.mjs', '.github/workflows/web-api-ci.yml']
+  push:
+    branches: [main, master]
+
+jobs:
+  guards:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: No invented learner counts (FALLBACK_LEARNER_COUNT / Figma mock number)
+        run: node scripts/check-no-invented-counts.mjs

@@ -9,6 +9,8 @@ class GotchaApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // M1: initialise the in-app language before any Activity (incl. ImportTrampolineActivity) builds strings.
+        app.gotcha.android.ui.theme.AppUiPrefs.init(this)
         container = AppContainer(this)
     }
 }

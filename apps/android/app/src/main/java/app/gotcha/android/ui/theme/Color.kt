@@ -69,7 +69,7 @@ object GotchaThemeState {
         }
 }
 
-private inline fun pick(light: Color, dark: Color): Color = if (GotchaThemeState.isDark) dark else light
+private fun pick(light: Color, dark: Color): Color = if (GotchaThemeState.isDark) dark else light
 
 object GotchaColors {
     /** Primary brand fill/accent: logo blue in light, lifted Blue400 on dark surfaces for contrast. */
@@ -126,4 +126,23 @@ object GotchaColors {
     val Danger get() = pick(Color(0xFFEF4444), GotchaBlue.DarkError)
     val DangerBg get() = pick(Color(0xFFFFF5F5), Color(0xFF2D1416))
     val SuccessBright = Color(0xFF10B981)
+
+    // --- M2 dark-mode tokens (team/design/M2-dark-tokens.md §1) ---
+    /** Filled CTA / selected-chip fill. White on it: 12.53:1 (light B700) / 5.61:1 (dark B500). */
+    val BrandFill get() = pick(GotchaBlue.B700, GotchaBlue.B500)
+    val OnBrandFill = Color.White
+    /** Danger text on surfaces/tints (Danger #EF4444 on DangerBg is only 3.52:1 in light). */
+    val DangerText get() = pick(Color(0xFFB91C1C), GotchaBlue.DarkError)
+    /** Text/icon accent on surfaces (links, selected icons, tip icons). */
+    val BrandText get() = pick(GotchaBlue.B700, GotchaBlue.B300)
+    /** Neutral secondary icon (reader toolbar / dictionary sheet). */
+    val IconMuted get() = pick(Color(0xFF6A7282), GotchaBlue.DarkText2)
+    /** Hairline dividers / separators. */
+    val Divider get() = pick(Color(0xFFE5E7EB), Color(0xFF2A2D42))
 }
+
+/** M2 §5: light/dark badge pair. */
+data class BadgeTone(val bg: Color, val fg: Color)
+
+fun badgeTone(lightBg: Long, lightFg: Long, darkBg: Long, darkFg: Long): BadgeTone =
+    if (GotchaThemeState.isDark) BadgeTone(Color(darkBg), Color(darkFg)) else BadgeTone(Color(lightBg), Color(lightFg))

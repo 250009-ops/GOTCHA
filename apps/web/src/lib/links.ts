@@ -31,3 +31,14 @@ export function registerUrl(opts?: { plan?: PlanTier; from?: string; lang?: stri
 export function libraryUrl() {
   return `${LEARNER_APP_URL}/`;
 }
+
+/**
+ * P3b guard: the public learner count is only ever the live API value.
+ * There is deliberately NO fallback/floor constant here (the old invented
+ * fallback learner-count constant is banned; CI runs scripts/check-no-invented-counts.mjs).
+ * Missing, non-numeric, negative or zero -> 0, and the UI hides the numeral.
+ */
+export function safeLearnerCount(value: unknown): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : 0;
+}

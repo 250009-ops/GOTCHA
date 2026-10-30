@@ -51,6 +51,29 @@ object AppUiPrefs {
         appContext?.getSharedPreferences(FILE, Context.MODE_PRIVATE)?.edit()?.putString(KEY_THEME, next)?.apply()
     }
 
+    private var localizedFor: Pair<String, android.content.res.Resources>? = null
+
+    /**
+     * Resources re-rooted on the in-app language, for strings built outside composition (coroutine error
+     * fallbacks, relative-time helpers). Reading [language] keeps composable callers recomposing on a switch.
+     * Null before [init] (JVM unit tests), in which case callers fall back to the English default.
+     */
+    fun localizedResources(): android.content.res.Resources? {
+        val ctx = appContext ?: return null
+        val lang = language
+        localizedFor?.let { (l, r) -> if (l == lang) return r }
+        val cfg = Configuration(ctx.resources.configuration).apply { setLocale(Locale.forLanguageTag(lang)) }
+        val res = ctx.createConfigurationContext(cfg).resources
+        localizedFor = lang to res
+        return res
+    }
+
+    /** m4: on sign-out, don't carry this account's UI language/theme to the next account. */
+    fun resetForSignOut() {
+        updateLanguage(java.util.Locale.getDefault().language)
+        updateTheme(null)
+    }
+
     fun normalize(code: String?): String {
         val c = code?.lowercase()?.take(2).orEmpty()
         return if (c in supportedLanguages) c else "en"

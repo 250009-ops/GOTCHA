@@ -1,9 +1,10 @@
 import { normalize } from '@gotcha/shared';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
+import { assertQuizHasQuestions, QuizUnavailableError } from '../ai/quiz-grounding';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 
@@ -58,6 +59,14 @@ export class PracticeService {
       questionLang,
       passageLang,
     });
+
+    // PS-02: no session and no quota charge when grounding removed every question.
+    try {
+      assertQuizHasQuestions(questions);
+    } catch (e) {
+      if (e instanceof QuizUnavailableError) throw new ServiceUnavailableException(e.message);
+      throw e;
+    }
 
     const session = await this.prisma.practiceSession.create({
       data: {

@@ -267,9 +267,13 @@ class MainActivity : ComponentActivity() {
             ),
         )
         // Ensure OEM 3-button nav stays transparent so learner glass can blend under it.
+        // Nit: deprecated on API 35+ (edge-to-edge enforced there) but still needed for minSdk 24–34.
+        @Suppress("DEPRECATION")
         window.statusBarColor = AndroidColor.TRANSPARENT
+        @Suppress("DEPRECATION")
         window.navigationBarColor = AndroidColor.TRANSPARENT
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
         }

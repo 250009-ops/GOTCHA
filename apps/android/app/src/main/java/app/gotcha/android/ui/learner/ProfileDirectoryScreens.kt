@@ -1,5 +1,8 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.badgeTone
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -305,7 +308,7 @@ private fun SegmentedControl(
         options.forEach { opt ->
             val on = selected == opt
             Text(
-                opt,
+                segmentLabel(opt),
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(8.dp))
@@ -320,6 +323,14 @@ private fun SegmentedControl(
             )
         }
     }
+}
+
+/** M1: SegmentedControl options are stable keys ("Light"/"Sepia"/"Dark"); only the label is localized. */
+private fun segmentLabel(key: String): String = when (key) {
+    "Light" -> uiString(R.string.ui_theme_light, englishFallback = key)
+    "Sepia" -> uiString(R.string.ui_theme_sepia, englishFallback = key)
+    "Dark" -> uiString(R.string.ui_theme_dark, englishFallback = key)
+    else -> key
 }
 
 private val PROFILE_LANG_OPTIONS = app.gotcha.android.data.model.APP_LANGUAGE_OPTIONS
@@ -439,7 +450,7 @@ fun EditProfileScreen(
             throw e
         } catch (e: Exception) {
             if (name.isEmpty() && email.isEmpty()) {
-                error = e.apiErrorMessage("Failed to load profile")
+                error = e.apiErrorMessage(R.string.profile_load_failed)
             }
         } finally {
             loading = false
@@ -461,7 +472,7 @@ fun EditProfileScreen(
             onBack = onBack,
             trailing = {
                 Text(
-                    if (saving) "…" else "Save",
+                    if (saving) "…" else uiString(R.string.common_save),
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
@@ -477,7 +488,7 @@ fun EditProfileScreen(
                                 )
                                 onBack()
                             } catch (e: Exception) {
-                                saveError = e.message ?: "Save failed"
+                                saveError = e.message ?: uiString(R.string.pd_save_failed)
                             } finally {
                                 saving = false
                             }
@@ -585,11 +596,11 @@ fun EditProfileScreen(
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FieldLabel("Full Name")
+                            FieldLabel(uiString(R.string.auth_name_label))
                             ProfileField(name, onValueChange = { name = it })
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FieldLabel("Email")
+                            FieldLabel(uiString(R.string.settings_email))
                             ProfileField(
                                 email,
                                 readOnly = true,
@@ -598,7 +609,7 @@ fun EditProfileScreen(
                                         Box(
                                             Modifier
                                                 .clip(RoundedCornerShape(4.dp))
-                                                .background(Color(0xFFECFDF3))
+                                                .background(GotchaColors.SuccessBg)
                                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                                         ) {
                                             Text(
@@ -614,7 +625,7 @@ fun EditProfileScreen(
                             )
                         }
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            FieldLabel("Native Language")
+                            FieldLabel(uiString(R.string.ui_native_language))
                             Box {
                                 Row(
                                     Modifier
@@ -712,7 +723,7 @@ fun NotificationsListScreen(
             throw e
         } catch (e: Exception) {
             if (items.isEmpty()) {
-                error = e.apiErrorMessage("Failed to load notifications")
+                error = e.apiErrorMessage(R.string.err_notifications_load)
             }
         } finally {
             loading = false
@@ -727,7 +738,7 @@ fun NotificationsListScreen(
                 container.userRepository.markAllNotificationsRead()
                 items = container.userRepository.notifications().items
             } catch (e: Exception) {
-                error = e.apiErrorMessage("Couldn't mark notifications as read")
+                error = e.apiErrorMessage(R.string.err_notifications_mark)
                 reloadKey += 1
             }
         }
@@ -766,7 +777,7 @@ fun NotificationsListScreen(
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    if (unreadCount > 0) "Mark all as read" else "All caught up",
+                    if (unreadCount > 0) uiString(R.string.pd_mark_all_read) else uiString(R.string.pd_all_caught_up),
                     fontFamily = Inter,
                     fontWeight = FontWeight.SemiBold,
                     fontSize = 14.sp,
@@ -793,7 +804,7 @@ fun NotificationsListScreen(
                     label,
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(if (selected) GotchaColors.WebAccent else Color.White)
+                        .background(if (selected) GotchaColors.BrandFill else GotchaColors.SurfaceCard)
                         .border(
                             1.dp,
                             if (selected) GotchaColors.WebAccent else GotchaColors.Border,
@@ -935,9 +946,9 @@ fun NotificationsListScreen(
 private fun notificationVisual(kind: String): Triple<Int, Color, Color> = when (kind.lowercase()) {
     "content" -> Triple(R.drawable.ic_book_open, GotchaBlue.B50, GotchaBlue.B700)
     "message" -> Triple(R.drawable.ic_message, GotchaBlue.InfoBg, GotchaBlue.InfoText)
-    "streak" -> Triple(R.drawable.ic_flame, Color(0xFFFFF7ED), Color(0xFFC2410C))
+    "streak" -> Triple(R.drawable.ic_flame, GotchaColors.WarningBg, GotchaColors.WarningText)
     "goal" -> Triple(R.drawable.ic_target, GotchaColors.SuccessBg, GotchaColors.SuccessText)
-    "vocab" -> Triple(R.drawable.ic_activity_clock, Color(0xFFEEF2FF), Color(0xFF3730A3))
+    "vocab" -> badgeTone(0xFFEEF2FF, 0xFF3730A3, 0xFF1E2140, 0xFFC5CAFD).let { Triple(R.drawable.ic_activity_clock, it.bg, it.fg) }
     else -> Triple(R.drawable.ic_bell, GotchaColors.SurfaceMuted, GotchaColors.TextMuted)
 }
 
@@ -947,11 +958,11 @@ private fun notificationTimeLabel(iso: String?): String {
         val then = Instant.parse(iso).toEpochMilli()
         val mins = ((System.currentTimeMillis() - then) / 60_000).toInt()
         when {
-            mins < 1 -> "just now"
-            mins < 60 -> "${mins}m ago"
-            mins < 1440 -> "${mins / 60}h ago"
-            mins < 2880 -> "Yesterday"
-            else -> "${mins / 1440}d ago"
+            mins < 1 -> uiString(R.string.time_just_now)
+            mins < 60 -> uiString(R.string.time_min_ago, mins.toInt())
+            mins < 1440 -> uiString(R.string.time_h_ago, (mins / 60).toInt())
+            mins < 2880 -> uiString(R.string.common_yesterday)
+            else -> uiString(R.string.time_d_ago, (mins / 1440).toInt())
         }
     } catch (_: Exception) {
         ""
@@ -987,7 +998,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             hasLoaded = true
         } catch (e: Exception) {
             if (!hasLoaded) {
-                error = e.apiErrorMessage("Failed to load notifications")
+                error = e.apiErrorMessage(R.string.err_notifications_load)
             }
         } finally {
             loading = false
@@ -1004,7 +1015,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             .padding(bottom = bottom),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ProfileDirHeader("Notifications", onBack)
+        ProfileDirHeader(uiString(R.string.nav_notifications), onBack)
         Column(
             Modifier.padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -1025,7 +1036,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
             if (saveError != null) {
                 Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
-            SectionLabel("Reminders")
+            SectionLabel(uiString(R.string.ui_reminders))
             SettingsCard {
                 ToggleRow(
                     title = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_learning_reminders),
@@ -1039,7 +1050,7 @@ fun NotificationsSettingsScreen(onBack: () -> Unit) {
                                 container.userRepository.updatePreferences(notificationsEnabled = next)
                             }.onFailure { e ->
                                 enabled = !next
-                                saveError = e.message ?: "Couldn’t save preference"
+                                saveError = e.message ?: uiString(R.string.pd_save_pref_failed)
                             }
                         }
                     },
@@ -1098,7 +1109,7 @@ fun ReadingPreferencesScreen(onBack: () -> Unit) {
                     ttsEnabled = ttsValue,
                 )
             }.onFailure { e ->
-                saveError = e.message ?: "Couldn’t save preference"
+                saveError = e.message ?: uiString(R.string.pd_save_pref_failed)
             }
         }
     }
@@ -1119,7 +1130,7 @@ fun ReadingPreferencesScreen(onBack: () -> Unit) {
             hasLoaded = true
         } catch (e: Exception) {
             if (!hasLoaded) {
-                error = e.apiErrorMessage("Failed to load preferences")
+                error = e.apiErrorMessage(R.string.err_preferences_load)
             }
         } finally {
             loading = false
@@ -1161,7 +1172,7 @@ fun ReadingPreferencesScreen(onBack: () -> Unit) {
                 Text(saveError!!, fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.Danger)
             }
             Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                SectionLabel("Reading")
+                SectionLabel(uiString(R.string.pd_reading))
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Text(copy.defaultFontSize, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = GotchaColors.TextMuted)
@@ -1236,13 +1247,13 @@ fun HelpSupportScreen(onBack: () -> Unit) {
             .padding(bottom = bottom),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ProfileDirHeader("Help & Support", onBack)
+        ProfileDirHeader(uiString(R.string.pd_help_support), onBack)
         Column(
             Modifier.padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
         ) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel("Contact")
+                SectionLabel(uiString(R.string.pd_contact))
                 SettingsCard {
                     Row(
                         Modifier
@@ -1266,7 +1277,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel("About")
+                SectionLabel(uiString(R.string.pd_about))
                 SettingsCard {
                     Row(
                         Modifier
@@ -1287,7 +1298,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                 }
             }
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                SectionLabel("Legal")
+                SectionLabel(uiString(R.string.pd_legal))
                 SettingsCard {
                     Row(
                         Modifier
@@ -1298,7 +1309,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_privacy_policy), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
-                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
+                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid) // i18n-ok: domain name
                     }
                     HorizontalDivider(color = GotchaColors.Border)
                     Row(
@@ -1310,7 +1321,7 @@ fun HelpSupportScreen(onBack: () -> Unit) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_terms_of_service), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = GotchaColors.Ink)
-                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid)
+                        Text("gotchaa.uz", fontFamily = Inter, fontSize = 13.sp, color = GotchaColors.BrandPurpleMid) // i18n-ok: domain name
                     }
                 }
             }
@@ -1337,7 +1348,7 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
             .background(GotchaColors.Surface)
             .learnerDirectoryStatusPad(),
     ) {
-        ProfileDirHeader("Change Password", onBack, centered = false)
+        ProfileDirHeader(uiString(R.string.settings_change_password), onBack, centered = false)
         if (success) {
             Column(
                 Modifier
@@ -1363,7 +1374,7 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                 GotchaPrimaryButton(
                     text = androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_done),
                     onClick = onBack,
-                    containerColor = GotchaColors.BrandPurpleMid,
+                    containerColor = GotchaColors.BrandFill,
                     shapeRadius = 16,
                 )
             }
@@ -1377,15 +1388,15 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FieldLabel("Current Password")
+                    FieldLabel(uiString(R.string.pd_current_password))
                     ProfileField(currentPassword, onValueChange = { currentPassword = it; error = null }, isPassword = true)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FieldLabel("New Password")
+                    FieldLabel(uiString(R.string.auth_new_password))
                     ProfileField(newPassword, onValueChange = { newPassword = it; error = null }, isPassword = true)
                 }
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    FieldLabel("Confirm New Password")
+                    FieldLabel(uiString(R.string.pd_confirm_new_password))
                     ProfileField(confirmPassword, onValueChange = { confirmPassword = it; error = null }, isPassword = true)
                 }
                 if (error != null) {
@@ -1398,11 +1409,11 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                     enabled = currentPassword.isNotBlank() && newPassword.isNotBlank() && confirmPassword.isNotBlank(),
                     onClick = {
                         if (newPassword.length < 8) {
-                            error = "New password must be at least 8 characters"
+                            error = uiString(R.string.pd_new_pw_short)
                             return@GotchaPrimaryButton
                         }
                         if (newPassword != confirmPassword) {
-                            error = "Passwords do not match"
+                            error = uiString(R.string.auth_err_password_mismatch)
                             return@GotchaPrimaryButton
                         }
                         scope.launch {
@@ -1412,13 +1423,13 @@ fun ChangePasswordScreen(onBack: () -> Unit) {
                                 container.userRepository.changePassword(currentPassword, newPassword)
                                 success = true
                             } catch (e: Exception) {
-                                error = e.apiErrorMessage("Could not change password")
+                                error = e.apiErrorMessage(R.string.err_password_change)
                             } finally {
                                 loading = false
                             }
                         }
                     },
-                    containerColor = GotchaColors.BrandPurpleMid,
+                    containerColor = GotchaColors.BrandFill,
                     shapeRadius = 16,
                 )
             }
@@ -1472,7 +1483,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
                     .background(GotchaColors.DangerBg)
-                    .border(1.dp, Color(0xFFFEE2E2), RoundedCornerShape(14.dp))
+                    .border(1.dp, GotchaColors.DangerText.copy(alpha = 0.4f), RoundedCornerShape(14.dp))
                     .padding(12.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -1491,11 +1502,11 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 )
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Current password")
+                FieldLabel(uiString(R.string.pd_current_password))
                 ProfileField(password, onValueChange = { password = it; error = null }, isPassword = true)
             }
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                FieldLabel("Type DELETE to confirm")
+                FieldLabel(uiString(R.string.pd_type_delete))
                 ProfileField(confirmText, onValueChange = { confirmText = it; error = null })
             }
             if (error != null) {
@@ -1507,11 +1518,11 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                 enabled = password.isNotBlank() && confirmText.isNotBlank(),
                 onClick = {
                     if (password.isBlank()) {
-                        error = "Enter your password to confirm"
+                        error = uiString(R.string.pd_enter_pw_confirm)
                         return@GotchaPrimaryButton
                     }
                     if (confirmText.trim().uppercase() != "DELETE") {
-                        error = "Type DELETE to confirm"
+                        error = uiString(R.string.pd_type_delete)
                         return@GotchaPrimaryButton
                     }
                     scope.launch {
@@ -1521,7 +1532,7 @@ fun DeleteAccountDialog(onDismiss: () -> Unit, onDeleted: () -> Unit) {
                             container.userRepository.deleteAccount(password)
                             onDeleted()
                         } catch (e: Exception) {
-                            error = e.apiErrorMessage("Could not delete account")
+                            error = e.apiErrorMessage(R.string.err_account_delete)
                         } finally {
                             loading = false
                         }
@@ -1563,7 +1574,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
             hasLoaded = true
         } catch (e: Exception) {
             if (!hasLoaded) {
-                error = e.apiErrorMessage("Failed to load language")
+                error = e.apiErrorMessage(R.string.err_language_load)
             }
         } finally {
             loading = false
@@ -1724,7 +1735,7 @@ fun AppLanguageScreen(onBack: () -> Unit) {
                                     Modifier
                                         .size(22.dp)
                                         .clip(RoundedCornerShape(11.dp))
-                                        .background(GotchaColors.BrandPurple),
+                                        .background(GotchaColors.BrandFill),
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Icon(
@@ -1782,7 +1793,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
             hasLoaded = true
         } catch (e: Exception) {
             if (!hasLoaded) {
-                error = e.apiErrorMessage("Failed to load native language")
+                error = e.apiErrorMessage(R.string.err_native_language_load)
             }
         } finally {
             loading = false
@@ -1799,7 +1810,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
             .padding(bottom = bottom),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        ProfileDirHeader("Native language", onBack)
+        ProfileDirHeader(uiString(R.string.ui_native_language), onBack)
         Column(
             Modifier.padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(20.dp),
@@ -1887,7 +1898,7 @@ fun NativeLanguageScreen(onBack: () -> Unit) {
                                 Modifier
                                     .size(22.dp)
                                     .clip(RoundedCornerShape(11.dp))
-                                    .background(GotchaColors.BrandPurple),
+                                    .background(GotchaColors.BrandFill),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Icon(

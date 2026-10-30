@@ -1,5 +1,8 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.util.uiString
+import app.gotcha.android.util.uiPlural
+import app.gotcha.android.R
 import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -111,7 +114,7 @@ fun VocabularyScreen(
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            if (items.isEmpty()) error = e.apiErrorMessage("Failed to load vocabulary")
+            if (items.isEmpty()) error = e.apiErrorMessage(R.string.err_vocab_load)
         } finally {
             loading = false
         }
@@ -350,7 +353,7 @@ fun VocabularyScreen(
                                     val on = chipFilter == chip
                                     val label = when (chip) {
                                         VocabChipFilter.All -> "all"
-                                        VocabChipFilter.Due -> "Due ($dueCount)"
+                                        VocabChipFilter.Due -> uiString(R.string.vocab_chip_due, dueCount)
                                         VocabChipFilter.Learning -> "learning"
                                         VocabChipFilter.Known -> "known"
                                     }
@@ -362,7 +365,7 @@ fun VocabularyScreen(
                                         color = if (on) Color.White else GotchaColors.TextMuted,
                                         modifier = Modifier
                                             .clip(RoundedCornerShape(8.dp))
-                                            .background(if (on) GotchaColors.WebAccent else Color.White)
+                                            .background(if (on) GotchaColors.BrandFill else GotchaColors.SurfaceCard)
                                             .border(1.dp, if (on) GotchaColors.WebAccent else GotchaColors.Border, RoundedCornerShape(8.dp))
                                             .clickable { chipFilter = chip }
                                             .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -397,8 +400,8 @@ fun VocabularyScreen(
                         item {
                             Text(
                                 buildString {
-                                    append("Showing ${filtered.size} of ${items.size}")
-                                    if (loading) append(" · refreshing…")
+                                    append(uiString(R.string.vocab_showing, filtered.size, items.size))
+                                    if (loading) append(uiString(R.string.vocab_refreshing))
                                 },
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
@@ -434,7 +437,7 @@ private fun VocabPageHeader(
         Column(modifier = Modifier.weight(1f)) {
             Text(androidx.compose.ui.res.stringResource(app.gotcha.android.R.string.x_vocabulary), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 22.sp, color = GotchaColors.Ink)
             Text(
-                "$total word${if (total == 1) "" else "s"} · $learning learning · $mastered mastered",
+                uiPlural(R.plurals.vocab_n_words, total) + " · " + uiString(R.string.vocab_summary_rest, learning, mastered),
                 fontFamily = Inter,
                 fontSize = 14.sp,
                 color = GotchaColors.TextSubtle,
@@ -445,14 +448,14 @@ private fun VocabPageHeader(
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(12.dp))
-                    .background(GotchaColors.WebAccent)
+                    .background(GotchaColors.BrandFill)
                     .clickable(onClick = onReview)
                     .padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(Icons.Outlined.Psychology, null, tint = Color.White, modifier = Modifier.size(16.dp))
-                Text("Review $dueCount due", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color.White)
+                Text(uiString(R.string.vocab_review_n_due, dueCount), fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, color = Color.White)
             }
         }
     }
@@ -481,7 +484,7 @@ private fun VocabEmptyPanel(title: String, description: String, actionLabel: Str
             color = Color.White,
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .background(GotchaColors.WebAccent)
+                .background(GotchaColors.BrandFill)
                 .clickable(onClick = onAction)
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         )
@@ -551,7 +554,7 @@ private fun VocabWordCard(
                     modifier = Modifier.padding(top = 2.dp),
                 )
                 Text(
-                    "Next ${formatVocabDueDate(item.dueAt)} · ${item.intervalDays ?: 0}d · ${item.repetitions ?: 0} reps",
+                    uiString(R.string.vocab_next_review, formatVocabDueDate(item.dueAt), item.intervalDays ?: 0, item.repetitions ?: 0),
                     fontFamily = Inter,
                     fontSize = 11.sp,
                     color = GotchaColors.TextSubtle,
@@ -608,11 +611,11 @@ internal fun formatVocabDueDate(iso: String?): String {
         val today = Instant.now().atZone(zone).toLocalDate()
         val diff = ChronoUnit.DAYS.between(today, due).toInt()
         when {
-            diff < -1 -> "${kotlin.math.abs(diff)}d overdue"
-            diff < 0 -> "Yesterday"
-            diff == 0 -> "Today"
-            diff == 1 -> "Tomorrow"
-            else -> "in ${diff}d"
+            diff < -1 -> uiString(R.string.vocab_overdue, kotlin.math.abs(diff))
+            diff < 0 -> uiString(R.string.common_yesterday)
+            diff == 0 -> uiString(R.string.common_today)
+            diff == 1 -> uiString(R.string.vocab_tomorrow)
+            else -> uiString(R.string.vocab_in_days, diff)
         }
     } catch (_: Exception) {
         iso.take(10)

@@ -87,16 +87,22 @@
             <intent-filter android:label="@string/open_with_gotcha">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <!-- B1 (lint AppLinkUrlError): file opens arrive as content:// URIs. -->
+                <data android:scheme="content" />
                 <data android:mimeType="application/pdf" />
             </intent-filter>
             <intent-filter android:label="@string/open_with_gotcha">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <!-- B1 (lint AppLinkUrlError): file opens arrive as content:// URIs. -->
+                <data android:scheme="content" />
                 <data android:mimeType="application/epub+zip" />
             </intent-filter>
             <intent-filter android:label="@string/open_with_gotcha">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
+                <!-- B1 (lint AppLinkUrlError): file opens arrive as content:// URIs. -->
+                <data android:scheme="content" />
                 <data android:mimeType="application/epub" />
             </intent-filter>
         </activity>

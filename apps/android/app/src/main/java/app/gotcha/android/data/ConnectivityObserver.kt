@@ -61,7 +61,23 @@ class ConnectivityObserver(context: Context) {
         refreshOnline()
     }
 
-    private fun anyValidated(): Boolean = networks.values.any { it } || currentOnline()
+    /** PS-11: last time our own API answered (any HTTP status). */
+    @Volatile private var lastApiReachableAt = 0L
+
+    /**
+     * PS-11: some networks never get NET_CAPABILITY_VALIDATED (VPN apps, filtered/private DNS blocking
+     * Google's probe) while the Gotcha API works fine. A real API response within [API_TRUST_MS] counts as
+     * online as long as some INTERNET network exists. Called from the OkHttp interceptor.
+     */
+    fun reportApiReachable() {
+        lastApiReachableAt = System.currentTimeMillis()
+        main.post { refreshOnline() }
+    }
+
+    private fun apiRecentlyReachable(): Boolean =
+        networks.isNotEmpty() && System.currentTimeMillis() - lastApiReachableAt < API_TRUST_MS
+
+    private fun anyValidated(): Boolean = networks.values.any { it } || currentOnline() || apiRecentlyReachable()
 
     private fun refreshOnline() {
         if (anyValidated()) {
@@ -85,5 +101,6 @@ class ConnectivityObserver(context: Context) {
 
     private companion object {
         const val OFFLINE_DEBOUNCE_MS = 2_000L
+        const val API_TRUST_MS = 60_000L
     }
 }

@@ -39,10 +39,14 @@ fun GotchaSystemBars(darkIcons: Boolean = !GotchaThemeState.isDark) {
                 },
             )
         }
+        // Nit: deprecated on API 35+ (edge-to-edge enforced there) but still needed for minSdk 24–34.
+        @Suppress("DEPRECATION")
         window.statusBarColor = AndroidColor.TRANSPARENT
+        @Suppress("DEPRECATION")
         window.navigationBarColor = AndroidColor.TRANSPARENT
         // Kill OEM contrast scrims so Telegram-style glass can blend into system nav.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            @Suppress("DEPRECATION")
             window.isStatusBarContrastEnforced = false
             window.isNavigationBarContrastEnforced = false
         }

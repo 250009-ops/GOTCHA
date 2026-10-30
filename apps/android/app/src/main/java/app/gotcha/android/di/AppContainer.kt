@@ -195,6 +195,8 @@ class AppContainer(context: Context) {
         .readTimeout(60, TimeUnit.SECONDS)
 
         .addInterceptor(clientPlatformInterceptor)
+        // PS-11: any HTTP response from our API proves we're online even if Android never validates the network.
+        .addInterceptor { chain -> chain.proceed(chain.request()).also { connectivityObserver.reportApiReachable() } }
         .addInterceptor(authInterceptor)
 
         .addInterceptor(refreshInterceptor)

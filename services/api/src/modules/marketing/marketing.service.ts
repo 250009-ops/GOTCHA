@@ -6,6 +6,7 @@ import { liveLearnerWhere, isFigmaSampleDisplayName } from '../../common/product
 import { atmosMinAmountSom } from '../billing/atmos.client';
 import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
+import { publicLearnerCount } from '../../common/public-learner-count';
 import { effectiveStreakCount } from '../../services/streak.service';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
@@ -155,8 +156,9 @@ export class MarketingService {
 
   constructor(private prisma: PrismaService) {}
 
+  /** Real live-learner count, or 0 (= hide the stat) below MARKETING_MIN_LEARNER_COUNT. No fallback figure. */
   async stats() {
-    const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
+    const learnerCount = publicLearnerCount(await this.prisma.user.count({ where: liveLearnerWhere() }));
     return {
       learnerCount,
       displayLearnerCount: learnerCount,

@@ -222,11 +222,13 @@ data class ContentItem(
     val currentSegmentId: String? = null,
 ) {
     fun resolvedStatus(): String = (publishStatus ?: status ?: "draft").lowercase()
-    fun catalogPriceUzs(): Double = priceUzs ?: priceUsd ?: 0.0
+    /** m1: UZS only. The old USD fallback showed a dollar amount as so'm. Null = no UZS price to display. */
+    fun catalogPriceUzs(): Double? = priceUzs?.takeIf { it > 0 }
+    fun hasAnyPrice(): Boolean = (priceUzs ?: 0.0) > 0 || (priceUsd ?: 0.0) > 0
     fun needsCatalogPayment(): Boolean {
         if (accessGranted == true) return false
-        if (accessGranted == false) return catalogPriceUzs() > 0
-        return isFree == false && catalogPriceUzs() > 0
+        if (accessGranted == false) return hasAnyPrice()
+        return isFree == false && hasAnyPrice()
     }
 }
 
@@ -1420,7 +1422,26 @@ data class MessagingPeer(
     val online: Boolean = false,
     val lastSeenAt: String? = null,
     val typing: Boolean = false,
+    /** P3b: set on GET messaging/peers/{id}. */
+    val blockedByMe: Boolean = false,
 )
+
+/** P3b report & block. `reason` is one of spam|harassment|inappropriate|underage|other. */
+@Serializable
+data class ReportUserRequest(
+    val reportedUserId: String,
+    val reason: String,
+    val details: String? = null,
+    val messageId: String? = null,
+    val conversationId: String? = null,
+    val alsoBlock: Boolean = false,
+)
+
+@Serializable
+data class ReportUserResponse(val id: String, val status: String? = null, val blocked: Boolean = false)
+
+@Serializable
+data class BlockResponse(val blocked: Boolean, val userId: String)
 
 @Serializable
 data class MessagingLang(

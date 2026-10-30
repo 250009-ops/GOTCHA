@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.BuildConfig
+import app.gotcha.android.ui.theme.badgeTone
 import app.gotcha.android.ui.theme.GotchaBlue
 
 import androidx.compose.foundation.background
@@ -38,7 +40,7 @@ import androidx.compose.material.icons.outlined.LocalFireDepartment
 import androidx.compose.material.icons.outlined.Psychology
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.Upload
-import androidx.compose.material.icons.outlined.ViewList
+import androidx.compose.material.icons.automirrored.outlined.ViewList
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -129,13 +131,14 @@ private fun itemSubtitle(item: ContentItem) = item.subtitle ?: item.description.
 private fun isUserImport(item: ContentItem) =
     item.contentType == "user_import" || item.contentSource == "user_import"
 
+// M2 §5: light pairs unchanged; dark pairs from team/design/M2-dark-tokens.md (all >= 8.8:1).
 private fun cefrColors(level: String): Pair<Color, Color> = when (level.lowercase()) {
-    "a1" -> Color(0xFFD1FAE5) to GotchaColors.SuccessText
-    "a2" -> Color(0xFFCCFBF1) to Color(0xFF0F766E)
-    "b1" -> Color(0xFFDBEAFE) to Color(0xFF1D4ED8)
-    "b2" -> Color(0xFFE0E7FF) to Color(0xFF4338CA)
-    "c1" -> GotchaBlue.B50 to GotchaBlue.B700
-    "c2" -> Color(0xFFFCE7F3) to Color(0xFFBE185D)
+    "a1" -> badgeTone(0xFFD1FAE5, 0xFF047857, 0xFF0F2A22, 0xFF6EE7B7).let { it.bg to it.fg }
+    "a2" -> badgeTone(0xFFCCFBF1, 0xFF0F766E, 0xFF0F2A2A, 0xFF5EEAD4).let { it.bg to it.fg }
+    "b1" -> badgeTone(0xFFDBEAFE, 0xFF1D4ED8, 0xFF13213D, 0xFF93C5FD).let { it.bg to it.fg }
+    "b2" -> badgeTone(0xFFE0E7FF, 0xFF4338CA, 0xFF1E2140, 0xFFC5CAFD).let { it.bg to it.fg }
+    "c1" -> badgeTone(0xFFEEF0FF, 0xFF2107AA, 0xFF1E2140, 0xFFC5CAFD).let { it.bg to it.fg }
+    "c2" -> badgeTone(0xFFFCE7F3, 0xFFBE185D, 0xFF3A1028, 0xFFF9A8D4).let { it.bg to it.fg }
     else -> GotchaColors.SurfaceMuted to GotchaColors.TextMuted
 }
 
@@ -607,7 +610,7 @@ private fun BrowseBody(
                         .padding(4.dp),
                 ) {
                     ViewToggle(Icons.Outlined.GridView, viewGrid) { onViewGrid(true) }
-                    ViewToggle(Icons.Outlined.ViewList, !viewGrid) { onViewGrid(false) }
+                    ViewToggle(Icons.AutoMirrored.Outlined.ViewList, !viewGrid) { onViewGrid(false) }
                 }
             }
         }
@@ -663,7 +666,7 @@ private fun BrowseBody(
                         filterLabel(tab),
                         modifier = Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(if (on) GotchaColors.WebAccent else GotchaColors.SurfaceCard)
+                            .background(if (on) GotchaColors.BrandFill else GotchaColors.SurfaceCard)
                             .border(1.dp, if (on) GotchaColors.WebAccent else GotchaColors.Border, RoundedCornerShape(50))
                             .clickable { onFilter(tab) }
                             .padding(horizontal = 14.dp, vertical = 6.dp),
@@ -731,7 +734,7 @@ private fun ViewToggle(icon: androidx.compose.ui.graphics.vector.ImageVector, ac
     Box(
         modifier = Modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(if (active) Color.White else Color.Transparent)
+            .background(if (active) GotchaColors.SurfaceCard else Color.Transparent)
             .clickable(onClick = onClick)
             .padding(6.dp),
     ) {
@@ -908,7 +911,11 @@ private fun ContinueReadingCard(item: ContentItem, onOpen: (String) -> Unit) {
             ) {
                 val pct = (item.progressPct ?: 0.0).roundToInt()
                 Text(
-                    if (item.needsCatalogPayment()) formatUzs(item.catalogPriceUzs()) else "$pct%",
+                    if (item.needsCatalogPayment()) {
+                        // m1: Play shows its own localized price in the billing sheet; never show our UZS list price there.
+                        val uzs = item.catalogPriceUzs()
+                        if (BuildConfig.ATMOS_CHECKOUT_ENABLED && uzs != null) formatUzs(uzs) else stringResource(R.string.library_paid)
+                    } else "$pct%",
                     fontFamily = Inter,
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
@@ -1119,7 +1126,7 @@ private fun EmptyLibrary(onImport: () -> Unit) {
             modifier = Modifier
                 .padding(top = 8.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(GotchaColors.WebAccent)
+                .background(GotchaColors.BrandFill)
                 .clickable { onImport() }
                 .padding(horizontal = 16.dp, vertical = 10.dp),
         )

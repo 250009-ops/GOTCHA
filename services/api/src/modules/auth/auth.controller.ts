@@ -42,6 +42,13 @@ export class AuthController {
     return this.auth.refresh(dto.refreshToken);
   }
 
+  /** m4: revoke this device's refresh token. Public (the access token may already be expired); idempotent. */
+  @Public()
+  @Post('logout')
+  logout(@Body() dto: RefreshDto) {
+    return this.auth.logout(dto.refreshToken);
+  }
+
   @Public()
   @Get('verify-email')
   verifyEmailGet(@Query('token') token: string) {

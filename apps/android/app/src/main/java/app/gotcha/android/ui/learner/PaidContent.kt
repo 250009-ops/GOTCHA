@@ -1,5 +1,6 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
@@ -24,13 +25,13 @@ import app.gotcha.android.ui.theme.GotchaColors
 import app.gotcha.android.ui.theme.Inter
 
 /** UI-26: catalog item that costs money (API `isFree=false` with a price). */
-fun ContentItem.isPaid(): Boolean = catalogPriceUzs() > 0.0 && (isFree == false || accessGranted != null)
+fun ContentItem.isPaid(): Boolean = hasAnyPrice() && (isFree == false || accessGranted != null)
 
 /** Paid and not yet owned — opening it leads to the Reader paywall (Google Play purchase). */
 fun ContentItem.isLocked(): Boolean = needsCatalogPayment()
 
 /**
- * Price/lock badge for library cards. Locked → lock + price; owned paid book → "Owned".
+ * Price/lock badge for library cards. Locked → lock + "Paid" (price only when ATMOS_CHECKOUT_ENABLED); owned paid book → "Owned".
  * Free items render nothing.
  */
 @Composable
@@ -50,7 +51,9 @@ fun PaidBadge(item: ContentItem, modifier: Modifier = Modifier) {
         if (locked) Icon(Icons.Outlined.Lock, contentDescription = null, tint = fg, modifier = Modifier.size(11.dp))
         Text(
             if (locked) {
-                formatSom(item.catalogPriceUzs())
+                // m1: price hidden on the Play build (Play shows its own localized price); UZS only, no USD fallback.
+                val uzs = item.catalogPriceUzs()
+                if (BuildConfig.ATMOS_CHECKOUT_ENABLED && uzs != null) formatSom(uzs) else stringResource(R.string.library_paid)
             } else {
                 stringResource(R.string.library_owned)
             },

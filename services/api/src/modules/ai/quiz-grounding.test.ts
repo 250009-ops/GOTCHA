@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { groundQuizQuestions, numbersGrounded, numbersIn } from './quiz-grounding';
+import { assertQuizHasQuestions, groundQuizQuestions, numbersGrounded, numbersIn, QuizUnavailableError } from './quiz-grounding';
 
 const passage = 'Es war im Oktober Anno 17, der großen Weihnachtsflut von 1717 folgte ein harter Winter.';
 
@@ -35,3 +35,21 @@ const cloze = groundQuizQuestions(
 assert.equal(cloze.length, 1);
 assert.equal(cloze[0].explanation, 'The flood of 1717.');
 console.log('quiz-grounding ok');
+
+// PS-01: adjacent numbers are not glued together.
+assert.deepEqual([...numbersIn('In 1717, 3 men came.')].sort(), ['1717', '3']);
+assert.deepEqual([...numbersIn('He had 3, 4 or 5 sons')].sort(), ['3', '4', '5']);
+assert.deepEqual([...numbersIn('It cost 2.50')], ['2.50']);
+assert.deepEqual([...numbersIn('In 1,717 and 12,000,000')].sort(), ['12000000', '1717']);
+assert.equal(
+  groundQuizQuestions(
+    [{ prompt: 'How many men came?', options: ['2', '3', '4', '5'], correctAnswer: '3' }],
+    'In 1717, 3 men came.',
+    { requireOptions: true },
+  ).length,
+  1,
+);
+// PS-02: an empty quiz is refused before a session/quota is touched.
+assert.throws(() => assertQuizHasQuestions([]), QuizUnavailableError);
+assert.deepEqual(assertQuizHasQuestions([1]), [1]);
+console.log('quiz-grounding PS-01/PS-02 tests passed');

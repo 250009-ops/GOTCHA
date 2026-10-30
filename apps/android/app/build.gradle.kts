@@ -36,6 +36,9 @@ android {
         versionName = derivedVersionName
         buildConfigField("String", "API_BASE_URL", "\"https://gotchaa.uz/api/v1/\"")
         buildConfigField("String", "WEB_BASE_URL", "\"https://gotchaa.uz\"")
+        // Play policy: the Android app sells digital goods through Google Play Billing only. The Atmos
+        // card checkout stays web-only (server config and keys are untouched).
+        buildConfigField("boolean", "ATMOS_CHECKOUT_ENABLED", "false")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -76,6 +79,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        // B1: java.time & friends on minSdk 24 (Android 7.x) need core-library desugaring.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     kotlinOptions {
@@ -87,6 +92,14 @@ android {
         buildConfig = true
     }
 
+    // M1: in-app language switching needs every locale in the base APK; Play language splits would
+    // drop ru/uz for users whose device locale is English (lint AppBundleLocaleChanges).
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -95,6 +108,7 @@ android {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     val composeBom = platform("androidx.compose:compose-bom:2025.05.01")
     implementation(composeBom)
     androidTestImplementation(composeBom)

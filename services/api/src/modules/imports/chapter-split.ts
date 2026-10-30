@@ -221,6 +221,23 @@ type HeadingKind = 'explicit' | 'inferred';
 
 type ParsedHeading = { title: string; consumeNext: boolean; kind: HeadingKind };
 
+const SPACED_CHAPTER = new RegExp(`^(${CHAPTER_WORD})\\s*(${NUM})\\.?$`, 'i');
+
+/**
+ * PS-05: "C H A P T E R I" → "CHAPTER I". Word gaps are 2+ spaces; single spaces sit between letters.
+ * Returns null unless the collapsed text is exactly <chapter word> <number>, so display words
+ * ("L E I P Z I G") stay ignored.
+ */
+export function unspaceChapterHeading(raw: string): string | null {
+  const collapsed = raw
+    .trim()
+    .split(/\s{2,}/)
+    .map((w) => w.replace(/\s+/g, ''))
+    .join('');
+  const m = collapsed.match(SPACED_CHAPTER);
+  return m ? `${m[1]} ${m[2].toUpperCase()}` : null;
+}
+
 function headingFromLine(
   line: string,
   nextLine?: string,
@@ -230,7 +247,11 @@ function headingFromLine(
   if (isDialogueLine(raw)) return null;
   if (IMAGE_CAPTION.test(raw) || isOcrImageJunkLine(raw)) return null;
   // UI-19: letter-spaced display headings ("L E I P Z I G") are not "Chapter L" + title.
-  if (LETTER_SPACED.test(raw)) return null;
+  // PS-05: but a letter-spaced *chapter* heading ("C H A P T E R I", "Г Л А В А  2") is one.
+  if (LETTER_SPACED.test(raw)) {
+    const unspaced = unspaceChapterHeading(raw);
+    return unspaced ? headingFromLine(unspaced, nextLine) : null;
+  }
 
   const md = raw.match(MARKDOWN_HEADING);
   if (md) {

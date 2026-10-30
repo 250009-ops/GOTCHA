@@ -1,5 +1,7 @@
 ﻿package app.gotcha.android.ui.auth
 
+import kotlinx.coroutines.CancellationException
+import androidx.compose.material3.minimumInteractiveComponentSize
 import android.content.Context
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.CubicBezierEasing
@@ -146,6 +148,8 @@ fun SignInScreen(
             try {
                 val res = container.authRepository.login(email.trim(), password)
                 onSignedIn(res.isAdmin)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(
                     "GotchaAuth",
@@ -297,7 +301,7 @@ fun SignUpScreen(
             (slideInHorizontally(tween(300, easing = emphasized)) { dir * slidePx } + fadeIn(tween(300, easing = emphasized)))
                 .togetherWith(slideOutHorizontally(tween(300, easing = emphasized)) { -dir * slidePx } + fadeOut(tween(150)))
         },
-        label = "signup-step",
+        label = "signup-step", // i18n-ok: animation label
     ) { current ->
     if (current == "languages") {
         AuthScaffold(
@@ -595,7 +599,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
             label = stringResource(R.string.auth_email_label),
             value = email,
             onValueChange = { email = it },
-            placeholder = "sarah@example.com",
+            placeholder = "name@example.com", // i18n-ok: example address
             keyboardType = KeyboardType.Email,
         )
         if (error != null) {
@@ -1031,9 +1035,12 @@ private fun AuthLanguageSearchField(
                                 Icons.Outlined.Close,
                                 contentDescription = stringResource(R.string.auth_remove_language, opt.englishLabel),
                                 tint = GotchaColors.BrandPurple,
+                                // Touch target: 48 dp hit area around the 16 dp glyph (was 16 dp).
                                 modifier = Modifier
-                                    .size(16.dp)
-                                    .clickable { onRemove(opt.code) },
+                                    .minimumInteractiveComponentSize()
+                                    .clickable(role = androidx.compose.ui.semantics.Role.Button) { onRemove(opt.code) }
+                                    .padding(2.dp)
+                                    .size(16.dp),
                             )
                         }
                     }
