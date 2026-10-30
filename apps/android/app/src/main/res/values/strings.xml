@@ -69,6 +69,7 @@
     <string name="auth_sign_in_instead">Sign in instead</string>
     <string name="auth_sign_in_link">Sign in</string>
     <string name="auth_sign_in_sub">Sign in to continue learning</string>
+    <string name="auth_sign_up_cta">Sign up</string>
     <string name="auth_sign_up_link">Sign up</string>
     <string name="auth_sign_up_sub">Start your reading journey today</string>
     <string name="auth_step_of">Step %1$d of %2$d</string>

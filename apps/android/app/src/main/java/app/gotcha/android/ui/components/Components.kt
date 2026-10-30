@@ -127,6 +127,8 @@ fun GotchaPrimaryButton(
     containerColor: Color = GotchaColors.BrandFill,
     contentColor: Color = GotchaColors.OnBrandFill,
     shapeRadius: Int = 14,
+    // P3b-08: allow a 2-line label in narrow (half-width) buttons instead of an ellipsis.
+    maxLines: Int = 1,
 ) {
     val shape = RoundedCornerShape(shapeRadius.dp)
     val minHeight = if (shapeRadius >= 16) 54.dp else 52.dp
@@ -168,9 +170,11 @@ fun GotchaPrimaryButton(
                     fontWeight = FontWeight.Bold,
                     fontSize = fontSize,
                     color = contentColor,
-                    maxLines = 1,
+                    maxLines = maxLines,
                     overflow = TextOverflow.Ellipsis,
-                    softWrap = false,
+                    softWrap = maxLines > 1,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    lineHeight = (fontSize.value + 2).sp,
                 )
             }
         }

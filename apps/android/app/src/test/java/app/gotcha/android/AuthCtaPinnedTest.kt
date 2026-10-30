@@ -23,7 +23,13 @@ class AuthCtaPinnedTest {
 
     @Test fun oneShotScrollHackIsGone() {
         assertFalse(src.contains("authCta"))
-        assertFalse(src.contains("BringIntoViewRequester"))
+        // The one-shot CTA bring-into-view must not come back in the scaffold (P3b-08 uses one only in the search field).
+        assertFalse(src.substringAfter("private fun AuthScaffold(").contains("BringIntoViewRequester"))
+    }
+
+    @Test fun languageSearchFieldReBringsIntoViewOnIme() {
+        val body = src.substringAfter("private fun AuthLanguageSearchField(").substringBefore("private fun AuthScaffold(")
+        assertTrue(body.contains("bringIntoViewRequester(") && body.contains("WindowInsets.ime"))
     }
 
     @Test fun bottomBarSitsInsideImePaddedColumnAfterScroll() {

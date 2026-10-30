@@ -68,6 +68,7 @@
     <string name="auth_sign_in_instead">Kirish</string>
     <string name="auth_sign_in_link">Kirish</string>
     <string name="auth_sign_in_sub">Davom etish uchun kiring</string>
+    <string name="auth_sign_up_cta">Yakunlash</string>
     <string name="auth_sign_up_link">Roʻyxatdan oʻtish</string>
     <string name="auth_sign_up_sub">Oʻqish sayohatingizni bugun boshlang</string>
     <string name="auth_step_of">%2$d bosqichdan %1$d-si</string>

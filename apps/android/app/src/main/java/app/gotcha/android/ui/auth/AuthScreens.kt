@@ -2,6 +2,8 @@
 
 import app.gotcha.android.data.api.networkUserMessage
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.relocation.bringIntoViewRequester
+import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.layout.ime
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -324,6 +326,7 @@ fun SignUpScreen(
                         containerColor = GotchaColors.SurfaceMuted,
                         contentColor = GotchaColors.BrandNavy,
                         shapeRadius = 14,
+                        maxLines = 2,
                         enabled = !loading,
                         modifier = Modifier.weight(1f),
                         onClick = {
@@ -333,7 +336,9 @@ fun SignUpScreen(
                         },
                     )
                     GotchaPrimaryButton(
-                        text = stringResource(R.string.auth_sign_up_link),
+                        // P3b-08: short localized CTA + 2-line wrap (ru/uz truncated at 360dp / 1.3x).
+                        text = stringResource(R.string.auth_sign_up_cta),
+                        maxLines = 2,
                         loading = loading,
                         enabled = nativeLanguage != null && targetLanguages.isNotEmpty(),
                         shapeRadius = 14,
@@ -1013,7 +1018,22 @@ private fun AuthLanguageSearchField(
         options.filter { it.code !in selectedCodes && it.code !in exclude && it.matchesQuery(query) }.take(8)
     }
 
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    // P3b-08: the field's own bring-into-view fires on focus, *before* the IME finishes animating in
+    // and shrinks the scroll viewport above the pinned bottomBar, so the field ended up under the bar.
+    // Re-request bring-into-view (field + suggestions) whenever it is focused and the IME height changes.
+    val bringIntoView = remember { BringIntoViewRequester() }
+    var focused by remember { mutableStateOf(false) }
+    val imeBottom = WindowInsets.ime.getBottom(LocalDensity.current)
+    LaunchedEffect(focused, imeBottom, open, suggestions.size) {
+        if (focused) {
+            withFrameNanos { }
+            bringIntoView.bringIntoView()
+        }
+    }
+    Column(
+        modifier = Modifier.bringIntoViewRequester(bringIntoView),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
@@ -1082,7 +1102,10 @@ private fun AuthLanguageSearchField(
                     modifier = Modifier
                         .weight(1f)
                         .height(24.dp)
-                        .onFocusChanged { open = it.isFocused || query.isNotBlank() },
+                        .onFocusChanged {
+                        focused = it.isFocused
+                        open = it.isFocused || query.isNotBlank()
+                    },
                     decorationBox = { inner ->
                         Box {
                             if (query.isEmpty()) {

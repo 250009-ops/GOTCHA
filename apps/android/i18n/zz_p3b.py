@@ -2,6 +2,8 @@
 # Loaded last by gen.py (zz_ prefix), so these win over core/extra/flows/reader/screens and reg_*.json.
 # fmt: off
 S = {
+    # P3b-08: short step-2 CTA so it fits a half-width bottom-bar button at 360dp / 1.3x.
+    'auth_sign_up_cta': ('Sign up', 'Готово', 'Yakunlash'),
     'auth_err_network': ("Couldn't reach GOTCHA. Try again in a moment.", 'Не удалось связаться с GOTCHA. Повторите попытку чуть позже.', 'GOTCHA bilan bogʻlanib boʻlmadi. Birozdan soʻng qayta urinib koʻring.'),
     'auth_search_learn': ('Search a language to add…', 'Найдите язык…', 'Til qidiring…'),
     'auth_search_native': ('Search your native language…', 'Найдите родной язык…', 'Ona tilingizni qidiring…'),

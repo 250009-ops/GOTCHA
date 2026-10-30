@@ -68,6 +68,7 @@
     <string name="auth_sign_in_instead">Войти</string>
     <string name="auth_sign_in_link">Войти</string>
     <string name="auth_sign_in_sub">Войдите, чтобы продолжить</string>
+    <string name="auth_sign_up_cta">Готово</string>
     <string name="auth_sign_up_link">Зарегистрироваться</string>
     <string name="auth_sign_up_sub">Начните читать уже сегодня</string>
     <string name="auth_step_of">Шаг %1$d из %2$d</string>
