@@ -1,0 +1,180 @@
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { ChevronDown } from 'lucide-react';
+import { UI_LANGUAGE_PICKER, UI_LANGUAGES, type UiLanguage } from '@gotcha/shared';
+import { UiLanguageFlag } from './UiLanguageFlag';
+import { cn } from './ui/utils';
+
+const MENU_MIN_WIDTH = 168;
+const MENU_GAP_PX = 6;
+
+export interface UiLanguageDropdownProps {
+  value: UiLanguage;
+  onChange: (code: UiLanguage) => void;
+  ariaLabel: string;
+  className?: string;
+  variant?: 'default' | 'light';
+  compact?: boolean;
+}
+
+function MenuPortal({
+  open,
+  onClose,
+  anchorRef,
+  ariaLabel,
+  borderClass,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  ariaLabel: string;
+  borderClass: string;
+  children: ReactNode;
+}) {
+  const [pos, setPos] = useState<{ top: number; right: number; minWidth: number } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !anchorRef.current) {
+      setPos(null);
+      return;
+    }
+    const update = () => {
+      const rect = anchorRef.current!.getBoundingClientRect();
+      setPos({
+        top: rect.bottom + MENU_GAP_PX,
+        right: window.innerWidth - rect.right,
+        minWidth: Math.max(rect.width, MENU_MIN_WIDTH),
+      });
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('scroll', update, true);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('scroll', update, true);
+    };
+  }, [open, anchorRef]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  if (!open || !pos) return null;
+
+  return createPortal(
+    <>
+      <button
+        type="button"
+        tabIndex={-1}
+        aria-label="Close language menu"
+        className="fixed inset-0 z-[100] cursor-default bg-transparent"
+        onClick={onClose}
+      />
+      <ul
+        role="listbox"
+        aria-label={ariaLabel}
+        style={{ top: pos.top, right: pos.right, minWidth: pos.minWidth }}
+        className={cn(
+          'fixed z-[110] overflow-hidden rounded-xl border bg-white py-1 shadow-lg shadow-slate-900/10',
+          borderClass,
+        )}
+      >
+        {children}
+      </ul>
+    </>,
+    document.body,
+  );
+}
+
+export function UiLanguageDropdown({
+  value,
+  onChange,
+  ariaLabel,
+  className,
+  variant = 'default',
+  compact = false,
+}: UiLanguageDropdownProps) {
+  const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const current = UI_LANGUAGE_PICKER[value];
+  const isLight = variant === 'light';
+
+  const menuItems = UI_LANGUAGES.map((code) => {
+    const item = UI_LANGUAGE_PICKER[code];
+    const selected = code === value;
+    return (
+      <li key={code} role="presentation">
+        <button
+          type="button"
+          role="option"
+          aria-selected={selected}
+          aria-label={item.nativeName}
+          onClick={() => {
+            onChange(code);
+            setOpen(false);
+          }}
+          className={cn(
+            'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
+            selected ? 'bg-[#155dfc] text-white' : 'text-[#101828] hover:bg-g-learning-bg',
+          )}
+        >
+          <UiLanguageFlag lang={code} />
+          <span className="truncate font-medium lg:hidden">{item.shortName}</span>
+          <span className="hidden truncate font-medium lg:inline">{item.nativeName}</span>
+        </button>
+      </li>
+    );
+  });
+
+  return (
+    <div className={cn('relative shrink-0', className)}>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-label={`${ariaLabel}: ${current.nativeName}`}
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          'inline-flex items-center rounded-full border font-semibold transition-colors touch-manipulation',
+          compact
+            ? 'h-8 gap-1.5 px-2 text-xs'
+            : 'h-8 gap-1.5 px-2 text-xs lg:h-9 lg:gap-2 lg:px-3 lg:text-sm',
+          isLight
+            ? 'border-white/25 bg-white/10 text-white hover:bg-white/15'
+            : 'border-[#c7d2fe] bg-white text-[#364153] hover:border-[#a5b4fc] hover:bg-[#fafaff]',
+        )}
+      >
+        <UiLanguageFlag lang={value} />
+        <span className={cn('truncate', compact ? 'inline' : 'lg:hidden')}>{current.shortName}</span>
+        {!compact && (
+          <span className="hidden max-w-[5.75rem] truncate lg:inline">{current.nativeName}</span>
+        )}
+        <ChevronDown
+          className={cn(
+            'shrink-0 opacity-60 transition-transform',
+            compact ? 'w-3 h-3' : 'w-3.5 h-3.5',
+            open && 'rotate-180',
+          )}
+          aria-hidden
+        />
+      </button>
+
+      <MenuPortal
+        open={open}
+        onClose={() => setOpen(false)}
+        anchorRef={triggerRef}
+        ariaLabel={ariaLabel}
+        borderClass={isLight ? 'border-white/20' : 'border-[#e5e7eb]'}
+      >
+        {menuItems}
+      </MenuPortal>
+    </div>
+  );
+}

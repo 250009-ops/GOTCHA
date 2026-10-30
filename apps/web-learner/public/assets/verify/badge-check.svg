@@ -1,0 +1,7 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="30" height="30" viewBox="0 0 30 30" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="badge-check">
+<rect x="1" y="1" width="28" height="28" rx="14" fill="#10B981"/>
+<rect x="1" y="1" width="28" height="28" rx="14" stroke="white" stroke-width="2"/>
+<path id="check-icon" d="M22 8L12.375 22L8 15.6364" stroke="white" stroke-width="2" stroke-linecap="round"/>
+</g>
+</svg>
