@@ -49,6 +49,9 @@ export function aiJudgeEligible(given: string, expected: string): boolean {
   return damerauLevenshtein(g.toLowerCase(), e.toLowerCase()) <= Math.max(4, Math.ceil(e.length * 0.75));
 }
 
+/** QA N4: cap on wrong-answer retries per daily session. */
+export const MAX_REQUEUES_PER_SESSION = 8;
+
 @Injectable()
 export class PracticeEngineService {
   constructor(
@@ -389,8 +392,15 @@ export class PracticeEngineService {
       }
       throw e;
     }
-    if (rating === 'again') {
-      await this.prisma.practiceSessionItem.update({ where: { id: item.id }, data: { requeue: true } });
+    // QA N4: an item is retried at most once, and a session gets at most MAX_REQUEUES_PER_SESSION retries.
+    let requeue = false;
+    if (rating === 'again' && item.attempts === 0) {
+      const retries = await this.prisma.practiceSessionItem.count({ where: { sessionId: session.id, attempts: { gte: 2 } } })
+        + await this.prisma.practiceSessionItem.count({ where: { sessionId: session.id, requeue: true } });
+      if (retries < MAX_REQUEUES_PER_SESSION) {
+        await this.prisma.practiceSessionItem.update({ where: { id: item.id }, data: { requeue: true } });
+        requeue = true;
+      }
     }
     const progress = await this.addXp(userId, xp, { allowStreak: !extra || (await this.queueEmpty(userId)) });
     if (progress.xpGained > 0) {
@@ -408,7 +418,7 @@ export class PracticeEngineService {
       translation: vocab.translation,
       context: vocab.contextSentence,
       rating,
-      requeue: rating === 'again',
+      requeue,
       nextDueAt: updated.dueAt,
       intervalDays: updated.intervalDays,
       mastered: updated.mastered,

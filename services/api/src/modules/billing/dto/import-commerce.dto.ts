@@ -1,8 +1,14 @@
-import { Transform } from 'class-transformer';
-import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, Length, Matches } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, Length, Matches, MaxLength, ValidateNested } from 'class-validator';
 import { ImportType } from '@prisma/client';
 
 export class ImportQuoteDto {
+  /** Admin-managed promo code (PricingService); validated server-side. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  promoCode?: string;
+
   @IsEnum(ImportType)
   importType!: ImportType;
 
@@ -27,6 +33,13 @@ export class ImportQuoteDto {
   @Min(1)
   @Max(4000)
   pageCount?: number;
+}
+
+export class CatalogCheckoutDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  promoCode?: string;
 }
 
 export class ImportCheckoutDto extends ImportQuoteDto {
@@ -60,4 +73,20 @@ export class ImportCancelDto {
   @IsString()
   @Length(0, 500)
   reason?: string;
+}
+
+/** Android → server after a Play purchase; the server re-verifies the token with Google. */
+export class VerifyPlayPurchaseDto {
+  @IsString()
+  @Matches(/^[a-z0-9][a-z0-9._]{0,98}$/)
+  sku!: string;
+
+  @IsString()
+  @Length(10, 4096)
+  purchaseToken!: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ImportQuoteDto)
+  importQuote?: ImportQuoteDto;
 }

@@ -7,6 +7,7 @@ import {
   preApplyPayment,
   retryOtp,
 } from '../lib/importBilling';
+import { PromoCodeField } from './PromoCodeField';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
 type PayStep = 'price' | 'card' | 'otp' | 'celebrate';
@@ -70,6 +71,7 @@ export function CatalogPaywall({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [canResendOtp, setCanResendOtp] = useState(false);
+  const [promoCode, setPromoCode] = useState<string | null>(null);
   const unlockedRef = useRef(onUnlocked);
   unlockedRef.current = onUnlocked;
 
@@ -112,7 +114,7 @@ export function CatalogPaywall({
     setLoading(true);
     setError(null);
     try {
-      const checkout = await checkoutCatalog(contentId);
+      const checkout = await checkoutCatalog(contentId, promoCode ?? undefined);
       if (checkout.step === 'done' || checkout.accessGranted) {
         setStep('celebrate');
         return;
@@ -293,6 +295,10 @@ export function CatalogPaywall({
         <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
           <p className="text-xs text-red-600">{error}</p>
         </div>
+      )}
+
+      {step === 'price' && (
+        <PromoCodeField applied={promoCode} busy={loading} onApply={(c) => setPromoCode(c)} onRemove={() => setPromoCode(null)} />
       )}
 
       {step === 'price' && (

@@ -43,6 +43,7 @@ async function bootstrap() {
     bodyParser: false,
   });
   app.set('trust proxy', 1);
+  app.disable('x-powered-by'); // BUG-11
   // Import paste / admin ingest can carry long novels; everything else stays small.
   app.use('/api/v1/imports', json({ limit: '24mb' }));
   app.use('/api/v1/admin/content', json({ limit: '24mb' }));

@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   Logger,
+  Optional,
   OnModuleDestroy,
   OnModuleInit,
   NotFoundException,
@@ -15,6 +16,7 @@ import { formatIsAllowed, normalizeAllowedFormats, normalizeImportFormat } from 
 import { MAX_BILLABLE_PAGES } from '../imports/pdf-page-count';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AtmosClient, validateCardForAtmos } from './atmos.client';
+import { PricingService, promoDiscountTiyins } from './pricing.service';
 import {
   catalogAccessGranted,
   catalogContentIdFromFormat,
@@ -39,6 +41,7 @@ export type ImportQuoteInput = {
   textLength?: number;
   wordCount?: number;
   pageCount?: number;
+  promoCode?: string;
 };
 
 export type ImportQuoteResult = {
@@ -58,6 +61,10 @@ export type ImportQuoteResult = {
   /** True if amountUzs < minAmountUzs — payment will fail. */
   belowMinimum: boolean;
   freeLimits: LearnerImportAllowance;
+  /** Price before the promo (UZS); equals amountUzs when no promo applies. */
+  listAmountUzs: number;
+  discountUzs: number;
+  promo: { id: string; code: string } | null;
 };
 
 export type LearnerImportAllowance = {
@@ -108,6 +115,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   constructor(
     private prisma: PrismaService,
     private atmos: AtmosClient,
+    @Optional() private pricing?: PricingService,
   ) {}
 
   gatewayEnabled(): boolean {
@@ -233,6 +241,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
   async findTier(pages: number) {
     const tiers = await this.prisma.importPageTier.findMany({
+      where: { active: true },
       orderBy: [{ minPages: 'asc' }, { sortOrder: 'asc' }],
     });
     return (
@@ -272,7 +281,16 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     // Minimum amount required by Atmos (configurable, default 500 soʻm)
     const minAmountTiyins = this.atmos.minAmountTiyins();
     const minAmountUzs = Math.ceil(minAmountTiyins / 100);
-    const effectiveAmount = isFree ? 0 : priceUzs;
+    // Promo (admin-managed): only on a payable quote; capped at 70% and never below the Atmos minimum.
+    let promo: { id: string; code: string } | null = null;
+    let discountTiyins = 0;
+    if (input.promoCode?.trim() && !isFree && gatewayEnabled && amountTiyins > 0 && this.pricing) {
+      const p = await this.pricing.resolvePromo(input.promoCode, userId, 'imports');
+      discountTiyins = promoDiscountTiyins(amountTiyins, p, minAmountTiyins);
+      promo = { id: p.id, code: p.code };
+    }
+    const chargedTiyins = amountTiyins - discountTiyins;
+    const effectiveAmount = isFree ? 0 : Math.round(chargedTiyins / 100);
     const belowMinimum = !isFree && effectiveAmount > 0 && effectiveAmount < minAmountUzs;
 
     return {
@@ -289,8 +307,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
             priceUzs,
           }
         : null,
-      amountUzs: isFree ? 0 : priceUzs,
-      amountTiyins: isFree ? 0 : amountTiyins,
+      amountUzs: isFree ? 0 : effectiveAmount,
+      amountTiyins: isFree ? 0 : chargedTiyins,
+      listAmountUzs: isFree ? 0 : priceUzs,
+      discountUzs: isFree ? 0 : Math.round(discountTiyins / 100),
+      promo: isFree ? null : promo,
       currency: 'UZS',
       isFree,
       freeReason,
@@ -371,6 +392,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         estimatedPages: quote.estimatedPages,
         tierId: quote.tier?.id,
         amountTiyins: quote.amountTiyins,
+        listAmountTiyins: quote.listAmountUzs * 100,
+        promoCodeId: quote.promo?.id ?? null,
         account,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         providerPaymentId: String(atmosTx.transactionId),
@@ -623,6 +646,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         })).count;
         if (revoked > 0) await tx.contentItem.update({ where: { id: contentId }, data: { salesCount: { decrement: revoked } } });
       }
+      // Unified ledger: the unlock this payment granted (any source) is revoked with it.
+      await tx.entitlement.updateMany({
+        where: { importPaymentId: payment.id, status: 'active' },
+        data: { status: 'revoked', revokedReason: 'refund' },
+      });
       await tx.auditLog.create({
         data: { actorId: audit.actorId, action: audit.action, entityType: 'import_payment', entityId: payment.id, metadata: { ...(audit.metadata as object), accessRevoked: revoked } },
       });
@@ -718,6 +746,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (count !== 1) return false;
     const paid = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
     if (paid) await this.fulfillCatalogPurchase(paid);
+    await this.pricing?.redeemForPayment(paymentId).catch((e) => this.logger.error(`Promo redeem failed for ${paymentId}: ${(e as Error).message}`));
     return true;
   }
 
@@ -899,7 +928,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async catalogCheckout(userId: string, contentId: string, isAdmin?: boolean) {
+  async catalogCheckout(userId: string, contentId: string, isAdmin?: boolean, promoCode?: string) {
     const access = await this.catalogAccess(userId, contentId, isAdmin);
     if (access.accessGranted) {
       return {
@@ -916,8 +945,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       throw new ServiceUnavailableException('Payment gateway is not available for catalog purchases');
     }
 
-    const amountTiyins = Math.round(access.priceUzs * 100);
+    const listTiyins = Math.round(access.priceUzs * 100);
     const minTiyins = this.atmos.minAmountTiyins();
+    const promo = promoCode?.trim() && this.pricing ? await this.pricing.resolvePromo(promoCode, userId, 'catalog') : null;
+    const amountTiyins = listTiyins - (promo ? promoDiscountTiyins(listTiyins, promo, minTiyins) : 0);
     if (amountTiyins < minTiyins) {
       throw new BadRequestException(
         'Payment could not be processed for this book. Please try again later or contact support.',
@@ -938,6 +969,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         contentFormat: catalogPaymentFormat(contentId),
         estimatedPages: 1,
         amountTiyins,
+        listAmountTiyins: listTiyins,
+        promoCodeId: promo?.id ?? null,
         account,
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         providerPaymentId: String(atmosTx.transactionId),
@@ -956,13 +989,14 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** M3: idempotent per payment (unique import_payment_id); sales count moves only when a row is created. */
-  private async fulfillCatalogPurchase(payment: {
+  async fulfillCatalogPurchase(payment: {
     id: string;
     userId: string;
     status: ImportPaymentStatus;
     contentFormat: string;
     amountTiyins: number;
     providerPaymentId: string | null;
+    provider?: string;
   }) {
     if (payment.status !== ImportPaymentStatus.paid) return;
     const contentId = catalogContentIdFromFormat(payment.contentFormat);
@@ -975,12 +1009,20 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
             contentId,
             amountUsd: payment.amountTiyins / 100,
             status: PurchaseStatus.completed,
-            provider: 'atmos',
+            provider: payment.provider ?? 'atmos',
             providerRef: payment.providerPaymentId,
             importPaymentId: payment.id,
           },
         }),
         this.prisma.contentItem.update({ where: { id: contentId }, data: { salesCount: { increment: 1 } } }),
+        this.prisma.entitlement.createMany({
+          data: [{
+            userId: payment.userId, kind: 'catalog_book', contentId, importPaymentId: payment.id,
+            source: payment.provider === 'google_play' ? 'google_play' : 'atmos',
+            sourceRef: payment.id,
+          }],
+          skipDuplicates: true,
+        }),
       ]);
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return; // already fulfilled

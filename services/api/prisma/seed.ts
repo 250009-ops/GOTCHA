@@ -195,41 +195,18 @@ async function main() {
   // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
   // Premium: unlimited.
   const UNLIMITED = 1_000_000;
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'free' },
-    update: {
-      name: 'Free',
-      priceMonthly: 0,
-      offlineEnabled: false,
-    },
-    create: {
-      tier: 'free',
-      name: 'Free',
-      priceMonthly: 0,
-      aiDailyQuota: 50,
-      importLimit: 15,
-      offlineEnabled: false,
-    },
-  });
-
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'premium' },
-    update: {
-      name: 'Premium',
-      priceMonthly: 9,
-      aiDailyQuota: UNLIMITED,
-      importLimit: UNLIMITED,
-      offlineEnabled: true,
-    },
-    create: {
-      tier: 'premium',
-      name: 'Premium',
-      priceMonthly: 9,
-      aiDailyQuota: UNLIMITED,
-      importLimit: UNLIMITED,
-      offlineEnabled: true,
-    },
-  });
+  // Prices/limits come from prisma/pricing-seed.json (PRICING.md §7, non-PROPOSAL rows); admins edit them later.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const pricing = require('./pricing-seed.json') as {
+    subscriptionPlans: Array<{ tier: 'free' | 'premium'; name: string; nameI18n: Record<string, string>; priceMonthly: number; period: string; aiDailyQuota: number; importLimit: number; offlineEnabled: boolean; features: string[] }>;
+  };
+  for (const [i, p] of pricing.subscriptionPlans.entries()) {
+    const data = {
+      name: p.name, priceMonthly: p.priceMonthly, aiDailyQuota: Math.min(p.aiDailyQuota, UNLIMITED), importLimit: Math.min(p.importLimit, UNLIMITED),
+      offlineEnabled: p.offlineEnabled, nameI18n: p.nameI18n, period: p.period, features: p.features, active: true, sortOrder: i,
+    };
+    await prisma.subscriptionPlan.upsert({ where: { tier: p.tier }, update: data, create: { tier: p.tier, ...data } });
+  }
 
   const license = await prisma.license.upsert({
     where: { id: '00000000-0000-4000-8000-000000000001' },

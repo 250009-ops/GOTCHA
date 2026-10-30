@@ -89,7 +89,7 @@ export default function StatsPage() {
   const streakGoalSub =
     todayMinutes >= dailyGoalMinutes
       ? copy.stats.goalProgress(100)
-      : `${Math.max(0, dailyGoalMinutes - todayMinutes)}${copy.commonExt.minutes} · ${copy.stats.dailyGoal}`;
+      : `${Math.max(0, dailyGoalMinutes - todayMinutes)} ${copy.commonExt.minutes} · ${copy.stats.dailyGoal}`;
   const totalReadMinutes = apiStats?.totalReadMinutes ?? 0;
   const rangeDays = range === '7d' ? 7 : 30;
   const avgMinPerDay = Math.round(totalReadMinutes / rangeDays);
@@ -182,9 +182,9 @@ export default function StatsPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <KpiCard value={`${formatStreakCount(currentStreak)} ${copy.commonExt.days}`} label={copy.statsPage.currentStreak} color="text-[#bb4d00] bg-[#fffbeb] border-[#fee685]" />
         <KpiCard
-          value={`${Math.floor(totalReadMinutes / 60)}${copy.commonExt.hours} ${totalReadMinutes % 60}${copy.commonExt.minutes}`}
+          value={`${Math.floor(totalReadMinutes / 60)} ${copy.commonExt.hours} ${totalReadMinutes % 60} ${copy.commonExt.minutes}`}
           label={copy.statsPage.readingTime}
-          sub={hasActivity ? `${copy.statsPage.dailyAverage} ${avgMinPerDay}${copy.commonExt.minutes}` : undefined}
+          sub={hasActivity ? `${copy.statsPage.dailyAverage} ${avgMinPerDay} ${copy.commonExt.minutes}` : undefined}
           color="text-g-blue-700 bg-g-blue-50 border-g-blue-200"
         />
         <KpiCard
@@ -194,7 +194,7 @@ export default function StatsPage() {
           color="text-g-learning-text bg-g-learning-bg border-[#bedbff]"
         />
         <KpiCard
-          value={`${todayMinutes}${copy.commonExt.minutes}`}
+          value={`${todayMinutes} ${copy.commonExt.minutes}`}
           label={copy.stats.todayReading}
           sub={streakGoalSub}
           color="text-[#364153] bg-[#f9fafb] border-[#e5e7eb]"

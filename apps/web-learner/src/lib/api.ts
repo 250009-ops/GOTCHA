@@ -47,6 +47,8 @@ export function setTokens(tokens: AuthTokens) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem('gotcha.appTheme'); // QA N6: theme is per-account; reset to system after logout
+  document.documentElement.removeAttribute('data-theme');
 }
 
 let refreshPromise: Promise<string | null> | null = null;

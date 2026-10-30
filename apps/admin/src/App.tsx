@@ -4,6 +4,7 @@ import AiUsagePage from './pages/AiUsagePage';
 import ContentEditorPage from './pages/ContentEditorPage';
 import ContentPage from './pages/ContentPage';
 import OverviewPage from './pages/OverviewPage';
+import PricingPage from './pages/PricingPage';
 import PaymentsPage from './pages/PaymentsPage';
 import ImportPricingPage from './pages/ImportPricingPage';
 import LanguagesPage from './pages/LanguagesPage';
@@ -38,6 +39,7 @@ export default function App() {
           <Route path="import-pricing" element={<ImportPricingPage />} />
           <Route path="import-pricing/:directory" element={<ImportPricingPage />} />
           <Route path="payments" element={<PaymentsPage />} />
+          <Route path="payments/pricing" element={<PricingPage />} />
           {/* Analytics merged into Overview */}
           <Route path="analytics" element={<Navigate to="/" replace />} />
           <Route path="settings" element={<SettingsPage />} />

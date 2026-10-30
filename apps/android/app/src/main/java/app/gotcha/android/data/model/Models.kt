@@ -637,6 +637,10 @@ data class UserPreferences(
     val ttsEnabled: Boolean? = null,
     val dailyGoalMinutes: Int? = null,
     val notificationsEnabled: Boolean? = null,
+    /** system | light | dark (shared with web). */
+    val appTheme: String? = null,
+    val dailyGoalXp: Int? = null,
+    val dailyNewWords: Int? = null,
 )
 
 @Serializable
@@ -700,6 +704,8 @@ data class UpdatePreferencesRequest(
     val showKnownWords: Boolean? = null,
     val ttsEnabled: Boolean? = null,
     val notificationsEnabled: Boolean? = null,
+    val appTheme: String? = null,
+    val dailyGoalXp: Int? = null,
 )
 
 @Serializable
@@ -1664,3 +1670,170 @@ data class PracticeResultResponse(
     val results: List<PracticeAnswerResult> = emptyList(),
     val score: Double = 0.0,
 )
+
+// ---- Daily practice engine (services/api practice-engine; contract = web practiceApi.ts) ----
+
+@Serializable
+data class PracticeSource(val contentId: String, val title: String)
+
+@Serializable
+data class PracticeCloze(val before: String, val after: String, val hint: String = "", val length: Int = 0)
+
+@Serializable
+data class PracticeHint(val firstLetter: String = "", val length: Int = 0, val words: Int = 1)
+
+@Serializable
+data class DailyPracticeItem(
+    val key: String,
+    val vocabId: String,
+    val type: String,
+    val lang: String = "en",
+    val nativeLang: String = "uz",
+    val extra: Boolean = false,
+    val source: PracticeSource? = null,
+    val word: String? = null,
+    val translation: String? = null,
+    val context: String? = null,
+    val options: List<String>? = null,
+    val cloze: PracticeCloze? = null,
+    val hasAudio: Boolean = false,
+    val hint: PracticeHint? = null,
+)
+
+@Serializable
+data class ForecastDay(val date: String, val count: Int)
+
+@Serializable
+data class PracticeOverview(
+    val dueCount: Int = 0,
+    val newCount: Int = 0,
+    val totalWords: Int = 0,
+    val masteredWords: Int = 0,
+    val accuracy: Double = 0.0,
+    val dailyNewWords: Int = 10,
+    val practicedToday: Boolean = false,
+    val forecast: List<ForecastDay> = emptyList(),
+    val xpToday: Int = 0,
+    val xpTotal: Int = 0,
+    val dailyGoalXp: Int = 60,
+    val streakCount: Int = 0,
+    val bestStreak: Int = 0,
+    val streakFreezes: Int = 0,
+)
+
+@Serializable
+data class DailyPracticeSession(
+    val sessionId: String? = null,
+    val items: List<DailyPracticeItem> = emptyList(),
+    val caughtUp: Boolean = false,
+    val totalWords: Int = 0,
+    val xpToday: Int = 0,
+    val dailyGoalXp: Int = 60,
+    val streakCount: Int = 0,
+    val streakFreezes: Int = 0,
+)
+
+@Serializable
+data class PracticeAnswerRequest(
+    val answerId: String,
+    val sessionId: String,
+    val vocabId: String,
+    val type: String,
+    val answer: String? = null,
+    val selfRating: String? = null,
+    val responseMs: Int,
+    val hintUsed: Boolean = false,
+)
+
+@Serializable
+data class DiffPart(val text: String, val op: String)
+
+@Serializable
+data class PracticeAnswerResponse(
+    val correct: Boolean,
+    val verdict: String,
+    val reason: String? = null,
+    val diff: List<DiffPart> = emptyList(),
+    val judgedByAi: Boolean = false,
+    val expected: String = "",
+    val word: String = "",
+    val translation: String = "",
+    val context: String? = null,
+    val rating: String = "good",
+    val requeue: Boolean = false,
+    val nextDueAt: String? = null,
+    val intervalDays: Int = 0,
+    val xpGained: Int = 0,
+    val xpToday: Int = 0,
+    val dailyGoalXp: Int = 60,
+    val goalReached: Boolean = false,
+    val goalReachedNow: Boolean = false,
+    val streakCount: Int = 0,
+    val streakExtended: Boolean = false,
+    val streakFreezes: Int = 0,
+    val freezesUsed: Int = 0,
+)
+
+@Serializable
+data class PracticeMistake(val vocabId: String, val word: String, val translation: String, val nextDueAt: String? = null)
+
+@Serializable
+data class PracticeSummary(
+    val answered: Int = 0,
+    val correct: Int = 0,
+    val accuracy: Double = 0.0,
+    val xpEarned: Int = 0,
+    val bonusXp: Int = 0,
+    val newWords: Int = 0,
+    val mistakes: List<PracticeMistake> = emptyList(),
+    val hardest: List<String> = emptyList(),
+    val dueTomorrow: Int = 0,
+    val xpToday: Int = 0,
+    val dailyGoalXp: Int = 60,
+    val streakCount: Int = 0,
+    val streakExtended: Boolean = false,
+    val goalReached: Boolean = false,
+)
+
+@Serializable
+data class PracticeAudioRequest(val vocabId: String)
+
+// ---- Google Play Billing + unified entitlements (services/api billing/play-billing.service.ts) ----
+
+@Serializable
+data class PlayStoreProduct(
+    val sku: String,
+    val kind: String,
+    val planTier: String? = null,
+    val importTierId: String? = null,
+    val contentId: String? = null,
+    val priceUzs: Int = 0,
+)
+
+@Serializable
+data class PlayProductsResponse(val obfuscatedAccountId: String, val products: List<PlayStoreProduct> = emptyList())
+
+@Serializable
+data class PlayBookSku(val sku: String, val priceUzs: Int = 0)
+
+@Serializable
+data class PlayVerifyRequest(val sku: String, val purchaseToken: String, val importQuote: ImportQuoteRequest? = null)
+
+@Serializable
+data class PlusEntitlement(val active: Boolean = false, val source: String? = null, val expiresAt: String? = null, val sku: String? = null)
+
+@Serializable
+data class BookEntitlement(val contentId: String, val source: String)
+
+@Serializable
+data class ImportCreditEntitlement(val paymentId: String, val source: String, val used: Boolean = false)
+
+@Serializable
+data class EntitlementsResponse(
+    val plus: PlusEntitlement = PlusEntitlement(),
+    val books: List<BookEntitlement> = emptyList(),
+    val importCredits: List<ImportCreditEntitlement> = emptyList(),
+)
+
+@Serializable
+data class PlayVerifyResponse(val status: String, val paymentId: String? = null, val entitlements: EntitlementsResponse? = null)

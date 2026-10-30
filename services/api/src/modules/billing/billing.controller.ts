@@ -1,10 +1,15 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
+import { StorePlatform } from '@prisma/client';
+import { EntitlementsService } from './entitlements.service';
+import { PlayBillingService, playAccountId } from './play-billing.service';
+import { GooglePlayClient } from './google-play.client';
 import { ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
 import { BillingService } from './billing.service';
 import { ImportCommerceService } from './import-commerce.service';
-import { ImportCheckoutDto, ImportQuoteDto, ImportPreApplyDto, ImportApplyDto, ImportCancelDto } from './dto/import-commerce.dto';
+import { ImportCheckoutDto, ImportQuoteDto, ImportPreApplyDto, ImportApplyDto, ImportCancelDto, CatalogCheckoutDto, VerifyPlayPurchaseDto } from './dto/import-commerce.dto';
 import { AtmosClient } from './atmos.client';
 
 @ApiTags('billing')
@@ -14,18 +19,57 @@ export class BillingController {
     private billing: BillingService,
     private importCommerce: ImportCommerceService,
     private atmos: AtmosClient,
+    private entitlements: EntitlementsService,
+    private playBilling: PlayBillingService,
+    private play: GooglePlayClient,
   ) {}
+
+  // ---------------------------------------------------------------- unified entitlements + Google Play
+
+  /** Everything the user owns from any source (web Atmos, Android Play, admin). Clients call this at login. */
+  @Get('entitlements')
+  myEntitlements(@CurrentUser() user: AuthUserPayload) {
+    return this.entitlements.forUser(user.sub);
+  }
+
+  /** SKUs for the app to query from Play, plus the account id to pass as obfuscatedAccountId. */
+  @Get('play/products')
+  async playProducts(@CurrentUser() user: AuthUserPayload) {
+    return { obfuscatedAccountId: playAccountId(user.sub), products: await this.playBilling.storeProducts(StorePlatform.google_play) };
+  }
+
+  @Get('play/books/:contentId')
+  playBookSku(@Param('contentId', ParseUUIDPipe) contentId: string) {
+    return this.playBilling.skuForBook(contentId);
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('play/verify')
+  @HttpCode(200)
+  verifyPlay(@CurrentUser() user: AuthUserPayload, @Body() body: VerifyPlayPurchaseDto) {
+    return this.playBilling.verify(user.sub, body);
+  }
+
+  /** Real-time developer notifications (Cloud Pub/Sub push). 2xx = ack; 401/5xx = Pub/Sub retries. */
+  @Public()
+  @SkipThrottle()
+  @Post('play/rtdn')
+  @HttpCode(204)
+  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string } }) {
+    if (!(await this.play.verifyPush(auth, token))) throw new UnauthorizedException();
+    await this.playBilling.handleRtdn(body);
+  }
 
   @Get('subscription')
   subscription(@CurrentUser() user: AuthUserPayload) {
     return this.billing.getSubscription(user.sub);
   }
 
-  /** Raw plan rows — prefer `/marketing/plans` for Landing feature copy. */
+  /** Active plans from the DB (admin-editable): localized name, price in UZS, period, feature keys. */
   @Public()
   @Get('plans')
-  plans() {
-    return this.billing.listPlans();
+  plans(@Query('lang') lang?: string) {
+    return this.billing.listPlans(lang === 'ru' || lang === 'uz' ? lang : 'en');
   }
 
   @Public()
@@ -115,8 +159,12 @@ export class BillingController {
   }
 
   @Post('content/:id/checkout')
-  catalogCheckout(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.importCommerce.catalogCheckout(user.sub, id, user.isAdmin);
+  catalogCheckout(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CatalogCheckoutDto = {},
+  ) {
+    return this.importCommerce.catalogCheckout(user.sub, id, user.isAdmin, body?.promoCode);
   }
 
   /**

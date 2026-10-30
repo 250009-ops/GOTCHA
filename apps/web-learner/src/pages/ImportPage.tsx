@@ -25,6 +25,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { PromoCodeField } from '../components/PromoCodeField';
 import { BrandMark } from '../components/GotchaLogo';
 
 type LearnerCopy = ReturnType<typeof useLearnerCopy>;
@@ -399,6 +400,7 @@ function PaymentConfirmModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [canResendOtp, setCanResendOtp] = useState(false);
+  const [promoQuote, setPromoQuote] = useState<import('../lib/importBilling').ImportQuote | null>(null);
 
   useEffect(() => {
     if (state.open) {
@@ -411,6 +413,7 @@ function PaymentConfirmModal({
       setError(null);
       setLoading(false);
       setCanResendOtp(false);
+      setPromoQuote(null);
     }
   }, [state.open]);
 
@@ -424,7 +427,25 @@ function PaymentConfirmModal({
 
   if (!state.quote) return null;
 
-  const { quote, onPaid, importTitle, importType } = state;
+  const { quote: baseQuote, onPaid, importTitle, importType } = state;
+  const quote = promoQuote ?? baseQuote;
+  const applyPromo = async (code: string) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const { quoteImport } = await import('../lib/importBilling');
+      setPromoQuote(await quoteImport({
+        importType: baseQuote.importType as 'paste' | 'url' | 'pdf' | 'epub',
+        contentFormat: baseQuote.contentFormat,
+        pageCount: baseQuote.estimatedPages,
+        promoCode: code,
+      }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : copy.errors.failedStartPayment);
+    } finally {
+      setLoading(false);
+    }
+  };
   const displayTitle = importTitle || 'Your Import';
   const typeLabel = importType === 'pdf' || importType === 'epub'
     ? importType.toUpperCase()
@@ -462,6 +483,7 @@ function PaymentConfirmModal({
         importType: quote.importType as 'paste' | 'url' | 'pdf' | 'epub',
         contentFormat: quote.contentFormat,
         pageCount: quote.estimatedPages,
+        promoCode: quote.promo?.code,
       });
       setPaymentId(checkout.paymentId);
       if (checkout.step === 'done' || checkout.isFree) {
@@ -599,6 +621,12 @@ function PaymentConfirmModal({
                 <span className="text-[#6a7282]">{copy.importPage.estimatedPages}</span>
                 <span className="text-[#101828] font-medium">~{quote.estimatedPages}</span>
               </div>
+              {!!quote.discountUzs && (
+                <div className="flex justify-between items-center text-sm">
+                  <span className="text-[#6a7282]">{quote.promo?.code}</span>
+                  <span className="text-g-ok font-medium">−{formatUzs(quote.discountUzs)}</span>
+                </div>
+              )}
               <div className="h-px bg-[#e4e7ec]" />
               <div className="flex justify-between items-center">
                 <span className="text-[#101828] text-sm font-semibold">{copy.importPage.total}</span>
@@ -613,6 +641,10 @@ function PaymentConfirmModal({
                     ? copy.importPage.lengthNotPriced
                     : formatFreeAllowance(quote.freeLimits, copy.billing)}
               </p>
+            )}
+
+            {quote.requiresPayment && (
+              <PromoCodeField applied={quote.promo?.code ?? null} busy={loading} onApply={applyPromo} onRemove={() => setPromoQuote(null)} />
             )}
 
             {error && (

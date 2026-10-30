@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
@@ -80,8 +80,12 @@ export default function VerifyEmailPage() {
     tryOpenGotchaAuthApp('verify-email', token, searchParams);
   }, [token, useWebFlow, searchParams]);
 
+  // BUG-12: verify tokens are single-use; StrictMode / dep changes must not fire the request twice.
+  const verifiedFor = useRef<string | null>(null);
   useEffect(() => {
     if (!token || androidHandoff) return;
+    if (verifiedFor.current === token) return;
+    verifiedFor.current = token;
     let cancelled = false;
     (async () => {
       try {

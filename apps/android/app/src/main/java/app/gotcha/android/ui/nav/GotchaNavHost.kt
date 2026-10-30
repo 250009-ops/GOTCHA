@@ -237,6 +237,8 @@ fun GotchaNavHost() {
             )
         }
         composable(Routes.Learner) {
+            // Login/app start: confirm any unverified Play purchase, then load unified entitlements (web + Play).
+            androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { container.playBilling.syncAtLogin() } }
             LaunchedEffect(pendingExternalImport) {
                 ExternalImportDebug.log(
                     "NAV",
@@ -298,11 +300,20 @@ fun GotchaNavHost() {
         ) { entry ->
             val contentId = entry.arguments?.getString("contentId")?.takeIf { it.isNotBlank() }
             val segmentId = entry.arguments?.getString("segmentId")?.takeIf { it.isNotBlank() }
-            PracticeScreen(
-                contentId = contentId,
-                segmentId = segmentId,
-                onBack = { nav.popBackStack() },
-            )
+            if (contentId == null) {
+                // "My words": FSRS daily practice (hub → player → summary).
+                app.gotcha.android.ui.learner.DailyPracticeScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenLibrary = { nav.popBackStack() },
+                )
+            } else {
+                // Chapter quiz stays on the legacy session API.
+                PracticeScreen(
+                    contentId = contentId,
+                    segmentId = segmentId,
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
         slideUpSheetComposable(Routes.Import) {
             ImportScreen(

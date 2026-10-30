@@ -37,6 +37,9 @@ export type ImportQuote = {
   freeReason: string | null;
   requiresPayment: boolean;
   freeLimits?: ImportFreeAllowance;
+  listAmountUzs?: number;
+  discountUzs?: number;
+  promo?: { id: string; code: string } | null;
 };
 
 export type ImportCheckout = {
@@ -118,6 +121,7 @@ export async function quoteImport(body: {
   textLength?: number;
   wordCount?: number;
   pageCount?: number;
+  promoCode?: string;
 }) {
   return api<ImportQuote>('/billing/imports/quote', {
     method: 'POST',
@@ -141,6 +145,7 @@ export async function checkoutImport(body: {
   wordCount?: number;
   pageCount?: number;
   platform?: 'web' | 'android';
+  promoCode?: string;
 }) {
   return api<ImportCheckout>('/billing/imports/checkout', {
     method: 'POST',
@@ -197,9 +202,10 @@ export async function catalogAccess(contentId: string) {
   return api<CatalogAccess>(`/billing/content/${contentId}/access`);
 }
 
-export async function checkoutCatalog(contentId: string) {
+export async function checkoutCatalog(contentId: string, promoCode?: string) {
   return api<CatalogCheckout>(`/billing/content/${contentId}/checkout`, {
     method: 'POST',
+    body: JSON.stringify(promoCode ? { promoCode } : {}),
   });
 }
 

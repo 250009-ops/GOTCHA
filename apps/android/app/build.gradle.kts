@@ -100,6 +100,8 @@ dependencies {
     androidTestImplementation(composeBom)
 
     implementation("androidx.core:core-ktx:1.15.0")
+    // All in-app digital purchases (imports, catalog books, Plus) — Play payments policy.
+    implementation("com.android.billingclient:billing-ktx:7.1.1")
     implementation("androidx.core:core-splashscreen:1.0.1")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")

@@ -340,7 +340,9 @@ class AppContainer(context: Context) {
 
     val vocabRepository = VocabRepository(api, contentCacheStore, json)
 
-    val importRepository = ImportRepository(api)
+    val playBilling = app.gotcha.android.data.billing.PlayBilling(context.applicationContext, api)
+
+    val importRepository = ImportRepository(api, playBilling)
 
     val externalImportRegistry = ExternalImportRegistry(context.applicationContext)
 

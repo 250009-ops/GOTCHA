@@ -26,3 +26,10 @@ apps/mobile/.flutter-plugins
 apps/mobile/.flutter-plugins-dependencies
 apps/mobile/.packages
 apps/mobile/pubspec.lock
+
+# Android build artifacts (QA N7)
+*.hprof
+apps/android/*.txt
+apps/android/**/build/
+apps/android/.gradle/
+apps/android/local.properties

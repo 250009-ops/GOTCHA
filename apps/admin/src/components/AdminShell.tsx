@@ -11,6 +11,7 @@ import {
   Settings,
   ShieldCheck,
   Receipt,
+  Tags,
   Users,
   X,
 } from 'lucide-react';
@@ -45,6 +46,7 @@ const nav: NavItem[] = [
   { to: '/notifications', label: 'Notifications', icon: Bell, roles: ['superadmin', 'editor'] },
   { to: '/import-pricing', label: 'Import & Pricing', icon: CreditCard, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/payments', label: 'Payments', icon: Receipt, roles: ['superadmin', 'analyst'] },
+  { to: '/payments/pricing', label: 'Pricing', icon: Tags, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/settings', label: 'Settings', icon: Settings, roles: ['superadmin'] },
 ];
 

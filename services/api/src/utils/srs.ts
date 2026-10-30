@@ -7,6 +7,8 @@ export type { SrsState };
 export const DESIRED_RETENTION = 0.9;
 /** Stability (days) at which a word counts as mastered / "known" (PRD §4.6 AC4). */
 export const MASTERED_STABILITY_DAYS = 90;
+/** QA N3: scheduler spec caps any interval at one year. */
+export const MAX_INTERVAL_DAYS = 365;
 
 /** Rollback switch: SRS_ALGORITHM=sm2 restores the legacy scheduler. Default: FSRS. */
 export function srsAlgorithm(): 'fsrs' | 'sm2' {
@@ -14,7 +16,7 @@ export function srsAlgorithm(): 'fsrs' | 'sm2' {
 }
 
 const scheduler = fsrs(
-  generatorParameters({ request_retention: DESIRED_RETENTION, enable_fuzz: true, enable_short_term: true }),
+  generatorParameters({ request_retention: DESIRED_RETENTION, maximum_interval: MAX_INTERVAL_DAYS, enable_fuzz: true, enable_short_term: true }),
 );
 
 const RATING: Record<SrsRatingValue, Rating.Again | Rating.Hard | Rating.Good | Rating.Easy> = {

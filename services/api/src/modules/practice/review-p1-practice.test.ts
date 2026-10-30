@@ -22,13 +22,14 @@ function engine(opts: { item?: any; session?: any; judge?: () => Promise<boolean
       updateMany: async ({ where }: any) => { calls.push('claimComplete'); const ok = !opts.session?.completedAt; opts.session = { ...opts.session, completedAt: new Date() }; return { count: ok && where.completedAt === null ? 1 : 0 }; },
     },
     practiceSessionItem: {
-      findUnique: async ({ where }: any) => items.find((i) => i.vocabId === where.sessionId_vocabId_type.vocabId && i.type === where.sessionId_vocabId_type.type) ?? null,
+      findUnique: async ({ where }: any) => items.find((i) => i.vocabId === where.sessionId_vocabId_type.vocabId && i.type === where.sessionId_vocabId_type.type) ? { ...items.find((i) => i.vocabId === where.sessionId_vocabId_type.vocabId && i.type === where.sessionId_vocabId_type.type) } : null,
       updateMany: async ({ where, data }: any) => {
         const i = items.find((x) => x.id === where.id && x.attempts === where.attempts && (x.answeredAt === null || x.requeue));
         if (!i) return { count: 0 };
         i.attempts++; i.answeredAt = data.answeredAt; i.requeue = false; return { count: 1 };
       },
       update: async ({ data }: any) => Object.assign(items[0], data),
+      count: async ({ where }: any) => items.filter((i) => (where.requeue ? i.requeue : i.attempts >= (where.attempts?.gte ?? 0))).length,
     },
     userVocabulary: { findFirst: async () => ({ ...vocab }), count: async () => 0, findMany: async () => [] },
     user: { findUnique: async () => ({ xpTotal: 0, xpToday: 0, streakCount: 0, streakFreezes: 0, bestStreak: 0 }), updateMany: async () => ({ count: 1 }) },
@@ -65,7 +66,9 @@ async function main() {
     const e = engine({ item: { vocabId: 'v1', type: 'typed_recall' }, judge: async () => false });
     const r = await e.svc.answer('u1', { ...base, type: 'typed_recall', answer: 'zzzz' });
     assert.equal(r.requeue, true);
-    await e.svc.answer('u1', { ...base, answerId: 'abcdefgh-3', type: 'typed_recall', answer: 'persistence' });
+    // QA N4: the retry is the last chance; a second wrong answer is not requeued again.
+    const r2 = await e.svc.answer('u1', { ...base, answerId: 'abcdefgh-3', type: 'typed_recall', answer: 'zzzz' });
+    assert.equal(r2.requeue, false);
     await assert.rejects(e.svc.answer('u1', { ...base, answerId: 'abcdefgh-4', type: 'typed_recall', answer: 'persistence' }), (x: any) => x.getStatus() === 409);
   }
   // B1: selfRating on a non-flashcard → 400

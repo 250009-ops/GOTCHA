@@ -7,6 +7,8 @@ import app.gotcha.android.data.TokenStore
 import app.gotcha.android.data.fetchWithCache
 import app.gotcha.android.data.readCachedJson
 import app.gotcha.android.data.api.GotchaApi
+import app.gotcha.android.data.model.ImportCheckoutResponse
+import app.gotcha.android.data.model.CatalogCheckoutResponse
 import app.gotcha.android.data.model.AdminAdjustTierRequest
 import app.gotcha.android.data.model.AdminCreateCampaignRequest
 import app.gotcha.android.data.model.AdminCreateContentRequest
@@ -553,6 +555,22 @@ class PracticeRepository(private val api: GotchaApi) {
         api.submitPractice(sessionId, SubmitPracticeRequest(answers))
 
     suspend fun get(sessionId: String): PracticeSession = api.getPracticeSession(sessionId)
+
+    // Daily practice engine
+    suspend fun overview() = api.practiceOverview()
+    suspend fun daily(size: Int, listening: Boolean, focus: List<String> = emptyList(), extra: Boolean = false) =
+        api.practiceDaily(
+            size = size,
+            caps = if (listening) "listening" else null,
+            focus = focus.takeIf { it.isNotEmpty() }?.joinToString(","),
+            extra = if (extra) "1" else null,
+        )
+    suspend fun answer(body: app.gotcha.android.data.model.PracticeAnswerRequest) = api.practiceAnswer(body)
+    suspend fun complete(sessionId: String) = api.practiceComplete(sessionId)
+    suspend fun audio(vocabId: String): ByteArray =
+        api.practiceAudio(app.gotcha.android.data.model.PracticeAudioRequest(vocabId)).use { it.bytes() }
+    suspend fun setGoal(xp: Int) =
+        api.updatePreferences(app.gotcha.android.data.model.UpdatePreferencesRequest(dailyGoalXp = xp))
 }
 
 class VocabRepository(
@@ -587,7 +605,7 @@ class VocabRepository(
     suspend fun delete(id: String) = api.deleteVocabulary(id)
 }
 
-class ImportRepository(private val api: GotchaApi) {
+class ImportRepository(private val api: GotchaApi, private val playBilling: app.gotcha.android.data.billing.PlayBilling) {
     suspend fun list(page: Int = 1, pageSize: Int = 20): ImportsListResponse =
         api.imports(page = page, pageSize = pageSize)
     suspend fun delete(id: String) = api.deleteImport(id)
@@ -636,16 +654,25 @@ class ImportRepository(private val api: GotchaApi) {
         textLength: Int? = null,
         wordCount: Int? = null,
         pageCount: Int? = null,
-    ) = api.importCheckout(
-        ImportCheckoutRequest(importType, contentFormat, textLength, wordCount, pageCount, "android"),
-    )
-    suspend fun catalogCheckout(contentId: String) = api.catalogCheckout(contentId)
+    ): ImportCheckoutResponse {
+        // Free imports still go through the server checkout (records the free-pool use). Paid imports use
+        // Google Play Billing only (Play policy); Atmos card checkout exists on the web app alone.
+        val quote = api.importQuote(ImportQuoteRequest(importType, contentFormat, textLength, wordCount, pageCount))
+        if (!quote.requiresPayment) {
+            return api.importCheckout(ImportCheckoutRequest(importType, contentFormat, textLength, wordCount, pageCount, "android"))
+        }
+        val tierId = quote.tier?.id ?: throw app.gotcha.android.data.billing.PlayBillingException("This import size can't be purchased in the app yet.")
+        val paymentId = playBilling.buyImport(tierId, ImportQuoteRequest(importType, contentFormat, textLength, wordCount, pageCount))
+        return ImportCheckoutResponse(paymentId = paymentId, status = "paid", isFree = false, quote = quote, step = "done")
+    }
+
+    /** Catalog book unlock via Google Play; already-owned books (bought on any platform) pass straight through. */
+    suspend fun catalogCheckout(contentId: String): CatalogCheckoutResponse {
+        val owned = runCatching { api.entitlements().books.any { it.contentId == contentId } }.getOrDefault(false)
+        if (!owned) playBilling.buyBook(contentId)
+        return CatalogCheckoutResponse(contentId = contentId, accessGranted = true, status = "paid", step = "done")
+    }
     suspend fun paymentStatus(id: String) = api.importPayment(id)
-    suspend fun preApply(paymentId: String, cardNumber: String, expiry: String) =
-        api.importPreApply(paymentId, ImportPreApplyRequest(cardNumber, expiry))
-    suspend fun apply(paymentId: String, otp: String) =
-        api.importApply(paymentId, ImportApplyRequest(otp))
-    suspend fun retryOtp(paymentId: String) = api.importRetryOtp(paymentId)
     suspend fun cancel(paymentId: String, reason: String? = null) =
         api.importCancel(paymentId, app.gotcha.android.data.model.ImportCancelRequest(reason))
 }

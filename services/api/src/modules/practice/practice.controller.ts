@@ -61,14 +61,14 @@ export class PracticeController {
   @Post('sessions/:id/answers')
   submit(
     @CurrentUser() user: AuthUserPayload,
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: SubmitPracticeDto,
   ) {
     return this.practice.submitAnswers(user.sub, id, dto);
   }
 
   @Get('sessions/:id')
-  getSession(@CurrentUser() user: AuthUserPayload, @Param('id') id: string) {
+  getSession(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.practice.getSession(user.sub, id);
   }
 }

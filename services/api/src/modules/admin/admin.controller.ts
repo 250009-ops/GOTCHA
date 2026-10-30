@@ -22,6 +22,10 @@ import { CurrentUser, AuthUserPayload, Roles } from '../../common/decorators';
 import { RolesGuard } from '../../common/guards';
 import { AdminService } from './admin.service';
 import { AdminOpsService } from './admin-ops.service';
+import { PricingService } from '../billing/pricing.service';
+import { PlanUpdateDto, PromoDto, StoreProductDto } from './dto/pricing.dto';
+
+const jsonSafe = (v: unknown) => JSON.parse(JSON.stringify(v));
 import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto, RefundPaymentDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
@@ -32,6 +36,7 @@ export class AdminController {
   constructor(
     private admin: AdminService,
     private ops: AdminOpsService,
+    private pricing: PricingService,
   ) {}
 
   @Get('me')
@@ -355,26 +360,91 @@ export class AdminController {
 
   @Patch('import-pricing/rules')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateImportPricingRules(@Body() body: { rules?: Array<Record<string, unknown>> }) {
-    return this.admin.updateImportPricingRules(body);
+  async updateImportPricingRules(@CurrentUser() actor: AuthUserPayload, @Body() body: { rules?: Array<Record<string, unknown>> }) {
+    const res = await this.admin.updateImportPricingRules(body);
+    await this.ops.audit(actor.sub, 'pricing.rules.update', 'platform_setting', null, { rules: (body.rules ?? []) as never });
+    return res;
   }
 
   @Post('import-pricing/tiers')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  createImportPageTier(@Body() body: Record<string, unknown>) {
-    return this.admin.createImportPageTier(body);
+  async createImportPageTier(@CurrentUser() actor: AuthUserPayload, @Body() body: Record<string, unknown>) {
+    const res = await this.admin.createImportPageTier(body);
+    await this.ops.audit(actor.sub, 'pricing.tier.create', 'import_page_tier', null, { after: body as never });
+    return res;
   }
 
   @Patch('import-pricing/tiers/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateImportPageTier(@Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.admin.updateImportPageTier(id, body);
+  async updateImportPageTier(@CurrentUser() actor: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string, @Body() body: Record<string, unknown>) {
+    const res = await this.admin.updateImportPageTier(id, body);
+    await this.ops.audit(actor.sub, 'pricing.tier.update', 'import_page_tier', id, { changes: body as never });
+    return res;
   }
 
   @Delete('import-pricing/tiers/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  deleteImportPageTier(@Param('id') id: string) {
-    return this.admin.deleteImportPageTier(id);
+  async deleteImportPageTier(@CurrentUser() actor: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    const res = await this.admin.deleteImportPageTier(id);
+    await this.ops.audit(actor.sub, 'pricing.tier.delete', 'import_page_tier', id);
+    return res;
+  }
+
+  // ---------------------------------------------------------------- pricing (plans, tiers, promo codes)
+
+  /** Plans, page tiers and promo codes in one payload (Payments → Pricing). */
+  @Get('pricing')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
+  pricingOverview() {
+    return this.pricing.adminOverview();
+  }
+
+  @Patch('pricing/plans/:tier')
+  @Roles(AdminRole.superadmin)
+  async updatePlan(@CurrentUser() actor: AuthUserPayload, @Param('tier') tier: string, @Body() body: PlanUpdateDto) {
+    const { before, after } = await this.pricing.updatePlan(tier, body);
+    await this.ops.auditStrict(actor.sub, 'pricing.plan.update', 'subscription_plan', after.id, { before: jsonSafe(before), after: jsonSafe(after) });
+    return after;
+  }
+
+  @Patch('pricing/tiers/:id/active')
+  @Roles(AdminRole.superadmin)
+  async setTierActive(@CurrentUser() actor: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string, @Body() body: { active?: boolean }) {
+    const { after } = await this.pricing.setTierActive(id, !!body.active);
+    await this.ops.auditStrict(actor.sub, body.active ? 'pricing.tier.activate' : 'pricing.tier.deactivate', 'import_page_tier', id);
+    return after;
+  }
+
+  @Post('pricing/promos')
+  @Roles(AdminRole.superadmin)
+  async createPromo(@CurrentUser() actor: AuthUserPayload, @Body() body: PromoDto) {
+    const promo = await this.pricing.createPromo(body);
+    await this.ops.auditStrict(actor.sub, 'pricing.promo.create', 'promo_code', promo.id, { after: jsonSafe(promo) });
+    return promo;
+  }
+
+  @Patch('pricing/promos/:id')
+  @Roles(AdminRole.superadmin)
+  async updatePromo(@CurrentUser() actor: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string, @Body() body: PromoDto) {
+    const { before, after } = await this.pricing.updatePromo(id, body);
+    await this.ops.auditStrict(actor.sub, 'pricing.promo.update', 'promo_code', id, { before: jsonSafe(before), after: jsonSafe(after) });
+    return after;
+  }
+
+  @Post('pricing/store-products')
+  @Roles(AdminRole.superadmin)
+  async createStoreProduct(@CurrentUser() actor: AuthUserPayload, @Body() body: StoreProductDto) {
+    const { after } = await this.pricing.upsertStoreProduct(body);
+    await this.ops.auditStrict(actor.sub, 'pricing.store_product.create', 'store_product', after.id, { after: jsonSafe(after) });
+    return after;
+  }
+
+  @Patch('pricing/store-products/:id')
+  @Roles(AdminRole.superadmin)
+  async updateStoreProduct(@CurrentUser() actor: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string, @Body() body: StoreProductDto) {
+    const { before, after } = await this.pricing.upsertStoreProduct(body, id);
+    await this.ops.auditStrict(actor.sub, 'pricing.store_product.update', 'store_product', id, { before: jsonSafe(before), after: jsonSafe(after) });
+    return after;
   }
 
   @Get('import-pricing/limits')

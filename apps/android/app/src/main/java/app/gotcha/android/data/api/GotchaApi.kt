@@ -1,5 +1,16 @@
 package app.gotcha.android.data.api
 
+import app.gotcha.android.data.model.PracticeOverview
+import app.gotcha.android.data.model.DailyPracticeSession
+import app.gotcha.android.data.model.PracticeAnswerRequest
+import app.gotcha.android.data.model.PracticeAnswerResponse
+import app.gotcha.android.data.model.PracticeSummary
+import app.gotcha.android.data.model.PracticeAudioRequest
+import app.gotcha.android.data.model.PlayProductsResponse
+import app.gotcha.android.data.model.PlayBookSku
+import app.gotcha.android.data.model.PlayVerifyRequest
+import app.gotcha.android.data.model.PlayVerifyResponse
+import app.gotcha.android.data.model.EntitlementsResponse
 import app.gotcha.android.data.model.AdminAiUsageResponse
 import app.gotcha.android.data.model.AdminAnalytics
 import app.gotcha.android.data.model.AdminAddLanguageRequest
@@ -250,20 +261,8 @@ interface GotchaApi {
     @POST("billing/imports/checkout")
     suspend fun importCheckout(@Body body: ImportCheckoutRequest): ImportCheckoutResponse
 
-    @POST("billing/content/{id}/checkout")
-    suspend fun catalogCheckout(@Path("id") id: String): CatalogCheckoutResponse
-
     @GET("billing/imports/payments/{id}")
     suspend fun importPayment(@Path("id") id: String): ImportPaymentStatus
-
-    @POST("billing/imports/payments/{id}/pre-apply")
-    suspend fun importPreApply(@Path("id") id: String, @Body body: ImportPreApplyRequest): ImportPreApplyResponse
-
-    @POST("billing/imports/payments/{id}/apply")
-    suspend fun importApply(@Path("id") id: String, @Body body: ImportApplyRequest): ImportApplyResponse
-
-    @POST("billing/imports/payments/{id}/retry-otp")
-    suspend fun importRetryOtp(@Path("id") id: String): ImportPreApplyResponse
 
     @POST("billing/imports/payments/{id}/cancel")
     suspend fun importCancel(@Path("id") id: String, @Body body: ImportCancelRequest): ImportCancelResponse
@@ -279,6 +278,42 @@ interface GotchaApi {
 
     @GET("practice/sessions/{id}")
     suspend fun getPracticeSession(@Path("id") id: String): PracticeSession
+
+    // Card (Atmos) checkout endpoints are web-only and intentionally absent here.
+    // Google Play Billing (all in-app digital purchases) + unified entitlements (web Atmos + Play).
+    @GET("billing/entitlements")
+    suspend fun entitlements(): EntitlementsResponse
+
+    @GET("billing/play/products")
+    suspend fun playProducts(): PlayProductsResponse
+
+    @GET("billing/play/books/{id}")
+    suspend fun playBookSku(@Path("id") contentId: String): PlayBookSku?
+
+    @POST("billing/play/verify")
+    suspend fun playVerify(@Body body: PlayVerifyRequest): PlayVerifyResponse
+
+    // Daily practice engine (FSRS). Only items issued by practice/daily can be answered.
+    @GET("practice/overview")
+    suspend fun practiceOverview(@Query("lang") lang: String? = null): PracticeOverview
+
+    @GET("practice/daily")
+    suspend fun practiceDaily(
+        @Query("size") size: Int,
+        @Query("caps") caps: String? = null,
+        @Query("focus") focus: String? = null,
+        @Query("extra") extra: String? = null,
+    ): DailyPracticeSession
+
+    @POST("practice/answer")
+    suspend fun practiceAnswer(@Body body: PracticeAnswerRequest): PracticeAnswerResponse
+
+    @POST("practice/daily/{id}/complete")
+    suspend fun practiceComplete(@Path("id") id: String): PracticeSummary
+
+    @Streaming
+    @POST("practice/audio")
+    suspend fun practiceAudio(@Body body: PracticeAudioRequest): ResponseBody
 
     @GET("users/me")
     suspend fun me(): MeResponse

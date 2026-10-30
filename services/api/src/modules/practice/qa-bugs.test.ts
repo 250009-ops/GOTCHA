@@ -72,7 +72,7 @@ async function main() {
 
   // BUG-10 localized API errors
   assert.equal(localizeApiError('ru', { message: 'Invalid or expired email verification token.', status: 400 }), 'Ссылка подтверждения недействительна или устарела.');
-  assert.equal(localizeApiError('uz', { message: 'Some new english error', status: 500 }), 'Server xatosi. Keyinroq urinib ko‘ring.');
+  assert.equal(localizeApiError('uz', { message: 'Some new english error', status: 500 }), 'Server xatosi. Keyinroq urinib koʻring.');
   assert.equal(localizeApiError('ru', { message: ['email must be an email'], status: 400 }), 'Проверьте введённые данные.');
   assert.equal(localizeApiError('en', { message: 'Some new english error', status: 400 }), 'Some new english error');
   assert.equal(localizeApiError('ru', { message: 'Invalid credentials', status: 401 }), 'Неверный email или пароль.');

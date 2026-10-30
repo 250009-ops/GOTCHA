@@ -22,6 +22,11 @@ export class AdminOpsService {
       .catch(() => undefined); // auditing must never break the action itself
   }
 
+  /** Finance/pricing changes: the audit row must exist, so errors propagate (REVIEW B2 spirit). */
+  auditStrict(actorId: string | null, action: string, entityType: string, entityId: string | null, metadata?: Prisma.InputJsonValue) {
+    return this.prisma.auditLog.create({ data: { actorId, action, entityType, entityId, metadata } });
+  }
+
   /** Everything we hold about a learner, as one JSON document (data-subject access / export request). */
   async exportUser(actorId: string, id: string) {
     const user = await this.prisma.user.findUnique({

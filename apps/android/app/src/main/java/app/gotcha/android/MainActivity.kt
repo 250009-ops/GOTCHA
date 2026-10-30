@@ -235,6 +235,12 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        // Google Play purchase sheet needs a foreground Activity.
+        (application as GotchaApp).container.playBilling.attach(this)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)

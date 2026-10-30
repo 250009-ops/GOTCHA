@@ -60,22 +60,22 @@ const RU: Templates = {
 };
 
 const UZ: Templates = {
-  streakTitle: (days) => `${days} kunlik seriyangizni yo‘qotmang!`,
-  streakBody: (name) => `${name}, seriyani saqlab qolish uchun bugun bir necha daqiqa o‘qing.`,
-  goalTitle: 'Kunlik o‘qish maqsadi',
+  streakTitle: (days) => `${days} kunlik seriyangizni yoʻqotmang!`,
+  streakBody: (name) => `${name}, seriyani saqlab qolish uchun bugun bir necha daqiqa oʻqing.`,
+  goalTitle: 'Kunlik oʻqish maqsadi',
   goalBody: (left, goal) => `Bugungi ${goal} daqiqalik maqsadga ${left} daqiqa qoldi.`,
-  vocabTitle: 'So‘zlarni takrorlash tayyor',
+  vocabTitle: 'Soʻzlarni takrorlash tayyor',
   vocabBody: (count) =>
     count === 1
-      ? '1 ta so‘z takrorlashga tayyor.'
-      : `${count} ta so‘z SRS takroriga tayyor.`,
+      ? '1 ta soʻz takrorlashga tayyor.'
+      : `${count} ta soʻz SRS takroriga tayyor.`,
   messageTitle: (peer) => `${peer} dan yangi xabar`,
   contentTitle: (kind) => {
     const labels = { book: 'kitob', article: 'maqola', story: 'hikoya', news: 'yangilik' } as const;
     const label = labels[kind ?? 'book'] ?? 'kitob';
     return `Kutubxonada yangi ${label}`;
   },
-  contentBody: (title) => `«${title}» endi o‘qishga tayyor.`,
+  contentBody: (title) => `«${title}» endi oʻqishga tayyor.`,
 };
 
 const TEMPLATES: Record<UiLanguage, Templates> = { en: EN, ru: RU, uz: UZ };
@@ -117,7 +117,7 @@ export function parseNotificationParams(kind: string, title: string, body: strin
     params.contentTitle =
       body.match(/^(.+?)\s+is now available/i)?.[1]?.trim() ||
       body.match(/^«(.+?)»/)?.[1]?.trim() ||
-      body.replace(/\s+(is now available|уже доступна|endi o‘qishga).*$/i, '').trim();
+      body.replace(/\s+(is now available|уже доступна|endi oʻqishga).*$/i, '').trim();
   }
   return params;
 }

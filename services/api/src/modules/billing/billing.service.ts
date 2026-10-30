@@ -8,34 +8,17 @@ import {
   resolveLearnerDailyAiQuota,
 } from '../ai/ai-settings';
 import { ImportCommerceService } from './import-commerce.service';
+import { PricingService, type PricingLang } from './pricing.service';
 
-/**
- * Synthesize the `features`, `priceLabel`, `priceUnit`, and `popular` fields
- * that the frontend expects but aren't columns in the DB schema.
- * See docs/E2E_AUDIT_REPORT.md item #8 for context.
- */
+/** Subscription view of a plan row: DB values only (no prices or feature copy in code). */
 function enrichPlan(plan: SubscriptionPlan) {
-  const isPremium = plan.tier === 'premium';
-  const priceMonthly = Number(plan.priceMonthly ?? 0);
+  const priceUzs = Math.round(Number(plan.priceMonthly ?? 0));
   return {
     ...plan,
-    priceMonthly,
-    priceLabel: priceMonthly > 0 ? `$${priceMonthly}` : 'Free',
-    priceUnit: priceMonthly > 0 ? '/mo' : '',
-    popular: isPremium,
-    features: isPremium
-      ? [
-          'Unlimited AI lookups',
-          'Unlimited content imports',
-          'Offline reading mode',
-          'Priority support',
-          'No ads',
-        ]
-      : [
-          `${plan.aiDailyQuota} AI lookups/day`,
-          `${plan.importLimit} free imports/day`,
-          'Access to public library',
-        ],
+    priceMonthly: priceUzs,
+    priceUzs,
+    currency: 'UZS' as const,
+    features: Array.isArray(plan.features) ? (plan.features as string[]) : [],
   };
 }
 
@@ -44,11 +27,12 @@ export class BillingService {
   constructor(
     private prisma: PrismaService,
     private importCommerce: ImportCommerceService,
+    private pricing: PricingService,
   ) {}
 
-  async listPlans() {
-    const plans = await this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } });
-    return plans.map(enrichPlan);
+  /** No prices in code: everything comes from subscription_plans (PRICING.md seed, admin-edited). */
+  async listPlans(lang: PricingLang = 'en') {
+    return (await this.pricing.publicPlans(lang)).map((p) => ({ ...p, priceMonthly: p.period === 'month' ? p.priceUzs : null }));
   }
 
   async getSubscription(userId: string) {

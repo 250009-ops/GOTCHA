@@ -11,6 +11,7 @@ function fakeDb(payment: Row) {
   const payments: Row[] = [payment];
   const purchases: Row[] = [];
   const audit: Row[] = [];
+  const entitlements: Row[] = [];
   const atmosCalls: string[] = [];
   let failAudit = false;
   const table = (rows: Row[], uniq?: string) => ({
@@ -38,6 +39,7 @@ function fakeDb(payment: Row) {
     contentPurchase: table(purchases, 'importPaymentId'),
     auditLog: table(audit),
     contentItem: { update: async () => ({}) },
+    entitlement: { ...table(entitlements), createMany: async ({ data }: any) => { for (const d of data) if (!entitlements.some((e) => e.sourceRef === d.sourceRef && e.kind === d.kind)) entitlements.push({ status: 'active', ...d }); return { count: data.length }; } },
   };
   // $transaction: callback form gets a snapshot-rollback; array form runs sequentially.
   db.$transaction = async (arg: any) => {

@@ -1,4 +1,4 @@
-﻿package app.gotcha.android.ui.learner
+package app.gotcha.android.ui.learner
 
 import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
@@ -452,7 +452,7 @@ private fun ImportWebTabPanel(
                 ) {
                     Text(
                         if (gatewayEnabled) {
-                            "Import allowance reached. Delete an old import or pay per material size via Atmos."
+                            "Import allowance reached. Delete an old import or buy this import in the app."
                         } else {
                             "Import allowance reached. Delete an old import to free up space — paid imports are not available right now."
                         },
@@ -465,9 +465,9 @@ private fun ImportWebTabPanel(
             }
             Text(
                 if (gatewayEnabled) {
-                    "Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first."
+                    "Paid imports are priced by page count and bought with Google Play."
                 } else {
-                    "Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled."
+                    "Imports are free right now."
                 },
                 fontFamily = Inter,
                 color = Color(0xFF99A1AF),
