@@ -2,32 +2,15 @@ import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
-import { liveLearnerWhere, isFigmaSampleDisplayName } from '../../common/production-users';
+import { liveLearnerWhere } from '../../common/production-users';
 import { atmosMinAmountSom } from '../billing/atmos.client';
 import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
-import { effectiveStreakCount } from '../../services/streak.service';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
 const UNLIMITED_THRESHOLD = 1_000_000;
 const LANDING_CACHE_TTL_MS = 60_000;
 const CATALOG_CAP = 12;
-const READER_CAP = 6;
-const READER_SCAN_CAP = 400;
-
-/** Figma landing mock names — never treat as live top readers. */
-const FIGMA_LANDING_DISPLAY_NAMES = new Set(
-  [
-    'Dilshod M.',
-    'Dilshod M',
-    'Shakhzoda K.',
-    'Shakhzoda K',
-    'Alisher U.',
-    'Alisher U',
-    'Alisher T.',
-    'Alisher T',
-  ].map((n) => n.toLowerCase()),
-);
 
 export type LandingCatalogItem = {
   id: string;
@@ -69,6 +52,17 @@ export type LandingTopReader = {
   streakDays: number;
   wordsLearned: number;
 };
+
+/**
+ * Hotfix web1 (AUDIT C4/C6): the public landing payload carries no learner names, no per-user
+ * stats and no learner counter. `stats` / `topReaders` stay in the shape (always zero / empty)
+ * so cached or older web builds keep working.
+ */
+export function publicLandingPayload(
+  p: Omit<LandingPayload, 'stats' | 'topReaders'>,
+): LandingPayload {
+  return { ...p, stats: { learnerCount: 0 }, topReaders: [] };
+}
 
 export type LandingPayload = {
   generatedAt: string;
@@ -129,23 +123,6 @@ function serializeCatalogItem(row: {
     isFree,
     priceUzs: isFree ? 0 : priceUzs,
   };
-}
-
-function readerInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-  }
-  const token = parts[0] ?? '';
-  return token.slice(0, 2).toUpperCase();
-}
-
-function isUsableDisplayName(name: string | null | undefined): name is string {
-  const value = name?.trim() ?? '';
-  if (value.length < 2) return false;
-  if (isFigmaSampleDisplayName(value)) return false;
-  if (FIGMA_LANDING_DISPLAY_NAMES.has(value.toLowerCase())) return false;
-  return true;
 }
 
 @Injectable()
@@ -229,34 +206,20 @@ export class MarketingService {
       return this.landingCache.payload;
     }
 
-    const [stats, languages, catalog, importPricing, topReaders] = await Promise.all([
-      this.safeStats(),
+    const [languages, catalog, importPricing] = await Promise.all([
       this.safeLanguages(),
       this.safeCatalog(),
       this.safeImportPricing(),
-      this.safeTopReaders(),
     ]);
 
-    const payload: LandingPayload = {
+    const payload = publicLandingPayload({
       generatedAt: new Date().toISOString(),
-      stats,
       languages,
       catalog,
       importPricing,
-      topReaders,
-    };
+    });
     this.landingCache = { at: now, payload };
     return payload;
-  }
-
-  private async safeStats(): Promise<LandingPayload['stats']> {
-    try {
-      const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
-      return { learnerCount };
-    } catch (err) {
-      this.logger.warn(`landing stats failed: ${err instanceof Error ? err.message : err}`);
-      return { learnerCount: 0 };
-    }
   }
 
   private async safeLanguages(): Promise<LandingPayload['languages']> {
@@ -369,66 +332,6 @@ export class MarketingService {
     } catch (err) {
       this.logger.warn(`landing import pricing failed: ${err instanceof Error ? err.message : err}`);
       return emptyPricing();
-    }
-  }
-
-  private async safeTopReaders(): Promise<LandingTopReader[]> {
-    try {
-      const users = await this.prisma.user.findMany({
-        where: {
-          ...liveLearnerWhere(),
-          displayName: { not: null },
-        },
-        select: {
-          displayName: true,
-          streakCount: true,
-          streakLastDate: true,
-          createdAt: true,
-          readingProgress: { select: { totalReadSeconds: true } },
-          _count: { select: { vocabulary: true } },
-        },
-        take: READER_SCAN_CAP,
-      });
-
-      const ranked = users
-        .map((user) => {
-          const displayName = user.displayName?.trim() ?? '';
-          const minutesRead = Math.floor(
-            user.readingProgress.reduce((sum, row) => sum + (row.totalReadSeconds || 0), 0) / 60,
-          );
-          const streakDays = effectiveStreakCount(user.streakCount, user.streakLastDate);
-          const wordsLearned = user._count.vocabulary;
-          return {
-            displayName,
-            minutesRead,
-            streakDays,
-            wordsLearned,
-            createdAt: user.createdAt.getTime(),
-          };
-        })
-        .filter((row) => isUsableDisplayName(row.displayName))
-        .filter(
-          (row) => row.minutesRead >= 30 || (row.streakDays >= 3 && row.wordsLearned >= 10),
-        )
-        .sort((a, b) => {
-          if (b.minutesRead !== a.minutesRead) return b.minutesRead - a.minutesRead;
-          if (b.streakDays !== a.streakDays) return b.streakDays - a.streakDays;
-          if (b.wordsLearned !== a.wordsLearned) return b.wordsLearned - a.wordsLearned;
-          return a.createdAt - b.createdAt;
-        })
-        .slice(0, READER_CAP);
-
-      return ranked.map((row, index) => ({
-        rank: index + 1,
-        displayName: row.displayName,
-        initials: readerInitials(row.displayName),
-        minutesRead: row.minutesRead,
-        streakDays: row.streakDays,
-        wordsLearned: row.wordsLearned,
-      }));
-    } catch (err) {
-      this.logger.warn(`landing top readers failed: ${err instanceof Error ? err.message : err}`);
-      return [];
     }
   }
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Brand } from './Brand';
 import { UiLanguageDropdown } from './UiLanguageDropdown';
+import { SHOW_PRICING } from '../lib/featureFlags';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
 import { isWebLocale, type WebLocale } from '../lib/webLocale';
@@ -33,8 +34,8 @@ function NavLinks({
   const navLinks = useMemo(
     () => [
       { to: '/#catalog', label: copy.nav.catalog },
-      { to: '/#pricing', label: copy.nav.pricing },
-      { to: '/#readers', label: copy.nav.readers },
+      // Hotfix web1: no leaderboard (C3); pricing only once prices are approved (C1).
+      ...(SHOW_PRICING ? [{ to: '/#pricing', label: copy.nav.pricing }] : []),
       { to: '/#features', label: copy.nav.features },
       { to: '/#how', label: copy.nav.how },
     ],
@@ -187,9 +188,11 @@ export function SiteFooter() {
                 <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
                   {copy.nav.catalog}
                 </Link>
-                <Link to="/#pricing" className="transition-colors hover:text-[#101828]">
-                  {copy.nav.pricing}
-                </Link>
+                {SHOW_PRICING && (
+                  <Link to="/#pricing" className="transition-colors hover:text-[#101828]">
+                    {copy.nav.pricing}
+                  </Link>
+                )}
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
                   {copy.nav.how}
                 </Link>

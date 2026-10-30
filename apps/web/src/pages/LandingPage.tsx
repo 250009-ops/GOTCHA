@@ -5,14 +5,15 @@ import { Seo } from '../components/Seo';
 import { SiteFooter, SiteNav } from '../components/SiteChrome';
 import {
   fetchMarketingLanding,
-  fetchMarketingStats,
   type LandingPayload,
 } from '../lib/api';
+import { SHOW_PRICING } from '../lib/featureFlags';
 import { libraryUrl, registerUrl } from '../lib/links';
 import { resolveMediaUrl } from '../lib/media';
 import { useMarketingCopy } from '../lib/webLocaleContext';
 
-const STORAGE_KEY = 'gotcha.landing.v1';
+// v2: drops cached payloads that still carried learner names (hotfix web1).
+const STORAGE_KEY = 'gotcha.landing.v2';
 const STORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const STEP_ICONS = [a.bookOpen, a.circleX, a.chartLine] as const;
@@ -25,10 +26,6 @@ function formatUzs(n: number) {
     .toString()
     .replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
   return `${grouped} soʻm`;
-}
-
-function formatLearners(n: number) {
-  return n.toLocaleString('en-US');
 }
 
 function cefrLabel(code: string) {
@@ -229,29 +226,12 @@ export default function LandingPage() {
       setLoadState('ready');
     }
 
-    const overlayLiveCount = () =>
-      fetchMarketingStats()
-        .then((stats) => {
-          if (cancelled) return;
-          const learnerCount = Number(stats.learnerCount) || 0;
-          if (!learnerCount) return;
-          setPayload((prev) =>
-            prev ? { ...prev, stats: { learnerCount } } : prev,
-          );
-        })
-        .catch(() => {
-          /* Keep catalog/pricing even if the live count is briefly unavailable. */
-        });
-
-    if (cached) void overlayLiveCount();
-
     fetchMarketingLanding()
       .then((data) => {
         if (cancelled) return;
         setPayload(data);
         setLoadState('ready');
         writeCachedLanding(data);
-        void overlayLiveCount();
       })
       .catch(() => {
         if (cancelled) return;
@@ -290,12 +270,9 @@ export default function LandingPage() {
     setSelectedLang(payload.languages[0].code);
   }, [payload, selectedLang]);
 
-  const learnerCount = payload?.stats.learnerCount ?? 0;
   const languages = payload?.languages ?? [];
   const catalogItems = payload?.catalog.items ?? [];
   const pricing = payload?.importPricing;
-  const topReaders = loadState === 'degraded' ? [] : (payload?.topReaders ?? []);
-  const hideReaders = loadState === 'degraded';
   const catalogLoading = loadState === 'loading' && !payload;
   const registerHref = registerUrl({
     plan: 'free',
@@ -479,6 +456,8 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* Hotfix web1 (AUDIT C1/C2): hidden until the owner approves the prices. */}
+        {SHOW_PRICING && (
         <section id="pricing" className="scroll-mt-24 bg-[#f3f0ff] px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
           <FadeIn className="mx-auto flex max-w-[640px] flex-col items-center gap-12">
             <div className="flex flex-col items-center gap-3 text-center">
@@ -537,92 +516,6 @@ export default function LandingPage() {
             </p>
           </FadeIn>
         </section>
-
-        {!hideReaders && (
-          <section id="readers" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
-            <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-12">
-              <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
-                <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">{copy.readers.label}</p>
-                <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-[32px]">
-                  {copy.readers.title}
-                </h2>
-                <p className="text-[15px] leading-[1.5] text-[#4a5565]">{copy.readers.subtitle}</p>
-              </div>
-
-              {catalogLoading ? (
-                <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-3">
-                  {Array.from({ length: 3 }).map((_, i) => (
-                    <div key={i} className="h-48 animate-pulse rounded-2xl border border-[#e2e8f0] bg-[#f8fafc]" />
-                  ))}
-                </div>
-              ) : topReaders.length === 0 ? (
-                <div className="flex w-full max-w-[540px] flex-col items-center gap-4 rounded-2xl border border-[#e2e8f0] bg-[#f3f0ff] px-6 py-10 text-center">
-                  <p className="text-sm leading-[1.5] text-[#4a5565]">{copy.readers.empty}</p>
-                  <a
-                    href={registerHref}
-                    className="inline-flex h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-sm font-semibold text-white"
-                  >
-                    {copy.readers.cta}
-                  </a>
-                </div>
-              ) : (
-                <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-                  {topReaders.map((reader) => (
-                    <article
-                      key={`${reader.rank}-${reader.displayName}`}
-                      className="flex flex-col gap-5 rounded-2xl border border-[#e2e8f0] bg-white p-6"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-[#101828]">
-                          <span className="font-['Manrope',sans-serif] text-base font-bold text-white">
-                            {reader.initials}
-                          </span>
-                        </div>
-                        <p className="truncate font-['Manrope',sans-serif] text-base font-bold text-[#101828]">
-                          {reader.displayName}
-                        </p>
-                      </div>
-                      <div className="flex flex-col gap-2.5 text-[13px]">
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
-                            <span className="inline-flex h-4 w-4 items-center justify-center">
-                              <Icon src={a.flameSm} size={16} />
-                            </span>
-                            {copy.readers.streak}
-                          </span>
-                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
-                            {reader.streakDays} {copy.readers.days}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
-                            <span className="inline-flex h-4 w-4 items-center justify-center">
-                              <Icon src={a.alarmClock} size={16} />
-                            </span>
-                            {copy.readers.timeRead}
-                          </span>
-                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
-                            {reader.minutesRead} {copy.readers.mins}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <span className="inline-flex items-center gap-2 text-[#4a5565]">
-                            <span className="inline-flex h-4 w-4 items-center justify-center">
-                              <Icon src={a.bookOpenSm} size={16} />
-                            </span>
-                            {copy.readers.wordsLearned}
-                          </span>
-                          <span className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">
-                            {reader.wordsLearned} {copy.readers.words}
-                          </span>
-                        </div>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </FadeIn>
-          </section>
         )}
 
         <section className="bg-[#101828] px-5 py-20 md:px-10 lg:px-20 lg:py-[120px]" aria-label="Get started">
@@ -631,13 +524,8 @@ export default function LandingPage() {
               <h2 className="font-['Manrope',sans-serif] text-[32px] font-extrabold leading-[1.2] text-white md:text-[44px]">
                 {copy.cta.title}
               </h2>
-              {learnerCount > 0 ? (
-                <p className="text-base font-medium text-[#99a1af]">
-                  {formatLearners(learnerCount)} readers already learning
-                </p>
-              ) : (
-                <p className="text-base font-medium text-[#99a1af]">{copy.cta.subtitle}</p>
-              )}
+              {/* Hotfix web1 (AUDIT C6): no learner counter. */}
+              <p className="text-base font-medium text-[#99a1af]">{copy.cta.subtitle}</p>
             </div>
             <a
               className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px"
