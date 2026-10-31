@@ -1,6 +1,8 @@
 /**
  * final-5 (Kai): Free limits and their resets. ALL resets are at 00:00 Asia/Tashkent:
  * daily lookups and quizzes at midnight, monthly import pages at midnight on the 1st. No uncapped or vague-limit wording.
+ * r3b: limit bodies are plan-neutral ("You have used all N …"): Plus users hit the same free import pool and a Plus quiz
+ * cap, so "Free includes N …" was wrong for them.
  */
 export type LimitLang = 'en' | 'ru' | 'uz';
 export const LIMIT_TIME_ZONE = 'Asia/Tashkent';
@@ -33,12 +35,12 @@ export const LIMIT_COPY: Record<LimitLang, LimitCopy> = {
     dailyReset: 'Resets at 00:00 Tashkent time.',
     monthlyReset: (d) => `Pages reset on ${d} at 00:00 Tashkent time.`,
     lookupTitle: 'Daily lookup limit reached',
-    lookupBody: (n) => `Free includes ${n} word lookups a day.`,
+    lookupBody: (n) => `You have used all ${n} word lookups for today.`,
     quizTitle: 'Daily quiz limit reached',
-    quizBody: (n) => `Free includes ${n} quizzes a day.`,
+    quizBody: (n) => `You have used all ${n} quizzes for today.`,
     importTitle: 'Free import limit reached',
-    importDailyBody: (n) => `Free includes ${n} imports a day.`,
-    importMonthlyBody: (n) => `Free includes ${n} pages a month.`,
+    importDailyBody: (n) => `You have used all ${n} free imports for today.`,
+    importMonthlyBody: (n) => `You have used all ${n} free pages for this month.`,
     paymentsOff: 'Paid imports are not available yet.',
     ok: 'OK',
     freePlan: 'Free plan',
@@ -51,12 +53,12 @@ export const LIMIT_COPY: Record<LimitLang, LimitCopy> = {
     dailyReset: 'Обновляется в 00:00 по ташкентскому времени.',
     monthlyReset: (d) => `Страницы обновятся ${d} в 00:00 по ташкентскому времени.`,
     lookupTitle: 'Дневной лимит поиска слов исчерпан',
-    lookupBody: (n) => `В Free входит ${n} поисков слов в день.`,
+    lookupBody: (n) => `Вы использовали все поиски слов на сегодня: ${n}.`,
     quizTitle: 'Дневной лимит тестов исчерпан',
-    quizBody: (n) => `В Free входит ${n} тестов в день.`,
+    quizBody: (n) => `Вы использовали все тесты на сегодня: ${n}.`,
     importTitle: 'Лимит бесплатных импортов исчерпан',
-    importDailyBody: (n) => `В Free входит ${n} импорта в день.`,
-    importMonthlyBody: (n) => `В Free входит ${n} страниц в месяц.`,
+    importDailyBody: (n) => `Вы использовали все бесплатные импорты на сегодня: ${n}.`,
+    importMonthlyBody: (n) => `Вы использовали все бесплатные страницы в этом месяце: ${n}.`,
     paymentsOff: 'Платные импорты пока недоступны.',
     ok: 'OK',
     freePlan: 'Тариф Free',
@@ -69,12 +71,12 @@ export const LIMIT_COPY: Record<LimitLang, LimitCopy> = {
     dailyReset: 'Toshkent vaqti bilan 00:00 da yangilanadi.',
     monthlyReset: (d) => `Sahifalar ${d} kuni Toshkent vaqti bilan 00:00 da yangilanadi.`,
     lookupTitle: 'Kunlik soʻz qidirish limiti tugadi',
-    lookupBody: (n) => `Free tarifida kuniga ${n} ta soʻz qidirish bor.`,
+    lookupBody: (n) => `Bugungi ${n} ta soʻz qidiruvi ishlatildi.`,
     quizTitle: 'Kunlik test limiti tugadi',
-    quizBody: (n) => `Free tarifida kuniga ${n} ta test bor.`,
+    quizBody: (n) => `Bugungi ${n} ta test ishlatildi.`,
     importTitle: 'Bepul import limiti tugadi',
-    importDailyBody: (n) => `Free tarifida kuniga ${n} ta import bor.`,
-    importMonthlyBody: (n) => `Free tarifida oyiga ${n} sahifa bor.`,
+    importDailyBody: (n) => `Bugungi ${n} ta bepul import ishlatildi.`,
+    importMonthlyBody: (n) => `Bu oydagi ${n} ta bepul sahifa ishlatildi.`,
     paymentsOff: 'Pullik importlar hozircha mavjud emas.',
     ok: 'OK',
     freePlan: 'Free tarifi',

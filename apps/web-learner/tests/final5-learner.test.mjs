@@ -44,7 +44,7 @@ test('limit copy says 00:00 Tashkent for daily and the 1st for monthly', () => {
   assert.match(shared.LIMIT_COPY.ru.dailyReset, /00:00 по ташкентскому/);
   assert.match(shared.LIMIT_COPY.uz.dailyReset, /Toshkent vaqti bilan 00:00/);
   for (const l of LANGS) assert.match(shared.LIMIT_COPY[l].monthlyReset('X'), /00:00/);
-  assert.match(shared.LIMIT_COPY.en.importMonthlyBody(50), /50 pages a month/);
+  assert.match(shared.LIMIT_COPY.en.importMonthlyBody(50), /all 50 free pages for this month/);
 });
 
 test('reset instants are 00:00 Asia/Tashkent (19:00 UTC)', () => {
@@ -60,15 +60,15 @@ test('reset instants are 00:00 Asia/Tashkent (19:00 UTC)', () => {
 test('limit screen notices from API 403 bodies', () => {
   const d = shared.limitNoticeFromError({ code: 'DAILY_LIMIT_REACHED', body: { kind: 'lookup', limit: 20 } }, 'en');
   assert.equal(d.title, 'Daily lookup limit reached');
-  assert.match(d.body, /20 word lookups a day/);
+  assert.match(d.body, /all 20 word lookups for today/);
   assert.match(d.reset, /00:00 Tashkent/);
   const q = shared.limitNoticeFromError({ code: 'DAILY_LIMIT_REACHED', body: { kind: 'quiz', limit: 10 } }, 'ru');
-  assert.match(q.body, /10 тестов/);
+  assert.match(q.body, /все тесты на сегодня: 10/);
   const m = shared.limitNoticeFromError({ code: 'IMPORT_LIMIT_REACHED', body: { limit: 'monthly_pages', monthlyFreePageLimit: 50, resetAt: '2026-11-30T19:00:00.000Z' } }, 'en');
-  assert.match(m.body, /50 pages a month/);
+  assert.match(m.body, /all 50 free pages for this month/);
   assert.match(m.reset, /1 December 2026 at 00:00 Tashkent/);
   const di = shared.limitNoticeFromError({ code: 'IMPORT_LIMIT_REACHED', body: { limit: 'daily_imports', dailyFreeImportsPerUser: 3 } }, 'uz');
-  assert.match(di.body, /3 ta import/);
+  assert.match(di.body, /3 ta bepul import/);
   assert.ok(shared.limitNoticeFromError({ code: 'PAYMENTS_DISABLED' }, 'en'));
   assert.equal(shared.limitNoticeFromError({ code: 'OTHER' }, 'en'), null);
 });
@@ -93,4 +93,16 @@ test('payments flag defaults off and gates the upsells', () => {
   assert.equal((imp.match(/if \(blockedByFreeLimit\(quote\)\) return;/g) || []).length, 3);
   const auth = readFileSync(join(SRC, 'pages', 'AuthPage.tsx'), 'utf8');
   assert.match(auth, /\{!adminReturnUrl && \([\s\S]*?signUpFree/);
+});
+
+test('r3b: limit bodies never say Free/Free tarif (Plus users see them too), all langs', () => {
+  for (const lang of ['en', 'ru', 'uz']) {
+    const bodies = [
+      shared.limitNoticeFromError({ code: 'DAILY_LIMIT_REACHED', body: { kind: 'lookup', limit: 20 } }, lang).body,
+      shared.limitNoticeFromError({ code: 'DAILY_LIMIT_REACHED', body: { kind: 'quiz', limit: 200 } }, lang).body,
+      shared.limitNoticeFromError({ code: 'IMPORT_LIMIT_REACHED', body: { limit: 'daily_imports', dailyFreeImportsPerUser: 3 } }, lang).body,
+      shared.limitNoticeFromError({ code: 'IMPORT_LIMIT_REACHED', body: { limit: 'monthly_pages', monthlyFreePageLimit: 50 } }, lang).body,
+    ];
+    for (const b of bodies) { assert.ok(!/\bFree\b|Free tarif|includes|входит/.test(b), `${lang}: ${b}`); assert.ok(!/\bmust\b/i.test(b)); }
+  }
 });
