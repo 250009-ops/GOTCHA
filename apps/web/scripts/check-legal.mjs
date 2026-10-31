@@ -5,7 +5,9 @@
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const publish = process.argv.includes('--publish');
+// PAY2-24: every build is a publish build unless it is an explicit local draft preview (LEGAL_DRAFT_PREVIEW=1), so a deploy
+// path that runs the plain `npm run build` can never ship a bare [PLACEHOLDER] or a draft line.
+const publish = process.argv.includes('--publish') || !/^(1|true|yes)$/i.test(String(process.env.LEGAL_DRAFT_PREVIEW ?? '').trim());
 // PAY2-14 (payments-02): `npm run build:publish` (the deploy path, deploy/lib/vite-env.sh) runs this with --publish.
 // --publish rejects ANY bracketed ALL-CAPS placeholder ([TBD BY PM], [EFFECTIVE DATE], [OFERTA URL] …), the PM
 // "not published" lines in en/ru/uz, VITE_PREVIEW_STAMP=true and LEGAL_DRAFT_PREVIEW.

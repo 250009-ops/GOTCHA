@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, readdirSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
@@ -54,10 +54,33 @@ test('PAY2-14: --publish rejects [TBD BY PM], any [ALL CAPS] placeholder, draft 
   rmSync(ok, { recursive: true });
 });
 
-test('PAY2-14: the real pending PM text is NOT publishable today (placeholders + draft lines) — G1 stays open', () => {
+test('PAY2-14/G1 (r3b): the real pending PM text (17:20) is publishable: placeholders filled, no draft lines', () => {
   const r = run(process.cwd(), ['--publish']);
-  assert.notEqual(r.status, 0);
-  for (const m of ['[EFFECTIVE DATE]', '[OFERTA URL]', 'NOT PUBLISHED']) assert.ok(r.stderr.includes(m), m);
+  assert.equal(r.status, 0, r.stderr);
+});
+
+test('PAY2-24: the plain check (no --publish) is a publish check unless LEGAL_DRAFT_PREVIEW=1', () => {
+  const d = sandbox({ 'legal-pm-payments/oferta-en.html': CLEAN.replace('1 November 2026', '[EFFECTIVE DATE]') });
+  const r = run(d, []);
+  assert.notEqual(r.status, 0); assert.ok(r.stderr.includes('[EFFECTIVE DATE]'), r.stderr);
+  rmSync(d, { recursive: true });
+});
+
+test('PAY2-24: every deploy script that builds apps/web goes through the publish guard', () => {
+  const root = join(process.cwd(), '..', '..');
+  const files = [...readdirSync(join(root, 'scripts')).map((f) => join(root, 'scripts', f)), ...readdirSync(join(root, 'deploy'), { recursive: true }).map((f) => join(root, 'deploy', String(f)))]
+    .filter((f) => /\.(mjs|js|cjs|sh)$/.test(f));
+  const bad: string[] = [];
+  for (const f of files) {
+    const t = readFileSync(f, 'utf8');
+    for (const line of t.split('\n')) {
+      const webBuild = /(['"]|\s)(run['"]?,?\s*['"]?build)\b(?!:publish)[^\n]*apps\/web(?![-\w])/.test(line);
+      if (webBuild) bad.push(`${f}: ${line.trim()}`);
+    }
+  }
+  assert.deepEqual(bad, [], 'apps/web must be built with build:publish');
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
+  assert.match(pkg.scripts.build, /check-legal\.mjs/, 'plain build still runs check-legal (publish mode by default)');
 });
 
 test('LEGAL_DRAFT_PREVIEW=1 lets a plain (non-publish) build carry the pending drafts; without it the draft line still fails', () => {
