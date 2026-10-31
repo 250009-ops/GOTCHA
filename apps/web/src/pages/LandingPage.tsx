@@ -7,9 +7,12 @@ import { LANDING_BOOKS, LANDING_COPY } from '../lib/landingCopy';
 import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
 import { useWebLocale } from '../lib/webLocaleContext';
 import lookup from '../data/lookup-capture.json';
+import { plusCta } from '../lib/plusCta';
 
 /** Landing premium rev 4 (team/uiux/landing-premium). No stats, learner counts or reader rankings are rendered (no marketing API call). */
 // PLUS-OFFER §4: the 50% import bullet (plusOpt) shows only once importDiscountPct = 50 is live in production.
+// Until Plus checkout exists (PLUS-OFFER §5), prices show but the CTA is 'Start free' + Marketing's pre-launch note.
+const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
 const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
 // Lookup popover renders only from a real captured API response (src/data/lookup-capture.json). Never typed by hand.
 type Captured = { lemma?: string; translation?: string; contextualMeaning?: string | null; partOfSpeech?: string | null };
@@ -76,6 +79,7 @@ export default function LandingPage() {
     return () => io.disconnect();
   }, [params]);
 
+  const pc = plusCta(C, CHECKOUT_LIVE, ui);
   const plusB = IMPORT_DISCOUNT_LIVE ? [C.plusB[0], C.plusOpt, ...C.plusB.slice(1)] : [...C.plusB];
   const navIds = ['#how', '#features', '#plus', '#faq'];
 
@@ -174,7 +178,7 @@ export default function LandingPage() {
                   );
                 })}
               </div>
-              <a className="btn btn-brand" href={startHref}>{C.plusCta}</a><p className="note">{C.plusNote}</p>
+              <a className="btn btn-brand" href={pc.href} data-cta="plus" data-plus-live={String(pc.live)}>{pc.label}</a><p className="note">{pc.note}</p>
             </div>
           </div>
         </div></div></section>

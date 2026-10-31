@@ -1,5 +1,5 @@
-// GENERATED verbatim from team/uiux/landing-premium/src/copy.json (rev 4, LANDING-COPY-v2 merged 31 Oct).
-// Only addition: `entity` (footer). mt/mb ('Built in Uzbekistan') dropped: pending sign-off.
+// GENERATED from team/uiux/landing-premium/src/copy.json (rev 4) + plusCta_prelaunch/plusNote_prelaunch verbatim from
+// team/marketing/LANDING-COPY-v2.md. Additions: `entity` (footer). Android FAQ removed (Kai, 31 Oct). mt/mb dropped (pending sign-off).
 export const LANDING_COPY = {
  "en": {
   "nav": [
@@ -63,7 +63,6 @@ export const LANDING_COPY = {
    "Do I have to pay to start?",
    "Can I read my own books?",
    "Which languages can I learn?",
-   "Is there an Android app?",
    "Can I delete my data?",
    "Does Plus renew by itself?"
   ],
@@ -71,7 +70,6 @@ export const LANDING_COPY = {
    "No. Reading, daily word lookups and some imports are free.",
    "Yes. Paste the text, add a link, or upload a PDF (scanned ones too) or an EPUB.",
    "Many. Pick a book from the library, or import a text in the language you're learning.",
-   "It's in closed testing on Google Play. The web version already works at gotchaa.uz/learn.",
    "Yes. Settings lets you download your data or delete your account.",
    "No. You pay once for 30 or 365 days, and when the pass ends you go back to Free with your words and progress kept."
   ],
@@ -84,7 +82,9 @@ export const LANDING_COPY = {
    "Privacy",
    "Terms"
   ],
-  "entity": "the Erkin Tizim team"
+  "entity": "the Erkin Tizim team",
+  "plusCta_prelaunch": "Start free",
+  "plusNote_prelaunch": "You can start on Free today. Plus payment opens on the site soon."
  },
  "uz": {
   "nav": [
@@ -148,7 +148,6 @@ export const LANDING_COPY = {
    "Boshlash uchun pul toʻlash kerakmi?",
    "Oʻz kitobimni oʻqisam boʻladimi?",
    "Qaysi tillarni oʻrganish mumkin?",
-   "Android ilovasi bormi?",
    "Maʼlumotlarimni oʻchirib tashlasam boʻladimi?",
    "Plus oʻzi uzaytiriladimi?"
   ],
@@ -156,7 +155,6 @@ export const LANDING_COPY = {
    "Yoʻq. Oʻqish, har kungi soʻz qidirish va ayrim importlar bepul.",
    "Ha. Matnni joylang, havola bering yoki PDF (skanerlangani ham) yoxud EPUB yuklang.",
    "Koʻp. Kutubxonadan kitob tanlang yoki oʻrganayotgan tilingizdagi matnni yuklang.",
-   "Hozir Google Playʼda yopiq testda. Veb-versiya esa gotchaa.uz/learn manzilida allaqachon ishlayapti.",
    "Ha. Sozlamalarda maʼlumotlaringizni yuklab olishingiz yoki akkauntni oʻchirishingiz mumkin.",
    "Yoʻq. 30 yoki 365 kun uchun bir marta toʻlaysiz. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz joyida qoladi."
   ],
@@ -169,7 +167,9 @@ export const LANDING_COPY = {
    "Maxfiylik",
    "Shartlar"
   ],
-  "entity": "Erkin Tizim jamoasi"
+  "entity": "Erkin Tizim jamoasi",
+  "plusCta_prelaunch": "Bepul boshlash",
+  "plusNote_prelaunch": "Hozir bepul tarifda boshlang. Plus uchun toʻlov saytda tez orada ochiladi."
  },
  "ru": {
   "nav": [
@@ -233,7 +233,6 @@ export const LANDING_COPY = {
    "Чтобы начать, нужно платить?",
    "Можно читать свои книги?",
    "Какие языки можно учить?",
-   "Есть приложение для Android?",
    "Можно удалить свои данные?",
    "Plus продлевается сам?"
   ],
@@ -241,7 +240,6 @@ export const LANDING_COPY = {
    "Нет. Чтение, ежедневные подсказки по словам и часть импортов бесплатны.",
    "Да. Вставьте текст, ссылку или загрузите PDF (сканы тоже) или EPUB.",
    "Много. Выберите книгу в библиотеке или загрузите текст на языке, который учите.",
-   "Оно сейчас в закрытом тесте в Google Play. Веб-версия уже работает на gotchaa.uz/learn.",
    "Да. В настройках можно скачать свои данные или удалить аккаунт.",
    "Нет. Вы платите один раз за 30 или 365 дней. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс останутся."
   ],
@@ -254,7 +252,9 @@ export const LANDING_COPY = {
    "Конфиденциальность",
    "Условия"
   ],
-  "entity": "команда Erkin Tizim"
+  "entity": "команда Erkin Tizim",
+  "plusCta_prelaunch": "Начать бесплатно",
+  "plusNote_prelaunch": "Начните с бесплатного плана уже сейчас. Оплата Plus скоро появится на сайте."
  }
 } as const;
 export type LandingLocale = keyof typeof LANDING_COPY;
