@@ -10,3 +10,9 @@ test('no minimum-age wording in web copy', () => {
     .filter((f) => BAD.test(readFileSync(f, 'utf8')));
   assert.deepEqual(hits, []);
 });
+
+// LG4-07: no auto-renew / offline / unlimited / no-ads / $ claims in LegalPage copy (passes are one-off, soʻm).
+const CLAIMS = /automatically renew|автоматически продлева|avtomatik ravishda yangilan|offline|unlimited|безлимит|cheksiz|no ads|без рекламы|reklamasiz|\$\s?\d/i;
+test('LG4-07: no false plan claims in legal copy', () => {
+  for (const l of ['en', 'ru', 'uz']) assert.ok(!CLAIMS.test(readFileSync(`src/lib/legalCopy.${l}.ts`, 'utf8')), l);
+});

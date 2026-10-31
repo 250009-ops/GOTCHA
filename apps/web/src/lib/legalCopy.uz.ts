@@ -48,7 +48,7 @@ export const LEGAL_UZ: LegalCopyBundle = {
         number: '5',
         title: 'Obunalar va to\'lovlar',
         paragraphs: [
-          'Premium funksiyalar pullik obunani talab qiladi. Barcha to\'lovlar oldindan undiriladi va qonun talab qilmasa, qaytarilmaydi. Obunalar yangilanish sanasidan oldin bekor qilinmasa, har bir hisob-kitob davri oxirida avtomatik ravishda yangilanadi.',
+          'Premium funksiyalar pullik obunani talab qiladi. Barcha to\'lovlar oldindan undiriladi va qonun talab qilmasa, qaytarilmaydi.',
         ],
       },
       {

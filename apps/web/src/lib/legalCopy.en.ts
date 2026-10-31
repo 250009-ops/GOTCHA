@@ -48,7 +48,7 @@ export const LEGAL_EN: LegalCopyBundle = {
         number: '5',
         title: 'Subscriptions and Payments',
         paragraphs: [
-          'Premium features require a paid subscription. All fees are billed in advance and are non-refundable unless required by law. Subscriptions automatically renew at the end of each billing cycle unless cancelled prior to the renewal date.',
+          'Premium features require a paid subscription. All fees are billed in advance and are non-refundable unless required by law.',
         ],
       },
       {
