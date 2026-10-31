@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build && node scripts/check-legal.mjs",
+    "preview": "vite preview",
+    "build:publish": "tsc -b && vite build && node scripts/check-legal.mjs --publish",
+    "oferta:gen": "python3 scripts/gen_oferta.py \"$LEGAL_DRAFTS_DIR/pending-payments-02\"",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.3.3",
