@@ -79,7 +79,6 @@ const MEMORY_LRU_MAX = 800;
 const IMPORT_CLEANUP_TIMEOUT_MS = 55_000;
 const IMPORT_CLEANUP_MAX_RETRIES = 1;
 
-@Injectable()
 function quizAnswerKey(value: string) {
   return value.trim().toLowerCase().replace(/[.?!…]+$/g, '').replace(/\s+/g, ' ');
 }
@@ -98,6 +97,7 @@ function groundedQuizQuestions<T extends { prompt?: string; options?: string[]; 
   });
 }
 
+@Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private client: OpenAI | null = null;
