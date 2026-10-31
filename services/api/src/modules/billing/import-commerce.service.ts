@@ -259,30 +259,36 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     const dayStart = this.startOfTashkentDay();
     const pageStart = this.pageWindowStart(resetCycle);
     const exclude = excludePaymentId ? { id: { not: excludePaymentId } } : {};
-
-    const [dailyFreeUsed, monthFreePayments] = await Promise.all([
-      this.prisma.importPayment.count({
-        where: {
-          userId,
-          status: ImportPaymentStatus.paid,
-          amountTiyins: 0,
-          paidAt: { gte: dayStart },
-          ...exclude,
-        },
-      }),
-      this.prisma.importPayment.findMany({
-        where: {
-          userId,
-          status: ImportPaymentStatus.paid,
-          amountTiyins: 0,
-          paidAt: { gte: pageStart },
-          ...exclude,
-        },
-        select: { estimatedPages: true },
-      }),
-    ]);
-
-    const monthlyPagesUsed = monthFreePayments.reduce((sum, p) => sum + p.estimatedPages, 0);
+    // 6.1b (Kai): both windows from one read. Daily import count = 00:00 Tashkent day (never resetCycle);
+    // pages = resetCycle window (monthly/yearly, 00:00 Tashkent). A free import that FAILED is not counted
+    // (no charge for a failed import); a user retry puts it back to queued, so it counts again.
+    const since = dayStart < pageStart ? dayStart : pageStart;
+    const free = await this.prisma.importPayment.findMany({
+      where: {
+        userId,
+        status: ImportPaymentStatus.paid,
+        amountTiyins: 0,
+        paidAt: { gte: since },
+        ...exclude,
+      },
+      select: { estimatedPages: true, paidAt: true, userImportId: true },
+    });
+    const importIds = free.map((p) => p.userImportId).filter((id): id is string => Boolean(id));
+    const failed = importIds.length
+      ? new Set(
+          (
+            await this.prisma.userImport.findMany({
+              where: { id: { in: importIds }, ingestionStatus: 'failed' },
+              select: { id: true },
+            })
+          ).map((u) => u.id),
+        )
+      : new Set<string>();
+    const counted = free.filter((p) => !(p.userImportId && failed.has(p.userImportId)));
+    const dailyFreeUsed = counted.filter((p) => p.paidAt && p.paidAt >= dayStart).length;
+    const monthlyPagesUsed = counted
+      .filter((p) => p.paidAt && p.paidAt >= pageStart)
+      .reduce((sum, p) => sum + p.estimatedPages, 0);
     return { dailyFreeUsed, monthlyPagesUsed };
   }
 

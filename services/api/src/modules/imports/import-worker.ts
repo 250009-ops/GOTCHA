@@ -13,8 +13,16 @@ import {
   IMPORT_REAP_INTERVAL_MS,
   IMPORT_STALE_MS,
   ImportQueueRow,
+  importQueueCounts,
   reapStaleImportJobs,
+  releaseImportJob,
 } from './import-queue';
+
+/** How long SIGTERM waits for running jobs before releasing them (keep below PM2 --kill-timeout). */
+export function importWorkerDrainMs(env = process.env): number {
+  const n = Number(env.IMPORT_WORKER_DRAIN_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.min(120_000, Math.floor(n)) : 20_000;
+}
 
 export function importWorkerConcurrency(env = process.env): number {
   const n = Number(env.IMPORT_WORKER_CONCURRENCY);
@@ -30,6 +38,8 @@ export class ImportWorker implements OnApplicationShutdown {
   private readonly logger = new Logger('ImportWorker');
   readonly workerId = `${hostname()}:${process.pid}:${randomUUID().slice(0, 8)}`;
   private running = 0;
+  /** Job ids this process currently owns (released back to the queue on shutdown). */
+  private readonly inFlight = new Set<string>();
   private stopping = false;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private reapTimer?: ReturnType<typeof setInterval>;
@@ -45,6 +55,10 @@ export class ImportWorker implements OnApplicationShutdown {
 
   start(pollMs = 1000) {
     this.logger.log(`Import worker ${this.workerId} started (concurrency=${this.concurrency}, heartbeat=${IMPORT_HEARTBEAT_MS}ms, stale=${IMPORT_STALE_MS}ms)`);
+    // Rows left queued while no worker ran (e.g. the 2 prod rows) are claimed by the normal loop below.
+    void importQueueCounts(this.prisma)
+      .then((c) => this.logger.log(`Queue on start: ${JSON.stringify(c)}`))
+      .catch(() => undefined);
     void this.housekeeping();
     this.reapTimer = setInterval(() => void this.housekeeping(), IMPORT_REAP_INTERVAL_MS);
     const loop = async () => {
@@ -54,7 +68,9 @@ export class ImportWorker implements OnApplicationShutdown {
           const job = await claimNextImportJob(this.prisma, this.workerId);
           if (!job) break;
           this.running++;
+          this.inFlight.add(job.id);
           void this.runJob(job).finally(() => {
+            this.inFlight.delete(job.id);
             this.running--;
             if (this.running === 0) this.idle.splice(0).forEach((f) => f());
             if (!this.stopping) setImmediate(() => void loop());
@@ -127,16 +143,29 @@ export class ImportWorker implements OnApplicationShutdown {
     }
   }
 
-  /** Stop claiming; wait (bounded) for running jobs. Unfinished ones are re-queued by the reaper. */
-  async stop(waitMs = 25_000) {
+  /**
+   * Graceful stop (SIGTERM): stop claiming, wait (bounded) for running jobs, then hand any job still
+   * running back to the queue without burning an attempt. A released job's late result is fenced off
+   * (completeImportJob needs locked_by = us), so another worker re-runs it exactly once; no charge path
+   * runs because only the owner that moves a job to "failed" calls finalizeFailure.
+   * Must run BEFORE Prisma disconnects — dist/worker.js calls it from its own signal handler.
+   */
+  async stop(waitMs = importWorkerDrainMs()): Promise<{ released: string[] }> {
     this.stopping = true;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     if (this.reapTimer) clearInterval(this.reapTimer);
-    if (this.running === 0) return;
-    await Promise.race([new Promise<void>((r) => this.idle.push(r)), new Promise((r) => setTimeout(r, waitMs))]);
+    if (this.running > 0) {
+      await Promise.race([new Promise<void>((r) => this.idle.push(r)), new Promise((r) => setTimeout(r, waitMs))]);
+    }
+    const released: string[] = [];
+    for (const id of [...this.inFlight]) {
+      if (await releaseImportJob(this.prisma, id, this.workerId).catch(() => false)) released.push(id);
+    }
+    if (released.length) this.logger.warn(`Released ${released.length} in-flight job(s) back to the queue: ${released.join(', ')}`);
+    return { released };
   }
 
   async onApplicationShutdown() {
-    await this.stop();
+    if (!this.stopping) await this.stop().catch(() => undefined);
   }
 }

@@ -136,6 +136,28 @@ export async function reapStaleImportJobs(
   };
 }
 
+/**
+ * 6.1b graceful shutdown: hand a still-running job back to the queue WITHOUT burning an attempt
+ * (the attempt was interrupted by a deploy/SIGTERM, not failed). Fenced on ownership, so a job that
+ * finishes concurrently (status=done) or was reaped is left alone. Returns true if released.
+ */
+export async function releaseImportJob(db: Db, jobId: string, workerId: string): Promise<boolean> {
+  const n = await db.$executeRaw`
+    UPDATE import_queue_jobs
+       SET status = 'queued', attempts = GREATEST(0, attempts - 1), locked_by = NULL, locked_at = NULL, heartbeat_at = NULL,
+           run_after = date_trunc('milliseconds', now() AT TIME ZONE 'UTC'), last_error = 'Released by worker shutdown',
+           updated_at = (now() AT TIME ZONE 'UTC')
+     WHERE id = ${jobId}::uuid AND status = 'running' AND locked_by = ${workerId}`;
+  return n === 1;
+}
+
+/** Counts for the start-up log (e.g. rows left queued while no worker was running). */
+export async function importQueueCounts(db: Db): Promise<Record<string, number>> {
+  const rows = await db.$queryRaw<{ status: string; n: number }[]>`
+    SELECT status, count(*)::int AS n FROM import_queue_jobs GROUP BY status`;
+  return Object.fromEntries(rows.map((r) => [r.status, Number(r.n)]));
+}
+
 /** User retry: fresh attempts, immediate run. Only from a terminal failed state. */
 export async function requeueFailedImportJob(db: Db | Prisma.TransactionClient, userImportId: string): Promise<boolean> {
   const n = await (db as Db).$executeRaw`

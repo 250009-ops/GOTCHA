@@ -11,6 +11,7 @@ import {
   failImportJobAttempt,
   heartbeatImportJob,
   reapStaleImportJobs,
+  releaseImportJob,
   requeueFailedImportJob,
 } from './import-queue';
 
@@ -107,6 +108,20 @@ async function main() {
     assert.equal(j3.attempts, 1);
     assert.ok(await completeImportJob(prisma, j3.id, 'F'));
     assert.equal(await requeueFailedImportJob(prisma, b), false, 'done job is not retryable');
+
+    // 6b. (6.1b) SIGTERM release: back to queued, attempt not burned, fenced; late completion refused
+    const c = await mkImport(user.id);
+    const jr = (await claimNextImportJob(prisma, 'G'))!;
+    assert.equal(jr.user_import_id, c);
+    assert.equal(await releaseImportJob(prisma, jr.id, 'H'), false, 'non-owner cannot release');
+    assert.equal(await releaseImportJob(prisma, jr.id, 'G'), true);
+    const rel = await jobOf(c);
+    assert.equal(rel.status, 'queued'); assert.equal(rel.attempts, 0); assert.equal(rel.lockedBy, null);
+    assert.equal(await completeImportJob(prisma, jr.id, 'G'), false, 'released worker cannot complete');
+    const jr2 = (await claimNextImportJob(prisma, 'H'))!;
+    assert.equal(jr2.id, jr.id); assert.equal(jr2.attempts, 1);
+    assert.ok(await completeImportJob(prisma, jr2.id, 'H'));
+    assert.equal(await releaseImportJob(prisma, jr2.id, 'H'), false, 'done job is never released');
 
     // 7. Worst-case stuck detection bound
     const { IMPORT_STALE_MS, IMPORT_REAP_INTERVAL_MS } = await import('./import-queue');
