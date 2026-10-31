@@ -1,4 +1,4 @@
-PM legal sources pulled 14:27 UTC+5. HTML embedded verbatim; the .md sources stay in team/pm/legal/web (they hold lawyer/owner HTML comments, which check-legal keeps out of the repo).
+PM legal sources pulled 14:27 UTC+5. HTML embedded verbatim; the .md sources stay in team/pm/legal/web (they hold lawyer/owner HTML comments, which check-legal keeps out of the repo). Re-synced privacy-{en,ru,uz} 2026-10-31 15:05 UTC+5 (PM regen: §11 "Kept" line only; reports with attached messages ~1 year after close).
 2026-10-31T14:25:53 oferta-en.html
 2026-10-31T14:19:35 oferta-en.md
 2026-10-31T14:25:53 oferta-ru.html
@@ -17,12 +17,12 @@ PM legal sources pulled 14:27 UTC+5. HTML embedded verbatim; the .md sources sta
 2026-10-31T14:25:44 terms-ru.md
 2026-10-31T14:25:53 terms-uz.html
 2026-10-31T14:25:44 terms-uz.md
-09a8de60bb29c3f9bf7dc19268c53ddcce2447bb2e11a1ce7498d9feac63510b  privacy-en.md
-1fad57793a5631c261f3cb280676eac24aa1d0942722c1f68c5fa934db995de9  privacy-ru.md
-42640b5951ac70477765d176f4a28c874b5829fe3b1964855a827f734c48e6e9  privacy-uz.md
-5045eca13c18fcc1bd3a5fb29889df9f2eb8b00882b4f61c6a0efdffc3dce601  privacy-en.html
-aedc0ace7dd45bc676ef39eeef5cc7ba199c34d305f5f74ee418ddf98dff7d06  privacy-ru.html
-cd64fc728032c6376868284d222146ef3675fea98a02dfb273865fe36b846397  privacy-uz.html
+675aa9f09ffb25d5db6ad432faa159624d7d4d439ea22ddb3257f495df3b3390  privacy-en.md
+c716ed1211da974604b5f9a7c67463205578caf839a107e08af487ae02c597be  privacy-ru.md
+ef5198990e944e9eb5d253d70a208bbc478999c181e06d50255be57263196baa  privacy-uz.md
+27813d46c667d88164d8e1845414f9cfcf864a812842eb662ebb5b2ea59fed67  privacy-en.html
+ce709d565d6392d4d02fac21d4b3c950e0b19eeba46436c9826e98fac012902f  privacy-ru.html
+163a73315225a3bc6575f15c54e8e9ba387ae4813679a3d4762fa254de8155df  privacy-uz.html
 d8f6e5f5cc587eee3caa3203674b5ab720e370424d4fa93856a35529f901c649  terms-en.md
 a1029ccacd4bae4f2b3b6f8c07aea19ea841e3b8d0aab919fcc434706f2c11c8  terms-ru.md
 ce9695c66f16b4cc50f38dad91768017c64f19bae0d2ce682687f938ed7df5c3  terms-uz.md
