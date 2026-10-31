@@ -14,7 +14,8 @@ interface PracticeQuestion {
   questionIndex: number;
   prompt: string;
   options?: string[] | null;
-  correctAnswer: string;
+  /** W-24: no longer sent before submit; revealed per result after server grading. */
+  correctAnswer?: string;
   explanation?: string | null;
 }
 
@@ -33,6 +34,7 @@ interface AnswerResult {
   questionId: string;
   userAnswer: string;
   isCorrect: boolean;
+  correctAnswer?: string;
   explanation?: string | null;
 }
 
@@ -256,10 +258,12 @@ export default function PracticePage() {
                         </p>
                         {!r?.isCorrect && (
                           <p className="text-xs text-[#6b7280] mt-0.5">
-                            Correct answer: <span className="font-medium text-emerald-700">{q.correctAnswer}</span>
+                            Correct answer: <span className="font-medium text-emerald-700">{r?.correctAnswer ?? q.correctAnswer}</span>
                           </p>
                         )}
-                        {q.explanation && <p className="text-xs text-[#9ca3af] mt-1.5">{q.explanation}</p>}
+                        {(r?.explanation ?? q.explanation) && (
+                          <p className="text-xs text-[#9ca3af] mt-1.5">{r?.explanation ?? q.explanation}</p>
+                        )}
                       </div>
                     </div>
                   </div>

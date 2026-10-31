@@ -6,6 +6,7 @@ import { AiService } from '../ai/ai.service';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 import { shuffleQuestionOptions } from './shuffle-options';
+import { redactSession } from './practice-redact';
 
 @Injectable()
 export class PracticeService {
@@ -82,8 +83,7 @@ export class PracticeService {
     if (dto.practiceType !== PracticeType.flashcard) {
       await this.limits.incrementQuizUsage(userId);
     }
-
-    return session;
+    return redactSession(session);
   }
   async submitAnswers(userId: string, sessionId: string, dto: SubmitPracticeDto) {
     const session = await this.prisma.practiceSession.findFirst({
@@ -112,7 +112,8 @@ export class PracticeService {
           isCorrect,
         },
       });
-      results.push({ ...saved, explanation: question.explanation });
+      // Revealed only now, after the server has graded the answer (W-24).
+      results.push({ ...saved, correctAnswer: question.correctAnswer, explanation: question.explanation });
     }
 
     const updated = await this.prisma.practiceSession.update({
@@ -123,10 +124,11 @@ export class PracticeService {
     return { session: updated, results, score: correctCount / session.questionCount };
   }
 
-  getSession(userId: string, sessionId: string) {
-    return this.prisma.practiceSession.findFirst({
+  async getSession(userId: string, sessionId: string) {
+    const session = await this.prisma.practiceSession.findFirst({
       where: { id: sessionId, userId },
       include: { questions: true, answers: true },
     });
+    return session ? redactSession(session) : session;
   }
 }
