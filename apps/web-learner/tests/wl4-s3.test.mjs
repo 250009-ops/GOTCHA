@@ -40,7 +40,14 @@ test('WL4-09: empty reader state is localised and has a retry', () => {
   const i = reader.indexOf('copy.reader.stillProcessing');
   assert.ok(i > 0 && reader.slice(i, i + 600).includes('setReloadNonce'));
 });
-test('WL4-11: Delete copy matches the purge (messages deleted, reports kept anonymised)', () => {
-  assert.doesNotMatch(del, /stay in other people/);
-  assert.match(del, /messages you sent/);
+test('WL4-11 v2: Delete copy follows Privacy §8/§11 (messages kept as "Deleted user", reports ~1 year after close) in en/ru/uz', () => {
+  assert.doesNotMatch(del, /imports and the messages you sent|siz yuborgan xabarlar butunlay|отправленные вами сообщения будут удалены/);
+  assert.match(del, /Messages you sent to other users are not deleted/);
+  assert.match(del, /“Deleted user”, and your name, email and photo are removed/);
+  assert.match(del, /deleted about 1 year after the report is closed/);
+  assert.match(del, /«Удалённый пользователь»/); assert.match(del, /примерно через 1 год после закрытия жалобы/);
+  assert.match(del, /«Oʻchirilgan foydalanuvchi»/); assert.match(del, /taxminan 1 yil keyin oʻchiriladi/);
+  const uz = del.split('\n').find((l) => l.trimStart().startsWith('uz:')) ?? '';
+  assert.doesNotMatch(uz, /[A-Za-z][‘’'][a-z]/u, 'uz uses ʻ U+02BB, not ‘ ’ or apostrophe');
+  assert.doesNotMatch(del, /unlimited|fair use|cheksiz|безлимит/i);
 });
