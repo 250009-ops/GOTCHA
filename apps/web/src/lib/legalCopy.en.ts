@@ -24,7 +24,7 @@ export const LEGAL_EN: LegalCopyBundle = {
         number: '2',
         title: 'Who May Use Gotcha',
         paragraphs: [
-          'You must be at least 13 years old to use the Service. If you are under the age of majority in your jurisdiction, you represent that you have received parental or guardian permission to use GOTCHA and that they agree to these Terms on your behalf.',
+          'If you are under the age of majority in your jurisdiction, you represent that you have received parental or guardian permission to use GOTCHA and that they agree to these Terms on your behalf.',
         ],
       },
       {
@@ -344,18 +344,8 @@ export const LEGAL_EN: LegalCopyBundle = {
           'To exercise any of these rights, please send an inquiry from your registered account email to privacy@gotcha.app. We respond to all requests within 30 days.',
       },
       {
-        id: 'section-children',
-        number: '11',
-        title: "Children's Privacy",
-        tocLabel: 'Children',
-        paragraphs: [
-          'GOTCHA is not intended for or directed towards children under the age of 13. We do not knowingly collect or solicit personal information from children.',
-          'If we discover that a child under 13 has registered an account with us, we will take immediate steps to permanently delete the profile and any associated learning metadata.',
-        ],
-      },
-      {
         id: 'section-cookies',
-        number: '12',
+        number: '11',
         title: 'Cookies & Tracking',
         tocLabel: 'Cookies',
         paragraphs: [
@@ -365,7 +355,7 @@ export const LEGAL_EN: LegalCopyBundle = {
       },
       {
         id: 'section-imports',
-        number: '13',
+        number: '12',
         title: 'User Imported Content',
         tocLabel: 'User imports',
         paragraphs: [
@@ -375,7 +365,7 @@ export const LEGAL_EN: LegalCopyBundle = {
       },
       {
         id: 'section-changes',
-        number: '14',
+        number: '13',
         title: 'Changes to This Policy',
         tocLabel: 'Changes',
         paragraphs: [
@@ -385,7 +375,7 @@ export const LEGAL_EN: LegalCopyBundle = {
       },
       {
         id: 'section-contact',
-        number: '15',
+        number: '14',
         title: 'Contact Us',
         tocLabel: 'Contact',
         paragraphs: [

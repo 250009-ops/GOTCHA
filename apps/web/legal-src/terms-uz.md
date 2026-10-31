@@ -8,6 +8,8 @@ Ushbu Foydalanish shartlari (“Shartlar”) **Erkin Tizim jamoasi** (“Ijrochi
 
 Erkin Tizim jamoasi · Email: **support@gotchaa.uz**
 
+Pullik mahsulotlar boʻyicha ommaviy oferta **https://gotchaa.uz/oferta** manzilida eʼlon qilingan.
+
 ## 2. Qamrov
 
 Ushbu Shartlar Gotcha veb-sayti **gotchaa.uz** va veb-ilovasi **gotchaa.uz/learn**ga (“Xizmat”) tatbiq etiladi. Keyinchalik Android ilova chiqishi mumkin. Undan oldin Shartlarni yangilaymiz.
@@ -51,21 +53,29 @@ Xizmatning bir qismi Xizmatda koʻrsatilgan limitlar doirasida bepul. Masalan, k
 
 ## 7. Pullik mahsulotlar, narxlar va toʻlov
 
-- **Nimani sotamiz:** bir martalik xaridlar: sahifalar soniga qarab narxlanadigan **importlar** va **pullik kitoblarga kirish**. Obunalar sotmaymiz. Agar ularni joriy qilsak, avval ushbu Shartlarni yangilaymiz.
+- **Nimani sotamiz:** bir martalik xaridlar: sahifalar soniga qarab narxlanadigan **importlar**, **pullik kitoblarga kirish** va **Gotcha Plus muddatli ruxsatnomalari**.
+- **Gotcha Plus ruxsatnomalari:** belgilangan muddat uchun bir martalik toʻlov: **30 kun — 24 990 soʻm** yoki **365 kun — 199 990 soʻm**. Ruxsatnoma **avtomatik uzaytirilmaydi**: sizdan qayta pul yechilmaydi, muddat tugagach Plus imkoniyatlari shunchaki yopiladi. Istalgan vaqtda yangi ruxsatnoma sotib olishingiz mumkin.
+- **Plusga nimalar kiradi:** kuniga **200 tagacha soʻz izohi** (bepul hisoblar: 50 tagacha), kuniga **50 tagacha test** (oqilona foydalanish) va **pullik importlarga 50% chegirma**. Ushbu limitlarni oldindan xabar berib oʻzgartirishimiz mumkin. Amaldagi ruxsatnoma tugamasdan yangisini sotib olishingiz mumkin; uning kunlari joriy ruxsatnoma tugagach boshlanadi.
+
 - **Narxlar:** oʻzbek soʻmida (UZS), toʻlovdan oldin koʻrsatiladi.
 - **Toʻlov:** Uzcard yoki Humo kartasi bilan **Atmos** orqali. Har bir toʻlov uchun elektron fiskal chek beriladi.
 - **Darhol kirish:** raqamli kontent toʻlovdan soʻng darhol taqdim etiladi. Toʻlovdan oldin kirish darhol boshlanishini xohlashingizni tasdiqlaysiz.
 
 ## 8. Pulni qaytarish
 
-Pulni faqat xarid **nosoz** boʻlgan holda qaytaramiz:
+Pulni faqat xarid nosoz boʻlgan holda qaytaramiz.
 
-- xarid **yetkazilmagan**: toʻlov qilgansiz, lekin import yoki kitob ochilmagan, yoki pul ikki marta yoxud xato bilan yechilgan; yoki
-- xarid **taʼriflanganidek ishlamaydi**: masalan, import amalga oshmagan yoki kitob ochilmayapti va biz buni oqilona muddatda tuzata olmaymiz.
+Xarid faqat quyidagi hollarda **nosoz** hisoblanadi:
 
-Murojaat qilish uchun toʻlovdan keyin **[CLAIM PERIOD]** ichida **support@gotchaa.uz** ga yozing. Hisobingiz emailini, toʻlov sanasini va nima notoʻgʻri boʻlganini koʻrsating. Avval muammoni tuzatishga harakat qilamiz. Agar tuzata olmasak, pulni Atmos orqali oʻsha kartaga qaytaramiz va sotib olingan kirish yopiladi.
+- **pul yechilgan, lekin yetkazilmagan:** toʻlov qilgansiz, lekin import, kitob yoki Plus ruxsatnomasi ochilmagan;
+- **ishlamaydigan kontent:** sotib olingan import, kitob yoki Plus imkoniyatlari taʼriflanganidek ishlamaydi (masalan, import amalga oshmagan yoki kitob ochilmayapti) va biz buni oqilona muddatda tuzata olmaymiz;
+- **muvaffaqiyatsiz toʻlov:** toʻlov amalga oshmagan, lekin kartangizdan pul baribir yechilgan;
+- **ikki marta yechilgan toʻlov:** bitta xarid uchun pul ikki marta yechilgan.
+
+Murojaat qilish uchun xariddan keyin **14 kalendar kuni** ichida **support@gotchaa.uz** ga yozing. Hisobingiz emailini, toʻlov sanasini va nima notoʻgʻri boʻlganini koʻrsating. Avval muammoni tuzatishga harakat qilamiz. Agar tuzata olmasak, murojaatingiz qabul qilinganidan keyin **14 kun** ichida pulni Atmos orqali oʻsha kartaga qaytaramiz va sotib olingan kirish yopiladi.
 
 Yetkazilgan va taʼriflanganidek ishlayotgan xaridlar uchun pul qaytarilmaydi, masalan, fikringiz oʻzgargan boʻlsa, qonunda boshqacha belgilangan hollar bundan mustasno. **Ushbu Shartlardagi hech narsa Oʻzbekiston isteʼmolchilar huquqlarini himoya qilish qonunchiligi boʻyicha huquqlaringizni cheklamaydi.** Toʻlov boʻyicha muammo boʻlsa, bankingizga eʼtiroz bildirishdan oldin bizga yozing.
+**Bekor qilish soʻrovlari.** Xarid yoki ruxsatnomani bekor qilishni soʻrash uchun **support@gotchaa.uz** ga yozing. Har bir soʻrovni koʻrib chiqamiz; hech narsa avtomatik bekor qilinmaydi yoki qaytarilmaydi, pul esa faqat ushbu boʻlim qoidalariga koʻra qaytariladi.
 
 ## 9. Sizning kontentingiz
 

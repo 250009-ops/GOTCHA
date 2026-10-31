@@ -12,6 +12,7 @@ import { marketingLocaleFor } from '../lib/webLocale';
 const TITLES = {
   terms: { uz: 'Foydalanish shartlari', ru: 'Условия использования', en: 'Terms of Use' },
   privacy: { uz: 'Maxfiylik siyosati', ru: 'Политика конфиденциальности', en: 'Privacy Policy' },
+  oferta: { uz: 'Ommaviy oferta', ru: 'Публичная оферта', en: 'Public offer' },
 } as const;
 
 const PROSE =
@@ -23,7 +24,7 @@ const PROSE =
   '[&_th]:bg-[#f9fafb] [&_th]:p-2 [&_th]:text-left [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:p-2 [&_td]:align-top ' +
   '[&_mark]:bg-yellow-200';
 
-export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' }) {
+export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' | 'oferta' }) {
   const { copyLocale } = useWebLocale();
   const lang = marketingLocaleFor(copyLocale);
   const html = (LEGAL_HTML_V2[lang] ?? LEGAL_HTML_V2.uz)[doc];

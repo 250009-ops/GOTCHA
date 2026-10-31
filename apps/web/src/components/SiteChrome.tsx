@@ -4,7 +4,9 @@ import { Brand } from './Brand';
 import { UiLanguageDropdown } from './UiLanguageDropdown';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
-import { isWebLocale, type WebLocale } from '../lib/webLocale';
+import { isWebLocale, marketingLocaleFor, type WebLocale } from '../lib/webLocale';
+
+const OFERTA_LABEL = { uz: 'Ommaviy oferta', ru: 'Публичная оферта', en: 'Public offer' } as const;
 
 function LanguagePicker({ className }: { className?: string }) {
   const { copyLocale, setLocale } = useWebLocale();
@@ -166,6 +168,7 @@ export function SiteNav() {
 }
 
 export function SiteFooter() {
+  const footerLang = marketingLocaleFor(useWebLocale().copyLocale);
   const copy = useMarketingCopy();
 
   return (
@@ -202,6 +205,11 @@ export function SiteFooter() {
                 <Link to="/terms" className="transition-colors hover:text-[#101828]">
                   {copy.footer.terms}
                 </Link>
+                {import.meta.env.VITE_LEGAL_V2 === 'true' && (
+                  <Link to="/oferta" className="transition-colors hover:text-[#101828]">
+                    {OFERTA_LABEL[footerLang]}
+                  </Link>
+                )}
               </div>
             </div>
           </div>

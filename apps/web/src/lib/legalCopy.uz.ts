@@ -24,7 +24,7 @@ export const LEGAL_UZ: LegalCopyBundle = {
         number: '2',
         title: 'GOTCHA\'dan kim foydalanishi mumkin',
         paragraphs: [
-          'Xizmatdan foydalanish uchun kamida 13 yoshda bo\'lishingiz kerak. Agar yurisdiksiyangizda voyaga yetmagan bo\'lsangiz, GOTCHA\'dan foydalanish uchun ota-onangiz yoki qonuniy vakilingizning ruxsatini olganingizni va ular ushbu Shartlarga sizning nomingizdan rozilik bildirganini tasdiqlaysiz.',
+          'Agar yurisdiksiyangizda voyaga yetmagan bo\'lsangiz, GOTCHA\'dan foydalanish uchun ota-onangiz yoki qonuniy vakilingizning ruxsatini olganingizni va ular ushbu Shartlarga sizning nomingizdan rozilik bildirganini tasdiqlaysiz.',
         ],
       },
       {
@@ -344,18 +344,8 @@ export const LEGAL_UZ: LegalCopyBundle = {
           'Ushbu huquqlardan foydalanish uchun ro\'yxatdan o\'tgan hisob elektron pochtangizdan privacy@gotcha.app manziliga murojaat yuboring. Barcha so\'rovlarga 30 kun ichida javob beramiz.',
       },
       {
-        id: 'section-children',
-        number: '11',
-        title: 'Bolalar maxfiyligi',
-        tocLabel: 'Bolalar',
-        paragraphs: [
-          'GOTCHA 13 yoshgacha bo\'lgan bolalar uchun mo\'ljallanmagan yoki ularga yo\'naltirilmagan. Biz bolalardan shaxsiy ma\'lumotlarni ataylab to\'plamaymiz yoki so\'ramaymiz.',
-          'Agar 13 yoshdan kichik bola bizda hisob ro\'yxatdan o\'tkazganini aniqlasak, profil va tegishli o\'rganish metama\'lumotlarini darhol butunlay o\'chirish choralarini ko\'ramiz.',
-        ],
-      },
-      {
         id: 'section-cookies',
-        number: '12',
+        number: '11',
         title: 'Cookie-fayllar va kuzatuv',
         tocLabel: 'Cookie-fayllar',
         paragraphs: [
@@ -365,7 +355,7 @@ export const LEGAL_UZ: LegalCopyBundle = {
       },
       {
         id: 'section-imports',
-        number: '13',
+        number: '12',
         title: 'Foydalanuvchi import qilgan kontent',
         tocLabel: 'Foydalanuvchi importlari',
         paragraphs: [
@@ -375,7 +365,7 @@ export const LEGAL_UZ: LegalCopyBundle = {
       },
       {
         id: 'section-changes',
-        number: '14',
+        number: '13',
         title: 'Ushbu siyosatga o\'zgartirishlar',
         tocLabel: 'O\'zgartirishlar',
         paragraphs: [
@@ -385,7 +375,7 @@ export const LEGAL_UZ: LegalCopyBundle = {
       },
       {
         id: 'section-contact',
-        number: '15',
+        number: '14',
         title: 'Biz bilan bog\'laning',
         tocLabel: 'Aloqa',
         paragraphs: [

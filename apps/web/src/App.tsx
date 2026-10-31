@@ -19,6 +19,7 @@ export default function App() {
         <Route path="/privacy" element={LegalV2Page ? <Suspense fallback={null}><LegalV2Page doc="privacy" /></Suspense> : <PrivacyPage />} />
         <Route path="/terms" element={LegalV2Page ? <Suspense fallback={null}><LegalV2Page doc="terms" /></Suspense> : <TermsPage />} />
         {/* web-launch-02: /roadmap removed (UI/UX P0, unverifiable promises); /pricing has no page while prices are hidden (W-13). */}
+        {LegalV2Page && <Route path="/oferta" element={<Suspense fallback={null}><LegalV2Page doc="oferta" /></Suspense>} />}
         <Route path="/roadmap" element={<HomeRedirect />} />
         <Route path="/pricing" element={<HomeRedirect />} />
         <Route path="*" element={<NotFoundPage />} />

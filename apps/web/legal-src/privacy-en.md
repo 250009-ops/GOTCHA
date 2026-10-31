@@ -56,7 +56,7 @@ Your data is stored on our servers in **Uzbekistan**, hosted by Eskiz. Backups a
 
 ## 5. AI processing by OpenAI (USA)
 
-Gotcha's AI features use models from **OpenAI, L.L.C.** in the **USA**. They are available to users of all ages.
+Gotcha's AI features use models from **OpenAI, L.L.C.** in the **USA**. They are available to users of all ages. AI features, including word lookup, are **on for every account**, whatever your age: every lookup, translation, quiz, import clean-up and audio request is sent to OpenAI as described below.
 
 **What is sent.** AI features send OpenAI **the text the feature needs, plus both languages** (the one you are learning and your own), together with our instructions to the model. Depending on the feature, this can include **the sentence around a word you tap**, **the full text of a chat message you translate, which may be a message another user wrote to you**, and the content and titles of documents you import. They send **no account identifiers**: none of our AI requests includes your user ID, name or email, or OpenAI's "user" field.
 
@@ -74,7 +74,7 @@ Gotcha's AI features use models from **OpenAI, L.L.C.** in the **USA**. They are
 
 **Please don't upload or type personal data.** A document you import is sent as it is, so it may contain whatever you put in it. Don't import documents, or type answers or select text, that contain your own or other people's personal data (for example names, phone numbers, addresses or ID numbers).
 
-**Purpose and retention.** The text is used only to produce the result you asked for. Word explanations and translations may be cached on our server so they can be reused, but these caches are not linked to your account. **Text-to-speech audio is stored on our server:** the text you ask to hear is saved as an audio file in Uzbekistan so it can be replayed, for [TTS RETENTION, pending cleanup job]. Apart from these caches and audio files, we don't log the AI's responses. Text sent to OpenAI may be retained by OpenAI for up to 30 days for abuse monitoring.
+**Purpose and retention.** The text is used only to produce the result you asked for. Word explanations and translations may be cached on our server so they can be reused, but these caches are not linked to your account. **Text-to-speech audio is stored on our server:** the text you ask to hear is saved as an audio file in Uzbekistan so it can be replayed, for **30 days**; a daily cleanup job deletes older files. Apart from these caches and audio files, we don't log the AI's responses. OpenAI does not use this text to train its models and does not retain it (zero data retention).
 
 **Transfer to the USA and your consent.** This text is processed in the USA, which may not ensure the same level of data protection as Uzbekistan. The legal basis for this transfer is the consent you give at sign-up, when you tick the box agreeing to the Terms of Use and this Privacy Policy, including this transfer. For users under 18, the parent or guardian gives this consent. You can withdraw it at any time by deleting your account (section 11) or by writing to **support@gotchaa.uz**. AI features then stop working for your account; everything else in Gotcha keeps working. Withdrawal does not affect text already processed.
 
@@ -96,15 +96,16 @@ We may disclose data to state bodies when Uzbek law requires it, or to protect t
 
 ## 8. How long we keep data
 
-| Data | How long |
+| Data | How long (after account deletion where relevant) |
 |---|---|
 | Account, learning data, imports, profile photo | While your account exists. Deleted within **30 days** after you delete your account (section 11). |
-| Messages you sent to other users | While your account exists. After deletion they stay in the recipient's conversation, anonymised (section 11). |
-| Payment, refund and fiscal records | For the period required by Uzbek tax and accounting law, without your learning data |
-| Backups | Overwritten in our regular backup cycle |
+| Messages you sent to other users | While your account exists. After deletion they stay in the recipient's conversation, anonymised as "Deleted user", until the recipient deletes them or their own account (section 11). A message attached to a report is kept with the report (below). |
+| Payment, refund and fiscal records (Atmos transactions, receipts) | **5 years** after the end of the year of the payment, as Uzbek accounting and tax law requires for accounting documents and tax records. Kept without your learning data. |
+| Consent records (sign-up tick-box version, time and IP; parental consent) | **3 years** after your account is deleted or the consent is withdrawn, so that we can prove the consent as ZRU-547 requires (3 years is the general limitation period for claims under the Civil Code). |
+| Audit and security logs (sign-ins, admin actions, deletions) | **12 months**, then deleted. |
+| Reports and moderation records | **1 year** after the report is closed, or longer if needed for an ongoing dispute or a request from a state body. |
+| Backups | Overwritten within **30 days** in our regular backup cycle. |
 | Server logs | For a limited period, for security |
-| Reports and moderation records | For as long as needed to keep the community safe and to deal with disputes |
-| Consent records | While the consent applies, and afterwards as long as needed to prove it |
 
 When a purpose has been achieved, we destroy the data or anonymise it, as Article 31 of ZRU-547 requires.
 

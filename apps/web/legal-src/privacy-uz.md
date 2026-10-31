@@ -56,7 +56,7 @@ Maʼlumotlaringiz **Oʻzbekistondagi** serverlarimizda, Eskiz xostingida saqlana
 
 ## 5. OpenAI (AQSh) tomonidan AI ishlovi
 
-Gotchaʼning AI funksiyalari **AQShdagi** **OpenAI, L.L.C.** modellaridan foydalanadi. Ular barcha yoshdagi foydalanuvchilar uchun mavjud.
+Gotchaʼning AI funksiyalari **AQShdagi** **OpenAI, L.L.C.** modellaridan foydalanadi. Ular barcha yoshdagi foydalanuvchilar uchun mavjud. AI funksiyalari, jumladan soʻzni izohlash, yoshingizdan qatʼi nazar **barcha hisoblar uchun yoqilgan**: har bir izoh, tarjima, test, importni tozalash va audio soʻrovi quyida tushuntirilganidek OpenAIʼga yuboriladi.
 
 **Nima yuboriladi.** AI funksiyalari OpenAIʼga **funksiya uchun zarur matnni va ikkala tilni** (oʻrganayotgan tilingiz va oʻz tilingiz) modelga beriladigan koʻrsatmalarimiz bilan birga yuboradi. Funksiyaga qarab bunga **siz bosgan soʻz atrofidagi gap**, **siz tarjima qilgan chat xabarining toʻliq matni (bu sizga boshqa foydalanuvchi yozgan xabar boʻlishi mumkin)** hamda import qilgan hujjatlaringiz mazmuni va sarlavhalari kirishi mumkin. **Hisobingizni aniqlaydigan maʼlumotlar yuborilmaydi**: AI soʻrovlarimizning hech birida foydalanuvchi ID, ism, email yoki OpenAIʼning «user» maydoni boʻlmaydi.
 
@@ -74,7 +74,7 @@ Gotchaʼning AI funksiyalari **AQShdagi** **OpenAI, L.L.C.** modellaridan foydal
 
 **Iltimos, shaxsiy maʼlumotlarni yuklamang va yozmang.** Import qilgan hujjatingiz qanday boʻlsa, shundayligicha yuboriladi, shuning uchun unda siz kiritgan har qanday maʼlumot boʻlishi mumkin. Oʻzingiz yoki boshqalarning shaxsiy maʼlumotlari (masalan, ismlar, telefon raqamlari, manzillar yoki hujjat raqamlari) bor hujjatlarni import qilmang, bunday javoblarni yozmang va bunday matnni belgilamang.
 
-**Maqsad va saqlash.** Matn faqat siz soʻragan natijani tayyorlash uchun ishlatiladi. Soʻz izohlari va tarjimalar qayta ishlatish uchun serverimizda keshlanishi mumkin, lekin bu keshlar hisobingizga bogʻlanmaydi. **Ovozga aylantirilgan audio serverimizda saqlanadi:** siz eshitmoqchi boʻlgan matn qayta tinglash uchun Oʻzbekistondagi serverimizda audio fayl sifatida [TTS RETENTION, pending cleanup job] davomida saqlanadi. Bu keshlar va audio fayllardan tashqari AI javoblarini jurnallarda saqlamaymiz. OpenAIʼga yuborilgan matn suiisteʼmolni aniqlash uchun OpenAI tomonidan 30 kungacha saqlanishi mumkin.
+**Maqsad va saqlash.** Matn faqat siz soʻragan natijani tayyorlash uchun ishlatiladi. Soʻz izohlari va tarjimalar qayta ishlatish uchun serverimizda keshlanishi mumkin, lekin bu keshlar hisobingizga bogʻlanmaydi. **Ovozga aylantirilgan audio serverimizda saqlanadi:** siz eshitmoqchi boʻlgan matn qayta tinglash uchun Oʻzbekistondagi serverimizda audio fayl sifatida **30 kun** davomida saqlanadi; eskiroq fayllar har kuni avtomatik tozalash orqali oʻchiriladi. Bu keshlar va audio fayllardan tashqari AI javoblarini jurnallarda saqlamaymiz. OpenAI bu matnni oʻz modellarini oʻqitishda ishlatmaydi va uni saqlamaydi (maʼlumotlarni nol saqlash, zero data retention).
 
 **AQShga uzatish va roziligingiz.** Bu matnga AQShda ishlov beriladi. AQSh Oʻzbekiston bilan bir xil darajadagi maʼlumotlar himoyasini taʼminlamasligi mumkin. Bu uzatishning huquqiy asosi roʻyxatdan oʻtishda bergan roziligingizdir: Foydalanish shartlari va ushbu Maxfiylik siyosatiga, jumladan shu uzatishga rozilik katakchasini belgilaysiz. 18 yoshga toʻlmagan foydalanuvchilar uchun bu rozilikni ota-ona yoki vasiy beradi. Uni istalgan vaqtda hisobingizni oʻchirib (11-boʻlim) yoki **support@gotchaa.uz** ga yozib chaqirib olishingiz mumkin. Shundan soʻng hisobingizda AI funksiyalari ishlamay qoladi, Gotchaʼning qolgan barcha imkoniyatlari esa ishlashda davom etadi. Chaqirib olish oldin ishlov berilgan matnga taʼsir qilmaydi.
 
@@ -96,15 +96,16 @@ Oʻzbekiston qonunchiligi talab qilganda yoki foydalanuvchilar va Xizmat xavfsiz
 
 ## 8. Maʼlumotlarni qancha muddat saqlaymiz
 
-| Maʼlumot | Muddat |
+| Maʼlumot | Muddat (tegishli hollarda hisob oʻchirilgandan keyin) |
 |---|---|
-| Hisob, oʻquv maʼlumotlari, importlar, profil rasmi | Hisobingiz mavjud ekan. Hisob oʻchirilgandan keyin **30 kun** ichida oʻchiriladi (11-boʻlim). |
-| Boshqa foydalanuvchilarga yuborgan xabarlaringiz | Hisobingiz mavjud ekan. Oʻchirilgandan keyin qabul qiluvchining suhbatida anonim holda qoladi (11-boʻlim). |
-| Toʻlov, qaytarish va fiskal yozuvlar | Oʻzbekiston soliq va buxgalteriya qonunchiligida belgilangan muddat davomida, oʻquv maʼlumotlaringizsiz |
-| Zaxira nusxalar | Odatdagi zaxiralash tsiklida ustidan yoziladi |
+| Hisob, oʻquv maʼlumotlari, importlar, profil rasmi | Hisobingiz mavjud ekan. Hisobni oʻchirganingizdan keyin **30 kun** ichida oʻchiriladi (11-boʻlim). |
+| Boshqa foydalanuvchilarga yuborgan xabarlaringiz | Hisobingiz mavjud ekan. Oʻchirilgandan keyin qabul qiluvchining suhbatida «Oʻchirilgan foydalanuvchi» nomidan anonim holda, qabul qiluvchi ularni yoki oʻz hisobini oʻchirgunicha qoladi (11-boʻlim). Shikoyatga ilova qilingan xabar shikoyat bilan birga saqlanadi (quyida). |
+| Toʻlov, pulni qaytarish va fiskal yozuvlar (Atmos tranzaksiyalari, cheklar) | Oʻzbekiston buxgalteriya hisobi va soliq qonunchiligi buxgalteriya hujjatlari va soliq yozuvlari uchun talab qilganidek, toʻlov yili tugaganidan keyin **5 yil**. Oʻquv maʼlumotlaringizsiz saqlanadi. |
+| Rozilik yozuvlari (roʻyxatdan oʻtishdagi katakcha versiyasi, vaqti va IP; ota-ona roziligi) | Hisob oʻchirilgan yoki rozilik chaqirib olinganidan keyin **3 yil**, ZRU-547 talabiga koʻra rozilikni isbotlay olishimiz uchun (3 yil — Fuqarolik kodeksi boʻyicha umumiy daʼvo muddati). |
+| Audit va xavfsizlik jurnallari (kirishlar, administrator harakatlari, oʻchirishlar) | **12 oy**, soʻng oʻchiriladi. |
+| Shikoyatlar va moderatsiya yozuvlari | Shikoyat yopilganidan keyin **1 yil**, davom etayotgan nizo yoki davlat organi soʻrovi uchun zarur boʻlsa, undan uzoqroq. |
+| Zaxira nusxalar | Odatiy zaxiralash siklida **30 kun** ichida ustidan yoziladi. |
 | Server jurnallari | Xavfsizlik uchun cheklangan muddat |
-| Shikoyat va moderatsiya yozuvlari | Hamjamiyat xavfsizligi va nizolarni hal qilish uchun zarur muddat |
-| Rozilik yozuvlari | Rozilik amal qilgan davr va undan keyin uni isbotlash uchun zarur muddat |
 
 ZRU-547 Qonunining 31-moddasiga koʻra, maqsadga erishilgach, maʼlumotlarni yoʻq qilamiz yoki anonimlashtiramiz.
 

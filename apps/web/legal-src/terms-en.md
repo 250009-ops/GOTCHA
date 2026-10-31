@@ -8,6 +8,8 @@ These Terms of Use (the "Terms") are a public offer from **the Erkin Tizim team*
 
 The Erkin Tizim team · Email: **support@gotchaa.uz**
 
+The public offer (oferta) for paid items is published at **https://gotchaa.uz/oferta**.
+
 ## 2. Scope
 
 These Terms cover the Gotcha website **gotchaa.uz** and the web app **gotchaa.uz/learn** (the "Service"). An Android app may follow later. We will update these Terms before it does.
@@ -51,21 +53,29 @@ Part of the Service is free, within the limits shown in the Service. For example
 
 ## 7. Paid items, prices and payment
 
-- **What we sell:** one-time purchases of **imports**, priced by page count, and **access to paid books**. We do not sell subscriptions. If we introduce them, we will update these Terms first.
+- **What we sell:** one-time purchases of **imports**, priced by page count, **access to paid books**, and **Gotcha Plus passes**.
+- **Gotcha Plus passes:** a one-off payment for a fixed period: **30 days for 24,990 soʻm** or **365 days for 199,990 soʻm**. A pass **does not renew**: you are never charged again, and Plus access simply ends when the period is over. You can buy a new pass at any time.
+- **What Plus includes:** up to **200 word lookups per day** (free accounts: up to 50), up to **50 quizzes per day** (fair use) and **50% off paid imports**. We may change these limits with prior notice. You can buy a new pass while one is active; its days start when the current pass ends.
+
 - **Prices:** in Uzbek soʻm (UZS), shown before you pay.
 - **Payment:** by Uzcard or Humo card through **Atmos**. An electronic fiscal receipt is issued for every payment.
 - **Immediate access:** digital content is delivered straight after payment. Before paying, you confirm that you want access to start at once.
 
 ## 8. Refunds
 
-We refund a purchase only if it is **faulty**:
+We refund a purchase only if it is faulty.
 
-- it was **not delivered**: you paid, but the import or book was not unlocked, or you were charged twice or by mistake; or
-- it **does not work as described**: for example, the import failed or the book won't open, and we can't fix it within a reasonable time.
+A purchase is **faulty** only in these cases:
 
-To claim, write to **support@gotchaa.uz** within **[CLAIM PERIOD]** of the payment. Give your account email, the payment date and what went wrong. We first try to fix the problem. If we can't, we refund the payment to the same card through Atmos, and the purchased access is removed.
+- **charged but not delivered:** you paid, but the import, book or Plus pass was not unlocked;
+- **broken content:** the purchased import, book or Plus access does not work as described (for example, the import failed or the book won't open), and we can't fix it within a reasonable time;
+- **failed charge:** the payment failed, but money was still taken from your card;
+- **duplicate charge:** you were charged twice for the same purchase.
+
+To claim, write to **support@gotchaa.uz** within **14 calendar days** of purchase. Give your account email, the payment date and what went wrong. We first try to fix the problem. If we can't, we refund the payment to the same card through Atmos within **14 days** of accepting your claim, and the purchased access is removed.
 
 Purchases that were delivered and work as described are not refunded, for example if you change your mind, unless the law requires otherwise. **Nothing in these Terms limits your rights under the consumer protection laws of Uzbekistan.** If there's a problem with a charge, please write to us before disputing it with your bank.
+**Cancellation requests.** To ask us to cancel a purchase or pass, write to **support@gotchaa.uz**. We review each request; nothing is cancelled or refunded automatically, and any refund follows the rules in this section.
 
 ## 9. Your content
 
