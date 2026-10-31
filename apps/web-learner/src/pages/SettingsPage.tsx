@@ -1,5 +1,6 @@
 import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
 import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
+import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -487,6 +488,9 @@ export default function SettingsPage() {
         <Row label={copy.settings.photo} description={copy.settings.photoHint}>
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
+            {isUnder13(user) ? (
+              <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[user?.uiLanguage === 'ru' || user?.uiLanguage === 'uz' ? user.uiLanguage : 'en']}</span>
+            ) : (
             <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
               {avatarBusy ? copy.settings.uploading : copy.settings.changePhoto}
               <input
@@ -506,6 +510,7 @@ export default function SettingsPage() {
                 }}
               />
             </label>
+            )}
           </div>
         </Row>
         <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
