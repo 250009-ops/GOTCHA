@@ -9,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { PLUS_FAIR_USE_DEFAULTS, PLUS_FAIR_USE_KEYS, activeSubWhere, fairUseCap } from '../../common/plan-active';
 import { createHash } from 'crypto';
-import { assertUnderCap, getPlanCaps, lookupMode, usageDayStart, userCapPlan } from '../../common/plan-caps';
+import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, lookupMode, usageDayStart, userCapPlan, type PlanCaps } from '../../common/plan-caps';
 
 type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number };
 import { mkdir, readFile, writeFile } from 'fs/promises';
@@ -284,7 +284,47 @@ export class AiService {
     // 429 at the cap (Free 20; Plus hidden hard cap). Plus past its AI quota → 'dictionary' (no OpenAI).
     const mode = lookupMode(plan, caps, usage?.lookupCount ?? 0);
 
-    return { quota, usage, today, memoryKey: null as string | null, mode };
+    return { quota, usage, today, memoryKey: null as string | null, mode, plan, caps };
+  }
+
+  /** True when the real Postgres client is behind `this.prisma` (unit fakes lack it → legacy path). */
+  private hasRawDb(): boolean {
+    const p = this.prisma as unknown as { $transaction?: unknown; $queryRaw?: unknown };
+    return !this.useMemory() && typeof p.$transaction === 'function' && typeof p.$queryRaw === 'function';
+  }
+
+  /**
+   * PAY2-09: atomic lookup slot. One conditional `UPDATE … SET lookup_count = lookup_count + 1
+   * WHERE lookup_count < limit` per request; parallel requests serialise on the (user, day) row so the
+   * Free cap (20) can never be overshot. Plus: unlimited AI (unconditional increment) or, if a Plus AI
+   * quota is configured, AI → dormant dictionary → hidden hard cap. Returns the mode actually claimed;
+   * throws the daily-limit 429 when no slot is left. Call releaseLookupSlot() if nothing was served.
+   */
+  private async reserveLookupSlot(userId: string, today: Date, plan: 'free' | 'plus', caps: PlanCaps): Promise<'ai' | 'dictionary'> {
+    await this.prisma.aiUsageDaily.createMany({ data: [{ userId, usageDate: today, lookupCount: 0 }], skipDuplicates: true });
+    const claim = async (limit: number | null) => {
+      const { count } = await this.prisma.aiUsageDaily.updateMany({
+        where: limit == null ? { userId, usageDate: today } : { userId, usageDate: today, lookupCount: { lt: limit } },
+        data: { lookupCount: { increment: 1 } },
+      });
+      return count > 0;
+    };
+    const aiCap = capOf(caps, plan, 'lookups');
+    if (await claim(aiCap ?? null)) return 'ai';
+    if (plan === 'plus') {
+      const hard = caps.plusLookupHardCap;
+      if (await claim(hard ?? null)) return 'dictionary';
+      throw dailyLimitException('lookups', plan, caps, new Date(), true);
+    }
+    throw dailyLimitException('lookups', plan, caps);
+  }
+
+  /** PAY2-09: give back a reserved lookup slot (OpenAI failed / nothing billable served). Never below 0. */
+  private async releaseLookupSlot(userId: string, today: Date) {
+    await this.prisma.aiUsageDaily.updateMany({
+      where: { userId, usageDate: today, lookupCount: { gt: 0 } },
+      data: { lookupCount: { decrement: 1 } },
+    }).catch(() => undefined);
   }
 
   private async incrementUsage(
@@ -368,10 +408,15 @@ export class AiService {
     // Miss path only: enforce platform + user quota before spending OpenAI.
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const { today, memoryKey, mode } = await this.checkQuota(userId, settings.defaultUserQuota);
+    const quota = await this.checkQuota(userId, settings.defaultUserQuota);
+    const { today, memoryKey } = quota;
+    let mode = quota.mode;
+    // PAY2-09: claim the slot atomically BEFORE spending OpenAI (DB mode); released below if unused.
+    const reserved = this.hasRawDb() && 'plan' in quota && quota.caps;
+    if (reserved) mode = await this.reserveLookupSlot(userId, today, quota.plan, quota.caps);
     if (mode === 'dictionary') {
       const row = await this.dictionaryGloss(cacheKeyLemma, dto.sourceLang, dto.targetLang);
-      await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
+      if (!reserved) await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
       const payload: MemoryLookup = { lemma: row?.lemma || cacheKeyLemma, translation: row?.translation ?? surface, contextualMeaning: null, phrase: null, grammarNote: null, partOfSpeech: row?.partOfSpeech ?? null };
       return { ...this.presentLookup(payload, surface, context, true), contextualMeaning: null, mode: 'dictionary' as const, dictionaryMiss: !row };
     }
@@ -490,6 +535,7 @@ export class AiService {
       } catch (err) {
         // Do not cache errors / billing failures.
         const detail = err instanceof Error ? err.message : 'OpenAI request failed';
+        if (reserved) await this.releaseLookupSlot(userId, today); // PAY2-09: nothing served → slot back
         throw new ServiceUnavailableException(
           `AI lookup failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
         );
@@ -552,7 +598,9 @@ export class AiService {
     }
 
     // Admin cost metrics + user daily quota: only count real OpenAI spend.
-    if (usedOpenAi) {
+    if (reserved) {
+      if (!usedOpenAi) await this.releaseLookupSlot(userId, today);
+    } else if (usedOpenAi) {
       await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
     }
 
@@ -668,6 +716,7 @@ export class AiService {
   /** 429 {code:'lookup_slow_down', retryAfterSec, messages}; logs the event. Refused calls are not counted. */
   async burstGuard(userId: string, now = Date.now()) {
     const { perMinute, perHour } = await this.burstLimits();
+    if (this.hasRawDb()) return this.burstGuardDb(userId, now, perMinute, perHour);
     const hits = (this.burst.get(userId) ?? []).filter((t) => now - t < 3_600_000);
     const lastMinute = hits.filter((t) => now - t < 60_000);
     const window = lastMinute.length >= perMinute ? 'minute' : hits.length >= perHour ? 'hour' : null;
@@ -682,6 +731,42 @@ export class AiService {
     hits.push(now);
     this.burst.set(userId, hits);
     if (this.burst.size > 50_000) for (const [k, ts] of this.burst) if (!ts.length || now - ts[ts.length - 1] > 3_600_000) this.burst.delete(k);
+  }
+
+  private slowDown(userId: string, window: 'minute' | 'hour', perMinute: number, perHour: number, retryAfterSec: number): never {
+    this.logger.warn(JSON.stringify({ event: 'lookup_burst', userId, window, perMinute, perHour, retryAfterSec }));
+    const messages = { en: slowDownMessage('en'), uz: slowDownMessage('uz'), ru: slowDownMessage('ru') };
+    throw new HttpException({ statusCode: 429, code: 'lookup_slow_down', retryAfterSec, message: messages.en, messages }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  /**
+   * PAY2-09: Postgres-backed sliding windows (lookup_burst_hits) so the guard holds across API processes.
+   * Per-user transaction-scoped advisory lock serialises check+insert; rows older than 1 h are pruned.
+   */
+  private async burstGuardDb(userId: string, now: number, perMinute: number, perHour: number) {
+    const at = new Date(now);
+    const hourAgo = new Date(now - 3_600_000), minuteAgo = new Date(now - 60_000);
+    const refused = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'lookup_burst:' + userId}))`;
+      await tx.$executeRaw`DELETE FROM "lookup_burst_hits" WHERE "user_id" = ${userId} AND "hit_at" <= ${hourAgo}`;
+      const rows = await tx.$queryRaw<Array<{ hour: bigint; minute: bigint; oldest_h: Date | null; oldest_m: Date | null }>>`
+        SELECT count(*) AS hour,
+               count(*) FILTER (WHERE "hit_at" > ${minuteAgo}) AS minute,
+               min("hit_at") AS oldest_h,
+               min("hit_at") FILTER (WHERE "hit_at" > ${minuteAgo}) AS oldest_m
+        FROM "lookup_burst_hits" WHERE "user_id" = ${userId} AND "hit_at" > ${hourAgo}`;
+      const r = rows[0];
+      const minute = Number(r?.minute ?? 0), hour = Number(r?.hour ?? 0);
+      const window = minute >= perMinute ? 'minute' : hour >= perHour ? 'hour' : null;
+      if (window) {
+        const oldest = (window === 'minute' ? r?.oldest_m : r?.oldest_h)?.getTime() ?? now;
+        const retryAfterSec = Math.max(1, Math.ceil(((window === 'minute' ? 60_000 : 3_600_000) - (now - oldest)) / 1000));
+        return { window, retryAfterSec } as const;
+      }
+      await tx.$executeRaw`INSERT INTO "lookup_burst_hits" ("user_id", "hit_at") VALUES (${userId}, ${at})`;
+      return null;
+    });
+    if (refused) this.slowDown(userId, refused.window, perMinute, perHour, refused.retryAfterSec);
   }
 
   // ---- Per-lookup cost log. Prices (USD per 1M tokens) from env OPENAI_LOOKUP_USD_PER_1M_IN / _OUT.

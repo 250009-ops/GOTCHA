@@ -395,6 +395,16 @@ model AiLookupCost {
   @@map("ai_lookup_costs")
 }
 
+/// PAY2-09: per-user lookup timestamps for the cross-process burst guard (30/min, 300/h). Pruned after 1 h.
+model LookupBurstHit {
+  id     BigInt   @id @default(autoincrement())
+  userId String   @map("user_id")
+  hitAt  DateTime @map("hit_at") @db.Timestamptz(6)
+
+  @@index([userId, hitAt])
+  @@map("lookup_burst_hits")
+}
+
 model AiUsageDaily {
   userId      String   @map("user_id") @db.Uuid
   usageDate   DateTime @map("usage_date") @db.Date
