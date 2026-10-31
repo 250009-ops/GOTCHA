@@ -5,6 +5,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded, Request, Response, NextFunction } from 'express';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import * as compression from 'compression';
 import { AppModule } from './app.module';
 import { ensureLanguageCatalog } from './common/language-catalog';
 import {
@@ -48,6 +49,21 @@ async function bootstrap() {
   app.use('/api/v1/admin/content', json({ limit: '24mb' }));
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
+  // W-23: large book payloads (GET /content/:id is 120-200 kB for 700-1,000-page books) reached
+  // some browsers as "200, empty body" through nginx proxy buffering (spill to proxy_temp), so the
+  // reader showed "Kontent topilmadi". We cannot change VPS2 nginx, so: gzip JSON in the app
+  // (~5x smaller) and tell nginx not to buffer these responses (X-Accel-Buffering is honoured
+  // per response and needs no nginx change). Audio (audio/*) is left uncompressed.
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => !/^audio\//.test(String(res.getHeader('Content-Type') ?? '')) && compression.filter(req, res),
+    }),
+  );
+  app.use('/api/v1/content', (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET') res.setHeader('X-Accel-Buffering', 'no');
+    next();
+  });
   app.use((_req: Request, res: Response, next: NextFunction) => {
     applySecurityHeaders(res);
     next();

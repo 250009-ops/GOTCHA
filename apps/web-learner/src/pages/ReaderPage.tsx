@@ -267,6 +267,8 @@ export default function ReaderPage() {
   const [showUnknownOnly, setShowUnknownOnly] = useState(false);
   const [chaptersOpen, setChaptersOpen] = useState(true);
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [loading, setLoading] = useState(true);
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
@@ -386,8 +388,10 @@ export default function ReaderPage() {
     setOutline([]);
     Promise.all([
       api<ContentItem>(`/content/${id}`),
-      api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
+      // W-23: a known-words hiccup must not hide the whole book.
+      api<Array<{ lemma: string; status: string }>>('/reading/known-words').catch(() => []),
     ]).then(async ([item, known]) => {
+      setLoadError(null);
       setContent(item);
       const trialCount = item.trialSegmentCount ?? 0;
       const canTrial = item.accessGranted === false && trialCount > 0;
@@ -436,8 +440,13 @@ export default function ReaderPage() {
       }
       setWordStatuses(map);
       lastProgressAtRef.current = Date.now();
-    }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  }, [id, accessNonce]);
+    }).catch((e) => {
+      // W-23: a network/parse failure is not "content not found"; offer a retry instead.
+      const status = (e as { status?: number }).status;
+      if (status !== 404) setLoadError(e instanceof Error ? e.message : 'Request failed');
+      toast.error(e.message);
+    }).finally(() => setLoading(false));
+  }, [id, accessNonce, reloadNonce]);
 
   const lemmaStatus = useCallback(
     (lemma: string): WordStatus => wordStatuses[lemma.toLowerCase()] ?? 'unknown',
@@ -671,6 +680,21 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#FDFCFF]">
         <div className="w-8 h-8 border-2 border-violet-300 border-t-[#7f22fe] rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!content && loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-[#FDFCFF] p-6 text-sm text-[#6a7282]">
+        <p>Could not load this book. Check your connection and try again.</p>
+        <button
+          type="button"
+          onClick={() => setReloadNonce((n) => n + 1)}
+          className="rounded-full bg-[#7f22fe] px-4 py-2 font-medium text-white"
+        >
+          Try again
+        </button>
       </div>
     );
   }
