@@ -1,6 +1,6 @@
 /**
- * final-5 B4 + Kai: (a) with PAYMENTS_UI_ENABLED off no Atmos create/pre-apply/apply/OTP can start for imports or
- * catalog (Plus has no purchase endpoint at this head), even when PAYMENT_GATEWAY_ENABLED=true in env; free-allowance
+ * final-5 B4 + Kai: (a) with payments off (PAYMENT_GATEWAY_ENABLED unset, or IMPORTS_UNLIMITED/DEV_UNLIMITED_IMPORTS set) no Atmos create/pre-apply/apply/OTP can start for imports or
+ * catalog (final-6: one flag; the old PAYMENTS_UI_ENABLED gate is gone); free-allowance
  * imports still work. (b) every confirmation path (apply, apply→"confirmed via get", getPayment poll, callback) settles
  * through one idempotent settlePaid: paid once, catalog granted exactly once, a paid-but-no-import payment stays
  * consumable exactly once (f29902f1). No Atmos credentials are read: the Atmos client is a fake.
@@ -44,9 +44,12 @@ function harness() {
 }
 
 (async () => {
-  // (a) flag off — gateway on in env — nothing can start
-  delete process.env.PAYMENTS_UI_ENABLED; process.env.PAYMENT_GATEWAY_ENABLED = 'true';
+  // (a) flag off — nothing can start; DEV_UNLIMITED_IMPORTS also forces off even with the gateway env on
+  process.env.PAYMENT_GATEWAY_ENABLED = 'true'; process.env.DEV_UNLIMITED_IMPORTS = 'true';
   assert.throws(() => assertPaymentsEnabled(), /not available/);
+  delete process.env.DEV_UNLIMITED_IMPORTS; delete process.env.PAYMENT_GATEWAY_ENABLED;
+  assert.throws(() => assertPaymentsEnabled(), /not available/);
+  process.env.PAYMENT_GATEWAY_ENABLED = 'true'; assert.doesNotThrow(() => assertPaymentsEnabled()); delete process.env.PAYMENT_GATEWAY_ENABLED;
   {
     const h = harness();
     (h.svc as any).quote = async () => ({ requiresPayment: true, amountTiyins: 2_900_000, importType: 'pdf', contentFormat: 'book', estimatedPages: 40, tier: { id: 't' } });
@@ -68,7 +71,7 @@ function harness() {
   }
 
   // (b) settlement paths, flag on
-  process.env.PAYMENTS_UI_ENABLED = 'true';
+  process.env.PAYMENT_GATEWAY_ENABLED = 'true';
   {
     const h = harness();
     // f29902f1: import paid via apply → "confirmed via get"
@@ -99,6 +102,6 @@ function harness() {
     await h.svc.markPaid('cat_2');
     assert.equal(h.purchases.filter((p) => p.contentId === 'c7').length, 1, 'repair grants once');
   }
-  delete process.env.PAYMENTS_UI_ENABLED; delete process.env.PAYMENT_GATEWAY_ENABLED;
-  console.log('payments-final5.test: OK (flag off blocks import/catalog Atmos starts even with gateway on; one idempotent settle path; f29902f1 consumable once; catalog grant once)');
+  delete process.env.PAYMENT_GATEWAY_ENABLED; delete process.env.PAYMENT_GATEWAY_ENABLED;
+  console.log('payments-final5.test: OK (flag off (unset or DEV_UNLIMITED) blocks import/catalog Atmos starts; PAYMENT_GATEWAY_ENABLED=true is the one ON switch; one idempotent settle path; f29902f1 consumable once; catalog grant once)');
 })().catch((e) => { console.error(e); process.exit(1); });

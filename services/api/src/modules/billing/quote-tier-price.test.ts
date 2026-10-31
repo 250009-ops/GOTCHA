@@ -1,5 +1,5 @@
 // quote(): a tier priced 0 (live 901–1500) must be "not priced", never charged 0 or shown as 0 soʻm. Mocked prisma/Atmos only.
-process.env.PAYMENTS_UI_ENABLED = 'true'; // r3b on final-5: payments-02 flows run with the payments UI on (off case: payments-final5.test)
+process.env.PAYMENT_GATEWAY_ENABLED = 'true'; // r3b on final-5: payments-02 flows run with the payments UI on (off case: payments-final5.test)
 import * as assert from 'node:assert/strict';
 import { ImportCommerceService } from './import-commerce.service';
 

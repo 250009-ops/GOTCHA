@@ -2,7 +2,7 @@
  * final-5 B1/B4/B7 + PM/Marketing copy guard: on prod-shaped rows (free 5000/100, premium 9.00 / 1000000) every plan
  * surface says Free = 20 lookups, 10 quizzes, 3 imports a day, 50 pages a month, localised en/ru/uz, soʻm only, and no
  * plan or marketing copy contains unlimited/безлимит/cheksiz, offline, 'fair use', 'no monthly fee' or '$'.
- * Pay-per-import card hidden unless PAYMENTS_UI_ENABLED=true.
+ * Pay-per-import card hidden unless PAYMENT_GATEWAY_ENABLED=true.
  */
 import assert from 'node:assert/strict';
 import { enrichPlan } from '../billing/billing.service';
@@ -25,7 +25,7 @@ const EXPECT = {
 
 setConfiguredPlanLimitsForTest({});
 assert.equal(paymentsUiEnabled({}), false);
-assert.equal(paymentsUiEnabled({ PAYMENTS_UI_ENABLED: 'true' } as any), true);
+assert.equal(paymentsUiEnabled({ PAYMENT_GATEWAY_ENABLED: 'true' } as any), true);
 
 (async () => {
   for (const lang of PLAN_LANGS) {
@@ -44,7 +44,7 @@ assert.equal(paymentsUiEnabled({ PAYMENTS_UI_ENABLED: 'true' } as any), true);
       platformSetting: { findUnique: async () => ({ value: imports }), findMany: async () => [] },
     };
     for (const flag of [undefined, 'true']) {
-      if (flag) process.env.PAYMENTS_UI_ENABLED = flag; else delete process.env.PAYMENTS_UI_ENABLED;
+      if (flag) process.env.PAYMENT_GATEWAY_ENABLED = flag; else delete process.env.PAYMENT_GATEWAY_ENABLED;
       const cards = await new MarketingService(db as any).plans(lang);
       assert.equal(cards.length, flag ? 2 : 1, `${lang} pay-per-import card visible=${!!flag}`);
       const free = cards[0];
@@ -52,7 +52,7 @@ assert.equal(paymentsUiEnabled({ PAYMENTS_UI_ENABLED: 'true' } as any), true);
       for (const b of EXPECT[lang].bits) assert.ok(free.features.some((x: string) => x.includes(b)), `${lang} marketing lacks "${b}"`);
       for (const s of strings(cards)) assert.ok(!BAN.test(s), `${lang} marketing: ${s}`);
     }
-    delete process.env.PAYMENTS_UI_ENABLED;
+    delete process.env.PAYMENT_GATEWAY_ENABLED;
   }
   // admin-configured caps flow into every surface
   setConfiguredPlanLimitsForTest({ freeLookups: 25, freeQuizzes: 12 });

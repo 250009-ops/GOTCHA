@@ -208,7 +208,7 @@ export class MarketingService {
       features: [t.everythingFree, t.payOnce, t.upfront],
     };
 
-    // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENTS_UI_ENABLED, default off).
+    // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENT_GATEWAY_ENABLED, default off).
     return paymentsUiEnabled() ? [free, payPerImport] : [free];
   }
 

@@ -458,7 +458,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENT_GATEWAY_ENABLED is off
     if (!this.atmos.configured()) {
       throw new ServiceUnavailableException('Atmos payment gateway is not configured');
     }
@@ -600,7 +600,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     cardNumber: string,
     expiry: string,
   ): Promise<{ paymentId: string; maskedPhone?: string; step: 'otp' }> {
-    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENT_GATEWAY_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -644,7 +644,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     paymentId: string,
     otp: string,
   ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'otp' | 'card' }> {
-    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENT_GATEWAY_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -713,7 +713,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     paymentId: string,
   ): Promise<{ paymentId: string; step: 'otp' }> {
-    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENT_GATEWAY_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -1696,7 +1696,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
-    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENT_GATEWAY_ENABLED is off
     if (!this.catalogPaymentsEnabled()) {
       throw new ServiceUnavailableException('Payment gateway is not available for catalog purchases');
     }
