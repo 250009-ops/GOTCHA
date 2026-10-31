@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Search, Upload } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -12,7 +12,9 @@ import { formatUzs } from '../lib/importBilling';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { openReader } from '../lib/readerReturn';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
-import { type ContentItem, gradientForId } from '../lib/types';
+import { type ContentItem } from '../lib/types';
+import { coverImageToShow } from '@gotcha/shared';
+import { BookCover, HERO_AUTHOR_STYLE, coverDisplayTitle, heroTitleStyle } from '../components/cover/BookCover';
 
 const cefrStyle: Record<string, string> = {
   a1: 'bg-emerald-100 text-emerald-700',
@@ -80,27 +82,9 @@ function itemSubtitle(item: ContentItem) {
   return item.subtitle ?? item.description ?? '';
 }
 
-function CoverArt({ item, className }: { item: ContentItem; className?: string }) {
-  const src = resolveMediaUrl(item.coverImageUrl);
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(src) && !failed;
-  return (
-    <div
-      className={cn('relative flex items-center justify-center overflow-hidden', className)}
-      style={showImage ? undefined : { backgroundImage: gradientForId(item.id) }}
-    >
-      {showImage ? (
-        <img
-          src={src ?? ''}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
-      )}
-    </div>
-  );
+function CoverArt({ item, className, variant = 'card' }: { item: ContentItem; className?: string; variant?: 'card' | 'thumb' }) {
+  // covers-01: landing-style template cover (title/author drawn in code); upload/original images when the admin chose one.
+  return <BookCover item={item} variant={variant} resolveUrl={resolveMediaUrl} className={cn('relative', className)} />;
 }
 
 function CefrBadge({ level }: { level: string }) {
@@ -144,7 +128,7 @@ function ContentCard({
           highlightClass,
         )}
       >
-        <CoverArt item={item} className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
+        <CoverArt item={item} variant="thumb" className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -189,15 +173,14 @@ function ContentCard({
       )}
     >
       <div className="relative shrink-0 w-full aspect-[3/4]">
-        <CoverArt item={item} className="absolute inset-0 w-full h-full" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
-        <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[calc(100%-2rem)]">
+        <CoverArt item={item} className="!absolute inset-0 w-full h-full" />
+        <div className="absolute top-2 left-2 z-[2] flex flex-wrap gap-1.5 max-w-[calc(100%-2.5rem)]">
           <CefrBadge level={item.cefrLevel} />
-          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/20 backdrop-blur text-white capitalize truncate max-w-[5rem]">
+          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/90 text-gray-700 shadow-sm capitalize truncate max-w-[5rem]">
             {item.contentType.replace('_', ' ')}
           </span>
         </div>
-        <div className="absolute top-2 right-2 flex items-center gap-1">
+        <div className="absolute top-2 right-2 z-[2] flex items-center gap-1">
           {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
             <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-g-blue-700 shadow-sm">
               {formatUzs(item.priceUzs ?? 0)}
@@ -242,25 +225,46 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
   const navigate = useNavigate();
   const copy = useLearnerCopy();
   const open = () => openReader(navigate, item.id);
-  const cover = resolveMediaUrl(item.coverImageUrl);
+  const imageMode = Boolean(coverImageToShow(item));
+  const title = coverDisplayTitle(item);
+  const author = (item.authorName ?? '').trim() || itemSubtitle(item);
+  // covers-01: the art panel takes whatever height the text block leaves, so text never sits on the art
+  // and the scrim always covers the text (>= 46%).
+  const boxRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef<HTMLDivElement>(null);
+  const [heroVars, setHeroVars] = useState<CSSProperties>({});
+  useLayoutEffect(() => {
+    const box = boxRef.current, text = textRef.current;
+    if (!box || !text || typeof ResizeObserver === 'undefined') return;
+    const fit = () => {
+      const t = text.offsetHeight + 28;
+      const art = Math.max(48, box.offsetHeight - 24 - t - 12);
+      setHeroVars({ ['--gc-hero-text' as string]: `${t}px`, ['--gc-hero-art' as string]: `${art}px` });
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    ro.observe(box); ro.observe(text);
+    return () => ro.disconnect();
+  }, []);
   return (
     <div
-      className="relative overflow-hidden rounded-2xl cursor-pointer group h-full min-h-[11rem]"
-      style={cover ? undefined : { backgroundImage: gradientForId(item.id) }}
+      ref={boxRef}
+      className={cn('relative overflow-hidden rounded-2xl cursor-pointer group h-full', imageMode ? 'min-h-[11rem]' : 'min-h-[19rem] sm:min-h-[17rem]')}
+      style={heroVars}
+      data-testid="continue-reading-hero"
       onClick={open}
     >
-      {cover && (
-        <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      <div className="relative p-5 sm:p-6 min-h-[11rem] h-full flex flex-col justify-end">
+      <BookCover item={item} variant="hero" resolveUrl={resolveMediaUrl} className="!absolute inset-0 h-full w-full" />
+      {imageMode ? <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" /> : null}
+      <div className="relative p-5 sm:p-6 h-full flex flex-col justify-end">
+        <div ref={textRef} className="flex flex-col">
         <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">{copy.libraryPage.continueReading}</span>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="text-white font-bold text-lg sm:text-xl leading-tight line-clamp-2 mb-0.5">{item.title}</div>
-            {itemSubtitle(item) && <div className="text-white/60 text-sm line-clamp-1">{itemSubtitle(item)}</div>}
+        <div className="flex flex-col gap-3">
+          <div className="min-w-0">
+            <div className="text-white mb-1" lang={item.language} style={heroTitleStyle(title)}>{title}</div>
+            {author && <div className="text-white/75 line-clamp-1" style={HERO_AUTHOR_STYLE}>{author}</div>}
           </div>
-          <div className="flex items-center justify-between gap-3 sm:ml-4 sm:flex-col sm:items-end sm:gap-2 shrink-0">
+          <div className="flex items-center justify-between gap-3 shrink-0">
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
               <span className="text-white font-bold text-sm sm:text-base">{formatUzs(item.priceUzs ?? 0)}</span>
             ) : (
@@ -277,6 +281,7 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
         </div>
         <div className="mt-3 h-1 bg-white/20 rounded-full overflow-hidden">
           <div className="h-full bg-white rounded-full" style={{ width: `${item.progressPct ?? 0}%` }} />
+        </div>
         </div>
       </div>
     </div>

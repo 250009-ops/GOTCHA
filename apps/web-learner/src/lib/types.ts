@@ -116,6 +116,8 @@ export interface ContentItem {
   cefrLevel: CefrLevel;
   genre?: string | null;
   coverImageUrl?: string | null;
+  /** covers-01: template | upload | original (API). template ⇒ coverImageUrl is null and the code-drawn cover renders. */
+  coverMode?: 'template' | 'upload' | 'original' | null;
   authorName?: string | null;
   wordCount: number;
   segmentCount?: number;
