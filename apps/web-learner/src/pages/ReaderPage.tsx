@@ -26,6 +26,7 @@ import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { pagesLabel } from '../lib/pagesLabel';
 import { formatUzs } from '../lib/importBilling';
 import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
@@ -916,7 +917,7 @@ export default function ReaderPage() {
                           </div>
                           {group.pageCount > 1 && (
                             <div className={cn('text-xs mt-0.5', activeHere ? 'text-g-blue-700' : 'text-[#99a1af]')}>
-                              {group.pageCount} pages
+                              {pagesLabel(group.pageCount, locale)}
                             </div>
                           )}
                         </button>

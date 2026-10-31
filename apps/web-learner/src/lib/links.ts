@@ -2,12 +2,12 @@
 export const MARKETING_URL = (
   import.meta.env.VITE_WEB_URL ??
   import.meta.env.VITE_MARKETING_URL ??
-  'http://localhost:5174'
+  (import.meta.env.DEV ? 'http://localhost:5174' : '')
 ).replace(/\/$/, '');
 
 /** Learner app base (this app). */
 export const LEARNER_APP_URL = (
-  import.meta.env.VITE_LEARNER_APP_URL ?? 'http://localhost:5175'
+  import.meta.env.VITE_LEARNER_APP_URL ?? (import.meta.env.DEV ? 'http://localhost:5175' : '')
 ).replace(/\/$/, '');
 
 /**
@@ -18,7 +18,7 @@ export const LEARNER_APP_URL = (
  */
 export const ADMIN_APP_BASES = (
   import.meta.env.VITE_ADMIN_APP_URL ??
-  'http://localhost:5173,http://localhost:5174'
+  (import.meta.env.DEV ? 'http://localhost:5173,http://localhost:5174' : '')
 )
   .split(',')
   .map((s) => s.trim().replace(/\/$/, ''))
@@ -33,7 +33,7 @@ export function adminAppUrl(): string {
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/admin/`;
   }
-  return 'http://localhost:5173/';
+  return import.meta.env.DEV ? 'http://localhost:5173/' : '/admin/';
 }
 
 /**

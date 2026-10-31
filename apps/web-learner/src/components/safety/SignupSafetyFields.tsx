@@ -1,4 +1,5 @@
 import { MARKETING_URL } from '../../lib/links';
+import { CONSENT_LINK_PATHS } from '../../lib/legalLinks';
 import { AGE_COPY, birthYearOptions, consentParts, toConsentLocale } from './signupConsent';
 
 /** S3 consent tick-box (unticked by default) + W-12 optional birth year. */
@@ -11,7 +12,11 @@ export function SignupSafetyFields(props: {
 }) {
   const l = toConsentLocale(props.locale);
   const age = AGE_COPY[l];
-  const hrefs = { terms: `${MARKETING_URL}/terms`, privacy: `${MARKETING_URL}/privacy`, oferta: `${MARKETING_URL}/oferta` };
+  const hrefs = {
+    terms: `${MARKETING_URL}${CONSENT_LINK_PATHS.terms}`,
+    privacy: `${MARKETING_URL}${CONSENT_LINK_PATHS.privacy}`,
+    oferta: `${MARKETING_URL}${CONSENT_LINK_PATHS.oferta}`,
+  };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">

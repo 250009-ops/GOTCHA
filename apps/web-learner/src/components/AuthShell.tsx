@@ -3,7 +3,7 @@ import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { LanguagePicker } from './LanguagePicker';
 import { GotchaLogo } from './GotchaLogo';
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
+const API_BASE = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000/api/v1' : '/api/v1')).replace(/\/$/, '');
 
 export const AUTH_FEATURES = [
   { key: 'readRealContent' as const },
