@@ -308,3 +308,8 @@ body:has(.lp){font-family:Manrope,system-ui,sans-serif}
 .lp.lp-page>main{flex:1 0 auto}
 .lp.lp-page>footer{border-top:1px solid var(--l-line,#e2e8f0)}
 @media(max-width:399px){.lp .nav .bar{gap:8px}.lp .nav .bar .right{gap:2px}.lp .nav .bar .right>.login{padding:0 4px}.lp .nav .bar .ls-btn{padding:0 6px}}
+/* r3: legal/404 bodies inside the landing shell (the .lp reset drops Tailwind spacing). */
+.lp .lp-legal{width:100%;max-width:820px;margin:0 auto;padding:40px 20px 56px}
+@media(min-width:768px){.lp .lp-legal{padding:56px 48px 72px}}
+.lp .lp-404{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:96px 24px;text-align:center}
+.lp .lp-404 a{display:inline-flex;align-items:center;min-height:44px;margin-top:8px;padding:12px 20px;border-radius:12px;background:var(--g-blue-700);color:var(--g-on-cta,#fff);font-weight:700;font-size:15px}
