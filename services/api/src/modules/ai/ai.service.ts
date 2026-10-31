@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import {
   Injectable,
   BadRequestException,
@@ -1141,13 +1142,9 @@ export class AiService {
       this.memoryPlatformLookups += 1;
       return;
     }
-    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
-    // Reuse quizCount bucket for platform metrics (no schema migration).
-    await this.prisma.aiUsageDaily.upsert({
-      where: { userId_usageDate: { userId, usageDate: today } },
-      create: { userId, usageDate: today, quizCount: 1 },
-      update: { quizCount: { increment: 1 } },
-    });
+    const today = limitDayStart();
+    // final-5: import clean-up no longer writes the learner's quizCount (it used up the Free 10 quizzes/day).
+    void userId; void today;
   }
 
   private async cleanupImportChunkWithRetry(

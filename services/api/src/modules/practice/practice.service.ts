@@ -1,3 +1,4 @@
+import { canReadUserImport } from '../content/user-import-privacy';
 import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -47,6 +48,7 @@ export class PracticeService {
       });
       if (!segment) throw new NotFoundException('Segment not found');
       const item = await this.prisma.contentItem.findUnique({ where: { id: segment.contentId } });
+      if (!item || !canReadUserImport(item, userId)) throw new NotFoundException('Segment not found');
       if (item && requiresCatalogPayment(item)) {
         const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
         if (!catalogAccessGranted({ item, userId, purchasedIds })) {

@@ -207,7 +207,8 @@ export class MarketingService {
       features: [t.everythingFree, t.payOnce, t.upfront],
     };
 
-    return [free, payPerImport];
+    // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENTS_UI_ENABLED, default off).
+    return paymentsUiEnabled() ? [free, payPerImport] : [free];
   }
 
   async landing(): Promise<LandingPayload> {

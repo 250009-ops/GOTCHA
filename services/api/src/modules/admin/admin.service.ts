@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import {
   BadRequestException,
   ConflictException,
@@ -62,6 +63,17 @@ import {
 } from '../../common/language-catalog';
 import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, languageFlag, languageLabel } from '@gotcha/shared';
 import { tashkentDayStart, tashkentMonthStart } from '../../common/tashkent-window';
+
+import { catalogBaseSom } from '../../common/catalog-pricing';
+import { assertValidPageTiers, type TierRow } from '../../common/page-tiers';
+import { PLAN_LIMIT_KEYS, effectivePlanLimits, planLimits, refreshPlanLimits, resetPlanLimitsCache } from '../../common/plan-limits';
+
+export const DELETION_RETENTION_DAYS = 365;
+export const isSelfDeleted = (u: { email: string; deletedAt: Date | null }) => Boolean(u.deletedAt) && u.email.startsWith('deleted-');
+/** Self-service deletion: anonymised row kept 1 year, then purged (Privacy §8). Null for suspended / active users. */
+export function deletionPurgeAfter(u: { email: string; deletedAt: Date | null }): Date | null {
+  return isSelfDeleted(u) ? new Date(u.deletedAt!.getTime() + DELETION_RETENTION_DAYS * 86_400_000) : null;
+}
 
 @Injectable()
 export class AdminService {
@@ -344,7 +356,7 @@ export class AdminService {
       revenueGrowthPct,
       aiLookupsToday,
       aiLimit,
-      aiDefaultUserQuota: aiSettings.defaultUserQuota,
+      aiDefaultUserQuota: (await this.freeLookupCap()), // final-5: read-only mirror of caps.free.lookups
       aiUsagePct,
       userGrowthPct,
       conversionPct,
@@ -379,8 +391,7 @@ export class AdminService {
     const statusKey = (status ?? '').trim().toLowerCase();
     const tierKey = (tier ?? '').trim().toLowerCase();
     const includeSuspended = statusKey === 'suspended';
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = limitDayStart();
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -481,8 +492,7 @@ export class AdminService {
     });
     if (!u) throw new NotFoundException('User not found');
 
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = limitDayStart();
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -770,7 +780,12 @@ export class AdminService {
     return this.auth.adminTriggerPasswordReset(id);
   }
 
-  async hardDeleteUser(id: string) {
+  /**
+   * final-5 A10: hard delete needs a typed confirm (?confirm=<user id>) and is audit-logged. Self-service deletion
+   * requests (option B: already anonymised, learning data purged, messages anonymised, reports unlinked) keep the
+   * anonymised row until the 1-year purge date; before that, hard delete is refused.
+   */
+  async hardDeleteUser(id: string, opts: { confirm?: string; actorId?: string | null; now?: Date } = {}) {
     const user = await this.prisma.user.findUnique({
       where: { id },
       include: { adminProfile: true },
@@ -779,8 +794,83 @@ export class AdminService {
     if (user.adminProfile) {
       throw new BadRequestException('Admin accounts cannot be permanently deleted here.');
     }
-    await this.prisma.user.delete({ where: { id } });
+    if (opts.confirm !== id) {
+      throw new BadRequestException('Type the user id to confirm a permanent delete (?confirm=<id>).');
+    }
+    const purgeAfter = deletionPurgeAfter(user);
+    if (purgeAfter && purgeAfter.getTime() > (opts.now ?? new Date()).getTime()) {
+      throw new BadRequestException(`Deletion request is in the 1-year retention window; permanent purge from ${purgeAfter.toISOString().slice(0, 10)}.`);
+    }
+    // final-5 WL4-11 option B: keep the user's sent messages for the other participants, anonymised as 'Deleted user'.
+    await this.prisma.$transaction([
+      this.prisma.message.updateMany({ where: { senderId: id }, data: { senderId: null } }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
+    await this.prisma.auditLog
+      .create({ data: { actorId: opts.actorId ?? null, action: 'user.hard_delete', entityType: 'user', entityId: id, metadata: { selfDeleted: isSelfDeleted(user) } } })
+      .catch(() => undefined);
     return { deleted: true, id };
+  }
+
+  /** final-5 A10: accounts the learner deleted themselves (anonymised e-mail deleted-<id>@…), newest first. */
+  async listDeletionRequests() {
+    const rows = await this.prisma.user.findMany({
+      where: { email: { startsWith: 'deleted-' }, deletedAt: { not: null } },
+      select: { id: true, email: true, deletedAt: true, createdAt: true },
+      orderBy: { deletedAt: 'desc' },
+      take: 500,
+    });
+    const now = Date.now();
+    return rows.map((u) => {
+      const purgeAfter = deletionPurgeAfter(u)!;
+      return { id: u.id, requestedAt: u.deletedAt, createdAt: u.createdAt, purgeAfter, purgeDue: purgeAfter.getTime() <= now };
+    });
+  }
+
+  async getPlanLimitsConfig() {
+    resetPlanLimitsCache();
+    await refreshPlanLimits(this.prisma);
+    const eff = effectivePlanLimits();
+    const imports = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
+    const iv = (imports?.value ?? {}) as { dailyFreeImportsPerUser?: number; monthlyFreePageLimit?: number };
+    return {
+      freeLookupsPerDay: eff.freeLookups,
+      freeQuizzesPerDay: eff.freeQuizzes,
+      plusQuizzesPerDay: eff.plusQuizzes,
+      freeImportsPerDay: Number.isInteger(iv.dailyFreeImportsPerUser) ? iv.dailyFreeImportsPerUser : 3,
+      freePagesPerMonth: Number.isInteger(iv.monthlyFreePageLimit) ? iv.monthlyFreePageLimit : 50,
+      resetTimezone: 'Asia/Tashkent',
+    };
+  }
+
+  async updatePlanLimitsConfig(body: Record<string, unknown>, actorId: string | null) {
+    const num = (v: unknown, name: string, max: number) => {
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < 0 || n > max) throw new BadRequestException(`${name} must be a whole number 0–${max}`);
+      return n;
+    };
+    const caps: Array<[string, number]> = [];
+    if (body.freeLookupsPerDay !== undefined) caps.push([PLAN_LIMIT_KEYS.freeLookups, num(body.freeLookupsPerDay, 'freeLookupsPerDay', 100_000)]);
+    if (body.freeQuizzesPerDay !== undefined) caps.push([PLAN_LIMIT_KEYS.freeQuizzes, num(body.freeQuizzesPerDay, 'freeQuizzesPerDay', 10_000)]);
+    if (body.plusQuizzesPerDay !== undefined) caps.push([PLAN_LIMIT_KEYS.plusQuizzes, num(body.plusQuizzesPerDay, 'plusQuizzesPerDay', 10_000)]);
+    for (const [key, value] of caps) {
+      await this.prisma.platformSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    }
+    if (body.freeImportsPerDay !== undefined || body.freePagesPerMonth !== undefined) {
+      const row = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
+      const cur = (row?.value && typeof row.value === 'object' ? row.value : {}) as Record<string, unknown>;
+      const next = {
+        ...cur,
+        ...(body.freeImportsPerDay !== undefined ? { dailyFreeImportsPerUser: num(body.freeImportsPerDay, 'freeImportsPerDay', 1000) } : {}),
+        ...(body.freePagesPerMonth !== undefined ? { monthlyFreePageLimit: num(body.freePagesPerMonth, 'freePagesPerMonth', 100_000) } : {}),
+      };
+      await this.prisma.platformSetting.upsert({ where: { key: 'importFreeLimits' }, update: { value: next }, create: { key: 'importFreeLimits', value: next } });
+    }
+    await this.prisma.auditLog
+      .create({ data: { actorId, action: 'plan_limits.update', entityType: 'platform_settings', metadata: body as object } })
+      .catch(() => undefined);
+    resetPlanLimitsCache();
+    return this.getPlanLimitsConfig();
   }
 
   private catalogFilter(opts?: {
@@ -1279,27 +1369,36 @@ export class AdminService {
   }
 
   async getCatalogPricingRules() {
+    // final-5: catalog pricing is stored in soʻm (UZS). Legacy USD keys are ignored. Plus discount is applied at checkout, not here.
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'catalogPricingRules' } });
     const defaults = {
       contentType: 'book',
-      basePriceUsd: 4.99,
-      perPageSurchargeUsd: 0.02,
+      currency: 'UZS',
+      basePriceSom: 49000,
+      perPageSurchargeSom: 0,
       volumeDiscountsEnabled: true,
       buy3PctOff: 10,
       buy5PctOff: 20,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
-    return { ...defaults, ...(row.value as object) };
+    const { basePriceUsd, perPageSurchargeUsd: _p, ...rest } = row.value as Record<string, unknown>;
+    return { ...defaults, ...rest, basePriceSom: catalogBaseSom(row.value), perPageSurchargeSom: 0, currency: 'UZS' } as typeof defaults;
   }
 
   async updateCatalogPricingRules(body: Record<string, unknown>) {
     const current = await this.getCatalogPricingRules();
+    const som = (v: unknown, cur: number, min: number) => {
+      if (v === undefined) return cur;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < min) throw new BadRequestException({ code: 'INVALID_CATALOG_PRICE', message: 'Prices are whole soʻm amounts' });
+      return n;
+    };
     const next = {
       ...current,
       contentType: body.contentType !== undefined ? String(body.contentType) : current.contentType,
-      basePriceUsd: body.basePriceUsd !== undefined ? Number(body.basePriceUsd) : current.basePriceUsd,
-      perPageSurchargeUsd:
-        body.perPageSurchargeUsd !== undefined ? Number(body.perPageSurchargeUsd) : current.perPageSurchargeUsd,
+      currency: 'UZS',
+      basePriceSom: som(body.basePriceSom, current.basePriceSom, 1),
+      perPageSurchargeSom: som(body.perPageSurchargeSom, current.perPageSurchargeSom, 0),
       volumeDiscountsEnabled:
         body.volumeDiscountsEnabled !== undefined
           ? Boolean(body.volumeDiscountsEnabled)
@@ -1307,12 +1406,14 @@ export class AdminService {
       buy3PctOff: body.buy3PctOff !== undefined ? Number(body.buy3PctOff) : current.buy3PctOff,
       buy5PctOff: body.buy5PctOff !== undefined ? Number(body.buy5PctOff) : current.buy5PctOff,
     };
+    // basePriceUsd is the legacy (misnamed, soʻm) key; mirrored so a final-4 rollback still reads the right price.
+    const stored = { ...next, perPageSurchargeSom: 0, basePriceUsd: next.basePriceSom };
     await this.prisma.platformSetting.upsert({
       where: { key: 'catalogPricingRules' },
-      update: { value: next as never },
-      create: { key: 'catalogPricingRules', value: next as never },
+      update: { value: stored as never },
+      create: { key: 'catalogPricingRules', value: stored as never },
     });
-    return next;
+    return { ...next, perPageSurchargeSom: 0 };
   }
 
   publishContent(id: string) {
@@ -1334,6 +1435,14 @@ export class AdminService {
       existing.contentType === ContentType.user_import
     ) {
       throw new BadRequestException('Learner imports are managed from User Imports, not the catalog.');
+    }
+
+    // final-5 (Kai, data loss): never delete a book someone bought. Archive it instead (hidden from the catalog;
+    // buyers keep reading it via their completed purchase). content_purchases FK is RESTRICT from 0027.
+    const purchaseCount = await this.prisma.contentPurchase.count({ where: { contentId: id } });
+    if (purchaseCount > 0) {
+      await this.prisma.contentItem.update({ where: { id }, data: { publishStatus: PublishStatus.archived } });
+      return { deleted: false, archived: true, id, purchases: purchaseCount };
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -1540,6 +1649,21 @@ export class AdminService {
     return raw;
   }
 
+  /** final-5: validate the active tier table as it would be after this change (server-side; prices are not changed here). */
+  private async freeLookupCap() {
+    await refreshPlanLimits(this.prisma);
+    return planLimits('free').lookupsPerDay ?? 0;
+  }
+
+  private async assertTierTableAfter(change: { removeId?: string; upsert?: TierRow & { id?: string } }) {
+    const rows = await this.prisma.importPageTier.findMany({ where: { active: true } });
+    const next: TierRow[] = rows
+      .filter((r) => r.id !== change.removeId && r.id !== change.upsert?.id)
+      .map((r) => ({ label: r.label, minPages: r.minPages, maxPages: r.maxPages, price: Number(r.priceUsd) }));
+    if (change.upsert) next.push(change.upsert);
+    assertValidPageTiers(next);
+  }
+
   private async reorderImportPageTiers() {
     const tiers = await this.prisma.importPageTier.findMany({
       orderBy: [{ minPages: 'asc' }, { sortOrder: 'asc' }],
@@ -1559,6 +1683,7 @@ export class AdminService {
     const price = this.parsePageTierPrice(body) ?? 0;
     const label = String(body.label ?? '').trim() || defaultPageTierLabel(minPages, maxPages);
     assertAtmosMinPriceSom(price, `Page tier "${label}"`);
+    await this.assertTierTableAfter({ upsert: { label, minPages, maxPages, price } });
     const count = await this.prisma.importPageTier.count();
     const created = await this.prisma.importPageTier.create({
       data: {
@@ -1589,6 +1714,9 @@ export class AdminService {
     if (price !== undefined) {
       assertAtmosMinPriceSom(price, `Page tier "${label}"`);
     }
+    if (existing.active) {
+      await this.assertTierTableAfter({ upsert: { id, label, minPages: nextMin, maxPages: nextMax, price: price ?? Number(existing.priceUsd) } });
+    }
     await this.prisma.importPageTier.update({
       where: { id },
       data: {
@@ -1606,6 +1734,7 @@ export class AdminService {
   async deleteImportPageTier(id: string) {
     const existing = await this.prisma.importPageTier.findUnique({ where: { id } });
     if (!existing) throw new NotFoundException('Page tier not found');
+    if (existing.active) await this.assertTierTableAfter({ removeId: id });
     await this.prisma.importPageTier.delete({ where: { id } });
     await this.reorderImportPageTiers();
     return { deleted: true, id };
@@ -1651,10 +1780,7 @@ export class AdminService {
       update: { value: next as never },
       create: { key: 'importFreeLimits', value: next as never },
     });
-    await this.prisma.subscriptionPlan.updateMany({
-      where: { tier: 'free' },
-      data: { importLimit: Math.max(0, Math.floor(next.dailyFreeImportsPerUser)) },
-    });
+    // final-5 B1: legacy subscription_plans.import_limit is no longer written or read; importFreeLimits is the source.
     return next;
   }
 
@@ -1690,6 +1816,10 @@ export class AdminService {
   async reviewModeration(reviewerId: string, id: string, status: ModerationStatus, notes?: string) {
     const item = await this.prisma.moderationQueue.findUnique({ where: { id } });
     if (!item) throw new NotFoundException('Moderation item not found');
+    if (!Object.values(ModerationStatus).includes(status) || status === ModerationStatus.pending) {
+      throw new BadRequestException('status must be approved, rejected or dismissed');
+    }
+    // final-5: "dismissed" closes the row and keeps the import private — the publish state is not touched below.
 
     const updated = await this.prisma.moderationQueue.update({
       where: { id },
@@ -2103,7 +2233,7 @@ export class AdminService {
     const todayLookups = todayRows.reduce((sum, r) => sum + r.lookupCount, 0);
     const todayQuizzes = todayRows.reduce((sum, r) => sum + r.quizCount, 0);
     const todayPlatformUsed = todayLookups + todayQuizzes;
-    const userQuota = aiSettings.defaultUserQuota;
+    const userQuota = await this.freeLookupCap();
     const usersAtQuota =
       userQuota > 0 && userQuota < 1_000_000
         ? todayRows.filter((r) => r.lookupCount >= userQuota).length
@@ -2211,7 +2341,7 @@ export class AdminService {
         dailyLimit: aiSettings.dailyLimit,
         lookupModel: aiSettings.lookupModel,
         quizModel: aiSettings.quizModel,
-        defaultUserQuota: aiSettings.defaultUserQuota,
+        defaultUserQuota: userQuota,
       },
       today: {
         lookups,
@@ -2221,7 +2351,7 @@ export class AdminService {
         priorLookups,
         growthPct,
         avgLookupsPerUser: Number(avgLookupsPerUser.toFixed(1)),
-        avgLookupsTarget: aiSettings.defaultUserQuota,
+        avgLookupsTarget: userQuota,
         apiCostToday: 0,
         avgCostPerLookup: 0,
         rateLimitedUsers: usersAtQuota,
@@ -2850,11 +2980,13 @@ export class AdminService {
       if (row.key === ADMIN_METRICS_KEY) continue;
       map[row.key] = row.value;
     }
+    // final-5: the old seed force-wrote a support address on the retired gotcha(dot)app domain; that legacy value reads as the live address.
+    if (typeof map.supportEmail !== 'string' || !map.supportEmail.trim() || /@gotcha\.app$/i.test(map.supportEmail)) map.supportEmail = 'support@gotchaa.uz';
 
     const aiDefaults = defaultAiPlatformSettings();
     return {
       platformName: 'GOTCHA',
-      supportEmail: 'support@gotcha.app',
+      supportEmail: 'support@gotchaa.uz',
       maintenanceMode: false,
       allowRegistrations: true,
       defaultCefr: 'a2',
@@ -2865,21 +2997,18 @@ export class AdminService {
       [AI_SETTING_KEYS.lookupModel]: aiDefaults.lookupModel,
       [AI_SETTING_KEYS.quizModel]: aiDefaults.quizModel,
       [AI_SETTING_KEYS.importCleanupModel]: aiDefaults.importCleanupModel,
-      [AI_SETTING_KEYS.defaultUserQuota]: aiDefaults.defaultUserQuota,
       aiConfigured: Boolean(process.env.OPENAI_API_KEY?.trim()),
       ...map,
+      [AI_SETTING_KEYS.defaultUserQuota]: await this.freeLookupCap(), // read-only mirror of caps.free.lookups
     };
   }
 
   async updateSettings(body: Record<string, unknown>) {
     const defaults = defaultAiPlatformSettings();
     const nextBody = { ...body };
-    if (nextBody[AI_SETTING_KEYS.defaultUserQuota] !== undefined) {
-      nextBody[AI_SETTING_KEYS.defaultUserQuota] = coerceNonNegInt(
-        nextBody[AI_SETTING_KEYS.defaultUserQuota],
-        defaults.defaultUserQuota,
-      );
-    }
+    // final-5 (Kai): caps.free.lookups (PATCH /admin/plan-limits) is the only Free lookup limit. The legacy
+    // aiDefaultUserQuota setting and subscription_plans.ai_daily_quota are ignored on write and never enforced.
+    delete nextBody[AI_SETTING_KEYS.defaultUserQuota];
     if (nextBody[AI_SETTING_KEYS.dailyLimit] !== undefined) {
       nextBody[AI_SETTING_KEYS.dailyLimit] = coerceNonNegInt(
         nextBody[AI_SETTING_KEYS.dailyLimit],
@@ -2899,15 +3028,6 @@ export class AdminService {
         }),
       ),
     );
-    if (nextBody[AI_SETTING_KEYS.defaultUserQuota] !== undefined) {
-      await this.prisma.subscriptionPlan.updateMany({
-        where: { tier: 'free' },
-        data: { aiDailyQuota: nextBody[AI_SETTING_KEYS.defaultUserQuota] as number },
-      });
-      const v = nextBody[AI_SETTING_KEYS.defaultUserQuota] as number; // WLF-12: the enforced Free lookup cap
-      await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.freeLookups }, update: { value: v }, create: { key: DAILY_CAP_KEYS.freeLookups, value: v } });
-      resetPlanCapsCache();
-    }
     return this.settings();
   }
 

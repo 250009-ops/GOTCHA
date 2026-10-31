@@ -3,6 +3,7 @@ import { Search, UserMinus, Users, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
 import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, StatCard } from '../components/ui';
 import { api } from '../lib/api';
+import { DeletionRequestsCard } from '../components/DeletionRequestsCard';
 import { formatNumber, initials, levelBadgeClass, relativeTime } from '../lib/utils';
 
 type FilterChip = 'All' | 'Pay as you go' | 'Free' | 'Suspended';
@@ -139,11 +140,12 @@ export default function UsersPage() {
     }
   }
 
+  const [confirmText, setConfirmText] = useState('');
   async function hardDelete(id: string) {
     setBusyId(id);
     setActionErr(null);
     try {
-      await api(`/admin/users/${id}`, { method: 'DELETE' });
+      await api(`/admin/users/${id}?confirm=${encodeURIComponent(confirmText.trim())}`, { method: 'DELETE' });
       setSelected(null);
       setConfirmHardDelete(false);
       await load();
@@ -174,6 +176,7 @@ export default function UsersPage() {
 
   return (
     <div>
+      <DeletionRequestsCard />
       <PageHeader
         title="Users"
         subtitle={`Total: ${formatNumber(data.stats.total)} users`}
@@ -394,10 +397,11 @@ export default function UsersPage() {
                   {confirmHardDelete ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-2">
                       <p className="text-xs text-rose-700 font-semibold">
-                        Permanently delete this user and all learning data?
+                        Permanently delete this user and all learning data? Type the user id to confirm. Self-deleted accounts can only be purged 1 year after the request.
                       </p>
+                      <Input aria-label="Type the user id to confirm" placeholder={selected.id} value={confirmText} onChange={(e) => setConfirmText(e.target.value)} />
                       <div className="flex gap-2">
-                        <Button variant="danger" disabled={busyId === selected.id} onClick={() => hardDelete(selected.id)}>
+                        <Button variant="danger" disabled={busyId === selected.id || confirmText.trim() !== selected.id} onClick={() => hardDelete(selected.id)}>
                           {busyId === selected.id ? '…' : 'Confirm delete'}
                         </Button>
                         <Button variant="secondary" disabled={busyId === selected.id} onClick={() => setConfirmHardDelete(false)}>

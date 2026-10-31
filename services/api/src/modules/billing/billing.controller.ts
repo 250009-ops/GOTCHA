@@ -182,6 +182,10 @@ export class BillingController {
     @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string,
   ) {
     return this.importCommerce.listPayments(user.sub, { limit: Number(limit), cursor });
+  /** final-5 (f29902f1): paid import credits not yet used for an import. Declared before :id. */
+  @Get('imports/payments-unused')
+  unusedPaid(@CurrentUser() user: AuthUserPayload) {
+    return this.importCommerce.unusedPaidImports(user.sub);
   }
 
   @Get('imports/payments/:id')

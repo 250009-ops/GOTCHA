@@ -40,21 +40,20 @@ CREATE TABLE IF NOT EXISTS "promo_codes" (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS "promo_codes_code_key" ON "promo_codes"("code");
 
--- Seed (PRICING.md v0.2 §7): Free and Plus (tier premium). PROPOSAL rows (yearly, student, promos) are not seeded.
+-- Seed: insert ONLY missing plan rows (ON CONFLICT DO NOTHING). Existing rows (prod: free + premium) keep their
+-- name, price and limits untouched; no price changes in web-launch-04 (pricing ships with payments-02).
+-- A missing premium row is created inactive with no price (admin sets it).
 INSERT INTO "subscription_plans" ("id","tier","name","price_monthly","ai_daily_quota","import_limit","offline_enabled","name_i18n","period","features","active","sort_order")
 VALUES
-  (gen_random_uuid(),'free','Free',0,50,15,false,'{"en":"Free","ru":"Бесплатно","uz":"Bepul"}','month',
+  (gen_random_uuid(),'free','Free',0,5000,100,false,'{"en":"Free","ru":"Бесплатно","uz":"Bepul"}','month',
    '["reader","library","ai_lookup","translate","tts","vocabulary","srs_review","practice","imports_free_pool","stats","messaging"]',true,0),
-  (gen_random_uuid(),'premium','Plus',34990,1000000,1000000,false,'{"en":"Plus","ru":"Plus","uz":"Plus"}','month',
-   '["reader","library","ai_lookup_unlimited","translate","tts","vocabulary","srs_review","practice","imports_free_pool","stats","messaging"]',true,1)
-ON CONFLICT ("tier") DO UPDATE SET
-  "name" = EXCLUDED."name", "price_monthly" = EXCLUDED."price_monthly", "ai_daily_quota" = EXCLUDED."ai_daily_quota",
-  "import_limit" = EXCLUDED."import_limit", "offline_enabled" = EXCLUDED."offline_enabled", "name_i18n" = EXCLUDED."name_i18n",
-  "period" = EXCLUDED."period", "features" = EXCLUDED."features", "sort_order" = EXCLUDED."sort_order";
+  (gen_random_uuid(),'premium','Plus',NULL,1000000,1000000,false,'{"en":"Plus","ru":"Plus","uz":"Plus"}','month',
+   '["reader","library","ai_lookup_unlimited","translate","tts","vocabulary","srs_review","practice","imports_free_pool","stats","messaging"]',false,1)
+ON CONFLICT ("tier") DO NOTHING;
 -- Page tiers: PRICING says keep current values; seed only when the table is empty.
 INSERT INTO "import_page_tiers" ("id","label","min_pages","max_pages","price_usd","sort_order","updated_at")
 SELECT gen_random_uuid(), v.label, v.min_pages, v.max_pages, v.price, v.sort, CURRENT_TIMESTAMP
-FROM (VALUES ('1 - 10 pages',1,10,12000,1),('11 - 50 pages',11,50,29000,2),('51 - 100 pages',51,100,49000,3),('100+ pages',101,NULL::int,79000,4))
+FROM (VALUES ('1 - 10 pages',1,10,12000,1),('11 - 50 pages',11,50,29000,2),('51 - 100 pages',51,100,49000,3),('101+ pages',101,NULL::int,79000,4))
   AS v(label,min_pages,max_pages,price,sort)
 WHERE NOT EXISTS (SELECT 1 FROM "import_page_tiers");
 -- Other tiers (if any) are left untouched; their plan rows stay but can be deactivated in admin.

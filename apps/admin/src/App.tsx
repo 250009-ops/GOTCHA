@@ -14,6 +14,8 @@ import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import { useAuth } from './lib/auth';
+import { RoleRoute } from './pages/RoleRoute';
+import { ROUTE_ROLES } from './lib/routeRoles';
 
 /** Dashboard is superadmin/analyst/editor only — moderators would otherwise land
  *  on a hard "Forbidden resource" error immediately after logging in. */
@@ -29,29 +31,20 @@ export default function App() {
       <Route element={<ProtectedRoute />}>
         <Route element={<AdminShell />}>
           <Route index element={<HomeRedirect />} />
-          <Route path="users" element={<UsersPage />} />
-          <Route path="content" element={<ContentPage />} />
-          <Route path="content/new" element={<ContentEditorPage />} />
-          <Route path="content/:id/edit" element={<ContentEditorPage />} />
-          <Route path="content/:directory" element={<ContentPage />} />
-          <Route path="languages" element={<LanguagesPage />} />
-          <Route path="level-tests" element={<Navigate to="/" replace />} />
-          <Route path="ai-usage" element={<AiUsagePage />} />
-          <Route path="gamification" element={<GamificationPage />} />
-          <Route path="reports" element={<ReportsPage />} />
-          <Route path="notifications" element={<NotificationsPage />} />
-          <Route path="import-pricing" element={<ImportPricingPage />} />
-          <Route path="import-pricing/:directory" element={<ImportPricingPage />} />
-          {/* Legacy Subscriptions nav → Import & Pricing */}
-          <Route path="subscriptions" element={<Navigate to="/import-pricing" replace />} />
-          <Route path="subscriptions/:directory" element={<Navigate to="/import-pricing" replace />} />
-          <Route path="analytics" element={<AnalyticsPage />} />
-          <Route path="support" element={<Navigate to="/" replace />} />
-          <Route path="settings" element={<SettingsPage />} />
-          {/* Figma IA: ops live under Content → User Imports (not sidebar nav) */}
-          <Route path="licenses" element={<Navigate to="/content/user-imports" replace />} />
-          <Route path="moderation" element={<Navigate to="/content/user-imports" replace />} />
-          <Route path="ingestion" element={<Navigate to="/content/user-imports" replace />} />
+          <Route path="users" element={<RoleRoute roles={ROUTE_ROLES['users']}><UsersPage /></RoleRoute>} />
+          <Route path="content" element={<RoleRoute roles={ROUTE_ROLES['content']}><ContentPage /></RoleRoute>} />
+          <Route path="content/new" element={<RoleRoute roles={ROUTE_ROLES['content/new']}><ContentEditorPage /></RoleRoute>} />
+          <Route path="content/:id/edit" element={<RoleRoute roles={ROUTE_ROLES['content/:id/edit']}><ContentEditorPage /></RoleRoute>} />
+          <Route path="content/:directory" element={<RoleRoute roles={ROUTE_ROLES['content/:directory']}><ContentPage /></RoleRoute>} />
+          <Route path="languages" element={<RoleRoute roles={ROUTE_ROLES['languages']}><LanguagesPage /></RoleRoute>} />
+          <Route path="ai-usage" element={<RoleRoute roles={ROUTE_ROLES['ai-usage']}><AiUsagePage /></RoleRoute>} />
+          <Route path="gamification" element={<RoleRoute roles={ROUTE_ROLES['gamification']}><GamificationPage /></RoleRoute>} />
+          <Route path="reports" element={<RoleRoute roles={ROUTE_ROLES['reports']}><ReportsPage /></RoleRoute>} />
+          <Route path="notifications" element={<RoleRoute roles={ROUTE_ROLES['notifications']}><NotificationsPage /></RoleRoute>} />
+          <Route path="import-pricing" element={<RoleRoute roles={ROUTE_ROLES['import-pricing']}><ImportPricingPage /></RoleRoute>} />
+          <Route path="import-pricing/:directory" element={<RoleRoute roles={ROUTE_ROLES['import-pricing/:directory']}><ImportPricingPage /></RoleRoute>} />
+          <Route path="analytics" element={<RoleRoute roles={ROUTE_ROLES['analytics']}><AnalyticsPage /></RoleRoute>} />
+          <Route path="settings" element={<RoleRoute roles={ROUTE_ROLES['settings']}><SettingsPage /></RoleRoute>} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

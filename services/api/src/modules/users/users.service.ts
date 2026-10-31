@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
@@ -791,8 +792,7 @@ export function buildStatsHistory(
     weeklyVocab.set(week, (weeklyVocab.get(week) ?? 0) + 1);
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = limitDayStart();
 
   const daily: Array<{ date: string; minutes: number; wordsSaved: number }> = [];
   const heatmap: StatsHeatmapDay[] = [];

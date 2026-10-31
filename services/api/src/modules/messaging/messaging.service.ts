@@ -155,18 +155,18 @@ export class MessagingService {
       body: string;
       translation: string | null;
       bodyLang: AppLanguage | null;
-      senderId: string;
+      senderId: string | null;
       createdAt: Date;
       editedAt?: Date | null;
       deletedAt?: Date | null;
       replyToId?: string | null;
-      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string };
+      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string } | null;
       replyTo?: {
         id: string;
         body: string;
         translation?: string | null;
         bodyLang?: AppLanguage | null;
-        senderId: string;
+        senderId: string | null;
         deletedAt: Date | null;
       } | null;
     },
@@ -184,7 +184,9 @@ export class MessagingService {
       // email is selected only to detect a deleted account; it never leaves the API.
       sender: m.sender
         ? { id: m.sender.id, displayName: m.sender.displayName, avatarUrl: m.sender.avatarUrl, deleted: isDeletedAccount(m.sender) }
-        : m.sender,
+        : m.senderId === null
+          ? { id: null, displayName: DELETED_USER_NAME, avatarUrl: null, deleted: true } // final-5 WL4-11 B: hard-deleted sender
+          : m.sender,
       mine,
       createdAt: m.createdAt,
       editedAt: m.editedAt ?? null,
@@ -295,7 +297,7 @@ export class MessagingService {
         const unreadCount = await this.prisma.message.count({
           where: {
             conversationId: c.id,
-            senderId: { not: userId },
+            OR: [{ senderId: { not: userId } }, { senderId: null }], // final-5: messages from hard-deleted users still count as unread
             ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
           },
         });

@@ -391,6 +391,7 @@ export default function ContentPage() {
                       <div className="flex gap-2">
                         <Button onClick={() => review(item.id, 'approved')}>Approve</Button>
                         <Button variant="danger" onClick={() => review(item.id, 'rejected')}>Reject</Button>
+                        <Button variant="secondary" title="Close without publishing; the import stays private to its owner" onClick={() => review(item.id, 'dismissed')}>Dismiss (keep private)</Button>
                       </div>
                     </Card>
                   ))}

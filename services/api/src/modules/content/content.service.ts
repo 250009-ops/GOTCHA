@@ -1,6 +1,7 @@
+import { userImportOwnerWhere } from './user-import-privacy';
 import { ageBand, AgeBand, allowedAgeRatings } from '../../common/safety/age-policy';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
+import { ContentSource, ContentType, PublishStatus, Prisma, PurchaseStatus, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
 import { ensureLanguageCatalog, getLearnerVisibleLanguageCodes } from '../../common/language-catalog';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
@@ -111,7 +112,7 @@ export class ContentService {
 
   private async assertLearnerCanRead(contentId: string, userId?: string, isAdmin?: boolean) {
     const item = await this.prisma.contentItem.findFirst({
-      where: { AND: [this.readableByLearnerWhere(contentId, userId), await this.learnerAgeWhere(userId, isAdmin)] },
+      where: { AND: [this.readableByLearnerWhere(contentId, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
     });
     if (!item) throw new NotFoundException('Content not found');
     const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
@@ -157,6 +158,8 @@ export class ContentService {
           publishStatus: { in: [PublishStatus.published, PublishStatus.review, PublishStatus.draft] },
         },
         { readingProgress: { some: { userId } } },
+        // final-5: a completed purchase keeps an archived catalog book readable for its buyer.
+        { purchases: { some: { userId, status: PurchaseStatus.completed } } },
       ],
     };
   }
@@ -413,7 +416,7 @@ export class ContentService {
     }
 
     const item = await this.prisma.contentItem.findFirst({
-      where: { AND: [this.readableByLearnerWhere(id, userId), await this.learnerAgeWhere(userId, isAdmin)] },
+      where: { AND: [this.readableByLearnerWhere(id, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
       include: {
         license: true,
         segments: {
@@ -465,7 +468,7 @@ export class ContentService {
     }
 
     const item = await this.prisma.contentItem.findFirst({
-      where: { AND: [this.readableByLearnerWhere(contentId, userId), await this.learnerAgeWhere(userId, isAdmin)] },
+      where: { AND: [this.readableByLearnerWhere(contentId, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
       select: {
         id: true,
         isFree: true,

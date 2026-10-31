@@ -33,7 +33,6 @@ function settingsPayload(settings: Settings) {
     supportEmail: settings.supportEmail?.trim() || undefined,
     aiEnabled: settings.aiEnabled,
     aiDailyLimit: settings.aiDailyLimit,
-    aiDefaultUserQuota: settings.aiDefaultUserQuota,
     aiLookupModel: settings.aiLookupModel,
     aiQuizModel: settings.aiQuizModel,
     aiImportCleanupModel: settings.aiImportCleanupModel,
@@ -205,6 +204,7 @@ export default function SettingsPage() {
               <span className="text-slate-500 block mb-1">Support email</span>
               <Input
                 type="email"
+                placeholder="support@gotchaa.uz"
                 value={String(settings.supportEmail ?? '')}
                 onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
               />
@@ -243,20 +243,14 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, aiDailyLimit: Number(e.target.value) })}
                 />
                 <span className="text-xs text-slate-400 mt-1 block">
-                  Shared cap for lookups + quizzes today. 0 = no limit. Learners are blocked when this is reached.
+                  Shared cap for lookups + quizzes today. 0 = no platform cap. Learners are blocked when this is reached.
                 </span>
               </label>
               <label className="text-sm">
-                <span className="text-slate-500 block mb-1">Daily word-lookup quota per learner</span>
-                <Input
-                  type="number"
-                  min={0}
-                  value={Number(settings.aiDefaultUserQuota ?? 50)}
-                  onChange={(e) => setSettings({ ...settings, aiDefaultUserQuota: Number(e.target.value) })}
-                />
+                <span className="text-slate-500 block mb-1">Free: word lookups per day (read-only)</span>
+                <Input type="number" readOnly disabled data-testid="free-lookups-readonly" value={Number(settings.aiDefaultUserQuota ?? 20)} />
                 <span className="text-xs text-slate-400 mt-1 block">
-                  Each learner’s word lookups per day in books and chat. Editable here and on Import & Pricing / AI Usage.
-                  0 = no limit. This is the warning they see after tapping too many words.
+                  Set under AI Usage → Plan limits (the only place the Free lookup limit is edited).
                 </span>
               </label>
               <label className="text-sm">

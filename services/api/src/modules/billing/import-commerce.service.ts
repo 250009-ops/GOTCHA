@@ -1,3 +1,4 @@
+import { limitDayStart, limitMonthStart, nextLimitResetAt, nextMonthlyResetAt } from '../../common/plan-limits';
 import {
   ConflictException,
   BadRequestException,
@@ -78,6 +79,10 @@ export type ImportQuoteResult = {
 export type LearnerImportAllowance = {
   gatewayEnabled: boolean;
   resetCycle: string;
+  /** final-5: 00:00 Asia/Tashkent; daily imports reset at dailyResetAt, monthly pages at monthlyResetAt (1st of the month). */
+  dailyResetAt: string;
+  monthlyResetAt: string;
+  timezone: string;
   allowedFormats: string[];
   dailyFreeImportsPerUser: number;
   dailyFreeUsed: number;
@@ -119,6 +124,10 @@ export function reviewFlagOnly(p: { status: string; cancelReason: string | null;
   if (p.refundDue) return false;
   if (p.status === 'pending') return p.cancelReason == null;
   return p.status === 'expired' && (p.cancelReason ?? '').startsWith('expired_unverified');
+import { paymentsUiEnabled } from '../../common/payments-ui';
+import { ForbiddenException as PaymentsForbidden } from '@nestjs/common';
+export function assertPaymentsEnabled(env: NodeJS.ProcessEnv = process.env) {
+  if (!paymentsUiEnabled(env)) throw new PaymentsForbidden({ statusCode: 403, code: 'PAYMENTS_DISABLED', message: 'Paid imports are not available yet.' });
 }
 
 @Injectable()
@@ -281,6 +290,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       monthlyFreePageLimit: pageCap,
       monthlyPagesUsed: usage.monthlyPagesUsed,
       monthlyPagesRemaining: Math.max(0, pageCap - usage.monthlyPagesUsed),
+      dailyResetAt: nextLimitResetAt().toISOString(),
+      monthlyResetAt: nextMonthlyResetAt().toISOString(),
+      timezone: 'Asia/Tashkent',
     };
   }
 
@@ -311,8 +323,16 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
     const gatewayEnabled = allowance.gatewayEnabled;
     const plus = gatewayEnabled ? await this.plusBenefitsFor(userId) : null;
-    let isFree = !gatewayEnabled;
-    let freeReason: string | null = gatewayEnabled ? null : 'Imports are free right now';
+    let isFree = false;
+    let freeReason: string | null = null;
+    if (!gatewayEnabled) {
+      // final-5 (b): no gateway → free, but only within the Free allowance (any format).
+      const within =
+        allowance.dailyFreeUsed < allowance.dailyFreeImportsPerUser &&
+        allowance.monthlyPagesUsed + estimatedPages <= allowance.monthlyFreePageLimit;
+      isFree = within;
+      freeReason = within ? 'Within free import allowance' : 'Free import limit reached';
+    }
 
     if (gatewayEnabled) {
       const formatOk = formatIsAllowed(allowance.allowedFormats, contentFormat);
@@ -324,6 +344,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       } else if (formatOk && plus && plus.benefits.freeImportMaxPages >= estimatedPages) {
         isFree = true;
         freeReason = 'Included with Plus';
+      } else if (!paymentsUiEnabled()) {
+        freeReason = 'Free import limit reached';
       } else if (!tier) {
         freeReason = matched ? 'This length is not priced yet' : 'This length is not covered by a page tier';
       }
@@ -390,6 +412,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     const quote = await this.quote(userId, input);
 
     if (!quote.requiresPayment) {
+      if (!quote.isFree) {
+        throw new ForbiddenException({ statusCode: 403, code: 'IMPORT_LIMIT_REACHED', message: quote.freeReason ?? 'Free import limit reached' });
+      }
       const account = `free_${randomUUID().replace(/-/g, '')}`;
       const payment = await this.prisma.importPayment.create({
         data: {
@@ -415,6 +440,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     if (!this.atmos.configured()) {
       throw new ServiceUnavailableException('Atmos payment gateway is not configured');
     }
@@ -555,6 +581,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     cardNumber: string,
     expiry: string,
   ): Promise<{ paymentId: string; maskedPhone?: string; step: 'otp' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -598,11 +625,13 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     paymentId: string,
     otp: string,
   ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'otp' | 'card' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
     if (!payment) throw new NotFoundException('Payment not found');
     if (payment.status === ImportPaymentStatus.paid) {
+      await this.fulfillCatalogPurchase(payment); // idempotent: repairs a paid-but-not-granted catalog purchase
       return { paymentId, status: 'paid', step: 'paid' };
     }
     // REVIEW B3: never charge a cancelled/failed/expired/refunded payment.
@@ -665,6 +694,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     paymentId: string,
   ): Promise<{ paymentId: string; step: 'otp' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -1016,6 +1046,29 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return true;
   }
 
+  /**
+   * final-5: the ONE paid transition for every confirmation path (apply, apply→"confirmed via get", getPayment poll,
+   * Atmos callback). Idempotent: only a non-paid row flips to paid (conditional update, so concurrent paths cannot
+   * double-settle) and the catalog grant is re-checked on every call, so a paid-but-not-granted purchase is repaired.
+   * Import payments stay paid + unused (userImportId null) until consumePayment attaches exactly one import.
+  async settlePaid(paymentId: string, opts?: { providerRef?: string; ofdUrl?: string; raw?: unknown }) {
+    // r3b merge: delegates to the payments-02 conditional transition (pending/expired → paid, Plus + catalog fulfilment).
+    const row = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!row) return null;
+    if (row.status === ImportPaymentStatus.pending || row.status === ImportPaymentStatus.expired) await this.transitionToPaid(paymentId, opts ?? {}, [ImportPaymentStatus.pending, ImportPaymentStatus.expired]);
+    else if (row.status === ImportPaymentStatus.paid) await this.fulfillCatalogPurchase(row);
+    return this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+  }
+
+  /** final-5 (f29902f1): paid import payments not yet attached to an import, so the learner can finish that import. */
+  unusedPaidImports(userId: string) {
+    return this.prisma.importPayment.findMany({
+      where: { userId, status: ImportPaymentStatus.paid, userImportId: null, amountTiyins: { gt: 0 }, NOT: { contentFormat: { startsWith: 'catalog:' } } },
+      orderBy: { paidAt: 'desc' },
+      select: { id: true, importType: true, estimatedPages: true, amountTiyins: true, paidAt: true },
+    });
+  }
+
   /** PAY1-01: current status read under `SELECT … FOR UPDATE` (serialises with a concurrent webhook/cancel). */
   private async lockedPaymentStatus(paymentId: string): Promise<ImportPaymentStatus | null> {
     return this.prisma.$transaction(async (tx) => {
@@ -1253,8 +1306,17 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   /**
    * Consume a paid (or free-credited) payment for an import. One payment → one import.
    */
-  async consumePayment(userId: string, paymentId: string | undefined, importType: ImportType) {
-    if (!this.gatewayEnabled()) return null;
+  async consumePayment(userId: string, paymentId: string | undefined, importType: ImportType, pages?: number) {
+    // final-5 (b): with the gateway off, imports are free but the Free allowance (3 a day / 50 pages a month) is still enforced.
+    if (!this.gatewayEnabled()) {
+      if (paymentId) {
+        const pre = await this.prisma.importPayment.findFirst({
+          where: { id: paymentId, userId, status: ImportPaymentStatus.paid, userImportId: null, importType },
+        });
+        if (pre && !catalogContentIdFromFormat(pre.contentFormat)) return pre; // credit already taken at checkout
+      }
+      return this.grantFreeImportCredit(userId, importType, pages ?? 1);
+    }
 
     if (!paymentId) {
       throw new ForbiddenException('Payment required for this import. Get a quote and checkout first.');
@@ -1278,6 +1340,42 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       throw new BadRequestException('Payment import type does not match');
     }
     return payment;
+  }
+
+  /** final-5 (b): gateway-off free import credit. Same counters as the gateway free path (amount 0 paid rows). */
+  async grantFreeImportCredit(userId: string, importType: ImportType, pages: number) {
+    const estimatedPages = Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.floor(pages) || 1));
+    const allowance = await this.learnerAllowance(userId);
+    const devUnlimited = envFlagTrue(process.env.DEV_UNLIMITED_IMPORTS) && process.env.NODE_ENV !== 'production';
+    const overDaily = !devUnlimited && allowance.dailyFreeUsed >= allowance.dailyFreeImportsPerUser;
+    const overPages = !devUnlimited && allowance.monthlyPagesUsed + estimatedPages > allowance.monthlyFreePageLimit;
+    if (overDaily || overPages) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'IMPORT_LIMIT_REACHED',
+        message: overDaily
+          ? `Free import limit reached: ${allowance.dailyFreeImportsPerUser} imports a day.`
+          : `Free import limit reached: ${allowance.monthlyFreePageLimit} pages a month (${allowance.monthlyPagesRemaining} left).`,
+        limit: overDaily ? 'daily_imports' : 'monthly_pages',
+        dailyFreeImportsPerUser: allowance.dailyFreeImportsPerUser,
+        monthlyFreePageLimit: allowance.monthlyFreePageLimit,
+        monthlyPagesRemaining: allowance.monthlyPagesRemaining,
+        resetAt: overDaily ? allowance.dailyResetAt : allowance.monthlyResetAt,
+        timezone: 'Asia/Tashkent',
+      });
+    }
+    return this.prisma.importPayment.create({
+      data: {
+        userId,
+        status: ImportPaymentStatus.paid,
+        importType,
+        contentFormat: this.mapImportTypeToFormat(importType),
+        estimatedPages,
+        amountTiyins: 0,
+        account: `free_${randomUUID().replace(/-/g, '')}`,
+        paidAt: new Date(),
+      },
+    });
   }
 
   /**
@@ -1466,6 +1564,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       return { status: 0, message: 'Transaction mismatch' };
     }
     if (payment.status === ImportPaymentStatus.paid) {
+      await this.settlePaid(payment.id); // idempotent re-check of the catalog grant
       return { status: 1, message: 'Successfully' };
     }
     if (payment.status === ImportPaymentStatus.expired) {
@@ -1546,6 +1645,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       };
     }
 
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     if (!this.catalogPaymentsEnabled()) {
       throw new ServiceUnavailableException('Payment gateway is not available for catalog purchases');
     }

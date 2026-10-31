@@ -124,8 +124,10 @@ export class ImportsService {
     userId: string,
     paymentId: string | undefined,
     importType: ImportType,
+    pages?: number,
   ) {
-    return this.importCommerce.consumePayment(userId, paymentId, importType);
+    const payment = await this.importCommerce.consumePayment(userId, paymentId, importType, pages);
+    return payment;
   }
 
   private uploadsRoot() {
@@ -296,7 +298,7 @@ export class ImportsService {
   async importPaste(userId: string, dto: ImportPasteDto) {
     await this.limits.assertImportAllowed(userId);
     const importLanguage = await this.resolveImportLanguage(userId, dto.language);
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste);
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste, this.importCommerce.estimatePages({ importType: ImportType.paste, textLength: dto.text?.length ?? 0 }));
 
     try {
       assertMaxChars(dto.text, 'Pasted text');
@@ -404,7 +406,13 @@ export class ImportsService {
     }
 
     const importType = isPdf ? ImportType.pdf : ImportType.epub;
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
+    let actualPages = 1;
+    try {
+      actualPages = await countImportDocumentPages(file.buffer, isPdf ? 'pdf' : 'epub');
+    } catch (err) {
+      throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
+    }
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType, actualPages);
     await this.importCommerce.assertPaymentCoversPages(userId, payment, actualPages, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';
     const title =
