@@ -38,7 +38,7 @@ export class RegisterDto {
   @IsBoolean()
   acceptTerms?: boolean;
 
-  /** S3: the tick-box label version the client showed (server stores its own CONSENT_VERSION if absent). */
+  /** S3: the tick-box label version the client showed (PAY2-17: absent = the pre-oferta .3 client; unknown = 400). */
   @IsOptional()
   @IsString()
   @MaxLength(64)

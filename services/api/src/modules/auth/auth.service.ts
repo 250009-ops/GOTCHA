@@ -1,4 +1,4 @@
-import { CONSENT_VERSION, consentRequired } from '../../common/safety/consent';
+import { consentRequired, recordedConsentVersion } from '../../common/safety/consent';
 import {
   BadRequestException,
   ConflictException,
@@ -221,6 +221,11 @@ export class AuthService {
       }
     }
 
+    // PAY2-17: store the label version the client showed (.3 when it sends none), refuse unknown versions.
+    const consentVersion = dto.acceptTerms === true ? recordedConsentVersion(dto.consentVersion) : null;
+    if (dto.acceptTerms === true && !consentVersion) {
+      throw new BadRequestException({ statusCode: 400, code: 'consent_version_unknown', message: 'Unknown consent version.' });
+    }
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const primaryTarget = dto.targetLanguages[0];
 
@@ -234,7 +239,7 @@ export class AuthService {
         // W-12: asked at sign-up, so no later one-time prompt.
         agePromptedAt: new Date(),
         ...(dto.acceptTerms === true
-          ? { consentVersion: CONSENT_VERSION, consentAt: new Date(), consentIp: ip?.slice(0, 64) ?? null }
+          ? { consentVersion, consentAt: new Date(), consentIp: ip?.slice(0, 64) ?? null }
           : {}),
         uiLanguage: dto.uiLanguage && (['en', 'ru', 'uz'] as const).includes(dto.uiLanguage) ? dto.uiLanguage : 'uz',
         emailVerifiedAt: null,
