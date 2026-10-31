@@ -66,3 +66,12 @@ test('pre-launch copy verbatim from LANDING-COPY-v2', () => {
   assert.equal(LANDING_COPY.uz.plusNote_prelaunch, 'Hozir bepul tarifda boshlang. Plus uchun to\u02bblov saytda tez orada ochiladi.');
   assert.equal(LANDING_COPY.ru.plusNote_prelaunch, 'Начните с бесплатного плана уже сейчас. Оплата Plus скоро появится на сайте.');
 });
+test('lookup: real uz capture, only the agreed edits; no ru/en glosses typed in', () => {
+  const cap = JSON.parse(readFileSync(new URL('../src/data/lookup-capture.json', import.meta.url), 'utf8'));
+  const raw = JSON.parse(readFileSync(new URL('../src/data/lookup-capture-hesitation-uz.raw.json', import.meta.url), 'utf8'));
+  assert.equal(cap.captured, true);
+  assert.equal(cap.byLang.uz.lemma, raw.lemma);
+  assert.equal(cap.byLang.uz.contextualMeaning, raw.contextualMeaning.replace(/\u2018/g, '\u02bb'));
+  assert.equal(raw.translation, 'ikkilanmoq'); assert.equal(cap.byLang.uz.translation, 'ikkilanish');
+  assert.equal(cap.byLang.en, 'uz'); assert.equal(cap.byLang.ru, null);
+});

@@ -1,6 +1,16 @@
 {
-  "_source": "PENDING. POST /api/v1/ai/lookup requires a signed-in user (401 without a token, checked 31 Oct 2026 14:05 UTC+5) and the miss path calls OpenAI, so no real response could be captured read-only from the box. Paste one real response (signed-in reader, word 'hesitation' in Crime and Punishment ch. I) here and set captured=true. Never type a definition by hand.",
-  "captured": false,
-  "word": "hesitation",
-  "response": null
+ "_source": "Real production lookup captured by QA (team/qa/lookup-capture-hesitation-uz.json, file time 31 Oct 2026 14:09 UTC+5; Crime and Punishment, Ch. IV). The unedited response is kept beside this file as lookup-capture-hesitation-uz.raw.json. Edits for the hero (Kai, 14:09): translation 'ikkilanmoq' (a verb, for a noun) -> 'ikkilanish'; U+2018 in the meaning normalised to U+02BB. The ru/en QA files are byte-identical copies of the Uzbek gloss, not ru/en captures, so ru has NO capture and its popover stays off; en shows the Uzbek capture (design: en page shows Uzbek, the primary audience).",
+ "captured": true,
+ "word": "hesitation",
+ "sentence": "He stood still in hesitation at the door, asking himself the strange question: ‘Must he tell her who killed Lizaveta?’",
+ "byLang": {
+  "uz": {
+   "lemma": "hesitation",
+   "translation": "ikkilanish",
+   "contextualMeaning": "biror ishni qilishda choʻchish yoki qaror qabul qilolmaslik",
+   "partOfSpeech": null
+  },
+  "en": "uz",
+  "ru": null
+ }
 }

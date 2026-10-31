@@ -16,8 +16,14 @@ const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
 const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
 // Lookup popover renders only from a real captured API response (src/data/lookup-capture.json). Never typed by hand.
 type Captured = { lemma?: string; translation?: string; contextualMeaning?: string | null; partOfSpeech?: string | null };
-const LK = lookup as unknown as { captured: boolean; response: Captured | null };
-const CAPTURED: Captured | null = LK.captured ? LK.response : null;
+const LK = lookup as unknown as { captured: boolean; word: string; sentence: string; byLang: Record<string, Captured | string | null> };
+/** Real captured lookup for this page language (an alias string points at another language's capture), or null. */
+function capturedFor(lang: string): Captured | null {
+  if (!LK.captured) return null;
+  let v = LK.byLang[lang] ?? null;
+  if (typeof v === 'string') v = LK.byLang[v] ?? null;
+  return typeof v === 'object' ? v : null;
+}
 
 const BASE = import.meta.env.BASE_URL;
 const ico = { check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />, plus: <path d="M8 2v12M2 8h12" /> };
@@ -34,8 +40,7 @@ function Popover({ d }: { d: Captured }) {
       <div className="hd">Dictionary<span>✕</span></div>
       <div className="bd">
         <div className="word"><b>{lookup.word}</b><span className="tag">word</span></div>
-        {d.lemma && <div className="lemma">{d.lemma}{d.partOfSpeech ? ` · ${d.partOfSpeech}` : ''}</div>}
-        {d.contextualMeaning && <div className="box m"><small>Natural meaning</small>{d.contextualMeaning}</div>}
+                {d.contextualMeaning && <div className="box m"><small>Natural meaning</small>{d.contextualMeaning}</div>}
         {d.translation && <div className="box t"><small>Translation</small>{d.translation}</div>}
       </div>
     </div>
@@ -79,6 +84,7 @@ export default function LandingPage() {
     return () => io.disconnect();
   }, [params]);
 
+  const CAPTURED = capturedFor(L);
   const pc = plusCta(C, CHECKOUT_LIVE, ui);
   const plusB = IMPORT_DISCOUNT_LIVE ? [C.plusB[0], C.plusOpt, ...C.plusB.slice(1)] : [...C.plusB];
   const navIds = ['#how', '#features', '#plus', '#faq'];
@@ -116,14 +122,13 @@ export default function LandingPage() {
               <a className="btn btn-ghost" href="#how"><span>{C.cta2}</span><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M8 3v10M3 8l5 5 5-5" /></svg></a>
             </div>
           </div>
-          {/* Render mirrors apps/web-learner ReaderPage.tsx. Text: Crime and Punishment (tr. Constance Garnett, public domain), live catalog id b8b9b407. */}
+          {/* Render mirrors apps/web-learner ReaderPage.tsx. Text: Crime and Punishment (tr. Constance Garnett, public domain), live catalog id b8b9b407; sentence and lookup from QA's real capture (src/data/README.md). */}
           <div className="hero-visual" aria-hidden="true">
             <div className="reader">
               <div className="bar"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3 5 8l5 5" /></svg><b>Crime and Punishment</b><span className="prog"><i /></span></div>
               <div className="page">
-                <div className="ch">Part I</div>
-                <h3>Chapter I</h3>
-                <p className="body">On an exceptionally hot evening early in July a young man came out of the <span className="w-learning">garret</span> in which he <span className="w-unknown">lodged</span> in S. Place and walked slowly, as though in <span className="w-sel">hesitation</span>, towards K. bridge. He had successfully avoided meeting his landlady on the staircase. His garret was under the roof of a high, five-storied house and was more like a cupboard than a room.</p>
+                <h3>Chapter IV</h3>
+                <p className="body">He stood still in <span className="w-sel">hesitation</span> at the door, asking himself the strange question: ‘Must he tell her who killed Lizaveta?’</p>
               </div>
             </div>
             {CAPTURED && <Popover d={CAPTURED} />}
@@ -132,7 +137,7 @@ export default function LandingPage() {
 
         <section className="demo" id="features"><div className="wrap"><div className="grid">
           <div className="sec-head rv"><h2>{C.featT}</h2></div>
-          <ol className="demo-list rv" id="demo" style={CAPTURED ? undefined : { gridColumn: '1/-1' }}>
+          <ol className="demo-list rv" id="demo" style={{ gridColumn: '1/-1' }}>
             {[2, 3, 1, 4, 5].map((i, j) => (
               <li key={i} className={j === 0 ? 'on' : undefined}>
                 <span className="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d={D_ICO[j]} /></svg></span>
