@@ -614,6 +614,7 @@ export class UsersService {
           emailVerificationToken: null,
           passwordResetToken: null,
           birthYear: null,
+          consentIp: null, // WL4-11: IP dropped; consent version + time kept as the record of acceptance
         },
       }),
       this.prisma.authRefreshToken.updateMany({
@@ -632,9 +633,9 @@ export class UsersService {
   /**
    * S1 delete-account REAL purge. Deletes the learner's learning data, imports (with their private
    * content and uploaded files), avatar, notifications, friend links, blocks and AI usage counters.
-   * KEPT on purpose (flag for Kai/legal; retention periods are not invented here): payment and purchase
-   * rows, audit logs, safety reports, sent chat messages (attached to the anonymised "Deleted user"),
-   * and the consent record. Each step is best-effort and logged.
+   * WL4-11 (Kai, 31 Oct): sent chat messages are DELETED; safety reports (user + content) are KEPT for safety but
+   * anonymised (reporter / reported user set to null, message link cleared, snapshot text kept); consent_ip is
+   * cleared (version + time kept). Still kept: payment and purchase rows, audit logs. Each step is best-effort and logged.
    */
   async purgeUserData(userId: string): Promise<Record<string, number | string>> {
     const out: Record<string, number | string> = {};
@@ -674,6 +675,13 @@ export class UsersService {
       p.friendRequest.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
     );
     await step('blocks', () => p.userBlock.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }));
+    await step('messages', () => p.message.deleteMany({ where: { senderId: userId } }));
+    await step('reportsAnonymised', async () => {
+      const a = await p.userReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
+      const b = await p.userReport.updateMany({ where: { reportedUserId: userId }, data: { reportedUserId: null, messageId: null } });
+      const c = await p.contentReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
+      return a.count + b.count + c.count;
+    });
     await step('targetLanguages', () => p.userTargetLanguage.deleteMany({ where: { userId } }));
     await step('preferences', () => p.userPreferences.deleteMany({ where: { userId } }));
     await step('avatarFiles', async () => {

@@ -1064,8 +1064,9 @@ model UserBlock {
 
 model UserReport {
   id              String           @id @default(uuid()) @db.Uuid
-  reporterId      String           @map("reporter_id") @db.Uuid
-  reportedUserId  String           @map("reported_user_id") @db.Uuid
+  /// WL4-11: null once the reporter / reported user deletes their account (report kept for safety, anonymised).
+  reporterId      String?          @map("reporter_id") @db.Uuid
+  reportedUserId  String?          @map("reported_user_id") @db.Uuid
   conversationId  String?          @map("conversation_id") @db.Uuid
   messageId       String?          @map("message_id") @db.Uuid
   reason          UserReportReason
@@ -1075,8 +1076,8 @@ model UserReport {
   createdAt       DateTime         @default(now()) @map("created_at")
   reviewedAt      DateTime?        @map("reviewed_at")
 
-  reporter     User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
-  reportedUser User @relation("ReportsReceived", fields: [reportedUserId], references: [id], onDelete: Cascade)
+  reporter     User? @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: SetNull)
+  reportedUser User? @relation("ReportsReceived", fields: [reportedUserId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@index([reportedUserId])
@@ -1114,7 +1115,7 @@ model FriendRequest {
 
 model ContentReport {
   id         String              @id @default(uuid()) @db.Uuid
-  reporterId String              @map("reporter_id") @db.Uuid
+  reporterId String?             @map("reporter_id") @db.Uuid
   contentId  String?             @map("content_id") @db.Uuid
   importId   String?             @map("import_id") @db.Uuid
   reason     UserReportReason
@@ -1123,7 +1124,7 @@ model ContentReport {
   createdAt  DateTime            @default(now()) @map("created_at")
   reviewedAt DateTime?           @map("reviewed_at")
 
-  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reporter User? @relation(fields: [reporterId], references: [id], onDelete: SetNull)
 
   @@index([status, createdAt])
   @@map("content_reports")
