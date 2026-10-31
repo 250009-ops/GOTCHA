@@ -136,6 +136,7 @@ export async function api<T>(
       code?: string;
       email?: string;
       status?: number;
+      body?: Record<string, unknown>;
     };
     if (err.code) error.code = err.code;
     if (capMsg) (error as { limit?: number }).limit = (err as { limit?: number }).limit;
@@ -147,6 +148,8 @@ export async function api<T>(
       error.message = dailyLimitText(info, currentUiLang()).message;
       announceDailyLimit(info);
     }
+    // final-5: keep the full 403 body (limit, resetAt, timezone) for the limit screen.
+    error.body = err as Record<string, unknown>;
     if (err.email) error.email = err.email;
     error.status = err.statusCode ?? res.status;
     throw error;

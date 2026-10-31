@@ -404,6 +404,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <div className="flex-1 h-px bg-[#e5e7eb]" />
           </div>
 
+          {/* final-5: admin sign-in never offers 'Sign up free'. */}
+          {!adminReturnUrl && (
           <div className="flex items-center justify-between gap-3 text-[13px] whitespace-nowrap">
             <span className="text-[#6b7280]">
               {isLogin ? copy.auth.noAccount : copy.auth.hasAccount}
@@ -417,6 +419,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>
           </div>
+          )}
         </div>
 
         <button

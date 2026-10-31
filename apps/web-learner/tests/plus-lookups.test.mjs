@@ -23,7 +23,8 @@ test('Plus lookups are uncapped: null quota shows the count only, no denominator
   const settings = readFileSync('src/pages/SettingsPage.tsx', 'utf8');
   assert.doesNotMatch(settings, /\?\? 50;/);
   assert.match(settings, /quota === null \? lookupsToday/);
-  assert.match(settings, /aiLookupsLine\(lookupsToday, quota === null \? null/);
+  // final-5: capped -> "left N of M"; null quota -> count only.
+  assert.match(settings, /: copy\.settings\.aiLookupsLine\(lookupsToday, null\)/);
   const copy = readFileSync('../../packages/shared/src/learnerCopy.ts', 'utf8');
   assert.equal((copy.match(/aiLookupsLine: \(used, quota\) => \(quota === null \?/g) || []).length, 3);
 });

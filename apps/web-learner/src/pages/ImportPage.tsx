@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { handleLimitError, paymentsEnabled } from '../lib/limits';
 import {
   AlertCircle,
   CheckCircle2,
@@ -717,6 +718,19 @@ function PaymentConfirmModal({
   );
 }
 
+
+/** final-5: stop before importing when the free allowance is used up, or a paid import is needed while payments are off. */
+function blockedByFreeLimit(quote: ImportQuote): boolean {
+  const overFree = quote.freeReason === 'Free import limit reached' || (!quote.isFree && !quote.requiresPayment);
+  if (!overFree && !(quote.requiresPayment && !paymentsEnabled())) return false;
+  const f = quote.freeLimits;
+  const daily = !f || f.dailyFreeRemaining <= 0;
+  return handleLimitError({
+    code: 'IMPORT_LIMIT_REACHED',
+    body: { ...(f ?? {}), limit: daily ? 'daily_imports' : 'monthly_pages' },
+  });
+}
+
 export default function ImportPage() {
   const copy = useLearnerCopy();
   const navigate = useNavigate();
@@ -837,6 +851,7 @@ export default function ImportPage() {
     try {
       const { quoteImport: getQuote, checkoutImport } = await import('../lib/importBilling');
       const quote = await getQuote({ importType: 'url', contentFormat: 'article', textLength: 6000 });
+      if (blockedByFreeLimit(quote)) return;
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
         openPayOrRetry({
@@ -859,7 +874,7 @@ export default function ImportPage() {
               toastReady(item);
               await load(1);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
+              if (!handleLimitError(err)) toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
             } finally {
               setLoading(false);
             }
@@ -880,7 +895,7 @@ export default function ImportPage() {
       toastReady(item);
       await load(1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
+      if (!handleLimitError(err)) toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
     } finally {
       if (!paymentModal.open) setLoading(false);
     }
@@ -894,6 +909,7 @@ export default function ImportPage() {
       const words = wordCountOf(data.text);
       const quoteParams = { importType: 'paste' as const, contentFormat: 'article', textLength: data.text.length, wordCount: words };
       const quote = await getQuote(quoteParams);
+      if (blockedByFreeLimit(quote)) return;
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
         openPayOrRetry({
@@ -911,7 +927,7 @@ export default function ImportPage() {
               toastReady(item);
               await load(1);
             } catch (err) {
-              toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
+              if (!handleLimitError(err)) toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
             } finally {
               setLoading(false);
             }
@@ -932,7 +948,7 @@ export default function ImportPage() {
       toastReady(item);
       await load(1);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
+      if (!handleLimitError(err)) toast.error(err instanceof Error ? err.message : copy.errors.importFailed);
     } finally {
       if (!paymentModal.open) setLoading(false);
     }
@@ -951,6 +967,7 @@ export default function ImportPage() {
       }
       const quoteParams = { importType: importType as 'pdf' | 'epub', contentFormat: 'ebook', pageCount };
       const quote = await getQuote(quoteParams);
+      if (blockedByFreeLimit(quote)) return;
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
         openPayOrRetry({
@@ -1081,7 +1098,7 @@ export default function ImportPage() {
               </div>
             )}
             <p className="text-[11px] text-[#99a1af] mb-3 leading-relaxed break-words">
-              {gatewayEnabled
+              {gatewayEnabled && paymentsEnabled()
                 ? copy.importPage.paidImportsHint
                 : copy.importPage.freeImportsHint}
             </p>
