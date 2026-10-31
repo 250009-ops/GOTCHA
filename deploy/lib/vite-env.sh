@@ -29,7 +29,7 @@ load_vite_build_env() {
 build_and_publish_frontends() {
   load_vite_build_env
 
-  VITE_BASE=/ npm run build --workspace=apps/web
+  VITE_BASE=/ npm run build:publish --workspace=apps/web  # PAY2-24: publish guard (fails closed if missing)
   VITE_BASE=/learn/ npm run build --workspace=apps/web-learner
   VITE_BASE=/admin/ npm run build --workspace=apps/admin
 

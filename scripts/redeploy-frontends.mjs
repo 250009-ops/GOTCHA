@@ -91,7 +91,7 @@ function sshExec(conn, cmd, timeoutMs = 120_000) {
 console.log(`==> Building frontends for ${DOMAIN}`);
 console.log(`    VITE_API_URL=${VITE_API_URL}`);
 
-runLocal(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--workspace=apps/web'], {
+runLocal(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build:publish', '--workspace=apps/web'] /* PAY2-24: publish guard (fails closed if apps/web has no build:publish) */, {
   VITE_BASE: '/',
 });
 runLocal(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--workspace=apps/web-learner'], {
