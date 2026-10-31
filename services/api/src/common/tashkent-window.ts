@@ -1,4 +1,4 @@
-/** r3b: report and limit windows start at 00:00 Asia/Tashkent (UTC+5 all year, no DST), never at UTC midnight (05:00 Tashkent). */
+/** r3b: report and limit windows start at 00:00 Asia/Tashkent (UTC+5 all year, no DST), not at 00:00Z. */
 export const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 /** 00:00 Tashkent of the calendar day containing `now`. */
 export function tashkentDayStart(now = new Date()): Date {
