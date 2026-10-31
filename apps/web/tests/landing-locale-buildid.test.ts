@@ -43,3 +43,9 @@ test('S4: footer build id = short sha · date, always rendered when known', () =
   assert.match(cfg, /VITE_BUILD_COMMIT \|\|= git\('git rev-parse --short=7 HEAD'\)/);
   assert.match(cfg, /VITE_BUILD_DATE \|\|= git\('git log -1 --format=%cs HEAD'\)/);
 });
+
+test("WLF-30: web-shipped Uzbek names use ʻ (U+02BB), never ASCII ' (O'zbekcha)", () => {
+  const meta = read('../../../packages/shared/src/uiLanguagePickerMeta.ts');
+  assert.ok(meta.includes("nativeName: 'O\u02bbzbekcha'"));
+  for (const f of [meta, read('../src/lib/landingCopy.ts'), read('../src/components/LandingLangSwitch.tsx')]) assert.doesNotMatch(f, /O'zbek/);
+});
