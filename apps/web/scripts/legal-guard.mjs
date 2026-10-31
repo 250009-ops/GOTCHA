@@ -10,3 +10,10 @@ export function legalPublishProblems({ mode, qaBuild, legalSource }) {
     (p) => `legal pages still contain ${p}; fill it in team/pm/legal/web and re-run scripts/gen_legal.py, or build the QA preview with VITE_LEGAL_V2=true`,
   );
 }
+
+// UI/UX 14:32: the footer build stamp must never ship. A production (deploy) build with VITE_PREVIEW_STAMP=true fails.
+export function previewStampProblems({ mode, qaBuild, previewStamp }) {
+  return mode === 'production' && !qaBuild && previewStamp === 'true'
+    ? ['VITE_PREVIEW_STAMP=true is set on a production build; the build stamp is for QA previews (VITE_LEGAL_V2=true) only']
+    : [];
+}

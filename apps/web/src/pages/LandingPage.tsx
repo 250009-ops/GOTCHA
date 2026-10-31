@@ -15,6 +15,8 @@ import { plusCta } from '../lib/plusCta';
 const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
 const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
 // LANDING-COPY-v2: the quiz bullet (plusB[1]) ships only once the separate quiz cap (Free 10 / Plus 200) exists in code.
+// Marketing 14:32: 'then dictionary lookups keep going' lines only once the dictionary-only fallback (payments-02) ships.
+const DICT_FALLBACK_LIVE = import.meta.env.VITE_PLUS_DICT_FALLBACK_LIVE === 'true';
 const QUIZ_CAP_LIVE = import.meta.env.VITE_PLUS_QUIZ_CAP_LIVE === 'true';
 // Lookup popover renders only from a real captured API response (src/data/lookup-capture.json). Never typed by hand.
 type Captured = { lemma?: string; translation?: string; contextualMeaning?: string | null; partOfSpeech?: string | null };
@@ -28,6 +30,8 @@ function capturedFor(lang: string): Captured | null {
 }
 
 const BASE = import.meta.env.BASE_URL;
+// Footer build stamp: preview only, never in a production build (UI/UX 14:32).
+const PREVIEW_STAMP = import.meta.env.VITE_PREVIEW_STAMP === 'true' && import.meta.env.VITE_LEGAL_V2 === 'true'; // QA/preview builds only
 const BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || '';
 // UX review #4: localised burger labels (BURGER.md).
 const BM: Record<LpLang, { lang: string; close: string; menu: string }> = {
@@ -58,7 +62,7 @@ function Popover({ d, lang }: { d: Captured; lang: LpLang }) {
   const P = POP[lang];
   return (
     <div className="pop" id="pop1" lang={lang}>
-      <div className="hd">{P.hd}<span aria-label={P.close}>✕</span></div>
+      <div className="hd">{P.hd}<span role="img" aria-label={P.close}><svg width="14" height="14" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M5 5l12 12M17 5 5 17" /></svg></span></div>
       <div className="bd">
         <div className="word"><b>{lookup.word}</b><span className="tag">{P.word}</span></div>
         {d.contextualMeaning && <div className="box m"><small>{P.meaning}</small>{d.contextualMeaning}</div>}
@@ -137,7 +141,7 @@ export default function LandingPage() {
 
   const CAPTURED = capturedFor(L);
   const pc = plusCta(C, CHECKOUT_LIVE, ui);
-  const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]];
+  const plusB = [(DICT_FALLBACK_LIVE ? C.plusB0Dict : C.plusB[0]), ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]].filter(Boolean);
   const navIds = ['#how', '#features', '#plus', '#faq'];
 
   return (
@@ -237,7 +241,7 @@ export default function LandingPage() {
 
         <section className="plus" id="plus"><div className="wrap"><div className="grid">
           <div className="plus-card rv">
-            <div className="plus-l"><span className="eyebrow">Plus</span><h2 style={{ marginTop: 12 }}>{C.plusT}</h2><p className="lead">{C.plusLead}</p>
+            <div className="plus-l"><span className="eyebrow">Plus</span><h2 style={{ marginTop: 12 }}>{C.plusT}</h2>{(DICT_FALLBACK_LIVE ? C.plusLeadDict : C.plusLead) && <p className="lead">{DICT_FALLBACK_LIVE ? C.plusLeadDict : C.plusLead}</p>}
               <ul id="plusB">{plusB.map((b) => <li key={b}><Svg k="check" s={18} /><span>{b}</span></li>)}</ul></div>
             <div className="plus-r">
               <div className="opt" id="tiles" role="radiogroup">
@@ -283,7 +287,7 @@ export default function LandingPage() {
         <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
           <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
         <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a></div>
-        {BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
+        {PREVIEW_STAMP && BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
           <div className="build-stamp" data-build-commit={BUILD_COMMIT}>preview build {BUILD_COMMIT}</div>
         )}
       </div></div></div></footer>

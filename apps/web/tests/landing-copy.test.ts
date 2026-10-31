@@ -15,10 +15,14 @@ for (const l of ['uz', 'ru', 'en'] as const) {
     const NOTE = { en: 'One-time payment. No subscription, no auto-renewal.', uz: 'Bir martalik toʻlov. Obuna yoʻq, avtomatik yangilanmaydi.', ru: 'Разовый платёж. Без подписки и автопродления.' }[l];
     assert.ok(C.plusNote.startsWith(NOTE), C.plusNote);
   });
-  test(`${l}: Plus limits Free 20 / Plus 200, quizzes 10/200, no stale 50`, () => {
+  test(`${l}: Plus copy: unlimited lookups (14:32) => no Plus lookup number shipped by default`, () => {
+    assert.equal(C.plusT, 'Gotcha Plus');
     assert.equal(C.plusB.length, 3);
-    assert.match(C.plusLead, /\b20\b/); assert.match(C.plusLead, /\b200\b/); assert.doesNotMatch(C.plusLead + C.plusB.join(' '), /\b50\b/);
-    assert.match(C.plusB[0], /200/); assert.match(C.plusB[1], /200/); assert.match(C.plusB[1], /\b10\b/);
+    // Slots awaiting Marketing's new lines: empty = hidden.
+    assert.equal(C.plusLead, ''); assert.equal(C.plusB[0], '');
+    assert.match(C.plusB[1], /200/); assert.match(C.plusB[1], /\b10\b/); // quiz bullet, behind VITE_PLUS_QUIZ_CAP_LIVE
+    assert.ok(C.plusB[2].length > 0); // "Everything in Free stays included"
+    assert.match(C.plusB0Dict, /200/); assert.match(C.plusLeadDict, /200/); // dictionary-fallback lines, flag-off
     if (l === 'en') { assert.ok(C.plusPrice.every((p) => p.includes('soʻm'))); }
     assert.match(C.plusPrice[0], /24[ ,]990/); assert.match(C.plusPrice[1], /199[ ,]990/);
     assert.match(C.plusOpt, /50%/);
@@ -136,14 +140,40 @@ test('uz web copy: no plain/curly apostrophes inside words (ʻ/ʼ only)', () => 
   for (const v of Object.values(LANDING_COPY.uz).flat(3)) if (typeof v === 'string') assert.doesNotMatch(v, /\p{L}['’‘]\p{L}/u, v);
 });
 
-test('Plus headline/lead/bullets verbatim from PLUS-OFFER; no 500 cap, no trial', () => {
-  assert.equal(LANDING_COPY.en.plusT, 'Look up 200 words a day with Plus.');
-  assert.equal(LANDING_COPY.uz.plusT, 'Plus bilan kuniga 200 ta soʻz qidiring.');
-  assert.equal(LANDING_COPY.ru.plusT, 'С Plus: 200 подсказок по словам в день.');
+test('Plus render: flags default off; no 500 cap, no trial; lead/bullets pluggable', () => {
+  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /DICT_FALLBACK_LIVE = import\.meta\.env\.VITE_PLUS_DICT_FALLBACK_LIVE === 'true'/);
+  assert.match(page, /QUIZ_CAP_LIVE = import\.meta\.env\.VITE_PLUS_QUIZ_CAP_LIVE === 'true'/);
+  assert.match(page, /\.filter\(Boolean\)/);
   for (const l of ['uz', 'ru', 'en'] as const) {
     const c = LANDING_COPY[l];
-    const t = [c.plusT, c.plusLead, ...c.plusB, c.plusOpt, c.plusNote].join(' ');
-    assert.doesNotMatch(t, /\b500\b|trial|sinov|пробн/i, l);
-    assert.equal(c.plusB.length, 3, l);
+    const t = [c.plusT, c.plusLead, ...c.plusB, c.plusOpt, c.plusNote, c.plusLeadDict, c.plusB0Dict].join(' ');
+    assert.doesNotMatch(t, /\b500\b|trial|sinov|пробн|unlimited|cheksiz|безлимит/i, l);
   }
+});
+
+test('popover close is an inline SVG, not a text glyph', () => {
+  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(page, /✕/);
+  assert.match(page, /aria-label=\{P\.close\}><svg/);
+});
+
+test('footer build stamp: only with VITE_PREVIEW_STAMP=true on a QA build; production build blocked', async () => {
+  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /PREVIEW_STAMP = import\.meta\.env\.VITE_PREVIEW_STAMP === 'true' && import\.meta\.env\.VITE_LEGAL_V2 === 'true'/);
+  assert.match(page, /\{PREVIEW_STAMP && BUILD_COMMIT/);
+  const { previewStampProblems } = await import('../scripts/legal-guard.mjs');
+  assert.equal(previewStampProblems({ mode: 'production', qaBuild: false, previewStamp: 'true' }).length, 1);
+  assert.equal(previewStampProblems({ mode: 'production', qaBuild: false, previewStamp: undefined }).length, 0);
+  assert.equal(previewStampProblems({ mode: 'production', qaBuild: true, previewStamp: 'true' }).length, 0);
+});
+
+test('Manrope subset covers every non-ASCII codepoint in the shipped copy', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const cps = new Set(execFileSync('python3', ['-c', "from fontTools.ttLib import TTFont;print(' '.join(str(c) for c in TTFont('public/fonts/manrope-subset.woff2').getBestCmap()))"], { cwd: new URL('..', import.meta.url) }).toString().trim().split(' ').map(Number));
+  const files = ['../src/lib/landingCopy.ts', '../src/lib/marketingCopy.ts', '../src/lib/legalHtml.generated.ts', '../src/pages/LandingPage.tsx', '../src/components/GotchaLogo.tsx'];
+  const missing = new Set<string>();
+  for (const f of files) for (const ch of readFileSync(new URL(f, import.meta.url), 'utf8')) { const c = ch.codePointAt(0)!; if (c >= 0x20 && !cps.has(c)) missing.add('U+' + c.toString(16).toUpperCase().padStart(4, '0')); }
+  assert.deepEqual([...missing], []);
+  assert.ok(cps.has(0x2248) && cps.has(0x2265));
 });
