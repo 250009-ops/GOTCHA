@@ -24,6 +24,8 @@ import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { persistLearnerLocale } from '../lib/learnerLocale';
+import type { UiLanguage } from '@gotcha/shared';
 import { practiceCopyFor } from '@gotcha/shared';
 import { applyAppTheme } from '../lib/appTheme';
 import {
@@ -398,6 +400,9 @@ export default function SettingsPage() {
   const saveAll = async () => {
     setSaving(true);
     try {
+      // W-21a: the header/localStorage locale used to win over Settings (a second PATCH reverted it).
+      // Persist the chosen UI language locally first so header, storage and server agree.
+      if ((UI_LANGUAGES as readonly string[]).includes(uiLanguage)) persistLearnerLocale(uiLanguage as UiLanguage);
       await Promise.all([
         updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage, uiLanguage }),
         updatePreferences({
