@@ -6,7 +6,8 @@ export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID
 /** Non-UUID ids are a 404, never a 500 from Postgres (DevOps 31 Oct: /content/home, /content/search). */
 @Injectable()
 export class UuidOr404Pipe implements PipeTransform<string, string> {
-  constructor(private what = 'Content') {}
+  // WL4-01: no constructor params — Nest instantiates pipes used by class reference via DI.
+  private readonly what = 'Content';
   transform(value: string): string {
     if (!isUuid(value)) throw new NotFoundException(`${this.what} not found`);
     return value;

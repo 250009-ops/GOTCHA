@@ -22,6 +22,8 @@ import { MarketingModule } from './modules/marketing/marketing.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 
+import { HealthController } from './health.controller';
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -53,6 +55,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     MessagingModule,
     NotificationsModule,
   ],
+  controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
 export class AppModule {}

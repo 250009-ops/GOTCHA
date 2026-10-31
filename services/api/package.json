@@ -15,6 +15,8 @@
     "restore-admin": "node scripts/restore-admin-credentials.mjs",
     "send-university-invites": "node scripts/send-university-invitations.mjs",
     "db:studio": "prisma studio",
+    "test:all": "node scripts/test-all.mjs",
+    "test:boot": "nest build && ts-node --transpile-only src/boot-smoke.test.ts",
     "test:chapters": "ts-node --transpile-only src/modules/imports/chapter-split.test.ts",
     "test:lookup": "ts-node --transpile-only src/modules/ai/lookup-normalize.test.ts",
     "test:pdf-pages": "ts-node --transpile-only src/modules/imports/pdf-page-count.test.ts",
