@@ -104,3 +104,23 @@ test('r3b: served /terms + /oferta (legal-pm-payments) match the pinned pending-
   }
   assert.match(readFileSync('legal-pm-payments/terms-en.html', 'utf8'), /you may choose the remedy/);
 });
+
+// WLF-11 (final-4): no served legal file may state 200 word lookups per day (Plus has no lookup cap; §7 has no Plus numbers).
+const LOOKUP_200 = [
+  /200[^.;:()<>]{0,40}(?:word\s*)?look-?ups?/i, /look-?ups?[^.;:()<>]{0,40}\b200\b/i,
+  /200[^.;:()<>]{0,40}(?:поиск|запрос|пояснени|слов)/i, /(?:поиск|запрос|пояснени)[^.;:()<>]{0,40}\b200\b/i,
+  /200[^.;:()<>]{0,40}(?:qidiruv|soʻz|izoh)/i, /(?:qidiruv|izoh)[^.;:()<>]{0,40}\b200\b/i,
+];
+const plain = (h: string) => h.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+test('WLF-11: no served legal file says 200 word lookups per day (en/ru/uz)', () => {
+  // final-6 G1: the payments Terms + Oferta that ship with payments ON are scanned too.
+  const files = [...LOCALES.map((l) => `legal-pm/privacy-${l}.html`), ...['terms', 'oferta'].flatMap((d) => LOCALES.map((l) => `legal-pm-payments/${d}-${l}.html`))];
+  for (const f of files) {
+    const t = plain(readFileSync(f, 'utf8'));
+    const d = f; const l = '';
+    for (const re of LOOKUP_200) assert.ok(!re.test(t), `${d}${l}: ${t.match(re)?.[0]}`);
+  }
+  // self-check: the guard catches the final-3 §7 wording in all 3 locales
+  for (const bad of ['up to <strong>200 word lookups per day</strong>', 'до <strong>200 пояснений слов в день</strong>', 'kuniga <strong>200 tagacha soʻz izohi</strong>'])
+    assert.ok(LOOKUP_200.some((re) => re.test(plain(bad))), bad);
+});
