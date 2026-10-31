@@ -1003,8 +1003,12 @@ function chapterTitleFromHtml(html: string, fallback: string): string {
     $('h2').first().text().trim() ||
     $('title').first().text().trim() ||
     fallback;
-  return t.replace(/\s+/g, ' ').slice(0, 120) || fallback;
+  const clean = t.replace(/\s+/g, ' ').slice(0, 120);
+  // W-28: calibre EPUBs carry <title>Unknown</title> on every file — not a chapter title.
+  return clean && !GENERIC_EPUB_TITLE.test(clean) ? clean : fallback;
 }
+
+const GENERIC_EPUB_TITLE = /^(unknown|untitled|none|null|chapter|text|document|index\d*|part\d*)$/i;
 
 export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocument> {
   const zip = await JSZip.loadAsync(buffer);
@@ -1046,6 +1050,13 @@ export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocu
       chapters[0]?.title || 'Imported EPUB',
     );
     if (split.length >= 3) return chaptersToDocument(split);
+  }
+  // W-28: file splits ≠ chapters (e.g. 28 files, 47 "One…Forty-seven" headings). If the files had no real
+  // titles, let the text splitter find the printed headings and keep it when it finds more chapters.
+  const generic = chapters.filter((c) => /^Chapter \d+$/.test(c.title)).length;
+  if (chapters.length > 1 && generic >= chapters.length * 0.8) {
+    const split = splitAccurateChapters(chapters.map((c) => c.text).join('\n\n'), chapters[0]?.title || 'Imported EPUB');
+    if (split.length > chapters.length) return chaptersToDocument(split);
   }
   if (chapters.length === 1 && countWords(chapters[0].text) >= 400) {
     const split = splitAccurateChapters(chapters[0].text, chapters[0].title);

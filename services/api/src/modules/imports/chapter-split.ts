@@ -16,6 +16,25 @@ const NUM = `(?:\\d{1,4}|${ROMAN})`;
 const WORD_NUM =
   'one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth';
 
+const UNITS = ['zero','one','two','three','four','five','six','seven','eight','nine','ten','eleven','twelve','thirteen','fourteen','fifteen','sixteen','seventeen','eighteen','nineteen'];
+const TENS = ['', '', 'twenty','thirty','forty','fifty','sixty','seventy','eighty','ninety'];
+const SPELLED_RE = `(?:(?:${TENS.slice(2).join('|')})(?:[-\\s]?(?:${UNITS.slice(1, 10).join('|')}))?|${UNITS.slice(1).join('|')})`;
+/** W-28: bare spelled-out chapter heading on its own line: "One", "Twenty-Six". */
+const SPELLED_ONLY = new RegExp(`^(${SPELLED_RE})\\.?$`, 'i');
+/** "Twenty-Six" → 26; null when not a spelled number 1–99. */
+export function spelledToInt(raw: string): number | null {
+  const t = raw.trim().toLowerCase().replace(/\.$/, '');
+  const u = UNITS.indexOf(t);
+  if (u > 0) return u;
+  const m = t.match(/^(twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety)(?:[-\s]?([a-z]+))?$/);
+  if (!m) return null;
+  const tens = TENS.indexOf(m[1]);
+  if (tens < 2) return null;
+  if (!m[2]) return tens * 10;
+  const unit = UNITS.indexOf(m[2]);
+  return unit >= 1 && unit <= 9 ? tens * 10 + unit : null;
+}
+
 const MARKDOWN_HEADING = /^(#{1,3})\s+(.+)$/;
 const NUMBERED_CHAPTER = new RegExp(
   `^(?:#{1,3}\\s+)?(?:${CHAPTER_WORD})\\s+(${NUM})(?:\\s*[.:—–\\-]\\s*|\\s+)(.*)$`,
@@ -217,7 +236,7 @@ function prettyChapterTitle(raw: string): string {
 
 type HeadingKind = 'explicit' | 'inferred';
 
-type ParsedHeading = { title: string; consumeNext: boolean; kind: HeadingKind };
+type ParsedHeading = { title: string; consumeNext: boolean; kind: HeadingKind; spelled?: boolean };
 
 function headingFromLine(
   line: string,
@@ -335,6 +354,12 @@ function headingFromLine(
     }
   }
 
+  const spelled = raw.match(SPELLED_ONLY);
+  if (spelled) {
+    const n = spelledToInt(spelled[1]);
+    if (n != null) return { title: `Chapter ${n}`, consumeNext: false, kind: 'inferred', spelled: true };
+  }
+
   return null;
 }
 
@@ -354,6 +379,7 @@ function splitMergedHeading(line: string): { title: string; rest: string } | nul
 }
 
 type FoundHeading = {
+  spelled?: boolean;
   index: number;
   title: string;
   consumeNext: boolean;
@@ -407,6 +433,7 @@ function collectHeadings(lines: string[]): FoundHeading[] {
       consumeNext: heading.consumeNext,
       consumeIndex,
       kind: heading.kind,
+      spelled: heading.spelled,
     });
     if (consumeIndex !== undefined) i = consumeIndex;
   }
@@ -844,12 +871,25 @@ export function ensureChapterLineBreaks(text: string): string {
   );
   // "solemnly. 2 A Lady in Distress" glued after a sentence (PDF / HTML).
   out = out.replace(
-    /(?<!\b(?:No|Vol|Mr|Dr|Ms|Mrs|vs|ch|pp|Pg|pg|no|vol))([.!?…]["”'\)]{0,3})\s+(\d{1,3}|[IVXLCDM]{2,8})\s+([A-Z][\p{L}'’\-]*(?:\s+(?:[A-Z][\p{L}'’\-]+|in|on|of|the|a|an|and|at|to|for|or)){0,10})(?=\s+[“"‘']|\s+[A-Z]|\s*$)/gu,
+    /(?<!\b(?:No|Vol|Mr|Dr|Ms|Mrs|St|vs|ch|pp|Pg|pg|no|vol|Jan|Feb|Mar|Apr|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec))([.!?…]["”'\)]{0,3})\s+(\d{1,3}|[IVXLCDM]{2,8})\s+([A-Z][\p{L}'’\-]*(?:\s+(?:[A-Z][\p{L}'’\-]+|in|on|of|the|a|an|and|at|to|for|or)){0,10})(?=\s+[“"‘']|\s+[A-Z]|\s*$)/gu,
     (full, punct: string, num: string, title: string) => {
       if (!looksLikeChapterTitle(title)) return full;
       return `${punct}\n\n${num}\n\n${title}\n\n`;
     },
   );
+  // W-28: whitespace-collapsed imports glue "One The train tore…" (at a paragraph start or after a
+  // sentence). Only a counting-up run 1,2,3… (3+) is split, so "…he said. Two men came" stays prose.
+  const glued = new RegExp(`(^|\\n\\s*\\n|[.!?…]["”’']?\\s+)(${SPELLED_RE})\\s+(?=[“"‘A-Z])`, 'gi');
+  const keep = new Set<number>();
+  let expect = 1;
+  for (const m of out.matchAll(glued)) {
+    const n = spelledToInt(m[2]);
+    if (n != null && n >= expect && n <= expect + 1) { keep.add(m.index!); expect = n + 1; } // tolerate one missed heading
+  }
+  if (keep.size >= 3) {
+    out = out.replace(glued, (full: string, pre: string, word: string, offset: number) =>
+      keep.has(offset) ? `${pre.trimEnd()}\n\n${word}\n\n` : full);
+  }
   return out;
 }
 
@@ -926,7 +966,11 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
     tocTitles.length >= 2 ? splitByOutlineTitles(stripped, tocTitles, fallbackTitle) : null;
 
   const lines = stripped.split('\n');
-  const headings = preferNumberedSequence(dropTableOfContents(collectHeadings(lines))).filter(
+  const collected = collectHeadings(lines);
+  // W-28: a lone "One" line is prose; spelled-out headings count only as a run of 3+.
+  const spelledCount = collected.filter((h) => h.spelled).length;
+  const usable = spelledCount >= 3 ? collected : collected.filter((h) => !h.spelled);
+  const headings = preferNumberedSequence(dropTableOfContents(usable)).filter(
     (h) => !isTocOrContentsTitle(h.title),
   );
 
