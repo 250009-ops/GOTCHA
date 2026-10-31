@@ -270,6 +270,20 @@ function stripChromePhrases(text: string): string {
     .replace(/^\s*you may also like\s*$/gim, '');
 }
 
+/**
+ * S4: undo print hard-wraps. "agi-\ntated" / "agi- tated" (PDF/OCR or whitespace-collapsed) → "agitated";
+ * a single line break inside a sentence (next line starts lowercase) → space. Blank lines, headings and
+ * dialogue lines (next line capitalised or quoted) are untouched. Suspended hyphens ("pre- and post-") stay.
+ */
+export function joinHardWraps(text: string): string {
+  const L = '\\p{Ll}';
+  return text
+    .replace(new RegExp(`(\\p{L}*${L})[-\\u00AD]\\n[ \\t]*(${L}+)`, 'gu'), '$1$2')
+    .replace(new RegExp(`(\\p{L}*${L})-[ \\t]+(?!(?:and|or|nor|to|und|и|или|va|yoki)\\b)(${L}+)`, 'gu'), '$1$2')
+    .replace(/\u00AD/g, '')
+    .replace(new RegExp(`([^\\n.!?…:;"”»])\\n(?=[ \\t]*${L})`, 'gu'), '$1 ');
+}
+
 /** Final plain-text cleanup shared by Paste / URL / PDF / EPUB. */
 export function cleanImportPlainText(text: string): string {
   let out = decodeBasicEntities(text);
@@ -279,6 +293,7 @@ export function cleanImportPlainText(text: string): string {
   out = out.replace(/<\/?[a-z][^>]*>/gi, ' ');
   out = decodeBasicEntities(out);
   out = normalizeImportWhitespace(out);
+  out = joinHardWraps(out);
   out = restoreDialogueLayout(out);
   return out;
 }
