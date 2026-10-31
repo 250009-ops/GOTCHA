@@ -1,4 +1,4 @@
-import { SiteFooter, SiteNav } from '../components/SiteChrome';
+import { LandingShell } from '../components/LandingChrome';
 import { Seo } from '../components/Seo';
 import { LEGAL_TITLES, legalHtml, type LegalDoc } from '../lib/legalPm';
 import { useWebLocale } from '../lib/webLocaleContext';
@@ -11,14 +11,12 @@ function PmLegalPage({ doc, path }: { doc: LegalDoc; path: string }) {
   const locale = marketingLocaleFor(copyLocale);
   const title = LEGAL_TITLES[doc][locale];
   return (
-    <div className="bg-white">
+    <LandingShell>
       <Seo title={title} description={title} path={path} />
-      <SiteNav />
-      <main className="mx-auto w-full max-w-[820px] px-5 py-10 md:px-12 lg:py-14">
+      <main className="lp-legal mx-auto w-full max-w-[820px] px-5 py-10 md:px-12 lg:py-14">
         <div className="legal-pm" data-legal-doc={doc} dangerouslySetInnerHTML={{ __html: legalHtml(doc, locale) }} />
       </main>
-      <SiteFooter />
-    </div>
+    </LandingShell>
   );
 }
 

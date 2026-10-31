@@ -1,5 +1,4 @@
-import { Link } from 'react-router-dom';
-import { SiteFooter, SiteNav } from '../components/SiteChrome';
+import { LandingShell, useLpLang } from '../components/LandingChrome';
 import { Seo } from '../components/Seo';
 import { useMarketingCopy } from '../lib/webLocaleContext';
 
@@ -10,19 +9,18 @@ import { useMarketingCopy } from '../lib/webLocaleContext';
  */
 export default function NotFoundPage() {
   const copy = useMarketingCopy();
+  const L = useLpLang();
   return (
-    <div className="flex min-h-screen flex-col bg-white">
+    <LandingShell>
       <Seo title={copy.notFound.seoTitle} description={copy.notFound.body} path="/404" noindex />
-      <SiteNav />
-      <main className="flex flex-1 flex-col items-center justify-center gap-4 px-6 py-24 text-center">
+      <main className="lp-404 flex min-h-[60vh] flex-col items-center justify-center gap-4 px-6 py-24 text-center">
         <p className="font-['Manrope',sans-serif] text-[56px] font-extrabold text-[#2107aa]">404</p>
         <h1 className="font-['Manrope',sans-serif] text-2xl font-bold text-[#101828]">{copy.notFound.title}</h1>
         <p className="text-base text-[#4a5565]">{copy.notFound.body}</p>
-        <Link to="/" className="mt-2 rounded-lg bg-[#2107aa] px-5 py-3 text-sm font-semibold text-[var(--g-on-cta)]">
+        <a href={`/?lang=${L}`} className="mt-2 rounded-lg bg-[#2107aa] px-5 py-3 text-sm font-semibold text-[var(--g-on-cta)]">
           {copy.notFound.home}
-        </Link>
+        </a>
       </main>
-      <SiteFooter />
-    </div>
+    </LandingShell>
   );
 }

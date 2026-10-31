@@ -2,11 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import '../landing-premium.css';
 import { Seo } from '../components/Seo';
-import { LandingLangSwitch, LP_LANGS, type LpLang } from '../components/LandingLangSwitch';
+import { LandingFooter, LandingHeader } from '../components/LandingChrome';
+import { type LpLang } from '../components/LandingLangSwitch';
 import { LANDING_BOOKS, LANDING_COPY, SHOW_PLUS_ON_LANDING, bookFor } from '../lib/landingCopy';
-import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
+import { libraryUrl, registerUrl } from '../lib/links';
 import { useWebLocale } from '../lib/webLocaleContext';
-import { buildId, queryWithLocale } from '../lib/queryLocale';
 import lookup from '../data/lookup-capture.json';
 import { plusCta } from '../lib/plusCta';
 
@@ -29,16 +29,6 @@ function capturedFor(lang: string): Captured | null {
 }
 
 const BASE = import.meta.env.BASE_URL;
-// Footer build stamp: preview only, never in a production build (UI/UX 14:32).
-const PREVIEW_STAMP = import.meta.env.VITE_PREVIEW_STAMP === 'true'; // QA/preview builds only; build:publish rejects VITE_PREVIEW_STAMP (PAY2-14)
-const BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || '';
-const BUILD_ID = buildId(BUILD_COMMIT, import.meta.env.VITE_BUILD_DATE || ''); // S4: footer build id (sha · date)
-// UX review #4: localised burger labels (BURGER.md).
-const BM: Record<LpLang, { lang: string; close: string; menu: string }> = {
-  en: { lang: 'Language', close: 'Close menu', menu: 'Menu' },
-  uz: { lang: 'Til', close: 'Menyuni yopish', menu: 'Menyu' },
-  ru: { lang: 'Язык', close: 'Закрыть меню', menu: 'Меню' },
-};
 const coverSrc = (id: string) => ({
   src: `${BASE}landing/covers/${id}.jpg`,
   srcSet: `${BASE}landing/covers/${id}-240.webp 240w, ${BASE}landing/covers/${id}-480.webp 480w`,
@@ -77,50 +67,15 @@ export default function LandingPage() {
   const [params, setParams] = useSearchParams();
   const L = (['uz', 'ru', 'en'].includes(copyLocale) ? copyLocale : 'uz') as LpLang;
   const C = LANDING_COPY[L];
-  const [menuOpen, setMenuOpen] = useState(false);
   const [tile, setTile] = useState(1);
   const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const root = useRef<HTMLDivElement>(null);
-  const burgerBtn = useRef<HTMLButtonElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
-  const T = BM[(['uz', 'ru', 'en'].includes(copyLocale) ? copyLocale : 'uz') as LpLang];
 
   const ui = L;
   const startHref = registerUrl({ plan: 'free', from: 'landing', ui });
-  const loginHref = loginUrl({ ui });
   const libHref = libraryUrl({ ui });
 
-  const onLang = (c: LpLang) => {
-    setLocale(c);
-    setParams(queryWithLocale(params, c), { replace: true });
-  };
 
-  // Burger: scroll lock, inert page, focus first link, Esc, focus trap, close on >=1024 (BURGER.md).
-  useEffect(() => {
-    if (!menuOpen) return;
-    const el = root.current!;
-    const inertEls = [...el.querySelectorAll('main, footer, .nav .logo, .nav .ls, .nav .login, #navcta')] as HTMLElement[];
-    inertEls.forEach((e) => e.setAttribute('inert', ''));
-    document.documentElement.style.overflow = 'hidden';
-    panel.current?.querySelector<HTMLElement>('.links a')?.focus();
-    const focusables = () => [burgerBtn.current!, ...panel.current!.querySelectorAll<HTMLElement>('a[href], button')];
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { e.preventDefault(); setMenuOpen(false); burgerBtn.current?.focus(); return; }
-      if (e.key !== 'Tab') return;
-      const f = focusables(); const i = f.indexOf(document.activeElement as HTMLElement);
-      e.preventDefault();
-      f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
-    };
-    const onResize = () => { if (window.innerWidth >= 1024) setMenuOpen(false); };
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('resize', onResize);
-    return () => {
-      inertEls.forEach((e) => e.removeAttribute('inert'));
-      document.documentElement.style.overflow = '';
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('resize', onResize);
-    };
-  }, [menuOpen]);
 
   useEffect(() => {
     const r = () => setWide(window.innerWidth >= 1024);
@@ -140,50 +95,13 @@ export default function LandingPage() {
   const CAPTURED = capturedFor(L);
   const pc = plusCta(C, CHECKOUT_LIVE, ui);
   const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]].filter(Boolean);
-  const navIds = ['#how', '#features', '#plus', '#faq'];
-  // SHOW_PLUS_ON_LANDING (landingCopy.ts, default true): false hides the #plus nav item, the Plus card and the last FAQ item (Plus renewal).
-  const nav = C.nav.map((n, i) => [n, navIds[i]] as const).filter(([, id]) => SHOW_PLUS_ON_LANDING || id !== '#plus');
+  // SHOW_PLUS_ON_LANDING (landingCopy.ts, default true): false hides the Plus card, its nav item (LandingChrome) and FAQ Q5.
   const faqN = SHOW_PLUS_ON_LANDING ? C.faq_questions.length : C.faq_questions.length - 1;
 
   return (
     <div className="lp" data-theme="light" ref={root} lang={L}>
       <Seo title={`GOTCHA — ${C.h1}`} description={C.sub} lang={L} />
-      <header className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap">
-        <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
-        <ul id="nav">{nav.map(([n, id]) => <li key={n}><a href={id}>{n}</a></li>)}</ul>
-        <div className="right">
-          <LandingLangSwitch value={L} onChange={onLang} />
-          <a className="login" href={loginHref}>{C.login}</a>
-          <a className="btn btn-white" href={startHref} id="navcta">{C.cta}</a>
-          <button ref={burgerBtn} className="burger" type="button" aria-label={menuOpen ? T.close : T.menu} aria-expanded={menuOpen} aria-controls="bm" onClick={() => setMenuOpen((v) => !v)}>
-            <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={menuOpen ? 'M5 5l12 12M17 5 5 17' : 'M3 7h16M3 15h16'} /></svg>
-          </button>
-        </div>
-      </div>
-        {menuOpen && (
-          <div className="bm" id="bm" ref={panel} role="dialog" aria-modal="true" aria-label={T.menu}>
-            <nav><ul className="links">
-              {nav.map(([n, id]) => (
-                <li key={n}><a href={id} onClick={() => setMenuOpen(false)}>{n}<svg width="18" height="18" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2" aria-hidden="true"><path d="m7 4 5 5-5 5" /></svg></a></li>
-              ))}
-            </ul></nav>
-            <h3 id="bm-lh">{T.lang}</h3>
-            <div className="seg" role="group" aria-labelledby="bm-lh">
-              {LP_LANGS.map((l) => (
-                <a key={l.code} href={`?lang=${l.code}`} lang={l.code} hrefLang={l.code} aria-label={l.name} title={l.name}
-                  aria-current={l.code === L ? 'true' : undefined}
-                  onClick={(e) => { e.preventDefault(); setMenuOpen(false); onLang(l.code); }}>
-                  <span className="flag" aria-hidden="true"><img src={l.flag} alt="" width={20} height={14} style={l.pos ? { objectPosition: l.pos } : undefined} /></span>{l.short}
-                </a>
-              ))}
-            </div>
-            <div className="foot">
-              <a className="btn btn-white" href={startHref} data-cta="burger">{C.cta}</a>
-              <a className="login" href={loginHref}>{C.login}</a>
-            </div>
-          </div>
-        )}
-      </header>
+      <LandingHeader onLanding />
 
       <main>
         <section className="hero" style={{ padding: 0 }}><div className="wrap"><div className="grid">
@@ -284,15 +202,7 @@ export default function LandingPage() {
         </div></div></section>
       </main>
 
-      <footer><div className="wrap"><div className="grid"><div>
-        <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
-          <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
-        <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a></div>
-        {BUILD_ID && <div className="build-id" data-build-id={BUILD_ID}>build {BUILD_ID}</div>}
-        {PREVIEW_STAMP && BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
-          <div className="build-stamp" data-build-commit={BUILD_COMMIT}>preview build {BUILD_COMMIT}</div>
-        )}
-      </div></div></div></footer>
+      <LandingFooter />
     </div>
   );
 }

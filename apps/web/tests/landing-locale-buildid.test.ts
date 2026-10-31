@@ -28,7 +28,7 @@ test('S3c: detection uses ?lang/?ui, query choice is persisted, <html lang> foll
   const ctx = read('../src/lib/webLocaleContext.tsx');
   assert.match(ctx, /if \(fromQuery\) persistWebLocale\(fromQuery\)/);
   assert.match(ctx, /document\.documentElement\.lang = copyLocale/);
-  const page = read('../src/pages/LandingPage.tsx');
+  const page = (read('../src/pages/LandingPage.tsx') + read('../src/components/LandingChrome.tsx'));
   assert.match(page, /setParams\(queryWithLocale\(params, c\)/);
   assert.match(page, /setLocale\(c\)/);
   assert.match(page, /registerUrl\(\{ plan: 'free', from: 'landing', ui \}\)/);
@@ -37,7 +37,7 @@ test('S3c: detection uses ?lang/?ui, query choice is persisted, <html lang> foll
 test('S4: footer build id = short sha · date, always rendered when known', () => {
   assert.equal(buildId('989e0a0', '2026-10-31'), '989e0a0 · 2026-10-31');
   assert.equal(buildId('', ''), '');
-  const page = read('../src/pages/LandingPage.tsx');
+  const page = (read('../src/pages/LandingPage.tsx') + read('../src/components/LandingChrome.tsx'));
   assert.match(page, /\{BUILD_ID && <div className="build-id"/);
   const cfg = read('../vite.config.ts');
   assert.match(cfg, /VITE_BUILD_COMMIT \|\|= git\('git rev-parse --short=7 HEAD'\)/);

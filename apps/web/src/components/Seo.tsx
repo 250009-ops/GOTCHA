@@ -7,7 +7,7 @@ export const SITE_ORIGIN = (
 ).replace(/\/$/, '');
 
 export const SITE_NAME = 'GOTCHA';
-export const DEFAULT_TITLE = 'GOTCHA — Get fluent by actually reading';
+export const DEFAULT_TITLE = "GOTCHA — Tap the word you don't know. Gotcha explains it in that sentence.";
 export const DEFAULT_DESCRIPTION =
   'Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek.';
 

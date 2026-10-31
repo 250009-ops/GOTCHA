@@ -60,7 +60,7 @@ test('switcher order UZ / ENG / RU', () => {
   assert.ok(i[0] > 0 && i[0] < i[1] && i[1] < i[2], String(i));
 });
 test('page renders no stats / learnerCount / topReaders', () => {
-  const src = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  const src = (readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8'));
   assert.doesNotMatch(src, /learnerCount|topReaders|fetchMarketingLanding/);
 });
 test('JSON-LD: Web only, no offers', () => {
@@ -87,7 +87,7 @@ test('lookup: real uz capture, only the agreed edits; no ru/en glosses typed in'
 });
 
 test('UX fixes: localised burger labels, dialog, self-hosted Bagel, webp covers', () => {
-  const src = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  const src = (readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8'));
   for (const s of ['Close menu', 'Menyuni yopish', 'Закрыть меню', "menu: 'Menyu'", "menu: 'Меню'", 'role="dialog"', 'aria-modal="true"', "'Escape'", "inert"]) {
     assert.ok(src.includes(s), s);
   }
@@ -123,7 +123,7 @@ test('uz web copy: no plain/curly apostrophes inside words (ʻ/ʼ only)', () => 
 });
 
 test('landing copy: no unlimited / fair use / cheksiz / безлим / 200 word lookups / 500 / trial; dictionary-fallback removed', () => {
-  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  const page = (readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8'));
   assert.doesNotMatch(page, /DICT_FALLBACK|plusLeadDict|plusB0Dict/);
   assert.match(page, /QUIZ_CAP_LIVE = import\.meta\.env\.VITE_PLUS_QUIZ_CAP_LIVE === 'true'/);
   const src = readFileSync(new URL('../src/lib/landingCopy.ts', import.meta.url), 'utf8');
@@ -131,13 +131,13 @@ test('landing copy: no unlimited / fair use / cheksiz / безлим / 200 word 
 });
 
 test('popover close is an inline SVG, not a text glyph', () => {
-  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  const page = (readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8'));
   assert.doesNotMatch(page, /✕/);
   assert.match(page, /aria-label=\{P\.close\}><svg/);
 });
 
 test('footer build stamp: only with VITE_PREVIEW_STAMP=true (build:publish rejects it, PAY2-14)', () => {
-  const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  const page = (readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8') + readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8'));
   assert.match(page, /PREVIEW_STAMP = import\.meta\.env\.VITE_PREVIEW_STAMP === 'true'/);
   assert.match(page, /\{PREVIEW_STAMP && BUILD_COMMIT/);
   assert.doesNotMatch(page, /VITE_LEGAL_V2/);
@@ -188,4 +188,19 @@ test('r3: catalog cards localised in uz/ru; Plus flag default ON', async () => {
   assert.equal(m.SHOW_PLUS_ON_LANDING, true);
   for (const l of ['uz', 'ru']) for (const b of m.LANDING_BOOKS) assert.notEqual(m.bookFor(b, l).author, b.author, `${l} ${b.id}`);
   assert.equal(m.bookFor(m.LANDING_BOOKS[0], 'ru').title, 'Преступление и наказание');
+});
+
+// r3 WLF-31/32/35 + shared chrome (static checks; the 390px browser run is tests-e2e/chrome-r3.e2e.mjs).
+test('r3: burger inert list never includes #bm; header Log in shown <1024; legal/404 use LandingShell; /oferta in footer + sitemap; no /assets/landing', () => {
+  const ch = readFileSync(new URL('../src/components/LandingChrome.tsx', import.meta.url), 'utf8');
+  assert.ok(!ch.includes("'.nav .login'") && !/querySelectorAll\('[^']*\.nav \.login/.test(ch), 'WLF-31 selector');
+  assert.ok(ch.includes(".right > .login") && ch.includes('href={`/oferta?lang=${L}`}'));
+  const css = readFileSync(new URL('../src/landing-premium.css', import.meta.url), 'utf8');
+  assert.ok(/max-width:1023px\)\{\.lp \.nav \.bar \.right>\.login\{display:inline-flex/.test(css));
+  for (const f of ['../src/pages/LegalPage.tsx', '../src/pages/NotFoundPage.tsx']) assert.ok(readFileSync(new URL(f, import.meta.url), 'utf8').includes('<LandingShell>'), f);
+  assert.ok(readFileSync(new URL('../public/sitemap.xml', import.meta.url), 'utf8').includes('https://gotchaa.uz/oferta'));
+  assert.ok(!existsSync(new URL('../public/assets/landing', import.meta.url)));
+  if (existsSync(new URL('../dist/index.html', import.meta.url))) assert.ok(!existsSync(new URL('../dist/assets/landing', import.meta.url)), 'dist has no /assets/landing');
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(!html.includes('Get fluent') && html.includes('og:image:alt" content="GOTCHA — Tap the word you don&#39;t know.'));
 });

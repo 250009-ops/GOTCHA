@@ -301,3 +301,9 @@ body:has(.lp){font-family:Manrope,system-ui,sans-serif}
 
 /* P2 (b): the panel has its own switcher; hide the header language button while the burger is open. */
 .lp .nav.menu-open .ls{visibility:hidden}
+/* r3 WLF-31: header Log in visible on mobile too (compact); burger Log in stays in the panel. */
+@media(max-width:1023px){.lp .nav .bar .right>.login{display:inline-flex;padding:0 6px;font-size:14px;white-space:nowrap}}
+/* r3: legal + 404 pages in the landing shell (header/footer). Body keeps the legal-pm typography. */
+.lp.lp-page{min-height:100vh;display:flex;flex-direction:column}
+.lp.lp-page>main{flex:1 0 auto}
+.lp.lp-page>footer{border-top:1px solid var(--l-line,#e2e8f0)}
