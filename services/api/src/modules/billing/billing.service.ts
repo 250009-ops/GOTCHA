@@ -9,6 +9,7 @@ import {
 } from '../ai/ai-settings';
 import { formatSom, planCopy, publicPlanPriceUzs, type PlanLang } from '../marketing/plan-copy';
 import { ImportCommerceService } from './import-commerce.service';
+import { planLimits } from '../../common/plan-limits';
 
 /**
  * Plan rows → client view. Copy is limited to true claims (marketing/plan-copy.ts, PLUS-OFFER.md); prices in soʻm.
@@ -16,6 +17,8 @@ import { ImportCommerceService } from './import-commerce.service';
 export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown) {
   const t = planCopy(lang);
   const isPremium = plan.tier === 'premium';
+  // Limits shown AND enforced come from one config (common/plan-limits.ts), never the DB row.
+  const limits = planLimits(isPremium ? 'premium' : 'free');
   if (!isPremium) {
     return {
       ...plan,
@@ -26,7 +29,9 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       priceLabel: t.free,
       priceUnit: '',
       popular: false,
-      features: [t.lookupsDay(plan.aiDailyQuota), t.importsDay(plan.importLimit), t.library],
+      aiDailyQuota: limits.lookupsPerDay,
+      quizDailyQuota: limits.quizzesPerDay,
+      features: [t.lookupsDay(limits.lookupsPerDay), t.quizzesDay(limits.quizzesPerDay), t.importsDay(plan.importLimit), t.library],
     };
   }
   // Premium = Plus, a 30-day pass (no auto-renew). Field names (incl. priceMonthly) are kept for old clients;
@@ -47,7 +52,9 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
     periodDays: 30,
     autoRenew: false,
     popular: true,
-    features: [t.plusLookups, t.plusFree],
+    aiDailyQuota: limits.lookupsPerDay,
+    quizDailyQuota: limits.quizzesPerDay,
+    features: [t.plusLimits(limits.lookupsPerDay, limits.quizzesPerDay), t.plusFree],
   };
 }
 
@@ -86,7 +93,9 @@ export class BillingService {
       quotaRow?.value,
       defaultAiPlatformSettings().defaultUserQuota,
     );
-    const quota = resolveLearnerDailyAiQuota(sub?.plan.aiDailyQuota, platformDefault);
+    void platformDefault; void resolveLearnerDailyAiQuota;
+    const quota = planLimits(sub?.plan.tier).lookupsPerDay;
+    const quizQuota = planLimits(sub?.plan.tier).quizzesPerDay;
 
     return {
       subscription: sub ? { ...sub, plan: enrichPlan(sub.plan) } : null,
@@ -94,6 +103,7 @@ export class BillingService {
         lookupsToday: usage?.lookupCount ?? 0,
         quizzesToday: usage?.quizCount ?? 0,
         quota,
+        quizQuota,
         importAllowance,
       },
     };

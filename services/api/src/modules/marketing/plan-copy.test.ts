@@ -44,6 +44,11 @@ async function main() {
   }
   assert.match((await m.plans('uz'))[1].features.join(' '), /Atmos/);
   assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
+  // Limits text matches config (Free 20/10, Plus 200/200).
+  assert.match((await m.plans('en'))[0].features.join(' '), /20 word lookups a day.*10 chapter quizzes a day/);
+  const pe = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 1_000_000, importLimit: 1, offlineEnabled: false, features: null } as never, 'en');
+  assert.equal(pe.aiDailyQuota, 200); assert.equal(pe.quizDailyQuota, 200); assert.match(pe.features[0], /^200 full AI explanations and 200 chapter quizzes a day$/);
+  assert.ok(!/unlimited|no daily limit/i.test(JSON.stringify(pe)));
   assert.equal(planLang('ru-RU'), 'ru'); assert.equal(planLang('xx'), 'en'); assert.equal(planLang(undefined), 'en');
   assert.equal(formatSom(199990), '199 990 soʻm');
   // Guard: no plan price under 1000 soʻm anywhere it is defined (seed, data fix, constants).
@@ -55,9 +60,7 @@ async function main() {
   assert.ok(seedPrices.length >= 2, 'seed has premium prices');
   for (const n of seedPrices) assert.ok(n >= 1000, `seed price ${n} < 1000 soʻm`);
   assert.ok(/'plus\.pass\.price_365_uzs', 199990/.test(seed));
-  const sql = readFileSync(join(root, 'prisma', 'data-fixes', '2026-10-31-plus-price-uzs.sql'), 'utf8');
-  assert.match(sql, /SET price_monthly = 24990/); assert.match(sql, /'199990'::jsonb/);
-  for (const m of sql.matchAll(/price_monthly = (\d+)/g)) assert.ok(Number(m[1]) >= 1000);
+  // Price data fix SQL is owned by payments-02 (gotcha-pay), not this release.
   // AC1-03: no user-facing "unlimited imports" in import quotes
   const ic = readFileSync(join(root, 'src', 'modules', 'billing', 'import-commerce.service.ts'), 'utf8');
   assert.ok(!/freeReason[^\n]*unlimited/i.test(ic), 'freeReason must not claim unlimited imports');
