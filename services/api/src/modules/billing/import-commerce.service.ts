@@ -203,31 +203,31 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  // Round-3: free-import windows reset at Asia/Tashkent midnight (business rule), not UTC midnight (= 05:00 Tashkent).
-  // Tashkent is UTC+5 all year (no DST). Method names kept for the existing callers.
-  private startOfUtcDay(d = new Date()) {
+  // All limit windows reset at 00:00 Asia/Tashkent: daily at midnight, monthly pages at midnight on the 1st, yearly on 1 Jan.
+  // Tashkent is UTC+5 all year (no DST).
+  private startOfTashkentDay(d = new Date()) {
     const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
     return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) - TASHKENT_OFFSET_MS);
   }
 
-  private startOfUtcMonth(d = new Date()) {
+  private startOfTashkentMonth(d = new Date()) {
     const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
     return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 1) - TASHKENT_OFFSET_MS);
   }
 
-  private startOfUtcYear(d = new Date()) {
+  private startOfTashkentYear(d = new Date()) {
     const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
     return new Date(Date.UTC(t.getUTCFullYear(), 0, 1) - TASHKENT_OFFSET_MS);
   }
 
   private pageWindowStart(resetCycle: string) {
-    if (resetCycle === 'daily') return this.startOfUtcDay();
-    if (resetCycle === 'yearly') return this.startOfUtcYear();
-    return this.startOfUtcMonth();
+    if (resetCycle === 'daily') return this.startOfTashkentDay();
+    if (resetCycle === 'yearly') return this.startOfTashkentYear();
+    return this.startOfTashkentMonth();
   }
 
   async freeUsage(userId: string, resetCycle = 'monthly', excludePaymentId?: string) {
-    const dayStart = this.startOfUtcDay();
+    const dayStart = this.startOfTashkentDay();
     const pageStart = this.pageWindowStart(resetCycle);
     const exclude = excludePaymentId ? { id: { not: excludePaymentId } } : {};
 
@@ -1473,8 +1473,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
   /** Admin overview helpers */
   async revenueStats() {
-    const monthStart = this.startOfUtcMonth();
-    const dayStart = this.startOfUtcDay();
+    const monthStart = this.startOfTashkentMonth();
+    const dayStart = this.startOfTashkentDay();
     const [paidMonth, paidToday, freeToday] = await Promise.all([
       this.prisma.importPayment.aggregate({
         where: { status: ImportPaymentStatus.paid, amountTiyins: { gt: 0 }, paidAt: { gte: monthStart } },
@@ -1736,8 +1736,8 @@ export function toPlaySummary(p: { id: string; sku: string; kind: string; state:
 export const SELLER = { en: 'the Erkin Tizim team', uz: 'Erkin Tizim jamoasi', ru: 'команда Erkin Tizim' } as const;
 /** Placeholder until Legal provides it; never invent one. */
 export const OFERTA_URL: string | null = null;
-/** The single refund rule (PAYMENTS §14 / PLUS-OFFER.md), same wording as pay.trust.refund (en). */
-export const REFUND_RULE_EN = "Refunds only if a purchase is faulty: you were charged but Plus wasn't delivered, the content is broken, or the charge failed or went through twice. Tell us at support@gotchaa.uz within 14 days of payment; approved refunds are returned within 10 working days.";
+/** The single refund rule (PAYMENTS §14, PM decision A), same wording as pay.trust.refund (en), UI/UX pay-copy.json 17:08 (round-3b). */
+export const REFUND_RULE_EN = "If a purchase is faulty, we fix it first: we re-run the import or unlock the book again. Money is returned only for a duplicate charge, a failed charge, or a purchase we can't deliver within 10 working days of your claim. Write to support@gotchaa.uz within 14 calendar days of purchase; approved refunds go back to your card within 10 working days.";
 
 type PlusTx = Pick<Prisma.TransactionClient, 'entitlement'> & { $executeRaw?: unknown };
 /** PAY1-03: Postgres transaction-scoped advisory lock per user (released at COMMIT/ROLLBACK). */

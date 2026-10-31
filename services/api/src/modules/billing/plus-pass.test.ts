@@ -147,7 +147,7 @@ async function main() {
   // Seller = team only; no legal name / STIR; oferta URL still a placeholder (null).
   assert.deepEqual(SELLER, { en: 'the Erkin Tizim team', uz: 'Erkin Tizim jamoasi', ru: 'команда Erkin Tizim' });
   assert.equal(OFERTA_URL, null);
-  assert.match(REFUND_RULE_EN, /within 14 days of payment; approved refunds are returned within 10 working days\.$/);
+  assert.match(REFUND_RULE_EN, /within 14 calendar days of purchase; approved refunds go back to your card within 10 working days\.$/);
 
   // PAY1-02: refunding a stacked pass moves later passes back by its unused days.
   {
