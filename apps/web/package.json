@@ -5,8 +5,11 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "build": "tsc -b && vite build && node scripts/check-legal.mjs",
+    "preview": "vite preview",
+    "legal:gen": "python3 scripts/gen_legal.py \"$LEGAL_DRAFTS_DIR\"",
+    "check:legal": "node scripts/check-legal.mjs",
+    "build:legal-qa": "VITE_LEGAL_V2=true vite build --outDir dist-legal-qa && node scripts/check-legal.mjs"
   },
   "dependencies": {
     "@gotcha/shared": "*",

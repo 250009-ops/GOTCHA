@@ -87,11 +87,7 @@ function CatalogCard({
         <p className="truncate font-['Manrope',sans-serif] text-[15px] font-bold text-[#101828] group-hover:text-[#2107aa]">
           {item.title}
         </p>
-        {item.isFree ? (
-          <span className="w-fit rounded bg-[#def2e4] px-1.5 py-0.5 text-[11px] font-bold text-[#047d57]">
-            Free
-          </span>
-        ) : null /* web-launch-01: no prices until the owner approves them */}
+        {/* web-launch-02: no Free/price badges until the owner approves pricing */}
       </div>
     </a>
   );

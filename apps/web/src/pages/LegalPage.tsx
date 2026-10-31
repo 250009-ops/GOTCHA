@@ -342,36 +342,3 @@ function LegalPage({
     </div>
   );
 }
-
-export function RoadmapPage() {
-  return (
-    <LegalPage
-      title="Product Roadmap"
-      updated="August 6, 2026"
-      path="/roadmap"
-      description="What GOTCHA is building next for reading-first fluency across English, Russian, and Uzbek."
-    >
-      <p className="text-base leading-[1.7] text-[#4a5565]">
-        What we're building next for reading-first fluency across English, Russian, and Uzbek.
-      </p>
-      <h2 className="mt-8 mb-3 text-xl font-bold tracking-[-0.3px] text-[#101828]">Now</h2>
-      <ul className="list-disc pl-5 space-y-1 text-base leading-[1.7] text-[#4a5565]">
-        <li>Desktop 3-panel reader with AI word lookup</li>
-        <li>Spaced repetition reviews from your reading</li>
-        <li>URL, PDF, and ePub imports</li>
-      </ul>
-      <h2 className="mt-8 mb-3 text-xl font-bold tracking-[-0.3px] text-[#101828]">Next</h2>
-      <ul className="list-disc pl-5 space-y-1 text-base leading-[1.7] text-[#4a5565]">
-        <li>Offline reading</li>
-        <li>Richer CEFR progress analytics</li>
-        <li>More curated library titles with licensed partners</li>
-      </ul>
-      <h2 className="mt-8 mb-3 text-xl font-bold tracking-[-0.3px] text-[#101828]">Later</h2>
-      <ul className="list-disc pl-5 space-y-1 text-base leading-[1.7] text-[#4a5565]">
-        <li>Additional target languages</li>
-        <li>Classroom / team plans</li>
-        <li>Deeper mobile parity with desktop reader</li>
-      </ul>
-    </LegalPage>
-  );
-}

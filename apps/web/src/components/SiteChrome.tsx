@@ -188,9 +188,6 @@ export function SiteFooter() {
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
                   {copy.nav.how}
                 </Link>
-                <Link to="/roadmap" className="transition-colors hover:text-[#101828]">
-                  {copy.footer.roadmap}
-                </Link>
               </div>
             </div>
             <div className="flex w-[160px] flex-col gap-4">
