@@ -344,7 +344,7 @@ export class ImportsService {
       throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this URL');
     }
     return {
-      title: (doc.title || titleFromUrl(url)).slice(0, 200),
+      title: (doc.detectedTitle || titleFromUrl(url)).slice(0, 200),
       wordCount: countWords(doc.text),
       textLength: doc.text.length,
     };
