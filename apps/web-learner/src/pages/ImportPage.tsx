@@ -25,6 +25,7 @@ import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { useAuth } from '../lib/auth';
 import { usePay } from '../components/payments';
+import { refundRequestHref } from '@gotcha/shared';
 
 interface ImportItem {
   id: string;
@@ -374,7 +375,7 @@ function ImportLogoMark() {
   );
 }
 
-type PaidImportRetry = { freeRetries: { paymentId: string; importType: string }[]; refundDue: number; review?: number };
+type PaidImportRetry = { freeRetries: { paymentId: string; importType: string; reason?: 'paid_late' }[]; refundDue: number; review?: number };
 
 type PaymentModalState = {
   open: boolean;
@@ -1138,11 +1139,19 @@ export default function ImportPage() {
                 </p>
               </div>
             )}
-            {paidRetry.freeRetries.length > 0 && (
+            {paidRetry.freeRetries.some((r) => r.reason !== 'paid_late') && (
               <div role="status" data-testid="imp-free-retry" className="p-3 mb-4 rounded-[14px] border border-emerald-200 bg-emerald-50 text-xs leading-relaxed text-emerald-900">
                 {payCopy.t('imp.freeRetry')}
               </div>
             )}
+            {/* PAY2-08: paid, but the import never ran (payment confirmed late). imp.refundDue stays for the refund-due case. */}
+            {paidRetry.freeRetries.filter((r) => r.reason === 'paid_late').map((r) => (
+              <div key={r.paymentId} role="status" data-testid="imp-paid-no-result" className="p-3 mb-4 rounded-[14px] border border-amber-200 bg-amber-50 text-xs leading-relaxed text-amber-900">
+                <p className="font-bold text-sm mb-1">{payCopy.t('imp.paidNoResult.title')}</p>
+                <p>{payCopy.t('imp.paidNoResult.body')}</p>
+                <a href={refundRequestHref(r.paymentId)} data-testid="imp-paid-no-result-refund" className="mt-2 inline-flex min-h-[44px] items-center font-semibold underline">{payCopy.t('imp.paidNoResult.refund')}</a>
+              </div>
+            ))}
             {(paidRetry.refundDue > 0 || (paidRetry.review ?? 0) > 0) && (
               <div role="status" data-testid="imp-refund-due" className="p-3 mb-4 rounded-[14px] border border-amber-200 bg-amber-50 text-xs leading-relaxed text-amber-900">
                 {payCopy.t('imp.refundDue')}
