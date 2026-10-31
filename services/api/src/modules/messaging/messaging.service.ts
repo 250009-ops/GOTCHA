@@ -1,3 +1,4 @@
+import { DELETED_USER_NAME, isDeletedAccount } from '../../common/deleted-user';
 import { notifyNewReport } from '../../common/safety/report-notify';
 import {
   BadRequestException,
@@ -106,6 +107,21 @@ export class MessagingService {
   }
 
   private peerSummary(user: PeerUser) {
+    if (isDeletedAccount(user)) {
+      // Privacy §11: shown as "Deleted user"; no name, email, photo, languages or presence.
+      return {
+        id: user.id,
+        displayName: DELETED_USER_NAME,
+        handle: '@deleted_user',
+        avatarUrl: null,
+        nativeLanguage: user.nativeLanguage,
+        primaryLanguage: user.nativeLanguage,
+        online: false,
+        lastSeenAt: null,
+        targetLanguages: [],
+        deleted: true,
+      };
+    }
     const primary =
       user.targetLanguages.find((t) => t.isPrimary)?.targetLanguage ??
       user.targetLanguages[0]?.targetLanguage ??

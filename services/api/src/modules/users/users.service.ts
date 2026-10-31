@@ -631,11 +631,14 @@ export class UsersService {
   }
 
   /**
-   * S1 delete-account REAL purge. Deletes the learner's learning data, imports (with their private
+   * S1 delete-account REAL purge (Privacy §8/§11). Deletes the learner's learning data, imports (with their private
    * content and uploaded files), avatar, notifications, friend links, blocks and AI usage counters.
-   * WL4-11 (Kai, 31 Oct): sent chat messages are DELETED; safety reports (user + content) are KEPT for safety but
-   * anonymised (reporter / reported user set to null, message link cleared, snapshot text kept); consent_ip is
-   * cleared (version + time kept). Still kept: payment and purchase rows, audit logs. Each step is best-effort and logged.
+   * Messages the user SENT are kept in the recipients' conversations and show as from "Deleted user" through the
+   * anonymised user row (name, email, photo removed in deleteAccount). Safety reports are kept for safety review and
+   * unlinked from the user: the user's reporter / reported-user id and the report's conversationId are nulled; the
+   * reported message stays attached via messageId (messageSnapshot and details kept). Reports are deleted about 1 year
+   * after closing by ReportRetentionJob. consent_ip is cleared (version + time kept). Still kept: payment and purchase
+   * rows, audit logs. Each step is best-effort and logged.
    */
   async purgeUserData(userId: string): Promise<Record<string, number | string>> {
     const out: Record<string, number | string> = {};
@@ -675,10 +678,17 @@ export class UsersService {
       p.friendRequest.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
     );
     await step('blocks', () => p.userBlock.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }));
-    await step('messages', () => p.message.deleteMany({ where: { senderId: userId } }));
-    await step('reportsAnonymised', async () => {
-      const a = await p.userReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
-      const b = await p.userReport.updateMany({ where: { reportedUserId: userId }, data: { reportedUserId: null, messageId: null } });
+    // Privacy §8/§11: sent messages are NOT deleted; they stay, shown as from "Deleted user".
+    // Recipients' stored message notifications may still carry the old name: drop them (they regenerate as "Deleted user").
+    await step('peerMessageNotifications', async () => {
+      const convs = await p.conversationParticipant.findMany({ where: { userId }, select: { conversationId: true } });
+      const ids = convs.map((c) => c.conversationId);
+      if (!ids.length) return 0;
+      return p.userNotification.deleteMany({ where: { kind: 'message', refId: { in: ids }, userId: { not: userId } } });
+    });
+    await step('reportsUnlinked', async () => {
+      const a = await p.userReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null, conversationId: null } });
+      const b = await p.userReport.updateMany({ where: { reportedUserId: userId }, data: { reportedUserId: null, conversationId: null } });
       const c = await p.contentReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
       return a.count + b.count + c.count;
     });
