@@ -9,7 +9,7 @@ export const SITE_ORIGIN = (
 export const SITE_NAME = 'GOTCHA';
 export const DEFAULT_TITLE = 'GOTCHA — Get fluent by actually reading';
 export const DEFAULT_DESCRIPTION =
-  'Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek. Pay as you go in soʻm — no subscription.';
+  'Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek.';
 
 function upsertMeta(selector: string, attrs: Record<string, string>) {
   let el = document.head.querySelector(selector) as HTMLMetaElement | null;

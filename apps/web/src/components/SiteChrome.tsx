@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Brand } from './Brand';
 import { UiLanguageDropdown } from './UiLanguageDropdown';
-import { SHOW_PRICING } from '../lib/featureFlags';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
 import { isWebLocale, type WebLocale } from '../lib/webLocale';
@@ -34,8 +33,6 @@ function NavLinks({
   const navLinks = useMemo(
     () => [
       { to: '/#catalog', label: copy.nav.catalog },
-      // Hotfix web1: no leaderboard (C3); pricing only once prices are approved (C1).
-      ...(SHOW_PRICING ? [{ to: '/#pricing', label: copy.nav.pricing }] : []),
       { to: '/#features', label: copy.nav.features },
       { to: '/#how', label: copy.nav.how },
     ],
@@ -188,11 +185,6 @@ export function SiteFooter() {
                 <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
                   {copy.nav.catalog}
                 </Link>
-                {SHOW_PRICING && (
-                  <Link to="/#pricing" className="transition-colors hover:text-[#101828]">
-                    {copy.nav.pricing}
-                  </Link>
-                )}
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
                   {copy.nav.how}
                 </Link>
@@ -219,7 +211,7 @@ export function SiteFooter() {
 
         <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Geist',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
           <p>{copy.footer.rights}</p>
-          <p>{copy.footer.powered}</p>
+          <a href="mailto:support@gotchaa.uz" className="transition-colors hover:text-[#101828]">support@gotchaa.uz</a>
         </div>
       </div>
     </footer>

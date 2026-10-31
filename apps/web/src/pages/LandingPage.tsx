@@ -7,7 +7,6 @@ import {
   fetchMarketingLanding,
   type LandingPayload,
 } from '../lib/api';
-import { SHOW_PRICING } from '../lib/featureFlags';
 import { libraryUrl, registerUrl } from '../lib/links';
 import { resolveMediaUrl } from '../lib/media';
 import { useMarketingCopy } from '../lib/webLocaleContext';
@@ -20,13 +19,6 @@ const STEP_ICONS = [a.bookOpen, a.circleX, a.chartLine] as const;
 const FEATURE_ICONS = [a.library, a.mousePointerClick, a.sparkles, a.flame, a.cloudUpload, a.creditCard] as const;
 
 type LoadState = 'loading' | 'ready' | 'degraded';
-
-function formatUzs(n: number) {
-  const grouped = Math.round(n)
-    .toString()
-    .replace(/\B(?=(\d{3})+(?!\d))/g, '\u202f');
-  return `${grouped} soʻm`;
-}
 
 function cefrLabel(code: string) {
   return code.trim().toUpperCase();
@@ -99,9 +91,7 @@ function CatalogCard({
           <span className="w-fit rounded bg-[#def2e4] px-1.5 py-0.5 text-[11px] font-bold text-[#047d57]">
             Free
           </span>
-        ) : (
-          <p className="text-[13px] font-bold text-[#101828]">{formatUzs(item.priceUzs)}</p>
-        )}
+        ) : null /* web-launch-01: no prices until the owner approves them */}
       </div>
     </a>
   );
@@ -272,7 +262,6 @@ export default function LandingPage() {
 
   const languages = payload?.languages ?? [];
   const catalogItems = payload?.catalog.items ?? [];
-  const pricing = payload?.importPricing;
   const catalogLoading = loadState === 'loading' && !payload;
   const registerHref = registerUrl({
     plan: 'free',
@@ -314,18 +303,6 @@ export default function LandingPage() {
               </a>
             </div>
             <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
-              <span className="inline-flex items-center gap-1.5 text-[13px] text-[#4a5565]">
-                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
-                  <Icon src={a.check} size={14} />
-                </span>
-                {copy.hero.noCard}
-              </span>
-              <span className="inline-flex items-center gap-1.5 text-[13px] text-[#4a5565]">
-                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
-                  <Icon src={a.check} size={14} />
-                </span>
-                {copy.hero.payAsYouGo}
-              </span>
             </div>
           </div>
 
@@ -455,68 +432,6 @@ export default function LandingPage() {
             )}
           </div>
         </section>
-
-        {/* Hotfix web1 (AUDIT C1/C2): hidden until the owner approves the prices. */}
-        {SHOW_PRICING && (
-        <section id="pricing" className="scroll-mt-24 bg-[#f3f0ff] px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
-          <FadeIn className="mx-auto flex max-w-[640px] flex-col items-center gap-12">
-            <div className="flex flex-col items-center gap-3 text-center">
-              <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">{copy.pricing.label}</p>
-              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
-                {copy.pricing.title}
-              </h2>
-              <p className="max-w-[540px] text-[15px] leading-[1.5] text-[#4a5565]">{copy.pricing.subtitle}</p>
-            </div>
-
-            {pricing && (
-              <div className="flex w-full items-center gap-4 rounded-xl border border-[#059669] bg-white p-5">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-2xl bg-[#def2e4]">
-                  <span className="inline-flex h-4 w-4 items-center justify-center">
-                    <Icon src={a.gift} size={16} />
-                  </span>
-                </div>
-                <div className="min-w-0">
-                  <p className="font-['Manrope',sans-serif] text-sm font-bold text-[#101828]">{copy.pricing.freeTierTitle}</p>
-                  <p className="text-[13px] text-[#4a5565]">
-                    {copy.pricing.freeTierBody(
-                      pricing.freeLimits.dailyFreeImportsPerUser,
-                      pricing.freeLimits.monthlyFreePageLimit,
-                    )}
-                  </p>
-                </div>
-              </div>
-            )}
-
-            {catalogLoading ? (
-              <div className="w-full animate-pulse overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white">
-                {Array.from({ length: 5 }).map((_, i) => (
-                  <div key={i} className="h-14 border-b border-[#e2e8f0] last:border-0" />
-                ))}
-              </div>
-            ) : pricing && pricing.tiers.length > 0 ? (
-              <div className="w-full overflow-hidden rounded-2xl border border-[#e2e8f0] bg-white">
-                <div className="flex items-center justify-between bg-[#f3f0ff] px-6 py-4 font-['Manrope',sans-serif] text-xs font-bold uppercase text-[#4a5565]">
-                  <span>{copy.pricing.volumeHeader}</span>
-                  <span>{copy.pricing.priceHeader}</span>
-                </div>
-                {pricing.tiers.map((tier) => (
-                  <div
-                    key={tier.id}
-                    className="flex items-center justify-between border-t border-[#e2e8f0] px-6 py-4 text-[15px] text-[#101828]"
-                  >
-                    <span className="font-['Manrope',sans-serif] font-semibold">{tier.label}</span>
-                    <span className="font-bold">{formatUzs(tier.priceUzs)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : null}
-
-            <p className="text-center text-xs text-[#99a1af]">
-              {copy.pricing.minCharge(formatUzs(pricing?.atmosMinAmountSom ?? 500))}
-            </p>
-          </FadeIn>
-        </section>
-        )}
 
         <section className="bg-[#101828] px-5 py-20 md:px-10 lg:px-20 lg:py-[120px]" aria-label="Get started">
           <div className="mx-auto flex max-w-[720px] flex-col items-center gap-8 text-center">
