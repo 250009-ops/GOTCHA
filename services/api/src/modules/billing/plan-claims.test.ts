@@ -1,6 +1,6 @@
 import * as assert from 'node:assert/strict';
 import { enrichPlan } from './billing.service';
-const BANNED = [/unlimited/i, /offline/i, /no ads/i, /priority support/i, /\$/, /\/mo\b/];
+const BANNED = [/unlimited/i, /fair use/i, /200 word lookups/i, /200 lookups/i, /no daily limit/i, /offline/i, /no ads/i, /priority support/i, /\$/, /\/mo\b/];
 const base = { id: 'x', aiDailyQuota: 50, importLimit: 3, offlineEnabled: true } as any;
 const p = enrichPlan({ ...base, tier: 'premium', name: 'Premium', priceMonthly: 9 });
 const f = enrichPlan({ ...base, tier: 'free', name: 'Free', priceMonthly: 0 });
@@ -9,9 +9,12 @@ for (const plan of [p, f]) {
   for (const re of BANNED) assert.ok(!re.test(text), `${re} in ${text}`);
   assert.equal(plan.offlineEnabled, false);
 }
-// Copy follows common/plan-limits (Plus 200 AI + 200 quizzes). The 50% import discount bullet is not in the
-// shipped copy (payments-01 owns it; add only once it is live).
-assert.ok(p.features.some((x: string) => /200 full AI explanations/.test(x)), JSON.stringify(p.features));
+// Copy follows common/plan-limits (14:40: Plus has no lookup cap, 200 quizzes). Plus lookup copy names no number.
+// The 50% import discount bullet is not in the shipped copy (payments-01 owns it; add only once it is live).
+assert.ok(p.features.includes('200 chapter quizzes a day'), JSON.stringify(p.features));
+assert.ok(p.features.includes('Full AI explanations for the words you look up'), JSON.stringify(p.features));
+assert.ok(!p.features.some((x: string) => /lookup/i.test(x) && /\d/.test(x)), JSON.stringify(p.features));
+assert.equal(p.aiDailyQuota, null);
 assert.ok(!JSON.stringify(p.features).includes('No daily limit'));
 // Prices come from the DB (payments-02 data fix); a stale USD-like price (9) is hidden, never shown as $.
 assert.equal(p.priceMonthly, null); assert.equal(p.priceHidden, true); assert.equal(p.autoRenew, false);

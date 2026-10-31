@@ -1,5 +1,5 @@
 import { formatSom, planCopy, type PlanLang } from './plan-copy';
-import { planLimits } from '../../common/plan-limits';
+import { freeLimits } from '../../common/plan-limits';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
@@ -157,7 +157,7 @@ export class MarketingService {
     const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = planLimits('free').lookupsPerDay;
+    const aiDailyQuota = freeLimits().lookupsPerDay;
     const importLimit = freePlan?.importLimit ?? 15;
 
     const free = {
@@ -177,7 +177,7 @@ export class MarketingService {
       features: [
         t.library,
         t.lookupsDay(aiDailyQuota),
-        t.quizzesDay(planLimits('free').quizzesPerDay),
+        t.quizzesDay(freeLimits().quizzesPerDay),
         t.importsDay(importLimit),
         t.review,
       ],

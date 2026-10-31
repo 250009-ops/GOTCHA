@@ -197,7 +197,7 @@ async function main() {
   console.log('Seeding Gotcha database...');
 
   // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
-  // Premium (Plus): 200 AI explanations/day, 500 hard cap, 200 quizzes/day — see common/plan-limits.ts.
+  // Premium (Plus): no daily word-lookup cap, 200 quizzes/day (14:40) — see common/plan-limits.ts. The DB quota column is not read.
   const UNLIMITED = 1_000_000;
   await prisma.subscriptionPlan.upsert({
     where: { tier: 'free' },
@@ -221,7 +221,6 @@ async function main() {
     update: {
       name: 'Plus',
       priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      aiDailyQuota: 200, // Plus: 200 full AI / 500 hard cap / 200 quizzes (common/plan-limits.ts)
       importLimit: UNLIMITED,
       offlineEnabled: false,
     },
@@ -229,7 +228,7 @@ async function main() {
       tier: 'premium',
       name: 'Plus',
       priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      aiDailyQuota: 200, // Plus: 200 full AI / 500 hard cap / 200 quizzes (common/plan-limits.ts)
+      aiDailyQuota: UNLIMITED, // no lookup cap for Plus; enforcement is common/plan-limits.ts (lookupsPerDay null)
       importLimit: UNLIMITED,
       offlineEnabled: false,
     },

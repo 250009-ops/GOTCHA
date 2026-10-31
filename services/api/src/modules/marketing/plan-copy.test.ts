@@ -44,11 +44,17 @@ async function main() {
   }
   assert.match((await m.plans('uz'))[1].features.join(' '), /Atmos/);
   assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
-  // Limits text matches config (Free 20/10, Plus 200/200).
+  // Limits text matches config (Free 20/10; Plus 200 quizzes, no lookup cap = null, 14:40).
   assert.match((await m.plans('en'))[0].features.join(' '), /20 word lookups a day.*10 chapter quizzes a day/);
   const pe = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 1_000_000, importLimit: 1, offlineEnabled: false, features: null } as never, 'en');
-  assert.equal(pe.aiDailyQuota, 200); assert.equal(pe.quizDailyQuota, 200); assert.match(pe.features[0], /^200 full AI explanations and 200 chapter quizzes a day$/);
-  assert.ok(!/unlimited|no daily limit/i.test(JSON.stringify(pe)));
+  assert.equal(pe.aiDailyQuota, null); assert.equal(pe.quizDailyQuota, 200);
+  assert.deepEqual(pe.features, ['Full AI explanations for the words you look up', '200 chapter quizzes a day', 'Everything in Free stays included']);
+  assert.ok(!/unlimited|fair use|200 word lookups|200 lookups|no daily limit/i.test(JSON.stringify(pe)));
+  for (const l of ['en', 'ru', 'uz'] as const) {
+    const px = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 200, importLimit: 1, offlineEnabled: false, features: null } as never, l);
+    assert.ok(!/unlimited|fair use|200 (word )?lookups|no daily limit|cheksiz|безлимит|\b500\b/i.test(JSON.stringify(px.features)), l);
+    assert.ok(!/\d/.test(px.features[0]), `${l}: Plus lookup line names no number`);
+  }
   assert.equal(planLang('ru-RU'), 'ru'); assert.equal(planLang('xx'), 'en'); assert.equal(planLang(undefined), 'en');
   assert.equal(formatSom(199990), '199 990 soʻm');
   // Guard: no plan price under 1000 soʻm anywhere it is defined (seed, data fix, constants).

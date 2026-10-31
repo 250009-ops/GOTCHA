@@ -24,7 +24,8 @@ const T = {
     library: 'Access to the public library',
     lookupsDay: (n: number) => `${n} word lookups a day`,
     quizzesDay: (n: number) => `${n} chapter quizzes a day`,
-    plusLimits: (l: number, q: number) => `${l} full AI explanations and ${q} chapter quizzes a day`,
+    plusLookups: 'Full AI explanations for the words you look up',
+    plusQuizzes: (q: number) => `${q} chapter quizzes a day`,
     importsDay: (n: number) => `${n} free imports a day`,
     review: 'Vocabulary review',
     ppiName: 'Pay per import', ppiLabel: 'Pay as you go', ppiUnit: 'one-time payments', ppiCta: 'Start reading for free',
@@ -40,7 +41,8 @@ const T = {
     library: 'Доступ к открытой библиотеке',
     lookupsDay: (n: number) => `${n} подсказок по словам в день`,
     quizzesDay: (n: number) => `${n} тестов по главам в день`,
-    plusLimits: (l: number, q: number) => `${l} полных AI-объяснений и ${q} тестов по главам в день`,
+    plusLookups: 'Полные AI-объяснения слов, которые вы ищете',
+    plusQuizzes: (q: number) => `${q} тестов по главам в день`,
     importsDay: (n: number) => `${n} бесплатных импортов в день`,
     review: 'Повторение слов',
     ppiName: 'Оплата за импорт', ppiLabel: 'Платите только за то, что нужно', ppiUnit: 'разовые платежи', ppiCta: 'Начать читать бесплатно',
@@ -56,7 +58,8 @@ const T = {
     library: 'Ochiq kutubxonadan foydalanish',
     lookupsDay: (n: number) => `Kuniga ${n} ta soʻz qidiruvi`,
     quizzesDay: (n: number) => `Kuniga ${n} ta bob testi`,
-    plusLimits: (l: number, q: number) => `Kuniga ${l} ta toʻliq AI izoh va ${q} ta bob testi`,
+    plusLookups: 'Qidirgan soʻzlaringiz uchun toʻliq AI izoh',
+    plusQuizzes: (q: number) => `Kuniga ${q} ta bob testi`,
     importsDay: (n: number) => `Kuniga ${n} ta bepul import`,
     review: "Soʻzlarni takrorlash",
     ppiName: "Har import uchun toʻlov", ppiLabel: "Kerak boʻlganda toʻlang", ppiUnit: "bir martalik toʻlovlar", ppiCta: "Bepul oʻqishni boshlash",
@@ -75,6 +78,7 @@ export const BANNED_PLAN_CLAIMS = [
   /offline/i, /oflayn/i, /офлайн/i,
   /no monthly fee/i, /unlimited (content )?imports/i, /priority support/i, /no ads/i,
   /\$/,
+  /unlimited/i, /fair use/i, /200 (word )?lookups/i, /no daily limit/i, /cheksiz/i, /безлимит/i,
 ];
 
 /**

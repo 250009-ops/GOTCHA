@@ -9,7 +9,7 @@ import {
 } from '../ai/ai-settings';
 import { formatSom, planCopy, publicPlanPriceUzs, type PlanLang } from '../marketing/plan-copy';
 import { ImportCommerceService } from './import-commerce.service';
-import { planLimits } from '../../common/plan-limits';
+import { freeLimits, planLimits } from '../../common/plan-limits';
 
 /**
  * Plan rows → client view. Copy is limited to true claims (marketing/plan-copy.ts, PLUS-OFFER.md); prices in soʻm.
@@ -31,7 +31,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       popular: false,
       aiDailyQuota: limits.lookupsPerDay,
       quizDailyQuota: limits.quizzesPerDay,
-      features: [t.lookupsDay(limits.lookupsPerDay), t.quizzesDay(limits.quizzesPerDay), t.importsDay(plan.importLimit), t.library],
+      features: [t.lookupsDay(freeLimits().lookupsPerDay), t.quizzesDay(limits.quizzesPerDay), t.importsDay(plan.importLimit), t.library],
     };
   }
   // Premium = Plus, a 30-day pass (no auto-renew). Field names (incl. priceMonthly) are kept for old clients;
@@ -52,9 +52,9 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
     periodDays: 30,
     autoRenew: false,
     popular: true,
-    aiDailyQuota: limits.lookupsPerDay,
+    aiDailyQuota: null, // no daily lookup cap for Plus (14:40)
     quizDailyQuota: limits.quizzesPerDay,
-    features: [t.plusLimits(limits.lookupsPerDay, limits.quizzesPerDay), t.plusFree],
+    features: [t.plusLookups, t.plusQuizzes(limits.quizzesPerDay), t.plusFree],
   };
 }
 

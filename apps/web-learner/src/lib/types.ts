@@ -196,7 +196,7 @@ export interface SubscriptionPlan {
   priceMonthly?: string | number | null;
   priceLabel?: string;
   priceUnit?: string;
-  aiDailyQuota: number;
+  aiDailyQuota: number | null; // null = no daily lookup cap (Plus)
   importLimit: number;
   offlineEnabled: boolean;
   popular?: boolean;
@@ -213,7 +213,7 @@ export interface SubscriptionInfo {
   usage: {
     lookupsToday: number;
     quizzesToday: number;
-    quota: number;
+    quota: number | null; // null = no daily lookup cap (Plus)
     importAllowance?: {
       gatewayEnabled: boolean;
       resetCycle: string;

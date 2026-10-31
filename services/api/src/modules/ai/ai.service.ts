@@ -15,7 +15,7 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
-import { planLimits } from '../../common/plan-limits';
+import { lookupCapped, planLimits } from '../../common/plan-limits';
 import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, ttsLimitError, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
@@ -281,15 +281,15 @@ export class AiService {
       include: { plan: true },
       orderBy: { createdAt: 'desc' },
     });
-    // 31 Oct: per-plan limits from config (Free 20 / Plus 200); admin default only applies to memory mode.
+    // 31 Oct 14:40: per-plan limits from config (Free 20 / Plus no cap = null); admin default only applies to memory mode.
     const quota = planLimits(sub?.plan.tier).lookupsPerDay;
 
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },
     });
 
-    // Values >= 1e6 match Premium "Unlimited AI lookups" from Landing pricing.
-    if (quota > 0 && quota < 1_000_000 && (usage?.lookupCount ?? 0) >= quota) {
+    // null (Plus) / 0 / >= 1e6 = no daily lookup cap.
+    if (lookupCapped(quota) && (usage?.lookupCount ?? 0) >= quota) {
       throw new ForbiddenException(
         'Daily AI lookup limit reached. Try again tomorrow.',
       );
