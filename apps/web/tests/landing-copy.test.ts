@@ -112,6 +112,10 @@ test('legal: canonical PM HTML verbatim, publish guard, oferta unlinked', async 
   const src = readFileSync(new URL('../src/lib/legalHtml.generated.ts', import.meta.url), 'utf8');
   assert.ok(src.includes('[EFFECTIVE DATE]'));
   assert.ok(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: src }).some((p: string) => p.includes('[EFFECTIVE DATE]')), 'prod build blocked');
+  const prod = legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: src }).join('\n');
+  for (const ph of ['[EFFECTIVE DATE]', '[OFERTA URL]', 'NOT PUBLISHED']) assert.ok(prod.includes(ph), ph);
+  assert.equal(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: '<p>Seller [SELLER LEGAL NAME]</p>' }).length, 1, 'any [ALLCAPS] placeholder');
+  assert.equal(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: '<p>[EFFECTIVE DATE] and [OFERTA URL]</p>' }).length, 2);
   assert.equal(legalPublishProblems({ mode: 'production', qaBuild: true, legalSource: src }).length, 0, 'QA build allowed');
   assert.equal(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: '<p>Effective date: 1 Dec 2026</p>' }).length, 0);
   for (const f of ['../src/components/SiteChrome.tsx', '../src/pages/LandingPage.tsx']) assert.ok(!readFileSync(new URL(f, import.meta.url), 'utf8').includes('oferta'), `${f} must not link /oferta`);

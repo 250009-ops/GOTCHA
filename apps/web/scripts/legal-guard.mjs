@@ -4,7 +4,9 @@
 export const PUBLISH_PLACEHOLDERS = ['[EFFECTIVE DATE]', 'NOT PUBLISHED', 'НЕ ОПУБЛИКОВАН', 'EʼLON QILINMAGAN'];
 export function legalPublishProblems({ mode, qaBuild, legalSource }) {
   if (mode !== 'production' || qaBuild) return [];
-  return PUBLISH_PLACEHOLDERS.filter((p) => legalSource.includes(p)).map(
+  // Any [ALLCAPS] legal placeholder ([EFFECTIVE DATE], [OFERTA URL], …), same pattern as PM's build_html.py.
+  const found = new Set([...PUBLISH_PLACEHOLDERS.filter((p) => legalSource.includes(p)), ...(legalSource.match(/\[[A-Z][A-Z /]+\]/g) ?? [])]);
+  return [...found].map(
     (p) => `legal pages still contain ${p}; fill it in team/pm/legal/web and re-run scripts/gen_legal.py, or build the QA preview with VITE_LEGAL_V2=true`,
   );
 }
