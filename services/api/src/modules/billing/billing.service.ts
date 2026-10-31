@@ -7,49 +7,28 @@ import {
   defaultAiPlatformSettings,
   resolveLearnerDailyAiQuota,
 } from '../ai/ai-settings';
+import { formatSom, planCopy, type PlanLang } from '../marketing/plan-copy';
 import { ImportCommerceService } from './import-commerce.service';
 
 /**
- * Synthesize the `features`, `priceLabel`, `priceUnit`, and `popular` fields
- * that the frontend expects but aren't columns in the DB schema.
- * See docs/E2E_AUDIT_REPORT.md item #8 for context.
+ * Plan rows → client view. Copy is limited to true claims (marketing/plan-copy.ts, PLUS-OFFER.md); prices in soʻm.
  */
-/** LG4-07: real Plus terms only (one-off passes in soʻm, no auto-renew, no offline/unlimited/ads claims). */
-export const PLUS_PASS_PRICES_UZS = { days30: 24990, days365: 199990 } as const;
-import { planLimits } from '../../common/plan-limits';
-const soum = (n: number) => `${n.toLocaleString('en-US').replace(/,/g, ' ')} soʻm`;
-
-export function enrichPlan(plan: SubscriptionPlan) {
+export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en') {
+  const t = planCopy(lang);
   const isPremium = plan.tier === 'premium';
-  const limits = planLimits(isPremium ? 'premium' : 'free');
-  const priceMonthly = isPremium ? PLUS_PASS_PRICES_UZS.days30 : 0;
+  const priceUzs = Math.round(Number(plan.priceMonthly ?? 0));
   return {
     ...plan,
-    name: isPremium ? 'Plus' : plan.name,
     offlineEnabled: false,
-    aiDailyQuota: limits.lookupsPerDay,
-    quizDailyQuota: limits.quizzesPerDay,
-    priceMonthly,
-    priceYearUzs: isPremium ? PLUS_PASS_PRICES_UZS.days365 : null,
-    periodDays: isPremium ? 30 : null,
-    autoRenew: false,
-    priceLabel: isPremium ? soum(PLUS_PASS_PRICES_UZS.days30) : 'Free',
-    priceUnit: isPremium ? '30-day pass' : '',
+    priceMonthly: priceUzs,
+    priceUzs,
+    currency: 'UZS' as const,
+    priceLabel: priceUzs > 0 ? formatSom(priceUzs, lang) : t.free,
+    priceUnit: '',
     popular: isPremium,
     features: isPremium
-      ? [
-          `${limits.lookupsPerDay} AI lookups/day`,
-          `${limits.quizzesPerDay} quizzes/day`,
-          '50% off paid imports',
-          `30-day pass ${soum(PLUS_PASS_PRICES_UZS.days30)} or 365-day pass ${soum(PLUS_PASS_PRICES_UZS.days365)}`,
-          'One-off payment, no auto-renewal',
-        ]
-      : [
-          `${limits.lookupsPerDay} AI lookups/day`,
-          `${limits.quizzesPerDay} quizzes/day`,
-          `${plan.importLimit} free imports/day`,
-          'Access to public library',
-        ],
+      ? [t.plusLookups, t.plusFree]
+      : [t.lookupsDay(plan.aiDailyQuota), t.importsDay(plan.importLimit), t.library],
   };
 }
 
@@ -60,9 +39,9 @@ export class BillingService {
     private importCommerce: ImportCommerceService,
   ) {}
 
-  async listPlans() {
+  async listPlans(lang: PlanLang = 'en') {
     const plans = await this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } });
-    return plans.map(enrichPlan);
+    return plans.map((p) => enrichPlan(p, lang));
   }
 
   async getSubscription(userId: string) {

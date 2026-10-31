@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { planLang } from '../marketing/plan-copy';
 import { ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
@@ -24,8 +25,8 @@ export class BillingController {
   /** Raw plan rows — prefer `/marketing/plans` for Landing feature copy. */
   @Public()
   @Get('plans')
-  plans() {
-    return this.billing.listPlans();
+  plans(@Query('lang') lang?: string) {
+    return this.billing.listPlans(planLang(lang));
   }
 
   @Public()

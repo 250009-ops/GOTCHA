@@ -1,4 +1,5 @@
-import { Controller, Get, Header } from '@nestjs/common';
+import { Controller, Get, Header, Query } from '@nestjs/common';
+import { planLang } from './plan-copy';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
 import { MarketingService } from './marketing.service';
@@ -17,8 +18,8 @@ export class MarketingController {
 
   @Public()
   @Get('plans')
-  plans() {
-    return this.marketing.plans();
+  plans(@Query('lang') lang?: string) {
+    return this.marketing.plans(planLang(lang));
   }
 
   @Public()

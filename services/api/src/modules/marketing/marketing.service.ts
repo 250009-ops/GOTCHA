@@ -1,4 +1,4 @@
-import { planLimits } from '../../common/plan-limits';
+import { formatSom, planCopy, type PlanLang } from './plan-copy';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
@@ -126,12 +126,6 @@ function serializeCatalogItem(row: {
   };
 }
 
-/** W-03: public learner counts are hidden (0) until there are at least this many learners. */
-export const PUBLIC_LEARNER_MIN = 100;
-export function publicLearnerCount(n: number, min = PUBLIC_LEARNER_MIN): number {
-  return n >= min ? n : 0;
-}
-
 @Injectable()
 export class MarketingService {
   private readonly logger = new Logger(MarketingService.name);
@@ -141,10 +135,9 @@ export class MarketingService {
 
   async stats() {
     const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
-    const shown = publicLearnerCount(learnerCount);
     return {
-      learnerCount: shown,
-      displayLearnerCount: shown,
+      learnerCount,
+      displayLearnerCount: learnerCount,
     };
   }
 
@@ -152,57 +145,50 @@ export class MarketingService {
    * Public marketing pricing copy. There is NO recurring subscription in this product —
    * learners get a free allowance and pay Atmos once, per import, only when they exceed it.
    */
-  async plans() {
+  async plans(lang: PlanLang = 'en') {
+    const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = planLimits('free').lookupsPerDay;
+    const aiDailyQuota = freePlan?.aiDailyQuota ?? 50;
     const importLimit = freePlan?.importLimit ?? 15;
 
     const free = {
       id: freePlan?.id ?? 'free',
       tier: 'free' as const,
-      name: freePlan?.name ?? 'Free',
+      name: t.freeName,
       priceMonthly: 0,
-      priceLabel: '0 soʻm',
-      priceUnit: 'to start',
+      priceLabel: formatSom(0, lang),
+      priceUnit: t.freeUnit,
       aiDailyQuota,
       importLimit,
-      offlineEnabled: freePlan?.offlineEnabled ?? false,
+      offlineEnabled: false,
       unlimitedLookups: aiDailyQuota >= UNLIMITED_THRESHOLD,
-      unlimitedImports: importLimit >= UNLIMITED_THRESHOLD,
+      unlimitedImports: false,
       popular: false,
-      cta: 'Get started',
+      cta: t.freeCta,
       features: [
-        'Access to public library',
-        `${aiDailyQuota} AI lookups / day`,
-        `${planLimits('free').quizzesPerDay} quizzes / day`,
-        `${importLimit} free imports / day`,
-        'Basic SRS review',
-        '7-day reading history',
+        t.library,
+        t.lookupsDay(aiDailyQuota),
+        t.importsDay(importLimit),
+        t.review,
       ],
     };
 
     const payPerImport = {
       id: 'pay-per-import',
       tier: 'pay-per-import' as const,
-      name: 'Pay-per-import',
+      name: t.ppiName,
       priceMonthly: 0,
-      priceLabel: 'Pay as you go',
-      priceUnit: 'no subscription',
+      priceLabel: t.ppiLabel,
+      priceUnit: t.ppiUnit,
       aiDailyQuota,
       importLimit,
-      offlineEnabled: true,
+      offlineEnabled: false,
       unlimitedLookups: false,
       unlimitedImports: false,
       popular: true,
-      cta: 'Start reading for free',
-      features: [
-        'Everything in Free',
-        'No monthly fee, ever',
-        'Need more than your free imports? Pay once per import via Atmos',
-        'Price shown upfront, based on document length',
-        'Full reading analytics',
-      ],
+      cta: t.ppiCta,
+      features: [t.everythingFree, t.payOnce, t.upfront],
     };
 
     return [free, payPerImport];
