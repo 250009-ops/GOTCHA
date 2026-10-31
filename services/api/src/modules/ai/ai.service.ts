@@ -15,7 +15,7 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
-import { aiDisabledError, DailyCounter, MODERATED_PLACEHOLDER, ttsDailyLimit, withChildSafe } from './ai-safety';
+import { aiDisabledError, DailyCounter, MODERATED_PLACEHOLDER, moderateOrBlock, ttsDailyLimit, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -136,24 +136,19 @@ export class AiService {
     if (!userId || this.useMemory()) return { band: ageBand(null) };
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { aiDisabled: true, birthYear: true },
+      select: { aiDisabled: true, aiDisabledBy: true, birthYear: true },
     });
-    if (u?.aiDisabled) throw aiDisabledError();
+    if (u?.aiDisabled) throw aiDisabledError(u.aiDisabledBy);
     return { band: ageBand(u?.birthYear ?? null) };
   }
 
-  /** AI-1: OpenAI moderation on text shown to minors. Fails open (logs) if moderation is unavailable. */
+  /** AI-1: OpenAI moderation on text shown to minors. Fails CLOSED (503) if moderation is unavailable. */
   private async moderateForMinor(band: AgeBand, text: string): Promise<string> {
     if (!isMinorBand(band) || !text.trim()) return text;
     const client = this.getClient();
     if (!client) return text;
-    try {
-      const res = await client.moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 4000) });
-      return res.results?.some((r) => r.flagged) ? MODERATED_PLACEHOLDER : text;
-    } catch (err) {
-      this.logger.warn(`moderation failed: ${err instanceof Error ? err.message : err}`);
-      return text;
-    }
+    // Kai 31 Oct: fail CLOSED — if moderation can't run, the output is not shown.
+    return moderateOrBlock(client, text, (m) => this.logger.warn(`moderation failed (blocked output): ${m}`));
   }
 
   private async assertAiAvailable(settings: AiPlatformSettings) {

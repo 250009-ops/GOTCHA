@@ -3,12 +3,17 @@ import { AgeBand, isMinorBand } from '../../common/safety/age-policy';
 
 /** S7: one clear error for every AI entry point when support/admin turned AI off for this account. */
 export const AI_DISABLED_CODE = 'AI_DISABLED';
-export function aiDisabledError() {
+/** Learner switched AI off in Settings (can switch it back on there). */
+export const AI_OFF_BY_USER_CODE = 'AI_OFF_BY_USER';
+export function aiDisabledError(by?: string | null) {
   return new ForbiddenException({
     statusCode: 403,
     error: 'Forbidden',
-    code: AI_DISABLED_CODE,
-    message: 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.',
+    code: by === 'user' ? AI_OFF_BY_USER_CODE : AI_DISABLED_CODE,
+    message:
+      by === 'user'
+        ? 'You turned AI features off. Turn them back on in Settings.'
+        : 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.',
   });
 }
 
@@ -49,3 +54,24 @@ export const ttsDailyLimit = () => {
   const n = Number(process.env.TTS_DAILY_LIMIT_PER_USER ?? 300);
   return Number.isFinite(n) ? n : 300;
 };
+
+export const AI_MODERATION_UNAVAILABLE = 'AI_MODERATION_UNAVAILABLE';
+type ModerationClient = { moderations: { create(a: { model: string; input: string }): Promise<{ results?: Array<{ flagged: boolean }> }> } };
+
+/**
+ * Minors only. Flagged → placeholder. Any moderation error → 503 AI_MODERATION_UNAVAILABLE
+ * (fail closed: the unchecked AI output is never returned). The learner shows a neutral retry message.
+ */
+export async function moderateOrBlock(client: ModerationClient, text: string, onError?: (msg: string) => void): Promise<string> {
+  try {
+    const res = await client.moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 4000) });
+    if (!res || !Array.isArray(res.results)) throw new Error('empty moderation response');
+    return res.results.some((r) => r.flagged) ? MODERATED_PLACEHOLDER : text;
+  } catch (err) {
+    onError?.(err instanceof Error ? err.message : String(err));
+    throw new HttpException(
+      { statusCode: 503, code: AI_MODERATION_UNAVAILABLE, message: 'This answer could not be checked right now. Please try again.' },
+      HttpStatus.SERVICE_UNAVAILABLE,
+    );
+  }
+}

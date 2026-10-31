@@ -12,3 +12,20 @@ assert.ok(withChildSafe('SYS', 'under13').includes(CHILD_SAFE_INSTRUCTION));
 assert.equal(withChildSafe('SYS', 'adult'), 'SYS');
 assert.equal((aiDisabledError() as any).getStatus(), 403);
 console.log('ai-safety: OK');
+
+import { moderateOrBlock, MODERATED_PLACEHOLDER, AI_MODERATION_UNAVAILABLE } from './ai-safety';
+(async () => {
+  const ok = { moderations: { create: async () => ({ results: [{ flagged: false }] }) } };
+  const bad = { moderations: { create: async () => ({ results: [{ flagged: true }] }) } };
+  const down = { moderations: { create: async () => { throw new Error('timeout'); } } };
+  const empty = { moderations: { create: async () => ({}) as any } };
+  assert.equal(await moderateOrBlock(ok, 'hello'), 'hello');
+  assert.equal(await moderateOrBlock(bad, 'x'), MODERATED_PLACEHOLDER);
+  let logged = '';
+  for (const c of [down, empty]) {
+    await assert.rejects(moderateOrBlock(c, 'secret output', (m) => (logged = m)), (e: any) =>
+      e.getStatus() === 503 && e.getResponse().code === AI_MODERATION_UNAVAILABLE && !JSON.stringify(e.getResponse()).includes('secret output'));
+  }
+  assert.ok(logged);
+  console.log('moderation fail-closed: OK');
+})().catch((e) => { console.error(e); process.exit(1); });
