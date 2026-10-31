@@ -1,4 +1,5 @@
-import { IsEnum, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { CATALOG_SORTS, type CatalogSort } from '../catalog-order';
 import { Type } from 'class-transformer';
 import { AppLanguage, CefrLevel, ContentSource, ContentType } from '@prisma/client';
 
@@ -10,6 +11,11 @@ export class ContentQueryDto {
   @IsOptional()
   @IsEnum(CefrLevel)
   level?: CefrLevel;
+
+  /** `level` (default): A1/A2 first, then newest. `newest`: newest first. */
+  @IsOptional()
+  @IsIn(CATALOG_SORTS)
+  sort?: CatalogSort;
 
   @IsOptional()
   @IsString()

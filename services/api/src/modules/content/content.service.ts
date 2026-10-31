@@ -1,3 +1,4 @@
+import { catalogOrderBy, sortByCatalogOrder } from './catalog-order';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
@@ -322,6 +323,7 @@ export class ContentService {
             (i.description?.toLowerCase().includes(q) ?? false),
         );
       }
+      items = sortByCatalogOrder(items, query.sort);
       return { items, total: items.length, page: 1, pageSize: items.length, hasMore: false };
     }
 
@@ -364,7 +366,7 @@ export class ContentService {
         where,
         skip,
         take: pageSize,
-        orderBy: { publishedAt: 'desc' },
+        orderBy: catalogOrderBy(query.sort),
         include: { license: { select: { attributionText: true, status: true } } },
       }),
       this.prisma.contentItem.count({ where }),
