@@ -18,7 +18,7 @@ test('LG4-07: no false plan claims in legal copy', () => {
   // is a data-use statement, not a plan claim, so the no-ads alternatives are only applied to Terms.
   const PRIVACY_CLAIMS = /automatically renew|автоматически продлева|avtomatik ravishda yangilan|offline|unlimited|безлимит|cheksiz|\$\s?\d/i;
   for (const l of ['en', 'ru', 'uz']) {
-    assert.ok(!CLAIMS.test(readFileSync(`legal-pm/terms-${l}.html`, 'utf8')), `terms-${l}`);
+    assert.ok(!CLAIMS.test(readFileSync(`legal-pm-payments/terms-${l}.html`, 'utf8')), `terms-${l}`);
     assert.ok(!PRIVACY_CLAIMS.test(readFileSync(`legal-pm/privacy-${l}.html`, 'utf8')), `privacy-${l}`);
   }
   assert.ok(!CLAIMS.test(readFileSync('src/pages/LegalPage.tsx', 'utf8')));

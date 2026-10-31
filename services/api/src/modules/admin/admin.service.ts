@@ -2764,7 +2764,7 @@ export class AdminService {
     const aiDefaults = defaultAiPlatformSettings();
     return {
       platformName: 'GOTCHA',
-      supportEmail: 'support@gotcha.app',
+      supportEmail: 'support@gotchaa.uz',
       maintenanceMode: false,
       allowRegistrations: true,
       defaultCefr: 'a2',

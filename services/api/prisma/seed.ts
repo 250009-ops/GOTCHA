@@ -914,8 +914,8 @@ async function main() {
   });
   await prisma.platformSetting.upsert({
     where: { key: 'supportEmail' },
-    update: { value: 'support@gotcha.app' },
-    create: { key: 'supportEmail', value: 'support@gotcha.app' },
+    update: { value: 'support@gotchaa.uz' },
+    create: { key: 'supportEmail', value: 'support@gotchaa.uz' },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiEnabled' },
