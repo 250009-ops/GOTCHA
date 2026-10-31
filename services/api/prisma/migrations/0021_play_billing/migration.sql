@@ -83,9 +83,7 @@ ON CONFLICT DO NOTHING;
 
 -- Play SKUs proposed in PRICING.md §6 (PROPOSAL ids). Inactive until created in Play Console
 -- and switched on in Admin → Pricing → Store products. Prices = web list price (fee absorbed).
-INSERT INTO "store_products" ("platform", "sku", "kind", "plan_tier", "price_uzs", "active")
-VALUES ('google_play', 'plus_monthly', 'subscription', 'premium', 34990, false)
-ON CONFLICT DO NOTHING;
+-- web-launch-04 final-5: no Play subscription SKU / price seeded here (pricing ships with payments-02).
 INSERT INTO "store_products" ("platform", "sku", "kind", "import_tier_id", "price_uzs", "active")
 SELECT 'google_play', 'import_tier_' || t."min_pages" || '_' || COALESCE(t."max_pages"::text, 'plus'), 'import_tier', t."id", ROUND(t."price_usd")::int, false
 FROM "import_page_tiers" t

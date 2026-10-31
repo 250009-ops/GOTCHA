@@ -1,3 +1,6 @@
+import { resolveCoverKey } from '@gotcha/shared';
+import { DELETED_USER_NAME, assertNotDeletedUser, isDeletedAccount } from '../../common/deleted-user';
+import { notifyNewReport } from '../../common/safety/report-notify';
 import {
   BadRequestException,
   ForbiddenException,
@@ -14,7 +17,16 @@ import {
 } from '../../common/production-users';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { EditMessageDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { EditMessageDto, ReportUserDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { assertCanMessage, assertPeerVisible, GatePrisma } from '../safety/friend-gate';
+import {
+  assertNotBlocked,
+  blockedPeerIds,
+  blockUser,
+  reportUser,
+  SafetyPrisma,
+  unblockUser,
+} from './messaging-safety';
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const ONLINE_WINDOW_MS = 90 * 1000;
@@ -22,7 +34,7 @@ const TYPING_WINDOW_MS = 4 * 1000;
 const MESSAGE_EMAIL_COOLDOWN_MS = 10 * 60 * 1000;
 
 const messageInclude = {
-  sender: { select: { id: true, displayName: true, avatarUrl: true } },
+  sender: { select: { id: true, displayName: true, avatarUrl: true, email: true } },
   replyTo: {
     select: {
       id: true,
@@ -55,6 +67,24 @@ function isLiveMessagingPeer(user: {
   if (isSyntheticUserEmail(user.email)) return false;
   if (isFigmaSampleDisplayName(user.displayName)) return false;
   return true;
+}
+
+/** covers-01: content card fields; coverImageKey is the EFFECTIVE cover (null in template mode → client draws it). */
+const CONTENT_CARD_SELECT = {
+  id: true,
+  title: true,
+  coverImageKey: true,
+  coverMode: true,
+  originalCoverKey: true,
+  genre: true,
+  language: true,
+} as const;
+function cardContent<T extends { coverImageKey: string | null; coverMode: string; originalCoverKey: string | null }>(
+  c: T | null | undefined,
+): (Omit<T, 'originalCoverKey'> & { coverImageKey: string | null }) | null {
+  if (!c) return null;
+  const { originalCoverKey: _o, ...rest } = c;
+  return { ...rest, coverImageKey: resolveCoverKey(c) };
 }
 
 @Injectable()
@@ -96,6 +126,21 @@ export class MessagingService {
   }
 
   private peerSummary(user: PeerUser) {
+    if (isDeletedAccount(user)) {
+      // Privacy §11: shown as "Deleted user"; no name, email, photo, languages or presence.
+      return {
+        id: user.id,
+        displayName: DELETED_USER_NAME,
+        handle: '@deleted_user',
+        avatarUrl: null,
+        nativeLanguage: user.nativeLanguage,
+        primaryLanguage: user.nativeLanguage,
+        online: false,
+        lastSeenAt: null,
+        targetLanguages: [],
+        deleted: true,
+      };
+    }
     const primary =
       user.targetLanguages.find((t) => t.isPrimary)?.targetLanguage ??
       user.targetLanguages[0]?.targetLanguage ??
@@ -129,18 +174,18 @@ export class MessagingService {
       body: string;
       translation: string | null;
       bodyLang: AppLanguage | null;
-      senderId: string;
+      senderId: string | null;
       createdAt: Date;
       editedAt?: Date | null;
       deletedAt?: Date | null;
       replyToId?: string | null;
-      sender?: { id: string; displayName: string | null; avatarUrl: string | null };
+      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string } | null;
       replyTo?: {
         id: string;
         body: string;
         translation?: string | null;
         bodyLang?: AppLanguage | null;
-        senderId: string;
+        senderId: string | null;
         deletedAt: Date | null;
       } | null;
     },
@@ -155,7 +200,12 @@ export class MessagingService {
       translation: deleted ? null : m.translation,
       bodyLang: m.bodyLang,
       senderId: m.senderId,
-      sender: m.sender,
+      // email is selected only to detect a deleted account; it never leaves the API.
+      sender: m.sender
+        ? { id: m.sender.id, displayName: m.sender.displayName, avatarUrl: m.sender.avatarUrl, deleted: isDeletedAccount(m.sender) }
+        : m.senderId === null
+          ? { id: null, displayName: DELETED_USER_NAME, avatarUrl: null, deleted: true } // final-5 WL4-11 B: hard-deleted sender
+          : m.sender,
       mine,
       createdAt: m.createdAt,
       editedAt: m.editedAt ?? null,
@@ -192,10 +242,44 @@ export class MessagingService {
     return row;
   }
 
+  private get safety(): SafetyPrisma {
+    return this.prisma as unknown as SafetyPrisma;
+  }
+
+  async listBlocks(userId: string) {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { blockerId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: { blocked: { select: { id: true, displayName: true, avatarUrl: true } } },
+    });
+    return rows.map((r) => ({
+      userId: r.blockedId,
+      displayName: r.blocked.displayName,
+      avatarUrl: r.blocked.avatarUrl,
+      blockedAt: r.createdAt,
+    }));
+  }
+
+  block(userId: string, peerUserId: string) {
+    return blockUser(this.safety, userId, peerUserId);
+  }
+
+  unblock(userId: string, peerUserId: string) {
+    return unblockUser(this.safety, userId, peerUserId);
+  }
+
+  async report(userId: string, dto: ReportUserDto) {
+    const r = await reportUser(this.safety, userId, dto);
+    notifyNewReport(this.mail, { id: r.id, kind: 'user', reason: dto.reason });
+    return r;
+  }
+
   async listConversations(userId: string, q?: string) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const rows = await this.prisma.conversation.findMany({
       where: {
         participants: { some: { userId } },
+        ...(hidden.length ? { NOT: { participants: { some: { userId: { in: hidden } } } } } : {}),
       },
       include: {
         participants: {
@@ -212,7 +296,7 @@ export class MessagingService {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
-        content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+        content: { select: CONTENT_CARD_SELECT },
       },
       orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }],
     });
@@ -232,14 +316,14 @@ export class MessagingService {
         const unreadCount = await this.prisma.message.count({
           where: {
             conversationId: c.id,
-            senderId: { not: userId },
+            OR: [{ senderId: { not: userId } }, { senderId: null }], // final-5: messages from hard-deleted users still count as unread
             ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
           },
         });
         return {
           id: c.id,
           language: c.language,
-          content: c.content,
+          content: cardContent(c.content),
           peer,
           lastMessage: last
             ? {
@@ -282,7 +366,7 @@ export class MessagingService {
         participants: {
           include: { user: { include: { targetLanguages: true } } },
         },
-        content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+        content: { select: CONTENT_CARD_SELECT },
         messages: {
           orderBy: { createdAt: 'asc' },
           take: 200,
@@ -297,7 +381,7 @@ export class MessagingService {
     return {
       id: c.id,
       language: c.language,
-      content: c.content,
+      content: cardContent(c.content),
       peer: peerPart
         ? {
             ...this.peerSummary(peerPart.user),
@@ -314,11 +398,14 @@ export class MessagingService {
     if (dto.peerUserId === userId) {
       throw new BadRequestException('Cannot message yourself');
     }
+    await assertNotDeletedUser(this.prisma as never, dto.peerUserId);
     const peer = await this.prisma.user.findFirst({
       where: { id: dto.peerUserId, deletedAt: null },
       include: { targetLanguages: true, adminProfile: { select: { userId: true } } },
     });
     if (!peer || !isLiveMessagingPeer(peer)) throw new NotFoundException('User not found');
+    await assertNotBlocked(this.safety, userId, dto.peerUserId);
+    await assertCanMessage(this.prisma as never, userId, dto.peerUserId);
 
     const key = this.pairKey(userId, dto.peerUserId);
     let conversation = await this.prisma.conversation.findUnique({
@@ -348,6 +435,13 @@ export class MessagingService {
 
   async sendMessage(userId: string, conversationId: string, dto: SendMessageDto) {
     await this.assertParticipant(conversationId, userId);
+    const other = await this.prisma.conversationParticipant.findFirst({
+      where: { conversationId, userId: { not: userId } },
+      select: { userId: true },
+    });
+    if (other) await assertNotDeletedUser(this.prisma as never, other.userId);
+    if (other) await assertNotBlocked(this.safety, userId, other.userId);
+    if (other) await assertCanMessage(this.prisma as never, userId, other.userId);
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('Message body required');
 
@@ -495,6 +589,7 @@ export class MessagingService {
   }
 
   async suggestions(userId: string) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const myProgress = await this.prisma.readingProgress.findMany({
       where: { userId },
       select: { contentId: true },
@@ -505,7 +600,7 @@ export class MessagingService {
       // Fallback: recent active learners with any reading progress
       const peers = await this.prisma.user.findMany({
         where: {
-          id: { not: userId },
+          id: { notIn: [userId, ...hidden] },
           ...liveMessagingPeerWhere(),
           readingProgress: { some: {} },
         },
@@ -515,7 +610,7 @@ export class MessagingService {
             take: 1,
             orderBy: { lastReadAt: 'desc' },
             include: {
-              content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+              content: { select: CONTENT_CARD_SELECT },
             },
           },
         },
@@ -523,13 +618,13 @@ export class MessagingService {
       });
       return peers.map((p) => ({
         ...this.peerSummary(p),
-        reading: p.readingProgress[0]?.content ?? null,
+        reading: cardContent(p.readingProgress[0]?.content),
       }));
     }
 
     const peers = await this.prisma.user.findMany({
       where: {
-        id: { not: userId },
+        id: { notIn: [userId, ...hidden] },
         ...liveMessagingPeerWhere(),
         readingProgress: { some: { contentId: { in: contentIds } } },
       },
@@ -540,7 +635,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -549,11 +644,12 @@ export class MessagingService {
 
     return peers.map((p) => ({
       ...this.peerSummary(p),
-      reading: p.readingProgress[0]?.content ?? null,
+      reading: cardContent(p.readingProgress[0]?.content),
     }));
   }
 
   async findLearners(userId: string, q?: string, lang?: string, sameReadings?: boolean) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const query = q?.trim().replace(/^@/, '') ?? '';
     let contentIds: string[] = [];
     if (sameReadings) {
@@ -585,7 +681,7 @@ export class MessagingService {
 
     const peers = await this.prisma.user.findMany({
       where: {
-        id: { not: userId },
+        id: { notIn: [userId, ...hidden] },
         ...liveMessagingPeerWhere(),
         AND: searchAnd,
         ...(sameReadings && contentIds.length
@@ -598,7 +694,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -608,11 +704,12 @@ export class MessagingService {
 
     return peers.map((p) => ({
       ...this.peerSummary(p),
-      reading: p.readingProgress[0]?.content ?? null,
+      reading: cardContent(p.readingProgress[0]?.content),
     }));
   }
 
   async peerProfile(userId: string, peerUserId: string) {
+    await assertPeerVisible(this.prisma as unknown as GatePrisma, userId, peerUserId); // WL4-12
     const peer = await this.prisma.user.findFirst({
       where: { id: peerUserId, deletedAt: null },
       include: {
@@ -623,7 +720,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -658,10 +755,14 @@ export class MessagingService {
     return {
       ...this.peerSummary(peer),
       createdAt: peer.createdAt,
+      // P3b: lets the client show Block vs Unblock.
+      blockedByMe: !!(await this.prisma.userBlock.findUnique({
+        where: { blockerId_blockedId: { blockerId: userId, blockedId: peerUserId } },
+      })),
       stats: { booksRead, wordsLearned, chats },
       currentlyReading: peer.readingProgress[0]
         ? {
-            ...peer.readingProgress[0].content!,
+            ...cardContent(peer.readingProgress[0].content)!,
             progressPct: peer.readingProgress[0].progressPct,
           }
         : null,

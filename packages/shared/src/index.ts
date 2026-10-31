@@ -212,5 +212,10 @@ export {
 export * from './practice';
 export * from './practiceCopy';
 export * from './plural';
+export * from './limitCopy';
 export * from './apiErrors';
 export * from './promoCopy';
+export * from './payCopy';
+export * from './dailyLimits';
+export * from './coverTemplate';
+export * from './landingPoster';

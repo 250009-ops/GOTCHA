@@ -64,7 +64,14 @@ export interface LearnerCopyExt {
     known: string;
     ignore: string;
     contentNotFound: string;
+    contentLoadFailed: string;
+    markAsLabel: string;
+    tryAgain: string;
     noSegments: string;
+    stillProcessing: string;
+    chapterOf: (n: number, total: number) => string;
+    chapterN: (n: number) => string;
+    pageOf: (n: number, total: number) => string;
     backToLibrary: string;
     unknown: string;
     learning: string;
@@ -314,6 +321,7 @@ export interface LearnerCopyExt {
     noMatchSearch: string;
     reviewDue: (count: number) => string;
     wordCountSummary: (total: number, learning: number, mastered: number) => string;
+    showingCount: (shown: number, total: number) => string;
     ratedAs: (lemma: string, rating: string) => string;
     filterAll: string;
     filterDue: (count: number) => string;
@@ -435,7 +443,14 @@ const EXT_EN: LearnerCopyExt = {
     known: 'Known',
     ignore: 'Ignore',
     contentNotFound: 'Content not found',
+    contentLoadFailed: 'Could not load this book. Check your connection and try again.',
+    markAsLabel: '→ Mark as:',
+    tryAgain: 'Try again',
     noSegments: 'No content segments available',
+    stillProcessing: 'This item may still be processing.',
+    chapterOf: (n: number, total: number) => `Chapter ${n} of ${total}`,
+    chapterN: (n: number) => `Chapter ${n}`,
+    pageOf: (n: number, total: number) => `${n} of ${total}`,
     backToLibrary: 'Library',
     unknown: 'unknown',
     learning: 'learning',
@@ -529,8 +544,8 @@ const EXT_EN: LearnerCopyExt = {
     lengthNotPriced: 'This length is not priced yet. Try a shorter document or try again later.',
     allowanceReachedPaid: 'Import allowance reached. Delete an old import or pay per material size via Atmos.',
     allowanceReachedFree: 'Import allowance reached. Delete an old import to free up space — paid imports are not available right now.',
-    paidImportsHint: 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first.',
-    freeImportsHint: 'Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled.',
+    paidImportsHint: 'Paid imports are priced by page count in soʻm and paid via Atmos. Your free allowance is used first.',
+    freeImportsHint: 'Free plan: 3 imports a day and 50 pages a month. Daily limits reset at 00:00 Tashkent time; pages reset on the 1st.',
     importRemoved: 'Import removed from history',
     pageTier: (label) => `Page tier (${label})`,
     estimatedPages: 'Estimated pages',
@@ -686,6 +701,7 @@ const EXT_EN: LearnerCopyExt = {
     noMatchSearch: 'No words match your search',
     reviewDue: (count) => `Review ${count} due`,
     wordCountSummary: (total, learning, mastered) => `${total} word${total !== 1 ? 's' : ''} · ${learning} learning · ${mastered} mastered`,
+    showingCount: (shown, total) => `Showing ${shown} of ${total}`,
     ratedAs: (lemma, rating) => `"${lemma}" rated as ${rating}`,
     filterAll: 'all',
     filterDue: (count) => `Due (${count})`,
@@ -810,7 +826,14 @@ const EXT_RU: LearnerCopyExt = {
     known: 'Знаю',
     ignore: 'Игнор',
     contentNotFound: 'Контент не найден',
+    contentLoadFailed: 'Не удалось загрузить книгу. Проверьте подключение и попробуйте снова.',
+    markAsLabel: '→ Отметить как:',
+    tryAgain: 'Повторить',
     noSegments: 'Нет доступных фрагментов',
+    stillProcessing: 'Возможно, материал ещё обрабатывается.',
+    chapterOf: (n: number, total: number) => `Глава ${n} из ${total}`,
+    chapterN: (n: number) => `Глава ${n}`,
+    pageOf: (n: number, total: number) => `${n} из ${total}`,
     backToLibrary: 'Библиотека',
     unknown: 'неизвестно',
     learning: 'изучаю',
@@ -904,8 +927,8 @@ const EXT_RU: LearnerCopyExt = {
     lengthNotPriced: 'Такая длина пока не оценена. Попробуйте короче или позже.',
     allowanceReachedPaid: 'Лимит импорта исчерпан. Удалите старый импорт или оплатите через Atmos.',
     allowanceReachedFree: 'Лимит импорта исчерпан. Удалите старый импорт — платный импорт сейчас недоступен.',
-    paidImportsHint: 'Платный импорт по тарифам страниц (UZS) через Atmos. Сначала применяются бесплатные лимиты.',
-    freeImportsHint: 'Импорт сейчас бесплатен — платный через Atmos отключён. Лимиты админа действуют при включении оплаты.',
+    paidImportsHint: 'Платный импорт оплачивается по числу страниц в сумах через Atmos. Сначала используется бесплатный лимит.',
+    freeImportsHint: 'Тариф Free: 3 импорта в день и 50 страниц в месяц. Дневные лимиты обновляются в 00:00 по ташкентскому времени, страницы — 1-го числа.',
     importRemoved: 'Импорт удалён из истории',
     pageTier: (label) => `Тариф страниц (${label})`,
     estimatedPages: 'Примерно страниц',
@@ -1061,6 +1084,7 @@ const EXT_RU: LearnerCopyExt = {
     noMatchSearch: 'Нет слов по запросу',
     reviewDue: (count) => `Повторить ${count}`,
     wordCountSummary: (total, learning, mastered) => `${total} ${pluralRu(total, 'слово', 'слова', 'слов')} · ${learning} изучаю · ${mastered} освоено`,
+    showingCount: (shown, total) => `Показано ${shown} из ${total}`,
     ratedAs: (lemma, rating) => `«${lemma}» — ${rating}`,
     filterAll: 'все',
     filterDue: (count) => `К повтору (${count})`,
@@ -1090,9 +1114,9 @@ const EXT_RU: LearnerCopyExt = {
     noWordSavesYet: 'Слов пока не сохранено',
     noWordsInRange: 'Нет сохранённых слов за период',
     noBooksRead: 'Книг не прочитано',
-    booksRead: (count) => `${count} книг${count === 1 ? 'а' : count < 5 ? 'и' : ''} прочитано`,
+    booksRead: (count) => `${count} ${pluralRu(count, 'книга прочитана', 'книги прочитаны', 'книг прочитано')}`,
     booksReadFinished: (count, finished) =>
-      `${count} книг прочитано · ${finished} завершено`,
+      `Прочитано: ${count} ${pluralRu(count, 'книга', 'книги', 'книг')} · завершено: ${finished}`,
   },
   errors: {
     lookupFailed: 'Поиск не удался',
@@ -1179,17 +1203,24 @@ const EXT_UZ: LearnerCopyExt = {
   reader: {
     dictionary: 'Lugʻat',
     lookingUp: 'Qidirilmoqda…',
-    naturalMeaning: 'Ma’no',
+    naturalMeaning: 'Maʼno',
     translation: 'Tarjima',
     save: 'Saqlash',
-    known: 'Ma’lum',
-    ignore: 'E’tiborsiz',
+    known: 'Maʼlum',
+    ignore: 'Eʼtiborsiz',
     contentNotFound: 'Kontent topilmadi',
+    contentLoadFailed: 'Kitobni yuklab boʻlmadi. Internetni tekshirib, qayta urinib koʻring.',
+    markAsLabel: '→ Belgilash:',
+    tryAgain: 'Qayta urinish',
     noSegments: 'Boʻlimlar mavjud emas',
+    stillProcessing: 'Material hali qayta ishlanayotgan boʻlishi mumkin.',
+    chapterOf: (n: number, total: number) => `${n}-bob, jami ${total}`,
+    chapterN: (n: number) => `${n}-bob`,
+    pageOf: (n: number, total: number) => `${n} / ${total}`,
     backToLibrary: 'Kutubxona',
-    unknown: 'noma’lum',
+    unknown: 'nomaʼlum',
     learning: 'oʻrganilmoqda',
-    unknownOnly: 'Faqat noma’lum',
+    unknownOnly: 'Faqat nomaʼlum',
     practice: 'Mashq',
     chapters: 'Boblar',
     collapse: 'Yigʻish',
@@ -1207,7 +1238,7 @@ const EXT_UZ: LearnerCopyExt = {
     pronounceWord: 'Soʻzni talaffuz qilish',
     zoomOut: 'Kichiklashtirish',
     zoomIn: 'Kattalashtirish',
-    unknownOnlyTitle: 'Faqat noma’lum soʻzlar',
+    unknownOnlyTitle: 'Faqat nomaʼlum soʻzlar',
     practiceTitle: 'Bu bob boʻyicha test',
     goToPage: 'Bobdagi sahifaga oʻtish',
     keepReadingSample: 'Namunani oʻqishda davom etish',
@@ -1223,7 +1254,7 @@ const EXT_UZ: LearnerCopyExt = {
     trySample: 'Namuna',
     newBadge: 'Yangi',
     percentRead: (n) => `${n}% oʻqilgan`,
-    percentKnown: (n) => `${n}% ma’lum`,
+    percentKnown: (n) => `${n}% maʼlum`,
     resume: 'Davom etish',
     yourLibraryEmpty: 'Kutubxona boʻsh',
     noContentFound: 'Kontent topilmadi',
@@ -1259,7 +1290,7 @@ const EXT_UZ: LearnerCopyExt = {
     delete: 'Oʻchirish',
     previous: 'Oldingi',
     next: 'Keyingi',
-    enterCardDetails: 'Karta ma’lumotlari',
+    enterCardDetails: 'Karta maʼlumotlari',
     enterSmsCode: 'SMS-kod',
     purchaseFor: (amount) => `${amount} ga sotib olish`,
     confirmPayment: 'Toʻlovni tasdiqlash',
@@ -1279,8 +1310,8 @@ const EXT_UZ: LearnerCopyExt = {
     lengthNotPriced: 'Bu uzunlik hali baholanmagan. Qisqaroq hujjat yoki keyinroq urinib koʻring.',
     allowanceReachedPaid: 'Import limiti tugadi. Eski importni oʻchiring yoki Atmos orqali toʻlang.',
     allowanceReachedFree: 'Import limiti tugadi. Eski importni oʻchiring — pullik import hozir yoʻq.',
-    paidImportsHint: 'Pullik import Admin tariflari (UZS) boʻyicha Atmos orqali. Avval bepul limitlar qoʻllaniladi.',
-    freeImportsHint: 'Import hozir bepul — Atmos orqali pullik import oʻchirilgan. Toʻlov yoqilganda admin limitlari qoʻllanadi.',
+    paidImportsHint: 'Pullik import sahifalar soniga qarab soʻmda Atmos orqali toʻlanadi. Avval bepul limit ishlatiladi.',
+    freeImportsHint: 'Free tarifi: kuniga 3 ta import va oyiga 50 sahifa. Kunlik limitlar Toshkent vaqti bilan 00:00 da, sahifalar har oyning 1-sanasida yangilanadi.',
     importRemoved: 'Import tarixdan olib tashlandi',
     pageTier: (label) => `Sahifa tarifi (${label})`,
     estimatedPages: 'Taxminiy sahifalar',
@@ -1305,7 +1336,7 @@ const EXT_UZ: LearnerCopyExt = {
     delete: 'Oʻchirish',
     messageDeleted: 'Xabar oʻchirildi',
     you: 'Siz',
-    wordMeaning: 'Soʻz ma’nosi',
+    wordMeaning: 'Soʻz maʼnosi',
     editingMessage: 'Xabar tahrirlanmoqda',
     replyTo: (name) => `${name} ga javob`,
     deleteForEveryone: 'Hammaga oʻchirilsinmi?',
@@ -1358,7 +1389,7 @@ const EXT_UZ: LearnerCopyExt = {
     title: 'Profil',
     loading: 'Yuklanmoqda…',
     message: (name) => `${name} ga yozish`,
-    memberSince: (date) => `${date} dan a’zo`,
+    memberSince: (date) => `${date} dan aʼzo`,
     booksRead: 'Oʻqilgan kitoblar',
     wordsLearned: 'Oʻrganilgan soʻzlar',
     chats: 'Suhbatlar',
@@ -1383,7 +1414,7 @@ const EXT_UZ: LearnerCopyExt = {
     readingTime: 'Oʻqish vaqti',
     vocabularyBreakdown: 'Lugʻat tahlili',
     booksRead: 'Oʻqilgan kitoblar',
-    noDataYet: 'Hali ma’lumot yoʻq',
+    noDataYet: 'Hali maʼlumot yoʻq',
     minutesRead: 'Oʻqilgan daqiqalar',
     wordsAdded: 'Qoʻshilgan soʻzlar',
     dailyAverage: 'Kunlik oʻrtacha',
@@ -1431,11 +1462,12 @@ const EXT_UZ: LearnerCopyExt = {
     reps: 'Takror',
     actions: 'Amallar',
     dueForReview: 'Takror uchun',
-    markKnown: 'Ma’lum deb belgilash',
+    markKnown: 'Maʼlum deb belgilash',
     remove: 'Olib tashlash',
     noMatchSearch: 'Qidiruvga mos soʻz yoʻq',
     reviewDue: (count) => `${count} ta takror`,
     wordCountSummary: (total, learning, mastered) => `${total} soʻz · ${learning} oʻrganilmoqda · ${mastered} oʻzlashtirilgan`,
+    showingCount: (shown, total) => `${total} tadan ${shown} tasi koʻrsatilmoqda`,
     ratedAs: (lemma, rating) => `«${lemma}» — ${rating}`,
     filterAll: 'hammasi',
     filterDue: (count) => `Muddat (${count})`,

@@ -1,11 +1,13 @@
-import { normalize } from '@gotcha/shared';
-import { Injectable, NotFoundException, BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { canReadUserImport } from '../content/user-import-privacy';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
+import { shuffleQuestionOptions } from './shuffle-options';
+import { redactSession } from './practice-redact';
 
 @Injectable()
 export class PracticeService {
@@ -16,15 +18,22 @@ export class PracticeService {
   ) {}
 
   async startSession(userId: string, dto: StartPracticeDto) {
-    // BUG-02: chapter sessions never had flashcard questions (0/0 → score null). Word review lives in the
-    // daily engine now (GET /practice/daily); `mixed` is engine-only too.
-    if (dto.practiceType === PracticeType.flashcard || dto.practiceType === PracticeType.mixed) {
-      throw new BadRequestException({ message: 'Use GET /practice/daily for word review', code: 'use_daily_practice' });
-    }
-    await this.limits.assertQuizAllowed(userId);
-    if (!dto.segmentId) {
+    if (!dto.segmentId && dto.practiceType !== PracticeType.flashcard) {
       throw new BadRequestException('segmentId required for this practice type');
     }
+    // Flashcards never count as a quiz (wlive behaviour).
+    if (dto.practiceType === PracticeType.flashcard) return this.createQuizSession(userId, dto);
+    // PAY2-04: claim the quiz slot atomically up front; give it back if no quiz is delivered.
+    await this.limits.reserveQuizSlot(userId);
+    try {
+      return await this.createQuizSession(userId, dto);
+    } catch (e) {
+      await this.limits.releaseQuizSlot(userId);
+      throw e;
+    }
+  }
+
+  private async createQuizSession(userId: string, dto: StartPracticeDto) {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -39,6 +48,7 @@ export class PracticeService {
       });
       if (!segment) throw new NotFoundException('Segment not found');
       const item = await this.prisma.contentItem.findUnique({ where: { id: segment.contentId } });
+      if (!item || !canReadUserImport(item, userId)) throw new NotFoundException('Segment not found');
       if (item && requiresCatalogPayment(item)) {
         const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
         if (!catalogAccessGranted({ item, userId, purchasedIds })) {
@@ -54,10 +64,14 @@ export class PracticeService {
     const questionLang =
       native && native !== passageLang ? native : ui && ui !== passageLang ? ui : ui ?? native ?? 'uz';
 
-    const questions = await this.ai.generateQuiz(segmentText, dto.practiceType, {
-      questionLang,
-      passageLang,
-    });
+    const questions =
+      dto.practiceType === PracticeType.flashcard
+        ? []
+        : shuffleQuestionOptions(await this.ai.generateQuiz(segmentText, dto.practiceType, {
+            questionLang,
+            passageLang,
+            userId,
+          }));
 
     const session = await this.prisma.practiceSession.create({
       data: {
@@ -79,11 +93,8 @@ export class PracticeService {
       include: { questions: { orderBy: { questionIndex: 'asc' } } },
     });
 
-    await this.limits.incrementQuizUsage(userId);
-
     return redactSession(session);
   }
-
   async submitAnswers(userId: string, sessionId: string, dto: SubmitPracticeDto) {
     const session = await this.prisma.practiceSession.findFirst({
       where: { id: sessionId, userId },
@@ -91,66 +102,43 @@ export class PracticeService {
     });
     if (!session) throw new NotFoundException('Practice session not found');
     if (session.completedAt) throw new BadRequestException('Session already completed');
-    if (session.questionCount === 0) throw new BadRequestException('Session has no questions');
 
-    // BUG-01 / BUG-03: validate before grading anything. Unknown ids reject the whole submission (nothing is
-    // completed or revealed); duplicate answers for one question are rejected rather than counted twice.
-    const byId = new Map(session.questions.map((q) => [q.id, q]));
-    const seen = new Set<string>();
+    let correctCount = 0;
+    const results = [];
+
     for (const answer of dto.answers) {
-      if (!byId.has(answer.questionId)) throw new BadRequestException(`Unknown questionId: ${answer.questionId}`);
-      if (seen.has(answer.questionId)) throw new BadRequestException(`Duplicate answer for questionId: ${answer.questionId}`);
-      seen.add(answer.questionId);
+      const question = session.questions.find((q) => q.id === answer.questionId);
+      if (!question) continue;
+
+      const isCorrect =
+        answer.userAnswer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
+      if (isCorrect) correctCount++;
+
+      const saved = await this.prisma.practiceAnswer.create({
+        data: {
+          sessionId,
+          questionId: question.id,
+          userAnswer: answer.userAnswer,
+          isCorrect,
+        },
+      });
+      // Revealed only now, after the server has graded the answer (W-24).
+      results.push({ ...saved, correctAnswer: question.correctAnswer, explanation: question.explanation });
     }
 
-    // m7: grade in memory, then claim completion and write answers in one transaction, so two concurrent
-    // submissions can't both complete the session or double-insert answers.
-    const graded = dto.answers.map((answer) => {
-      const question = byId.get(answer.questionId)!;
-      // case/punctuation/ё=е/Uzbek apostrophes
-      return { question, userAnswer: answer.userAnswer, isCorrect: normalize(answer.userAnswer) === normalize(question.correctAnswer) };
-    });
-    const correctCount = graded.filter((g) => g.isCorrect).length;
-    const { updated, results } = await this.prisma.$transaction(async (tx) => {
-      const claim = await tx.practiceSession.updateMany({
-        where: { id: sessionId, userId, completedAt: null },
-        data: { correctCount, completedAt: new Date() },
-      });
-      if (claim.count !== 1) throw new ConflictException('Session already completed');
-      const results = [];
-      for (const g of graded) {
-        const saved = await tx.practiceAnswer.create({ data: { sessionId, questionId: g.question.id, userAnswer: g.userAnswer, isCorrect: g.isCorrect } });
-        results.push({ ...saved, correctAnswer: g.question.correctAnswer, explanation: g.question.explanation });
-      }
-      const updated = await tx.practiceSession.findUniqueOrThrow({ where: { id: sessionId } });
-      return { updated, results };
+    const updated = await this.prisma.practiceSession.update({
+      where: { id: sessionId },
+      data: { correctCount, completedAt: new Date() },
     });
 
-    // Unanswered questions count as wrong; score is always within [0, 1].
-    return { session: updated, results, score: Math.min(1, correctCount / session.questionCount) };
+    return { session: updated, results, score: correctCount / session.questionCount };
   }
 
   async getSession(userId: string, sessionId: string) {
     const session = await this.prisma.practiceSession.findFirst({
       where: { id: sessionId, userId },
-      include: { questions: { orderBy: { questionIndex: 'asc' } }, answers: true },
+      include: { questions: true, answers: true },
     });
-    if (!session) throw new NotFoundException('Practice session not found'); // BUG-04: no 200 + empty body
-    // Answers are only revealed once the session has been submitted.
-    return session.completedAt ? session : redactSession(session);
+    return session ? redactSession(session) : session;
   }
-}
-
-/**
- * Strip answer keys from questions before a session is graded. `correctAnswer` is kept as an
- * empty string (not removed) so already-released Android builds, whose model declares it
- * non-null, still deserialize. Graded results carry the real answer + explanation.
- */
-function redactSession<T extends { questions: Array<{ correctAnswer: string; explanation: string | null }> }>(
-  session: T,
-): T {
-  return {
-    ...session,
-    questions: session.questions.map((q) => ({ ...q, correctAnswer: '', explanation: null })),
-  };
 }

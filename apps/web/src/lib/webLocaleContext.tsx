@@ -1,3 +1,4 @@
+import { localeFromQuery } from './queryLocale';
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { LANGUAGE_META, type AppLanguage } from '@gotcha/shared';
@@ -26,6 +27,9 @@ export function WebLocaleProvider({ children }: { children: ReactNode }) {
   const [locale, setLocaleState] = useState<WebLocale>(() => detectWebLocale(searchParams));
 
   useEffect(() => {
+    // S3c: ?lang= / ?ui= translate the page and are remembered for the next visit.
+    const fromQuery = localeFromQuery(searchParams);
+    if (fromQuery) persistWebLocale(fromQuery);
     setLocaleState(detectWebLocale(searchParams));
   }, [searchParams]);
 

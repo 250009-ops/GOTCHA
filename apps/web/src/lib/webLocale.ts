@@ -1,4 +1,5 @@
 import { APP_LANGUAGES, type AppLanguage } from '@gotcha/shared';
+import { localeFromQuery } from './queryLocale';
 
 export type WebLocale = AppLanguage;
 
@@ -95,7 +96,7 @@ function browserRuUzHint(): WebLocale | null {
 
 /** Detect locale: explicit ?lang= → saved choice → domain → RU/UZ browser hint → Uzbek default. */
 export function detectWebLocale(searchParams?: URLSearchParams): WebLocale {
-  const fromQuery = searchParams?.get('lang')?.trim().toLowerCase();
+  const fromQuery = localeFromQuery(searchParams);
   if (fromQuery && isWebLocale(fromQuery)) return fromQuery;
 
   try {

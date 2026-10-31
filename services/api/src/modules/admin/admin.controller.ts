@@ -1,3 +1,4 @@
+import { jobHealth } from '../../common/jobs/job-health';
 import {
   BadRequestException,
   Body,
@@ -29,6 +30,8 @@ const jsonSafe = (v: unknown) => JSON.parse(JSON.stringify(v));
 import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto, RefundPaymentDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
+const actorIdOf = (u?: AuthUserPayload): string | null => ((u as { sub?: string; id?: string } | undefined)?.sub ?? (u as { id?: string } | undefined)?.id ?? null);
+
 @ApiTags('admin')
 @Controller('admin')
 @UseGuards(RolesGuard)
@@ -57,6 +60,13 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor, AdminRole.moderator)
   requestPasswordReset(@CurrentUser() user: AuthUserPayload) {
     return this.admin.requestPasswordReset(user.sub);
+  }
+
+  /** LG4-09: retention/deletion job health (false = a job failed; see lastError). */
+  @Get('health/jobs')
+  @Roles(AdminRole.superadmin, AdminRole.moderator)
+  jobsHealth() {
+    return jobHealth();
   }
 
   @Get('dashboard')
@@ -103,9 +113,9 @@ export class AdminController {
 
   @Post('users/:id/adjust-tier')
   @Roles(AdminRole.superadmin)
-  async adjustUserTier(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string, @Body() body: { tier?: string }) {
-    const res = await this.admin.adjustUserTier(id, String(body.tier ?? ''));
-    await this.ops.audit(actor.sub, 'user.adjust_tier', 'user', id, { tier: String(body.tier ?? '') });
+  async adjustUserTier(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string, @Body() body: { tier?: string; days?: number; until?: string }) {
+    const res = await this.admin.adjustUserTier(id, String(body.tier ?? ''), { days: body.days, until: body.until });
+    await this.ops.audit(actor.sub, 'user.adjust_tier', 'user', id, { tier: String(body.tier ?? ''), days: body.days ?? null, until: body.until ?? null });
     return res;
   }
 
@@ -127,8 +137,7 @@ export class AdminController {
   }
 
   /**
-   * Full refund: claim → Atmos reverse (Atmos has no idempotency key; the claim dedupes) → finalize + audit. The
-   * Idempotency-Key header is only recorded in the audit log. Local-only (no money moved) only when
+   * Full refund: claim → Atmos reverse (idempotency key) → finalize + audit. Local-only (no money moved) only when
    * ATMOS_SANDBOX is explicitly true. Repeating the call for a refunded payment returns the existing result.
    */
   @Post('payments/:id/refund')
@@ -149,27 +158,10 @@ export class AdminController {
     return this.ops.reconcileRefunds();
   }
 
-  /**
-   * N-M2: close a stuck `refunding` payment after checking the Atmos cabinet (money already returned by reverse or
-   * manual transfer). Does NOT call Atmos. Reason required; audited as payment.refund.finalized_manually.
-   */
-  @Post('payments/:id/refund/finalize')
-  @Roles(AdminRole.superadmin)
-  finalizeRefund(
-    @CurrentUser() actor: AuthUserPayload,
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() body: RefundPaymentDto,
-  ) {
-    return this.ops.finalizeRefund(actor.sub, id, body.reason ?? '');
-  }
-
   @Delete('users/:id')
   @Roles(AdminRole.superadmin)
-  async hardDeleteUser(@CurrentUser() actor: AuthUserPayload, @Param('id') id: string) {
-    const res = await this.admin.hardDeleteUser(id);
-    // entityId kept in metadata too: the row is gone, the audit trail is not.
-    await this.ops.audit(actor.sub, 'user.delete', 'user', id, { userId: id });
-    return res;
+  hardDeleteUser(@Param('id') id: string, @Query('confirm') confirm?: string, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.hardDeleteUser(id, { confirm, actorId: actorIdOf(user) });
   }
 
   @Get('content')
@@ -295,6 +287,13 @@ export class AdminController {
   uploadCover(@Param('id') id: string, @UploadedFile() file: Express.Multer.File | undefined) {
     if (!file) throw new BadRequestException('File is required');
     return this.admin.uploadContentCover(id, file);
+  }
+
+  /** covers-01: 'Use template' / 'Use upload' / 'Revert to original' per book. */
+  @Patch('content/:id/cover-mode')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  setCoverMode(@Param('id') id: string, @Body() body: { coverMode?: unknown }, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.setContentCoverMode(id, body?.coverMode, actorIdOf(user));
   }
 
   @Patch('content/:id/reingest')
@@ -480,8 +479,28 @@ export class AdminController {
     return this.admin.aiUsage(range);
   }
 
+  /** final-5 A4/A5: Free 20 lookups / 10 quizzes, Plus 200 quizzes, Free imports 3/day + 50 pages/month (platform_settings). */
+  @Get('plan-limits')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
+  planLimits() {
+    return this.admin.getPlanLimitsConfig();
+  }
+
+  @Patch('plan-limits')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updatePlanLimits(@Body() body: Record<string, unknown>, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.updatePlanLimitsConfig(body, actorIdOf(user));
+  }
+
+  /** final-5 A10: self-service deletion requests (anonymised, data purged) and their 1-year hard-purge date. */
+  @Get('users-deletion-requests')
+  @Roles(AdminRole.superadmin, AdminRole.moderator)
+  deletionRequests() {
+    return this.admin.listDeletionRequests();
+  }
+
   @Patch('ai-usage/limits')
-  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  @Roles(AdminRole.superadmin, AdminRole.editor)
   updateAiUsageLimits(@Body() body: UpdateAiLimitsDto) {
     return this.admin.updateSettings({
       aiDefaultUserQuota: body.aiDefaultUserQuota,
@@ -577,6 +596,26 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.moderator)
   updateTicket(@Param('id') id: string, @Body() body: Record<string, unknown>) {
     return this.admin.updateTicket(id, body);
+  }
+
+  @Get('plus-settings')
+  @Roles(AdminRole.superadmin)
+  plusSettings() {
+    return this.admin.plusSettings();
+  }
+
+  @Get('ai/lookup-costs')
+  @Roles(AdminRole.superadmin)
+  lookupCosts(@Query('days') days?: string) {
+    return this.admin.lookupCostSummary(days);
+  }
+
+  @Patch('plus-settings')
+  @Roles(AdminRole.superadmin)
+  async updatePlusSettings(@CurrentUser() actor: AuthUserPayload, @Body() body: Record<string, unknown>) {
+    const res = await this.admin.updatePlusSettings(body);
+    await this.ops.audit(actor.sub, 'billing.plus_settings', 'platform_setting', 'plus', body as never);
+    return res;
   }
 
   @Get('settings')

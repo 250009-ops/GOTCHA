@@ -116,6 +116,8 @@ export interface ContentItem {
   cefrLevel: CefrLevel;
   genre?: string | null;
   coverImageUrl?: string | null;
+  /** covers-01: template | upload | original (API). template ⇒ coverImageUrl is null and the code-drawn cover renders. */
+  coverMode?: 'template' | 'upload' | 'original' | null;
   authorName?: string | null;
   wordCount: number;
   segmentCount?: number;
@@ -200,7 +202,8 @@ export interface SubscriptionPlan {
   priceMonthly?: string | number | null;
   priceLabel?: string;
   priceUnit?: string;
-  aiDailyQuota: number;
+  /** null = no daily lookup cap (Plus, 31 Oct 14:40). */
+  aiDailyQuota: number | null;
   importLimit: number;
   offlineEnabled: boolean;
   popular?: boolean;
@@ -217,7 +220,13 @@ export interface SubscriptionInfo {
   usage: {
     lookupsToday: number;
     quizzesToday: number;
-    quota: number;
+    /** null = no daily lookup cap (Plus). */
+    quota: number | null;
+    /** final-5: daily quiz cap (null = no cap). */
+    quizQuota?: number | null;
+    /** final-5: next 00:00 Asia/Tashkent. */
+    resetAt?: string;
+    timezone?: string;
     importAllowance?: {
       gatewayEnabled: boolean;
       resetCycle: string;

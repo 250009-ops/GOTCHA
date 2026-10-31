@@ -1,4 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
+import { buildLabel } from '../lib/buildInfo';
+import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
+import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -24,7 +28,10 @@ import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
-import { practiceCopyFor } from '@gotcha/shared';
+import { persistLearnerLocale } from '../lib/learnerLocale';
+import type { UiLanguage } from '@gotcha/shared';
+import { payCopyFor, practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
+import { usePaymentsEnabled } from '../lib/limits';
 import { applyAppTheme } from '../lib/appTheme';
 import {
   CEFR_LEVELS,
@@ -52,8 +59,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** WL4-08: Row shares its label with the control inside it (sliders/toggles/selects get an accessible name). */
+const RowLabel = createContext<string | undefined>(undefined);
+
 function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
+    <RowLabel.Provider value={label}>
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
       <div className="min-w-0 sm:flex-1">
         <div className="text-sm font-medium text-[#364153]">{label}</div>
@@ -63,14 +74,17 @@ function Row({ label, description, children }: { label: string; description?: st
         {children}
       </div>
     </div>
+    </RowLabel.Provider>
   );
 }
 
 function RangeSlider({ value, min, max, step, onChange }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
   const pct = ((value - min) / (max - min)) * 100;
+  const label = useContext(RowLabel);
   return (
     <input
       type="range"
+      aria-label={label}
       min={min}
       max={max}
       step={step}
@@ -83,9 +97,13 @@ function RangeSlider({ value, min, max, step, onChange }: { value: number; min: 
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  const label = useContext(RowLabel);
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn('relative inline-flex h-6 w-8 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}
     >
@@ -94,13 +112,13 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function ModalShell({ title, onClose, children, closeLabel }: { title: string; onClose: () => void; children: React.ReactNode; closeLabel?: string }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <span className="text-sm font-semibold text-gray-900">{title}</span>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
+          <button type="button" onClick={onClose} aria-label={closeLabel} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -151,7 +169,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <ModalShell title={copy.settings.changePassword} onClose={onClose}>
+    <ModalShell title={copy.settings.changePassword} onClose={onClose} closeLabel={copy.common.cancel}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.currentPassword}</label>
@@ -194,7 +212,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           type="button"
           onClick={() => void submit()}
           disabled={saving}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.settings.updatePassword}
@@ -281,8 +299,9 @@ function TargetLanguageModal({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.cefrLevel}</label>
+          <label htmlFor="settings-cefr" className="text-xs font-semibold text-[#4a5565]">{copy.settings.cefrLevel}</label>
           <select
+            id="settings-cefr"
             value={cefrLevel}
             onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
             className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
@@ -302,7 +321,7 @@ function TargetLanguageModal({
           type="button"
           onClick={() => void submit()}
           disabled={saving || (mode === 'add' && available.length === 0)}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {mode === 'add' ? copy.settings.addLanguage : copy.settings.saveLanguage}
@@ -331,7 +350,8 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
-  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'uz');
+  // WL4-05: show the language the UI is actually in (local choice wins over a stale server value).
+  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(locale as AppLanguage);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
@@ -354,9 +374,12 @@ export default function SettingsPage() {
     if (user) {
       setDisplayName(user.displayName ?? '');
       setNativeLanguage(user.nativeLanguage ?? 'en');
-      setUiLanguage(user.uiLanguage ?? 'uz');
     }
   }, [user]);
+
+  useEffect(() => {
+    setUiLanguage(locale as AppLanguage);
+  }, [locale]);
 
   useEffect(() => {
     api<CatalogLanguage[]>('/content/languages')
@@ -398,6 +421,9 @@ export default function SettingsPage() {
   const saveAll = async () => {
     setSaving(true);
     try {
+      // W-21a: the header/localStorage locale used to win over Settings (a second PATCH reverted it).
+      // Persist the chosen UI language locally first so header, storage and server agree.
+      if ((UI_LANGUAGES as readonly string[]).includes(uiLanguage)) persistLearnerLocale(uiLanguage as UiLanguage);
       await Promise.all([
         updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage, uiLanguage }),
         updatePreferences({
@@ -419,10 +445,18 @@ export default function SettingsPage() {
   };
 
   const plan = subscription?.subscription?.plan;
-  const quota = subscription?.usage.quota ?? plan?.aiDailyQuota ?? 50;
+  // Plus (31 Oct 14:40): quota null = no daily lookup cap. Show the count only; never a number or a limit claim.
+  const rawQuota = subscription ? subscription.usage.quota : (plan?.aiDailyQuota ?? null);
+  const quota = typeof rawQuota === 'number' && rawQuota > 0 && rawQuota < 1_000_000 ? rawQuota : null;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
-  const usagePct = quota > 0 && quota < 1_000_000 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
+  const usagePct = quota !== null ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const importAllowance = subscription?.usage.importAllowance;
+  // final-5 B5: real limits and counters; every reset is 00:00 Asia/Tashkent (pages: the 1st).
+  const limitCopy = LIMIT_COPY[limitLang(locale)];
+  const rawQuizQuota = subscription?.usage.quizQuota;
+  const quizQuota = typeof rawQuizQuota === 'number' && rawQuizQuota > 0 && rawQuizQuota < 1_000_000 ? rawQuizQuota : null;
+  const quizzesToday = subscription?.usage.quizzesToday ?? 0;
+  const payments = usePaymentsEnabled();
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
     () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),
@@ -469,7 +503,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => void saveAll()}
           disabled={saving}
-          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
+          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.common.saveChanges}
@@ -480,6 +514,9 @@ export default function SettingsPage() {
         <Row label={copy.settings.photo} description={copy.settings.photoHint}>
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
+            {isUnder13(user) ? (
+              <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[locale === 'ru' || locale === 'uz' ? locale : 'en']}</span>
+            ) : (
             <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
               {avatarBusy ? copy.settings.uploading : copy.settings.changePhoto}
               <input
@@ -499,6 +536,7 @@ export default function SettingsPage() {
                 }}
               />
             </label>
+            )}
           </div>
         </Row>
         <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
@@ -512,26 +550,28 @@ export default function SettingsPage() {
         </Row>
         <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
           <select
+            aria-label={copy.settings.nativeLanguage}
             value={nativeLanguage}
             onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
             className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
-                {l.flagEmoji} {l.name}
+                {l.flagEmoji} {(l as { nativeName?: string }).nativeName || l.name}
               </option>
             ))}
           </select>
         </Row>
         <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
           <select
+            aria-label={copy.settings.appLanguage}
             value={uiLanguage}
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
             className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
-                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
+                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].nativeName}
               </option>
             ))}
           </select>
@@ -583,6 +623,7 @@ export default function SettingsPage() {
                     onClick={() => void handleRemoveLanguage(tl.targetLanguage)}
                     className="p-1.5 rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
                     title={copy.settings.removeLanguage}
+                    aria-label={copy.settings.removeLanguage}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -590,6 +631,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setLangModal({ mode: 'edit', existing: tl })}
+                  aria-label={copy.settings.editTargetLanguage}
                   className="p-1.5 rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -689,6 +731,14 @@ export default function SettingsPage() {
         </Row>
       </Section>
 
+      <Section title={aiSwitchText(locale).title}>
+        <AiSwitch lang={locale} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
+      </Section>
+
+      <Section title={deleteAccountText(locale).title}>
+        <DeleteAccount lang={locale} onDeleted={() => { logout(); window.location.assign('/'); }} />
+      </Section>
+
       <Section title={copy.settings.usageImports}>
         <div className="p-4 sm:p-5 min-w-0">
           {subLoading ? (
@@ -702,33 +752,30 @@ export default function SettingsPage() {
                 className="rounded-[14px] p-4 sm:p-5 min-w-0"
                 style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
               >
-                <div className="rounded-[14px] text-white min-w-0">
+                <div className="rounded-[14px] text-g-on-cta min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
-                      <div className="text-xl sm:text-2xl font-bold mt-1">{copy.settings.payPerImport}</div>
+                      <div className="text-xl sm:text-2xl font-bold mt-1">{payments ? copy.settings.payPerImport : subscription?.subscription ? (plan?.name ?? 'Plus') : limitCopy.freePlan}</div>
                     </div>
                     <Zap className="w-6 h-6 text-white shrink-0" />
                   </div>
                   <div className="space-y-1.5 py-4">
                     {[
-                      copy.settings.aiLookupsLine(lookupsToday, quota === 0 || quota >= 1_000_000 ? '∞' : String(quota)),
+                      quota !== null
+                        ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
+                        : copy.settings.aiLookupsLine(lookupsToday, null),
+                      quizQuota !== null ? limitCopy.quizzesLeft(Math.max(0, quizQuota - quizzesToday), quizQuota) : null,
                       importAllowance
-                        ? copy.settings.freeImportsLine(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
+                        ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                         : plan?.importLimit && plan.importLimit < 1_000_000
                           ? copy.settings.importLimitLine(plan.importLimit)
                           : null,
                       importAllowance
-                        ? copy.settings.freePagesLine(
-                            importAllowance.monthlyPagesRemaining,
-                            importAllowance.monthlyFreePageLimit,
-                            importAllowance.resetCycle === 'daily'
-                              ? copy.billing.today
-                              : importAllowance.resetCycle === 'yearly'
-                                ? copy.billing.thisYear
-                                : copy.billing.thisMonth,
-                          )
+                        ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                         : null,
+                      limitCopy.dailyReset,
+                      importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
                       copy.settings.publicLibraryAccess,
                     ].filter(Boolean).map((f) => (
                       <div key={f as string} className="flex items-start gap-2 text-sm">
@@ -737,6 +784,7 @@ export default function SettingsPage() {
                       </div>
                     ))}
                   </div>
+                  {payments && (<>
                   <button
                     type="button"
                     onClick={() => navigate('/app/import')}
@@ -744,6 +792,14 @@ export default function SettingsPage() {
                   >
                     <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/payments')}
+                    className="w-full min-w-0 h-9 px-3 rounded-[14px] text-white/90 text-sm font-medium underline hover:text-white"
+                  >
+                    {payCopyFor(locale)['history.title']}
+                  </button>
+                  </>)}
                 </div>
               </div>
 
@@ -751,10 +807,10 @@ export default function SettingsPage() {
                 <div>
                   <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
                     <span>{copy.settings.aiLookupsToday}</span>
-                    <span>{lookupsToday}/{quota === 0 || quota >= 1_000_000 ? '∞' : quota}</span>
+                    <span>{quota === null ? lookupsToday : `${lookupsToday}/${quota}`}</span>
                   </div>
                   <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === 0 || quota >= 1_000_000 ? 4 : usagePct}%` }} />
+                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === null ? 4 : usagePct}%` }} />
                   </div>
                 </div>
                 {importAllowance ? (
@@ -802,6 +858,7 @@ export default function SettingsPage() {
           {copy.settings.signOut}
         </Button>
       </div>
+      <p data-testid="build-id" className="text-center text-[11px] text-[#99a1af] select-all">{buildLabel()}</p>
     </div>
   );
 }

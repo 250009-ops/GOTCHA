@@ -1,6 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { api } from '../lib/api';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
@@ -10,6 +9,8 @@ import {
   loadPendingImport,
   type PendingImport,
 } from '../lib/importBilling';
+import { paymentKindOf, plusSuccessLine } from '../lib/payments';
+import { PayExpired, PayPending, PayResult, PayButton, PayTrust, usePay, usePaymentPolling } from '../components/payments';
 
 type ImportItem = {
   id: string;
@@ -61,47 +62,49 @@ export default function ImportPaymentReturnPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const copy = useLearnerCopy();
-  const [message, setMessage] = useState(copy.importReturn.confirming);
+  const { t, errOr } = usePay();
+  const paymentId = params.get('paymentId');
+  const [payment, setPayment] = useState<{ status: string; contentId?: string | null; contentFormat?: string | null; needsAttention?: boolean; account?: string } | null>(null);
+  const [phase, setPhase] = useState<'polling' | 'importing' | 'done'>('polling');
+  const [plusUntil, setPlusUntil] = useState<string | null>(null);
+  const ran = useRef(false);
 
   useEffect(() => {
-    const paymentId = params.get('paymentId');
-    if (!paymentId) {
-      toast.error(copy.importReturn.missingReference);
+    if (!paymentId) { toast.error(copy.importReturn.missingReference); navigate('/app/import', { replace: true }); }
+  }, [paymentId, navigate, copy]);
+
+  // 2 s for 20 s, then 10 s up to 2 min (PAYMENTS §6). Webhook or Atmos status fallback flips it to paid.
+  const poll = usePaymentPolling(async () => {
+    const p = await getImportPayment(paymentId!);
+    setPayment(p as never);
+    return p as { status: string; needsAttention?: boolean };
+  }, Boolean(paymentId));
+
+  useEffect(() => {
+    if (!paymentId || !payment || payment.status !== 'paid' || ran.current) return;
+    ran.current = true;
+    const kind = paymentKindOf(payment);
+    if (kind === 'plus') {
+      // 11d: "Plus is active until {date}. No daily limit on word lookups." (pay-copy.json plus.successSub), date from the pass.
+      api<{ expiresAt: string | null }>('/billing/plus/offer').then((o) => setPlusUntil(o.expiresAt)).catch(() => undefined);
+      setPhase('done'); return;
+    }
+    if (kind === 'catalog' && payment.contentId) {
+      // Book resume: the purchase unlocks the content; reopen it in the reader.
+      toast.success(copy.importReturn.paymentConfirmed);
+      navigate(`/app/read/${payment.contentId}`, { replace: true });
+      return;
+    }
+    const pending = loadPendingImport();
+    if (!pending || pending.paymentId !== paymentId) {
+      sessionStorage.setItem('gotcha_paid_payment_id', paymentId);
+      toast.success(copy.importReturn.paymentConfirmed);
       navigate('/app/import', { replace: true });
       return;
     }
-
-    let cancelled = false;
-    (async () => {
-      try {
-        // Poll until paid (webhook or Atmos invoice status).
-        let paid = false;
-        for (let i = 0; i < 20 && !cancelled; i++) {
-          const payment = await getImportPayment(paymentId);
-          if (payment.status === 'paid') {
-            paid = true;
-            break;
-          }
-          setMessage(copy.importReturn.waitingAtmos);
-          await new Promise((r) => setTimeout(r, 1500));
-        }
-        if (!paid) {
-          toast.error(copy.importReturn.paymentNotConfirmedToast);
-          navigate('/app/import', { replace: true });
-          return;
-        }
-
-        const pending = loadPendingImport();
-        if (!pending || pending.paymentId !== paymentId) {
-          // Paid but no pending payload — user can import with this paymentId from Import page.
-          sessionStorage.setItem('gotcha_paid_payment_id', paymentId);
-          toast.success(copy.importReturn.paymentConfirmed);
-          navigate('/app/import', { replace: true });
-          return;
-        }
-
-        setMessage(copy.importReturn.importing);
-        const item = await runPendingImport(pending, copy.importReturn.reselectFile);
+    setPhase('importing');
+    runPendingImport(pending, copy.importReturn.reselectFile)
+      .then((item) => {
         clearPendingImport();
         if (item.ingestionStatus === 'ready' && item.content?.id) {
           toast.success(copy.importReturn.importReady);
@@ -110,21 +113,43 @@ export default function ImportPaymentReturnPage() {
         }
         toast.success(copy.importReturn.importSubmitted);
         navigate('/app/import', { replace: true });
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : copy.importReturn.couldNotFinishImport);
+      })
+      .catch((err) => {
+        toast.error(errOr(err, copy.importReturn.couldNotFinishImport));
         navigate('/app/import', { replace: true });
-      }
-    })();
+      });
+  }, [payment, paymentId, navigate, copy, errOr]);
 
-    return () => {
-      cancelled = true;
-    };
-  }, [params, navigate, copy]);
+  const startAgain = () => {
+    const kind = payment ? paymentKindOf(payment) : 'import';
+    if (kind === 'plus') navigate('/app/plus', { replace: true });
+    else if (kind === 'catalog' && payment?.contentId) navigate(`/app/read/${payment.contentId}`, { replace: true });
+    else navigate('/app/import', { replace: true });
+  };
 
+  const status = payment?.status ?? 'pending';
   return (
-    <div className="min-h-[60vh] flex flex-col items-center justify-center gap-3 text-sm text-slate-600">
-      <Loader2 className="w-6 h-6 animate-spin text-g-blue-700" />
-      <p>{message}</p>
+    <div className="min-h-[60vh] mx-auto w-full max-w-md flex flex-col items-center justify-center gap-4 px-4 py-8">
+      {status === 'pending' && (
+        <PayPending slow={poll.slow} reference={payment?.account ?? null} needsAttention={payment?.needsAttention} onCheckAgain={poll.checkAgain} />
+      )}
+      {status === 'paid' && phase !== 'done' && (
+        <PayResult tone="ok" title={t('success.title')} body={copy.importReturn.importing} />
+      )}
+      {status === 'paid' && phase === 'done' && (
+        <PayResult tone="ok" title={t('plus.success')} body={plusUntil ? plusSuccessLine(t('plus.successSub'), plusUntil) : t('plus.noRenew')}>
+          <PayButton type="button" label={t('plus.ctaShort')} onClick={() => navigate('/app/plus', { replace: true })} />
+        </PayResult>
+      )}
+      {status === 'expired' && <PayExpired onStartAgain={startAgain} />}
+      {(status === 'failed' || status === 'refunded') && (
+        <PayResult tone="bad" title={status === 'refunded' ? t('status.refunded') : t('fail.title')} body={t('fail.noCharge')}>
+          {payment?.needsAttention && <p className="text-sm" style={{ color: 'var(--g-warn)' }}>{t('support.review')}</p>}
+          <PayButton type="button" label={t('startAgain')} onClick={startAgain} />
+        </PayResult>
+      )}
+      {/* 11d Plus success uses the Plus refund sentence (pay-copy.json / gen_pay.py trust(plus=True)); imports/books: generic. */}
+      <PayTrust plus={payment ? paymentKindOf(payment) === 'plus' : false} />
     </div>
   );
 }

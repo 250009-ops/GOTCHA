@@ -9,6 +9,8 @@ export type FullLearnerCopy = LearnerCopy & LearnerCopyExt;
 
 export interface LearnerCopy {
   nav: {
+    /** WL4-08: accessible name of the main navigation. */
+    mainLabel: string;
     library: string;
     vocabulary: string;
     practice: string;
@@ -182,7 +184,7 @@ export interface LearnerCopy {
     languageRemoved: string;
     languageRemoveFailed: string;
     removeLanguage: string;
-    aiLookupsLine: (used: number, quota: string) => string;
+    aiLookupsLine: (used: number, quota: string | null) => string;
     freeImportsLine: (remaining: number, total: number) => string;
     freePagesLine: (remaining: number, total: number, cycle: string) => string;
     publicLibraryAccess: string;
@@ -309,6 +311,7 @@ export interface LearnerCopy {
 
 const EN: LearnerCopy = {
   nav: {
+    mainLabel: 'Main navigation',
     library: 'Library',
     vocabulary: 'Vocabulary',
     practice: 'Practice',
@@ -389,7 +392,7 @@ const EN: LearnerCopy = {
     authFeatures: [
       { title: 'Read real content', desc: 'Books, articles, and news in the languages you want to learn' },
       { title: 'Build vocabulary', desc: 'AI-powered word lookup with spaced repetition' },
-      { title: 'Track your progress', desc: 'CEFR level tracking, streaks, and reading stats' },
+      { title: 'Track your progress', desc: 'Streaks and reading stats' },
       { title: 'Learn in context', desc: 'Words stick when you learn them from real sentences' },
     ],
     learnersCount: (n) => `${n} ${pluralEn(Number(String(n).replace(/\D/g, '')), 'learner', 'learners')}`,
@@ -422,7 +425,7 @@ const EN: LearnerCopy = {
     photoUpdated: 'Photo updated',
     uploadFailed: 'Upload failed',
     displayName: 'Display name',
-    displayNameHint: 'Shown on your profile and leaderboard',
+    displayNameHint: 'Shown on your profile',
     displayNamePlaceholder: 'Your name',
     nativeLanguage: 'Native language',
     nativeLanguageHint: 'Used for translations and lookups',
@@ -439,7 +442,7 @@ const EN: LearnerCopy = {
     editTargetLanguage: 'Edit target language',
     addTargetLanguage: 'Add target language',
     languageLabel: 'Language',
-    cefrLevel: 'CEFR level',
+    cefrLevel: 'Your level',
     setPrimary: 'Set as primary target language',
     saveLanguage: 'Save changes',
     readingPreferences: 'Reading Preferences',
@@ -487,7 +490,7 @@ const EN: LearnerCopy = {
     languageRemoved: 'Language removed',
     languageRemoveFailed: 'Could not remove language',
     removeLanguage: 'Remove language',
-    aiLookupsLine: (used, quota) => `AI lookups: ${used}/${quota} today`,
+    aiLookupsLine: (used, quota) => (quota === null ? `AI lookups today: ${used}` : `AI lookups: ${used}/${quota} today`),
     freeImportsLine: (remaining, total) => `${remaining} of ${total} free imports left today`,
     freePagesLine: (remaining, total, cycle) => `${remaining} of ${total} free pages left ${cycle}`,
     publicLibraryAccess: 'Access to the public library',
@@ -615,6 +618,7 @@ const EN: LearnerCopy = {
 const RU: LearnerCopy = {
   ...EN,
   nav: {
+    mainLabel: 'Основная навигация',
     library: 'Библиотека',
     vocabulary: 'Словарь',
     practice: 'Практика',
@@ -697,7 +701,7 @@ const RU: LearnerCopy = {
     authFeatures: [
       { title: 'Настоящие тексты', desc: 'Книги, статьи и новости на изучаемых языках' },
       { title: 'Словарь', desc: 'ИИ-перевод и интервальное повторение' },
-      { title: 'Прогресс', desc: 'Уровень CEFR, серии и статистика чтения' },
+      { title: 'Прогресс', desc: 'Серии и статистика чтения' },
       { title: 'В контексте', desc: 'Слова запоминаются из реальных предложений' },
     ],
     learnersCount: (n) => `${n} ${pluralRu(Number(String(n).replace(/\D/g, '')), 'ученик', 'ученика', 'учеников')}`,
@@ -731,7 +735,7 @@ const RU: LearnerCopy = {
     photoUpdated: 'Фото обновлено',
     uploadFailed: 'Ошибка загрузки',
     displayName: 'Имя',
-    displayNameHint: 'Отображается в профиле и рейтинге',
+    displayNameHint: 'Отображается в профиле',
     displayNamePlaceholder: 'Ваше имя',
     nativeLanguage: 'Родной язык',
     nativeLanguageHint: 'Для переводов и поиска слов',
@@ -748,7 +752,7 @@ const RU: LearnerCopy = {
     editTargetLanguage: 'Изменить язык',
     addTargetLanguage: 'Добавить язык',
     languageLabel: 'Язык',
-    cefrLevel: 'Уровень CEFR',
+    cefrLevel: 'Ваш уровень',
     setPrimary: 'Сделать основным',
     saveLanguage: 'Сохранить',
     readingPreferences: 'Настройки чтения',
@@ -796,7 +800,7 @@ const RU: LearnerCopy = {
     languageRemoved: 'Язык удалён',
     languageRemoveFailed: 'Не удалось удалить язык',
     removeLanguage: 'Удалить язык',
-    aiLookupsLine: (used, quota) => `ИИ-запросы: ${used}/${quota} сегодня`,
+    aiLookupsLine: (used, quota) => (quota === null ? `ИИ-запросы сегодня: ${used}` : `ИИ-запросы: ${used}/${quota} сегодня`),
     freeImportsLine: (remaining, total) => `${remaining} из ${total} бесплатных импортов сегодня`,
     freePagesLine: (remaining, total, cycle) => `${remaining} из ${total} бесплатных страниц ${cycle}`,
     publicLibraryAccess: 'Доступ к публичной библиотеке',
@@ -924,10 +928,11 @@ const RU: LearnerCopy = {
 const UZ: LearnerCopy = {
   ...EN,
   nav: {
+    mainLabel: 'Asosiy menyu',
     library: 'Kutubxona',
     vocabulary: 'Lugʻat',
     practice: 'Mashq',
-    import: 'Import',
+    import: 'Yuklash', // WL4-06: no English in the uz nav
     statistics: 'Statistika',
     notifications: 'Bildirishnomalar',
     messages: 'Xabarlar',
@@ -1005,12 +1010,12 @@ const UZ: LearnerCopy = {
     authTagline: 'Har bir sahifa dars boʻladigan oʻqishga asoslangan til ilovasi.',
     authFeatures: [
       { title: 'Haqiqiy kontent', desc: 'Oʻrganmoqchi boʻlgan tillarda kitoblar, maqolalar va yangiliklar' },
-      { title: 'Lugʻat', desc: 'Sun’iy intellekt tarjimasi va interval takrorlash' },
-      { title: 'Progress', desc: 'CEFR darajasi, seriyalar va oʻqish statistikasi' },
+      { title: 'Lugʻat', desc: 'Sunʼiy intellekt tarjimasi va interval takrorlash' },
+      { title: 'Progress', desc: 'Seriyalar va oʻqish statistikasi' },
       { title: 'Kontekstda', desc: 'Soʻzlar haqiqiy jumlalardan yodlanadi' },
     ],
     learnersCount: (n) => `${n} oʻquvchi`,
-    alreadyReading: 'GOTCHA’da oʻqimoqda',
+    alreadyReading: 'GOTCHAʼda oʻqimoqda',
     booksInLanguages: (langs) => `${langs} tillarda kitoblar, maqolalar, yangiliklar`,
   },
   authToasts: {
@@ -1040,7 +1045,7 @@ const UZ: LearnerCopy = {
     photoUpdated: 'Rasm yangilandi',
     uploadFailed: 'Yuklash xatosi',
     displayName: 'Koʻrinadigan ism',
-    displayNameHint: 'Profil va reytingda koʻrinadi',
+    displayNameHint: 'Profilda koʻrinadi',
     displayNamePlaceholder: 'Ismingiz',
     nativeLanguage: 'Ona tili',
     nativeLanguageHint: 'Tarjima va soʻz qidirish uchun',
@@ -1057,7 +1062,7 @@ const UZ: LearnerCopy = {
     editTargetLanguage: 'Tilni tahrirlash',
     addTargetLanguage: 'Til qoʻshish',
     languageLabel: 'Til',
-    cefrLevel: 'CEFR darajasi',
+    cefrLevel: 'Darajangiz',
     setPrimary: 'Asosiy til sifatida belgilash',
     saveLanguage: 'Saqlash',
     readingPreferences: 'Oʻqish sozlamalari',
@@ -1070,8 +1075,8 @@ const UZ: LearnerCopy = {
     themeLight: 'Yorugʻ',
     themeSepia: 'Sepia',
     themeDark: 'Qorongʻi',
-    showKnownWords: 'Ma’lum soʻzlarni koʻrsatish',
-    showKnownWordsHint: 'Oʻchirilsa, ma’lum soʻzlar belgilanmaydi',
+    showKnownWords: 'Maʼlum soʻzlarni koʻrsatish',
+    showKnownWordsHint: 'Oʻchirilsa, maʼlum soʻzlar belgilanmaydi',
     tts: 'Ovozli oʻqish',
     ttsHint: 'Matnni ovozda oʻqish',
     learningGoals: 'Oʻqish maqsadlari',
@@ -1105,7 +1110,7 @@ const UZ: LearnerCopy = {
     languageRemoved: 'Til olib tashlandi',
     languageRemoveFailed: 'Tilni olib boʻlmadi',
     removeLanguage: 'Tilni olib tashlash',
-    aiLookupsLine: (used, quota) => `AI soʻrovlar: ${used}/${quota} bugun`,
+    aiLookupsLine: (used, quota) => (quota === null ? `Bugungi AI soʻrovlar: ${used}` : `AI soʻrovlar: ${used}/${quota} bugun`),
     freeImportsLine: (remaining, total) => `Bugun ${total} dan ${remaining} bepul import qoldi`,
     freePagesLine: (remaining, total, cycle) => `${cycle} ${total} dan ${remaining} bepul sahifa qoldi`,
     publicLibraryAccess: 'Ommaviy kutubxonaga kirish',
@@ -1220,7 +1225,7 @@ const UZ: LearnerCopy = {
     messages: 'Xabarlar — GOTCHA',
     vocabulary: 'Lugʻat — GOTCHA',
     practice: 'Mashq — GOTCHA',
-    import: 'Import — GOTCHA',
+    import: 'Yuklash — GOTCHA',
     statistics: 'Statistika — GOTCHA',
     notifications: 'Bildirishnomalar — GOTCHA',
     settings: 'Sozlamalar — GOTCHA',

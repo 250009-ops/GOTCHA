@@ -18,7 +18,7 @@ const EXPECTED = [
 const login = await fetch(`${API}/auth/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: 'admin@gotcha.app', password: process.env.ADMIN_PASSWORD }),
+  body: JSON.stringify({ email: 'admin@gotcha.app', password: '<REDACTED-admin-pw>' }),
 }).then((r) => r.json());
 const token = login.accessToken;
 const rows = await fetch(`${API}/admin/content/curriculum?type=all`, {

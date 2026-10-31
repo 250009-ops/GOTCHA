@@ -22,8 +22,8 @@ export class AiController {
   @Post('speech')
   @Header('Content-Type', 'audio/mpeg')
   @Header('Cache-Control', 'private, max-age=86400')
-  async speech(@CurrentUser() _user: AuthUserPayload, @Body() dto: SpeechDto) {
-    const buffer = await this.ai.speak(dto.text, dto.lang);
+  async speech(@CurrentUser() user: AuthUserPayload, @Body() dto: SpeechDto) {
+    const buffer = await this.ai.speak(dto.text, dto.lang, user.sub);
     return new StreamableFile(buffer, {
       type: 'audio/mpeg',
       disposition: 'inline',

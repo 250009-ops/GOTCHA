@@ -1,5 +1,9 @@
+import { deletedAccountLine, isUserDeletedError, shownName } from '../lib/deletedUser';
+import { handleLimitError } from '../lib/limits';
+import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { isDailyLimitError } from '../lib/dailyLimit';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
@@ -27,7 +31,7 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
@@ -40,6 +44,8 @@ type Peer = {
   online?: boolean;
   lastSeenAt?: string | null;
   typing?: boolean;
+  /** Privacy §11: the account was deleted; name is localised from this flag, composer is closed. */
+  deleted?: boolean;
 };
 
 type ContentRef = {
@@ -532,7 +538,7 @@ function WordMeaningPanel({
           type="button"
           disabled={!canAct}
           onClick={onSave}
-          className="h-10 rounded-xl bg-g-blue-700 text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+          className="h-10 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
         >
           {reader.save}
         </button>
@@ -560,6 +566,9 @@ function WordMeaningPanel({
 }
 
 export default function MessagesPage() {
+  const { locale: uiLocale } = useLearnerLocale();
+  const peerName = (p: Peer | null | undefined, fallback: string) => shownName(p, uiLocale, fallback) ?? fallback;
+  const [peerGone, setPeerGone] = useState(false);
   const copy = useLearnerCopy();
   const msg = copy.messages;
   const mp = copy.messagesPage;
@@ -777,6 +786,7 @@ export default function MessagesPage() {
     return () => window.clearInterval(id);
   }, [loadInbox, search]);
 
+  const [gatedPeer, setGatedPeer] = useState<{ id: string; under13: boolean } | null>(null);
   const startWith = async (peerId: string, contentId?: string | null) => {
     try {
       const d = await api<ConversationDetail>('/messaging/conversations', {
@@ -785,9 +795,16 @@ export default function MessagesPage() {
       });
       setSelectedId(d.id);
       setDetail(d);
+      setGatedPeer(null);
       setProfilePeerId(null);
       await loadInbox(search.trim() || undefined);
     } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === 'MESSAGING_NOT_ALLOWED') {
+        setGatedPeer({ id: peerId, under13: false });
+        setProfilePeerId(null);
+        return;
+      }
       setError(e instanceof Error ? e.message : copy.commonExt.error);
     }
   };
@@ -925,6 +942,8 @@ export default function MessagesPage() {
     }).catch(() => undefined);
   };
 
+  useEffect(() => setPeerGone(false), [selectedId]);
+
   const send = async () => {
     if (!selectedId || !draft.trim() || sending) return;
     const text = draft.trim();
@@ -1049,6 +1068,7 @@ export default function MessagesPage() {
         status: msg.status ?? 'sent',
       });
     } catch (e) {
+      if (isUserDeletedError(e)) setPeerGone(true);
       if (!editingMsg) {
         setDetail((prev) =>
           prev
@@ -1160,7 +1180,7 @@ export default function MessagesPage() {
             lemma: selectedWord.toLowerCase(),
             sentence: selectedSentence.slice(0, 4000) || selectedWord,
             sourceLang: apiChatLang(selectedLineLang),
-            targetLang: apiChatLang(nativeLang),
+            targetLang: uiLocale, // Lookup bug (b): answer in the UI language
           }),
         });
         if (!cancelled) {
@@ -1172,9 +1192,16 @@ export default function MessagesPage() {
           });
         }
       } catch (e) {
+        if (handleLimitError(e)) return;
         const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
@@ -1193,7 +1220,7 @@ export default function MessagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang, copy.errors.lookupFailed]);
+  }, [selectedWord, selectedSentence, selectedLineLang, uiLocale, copy.errors.lookupFailed]);
 
   const saveWord = async (mastered = false) => {
     if (!selectedWord || !lookup?.translation) return;
@@ -1335,9 +1362,9 @@ export default function MessagesPage() {
                     type="button"
                     onClick={() => openPeerProfile(c.peer?.id)}
                     className="relative shrink-0 rounded-full"
-                    aria-label={`Open ${c.peer?.displayName ?? 'learner'} profile`}
+                    aria-label={`Open ${peerName(c.peer, 'learner')} profile`}
                   >
-                    <UserAvatar name={c.peer?.displayName} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
+                    <UserAvatar name={peerName(c.peer, 'Learner')} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
                   </button>
                   <button
                     type="button"
@@ -1348,7 +1375,7 @@ export default function MessagesPage() {
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-semibold text-sm text-gray-900 truncate">
-                          {c.peer?.displayName ?? 'Learner'}
+                          {peerName(c.peer, 'Learner')}
                         </span>
                         <span className={cx('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', langBadge(c.language ?? c.peer?.primaryLanguage))}>
                           {(c.language ?? c.peer?.primaryLanguage ?? 'en').toUpperCase().slice(0, 2)}
@@ -1368,7 +1395,7 @@ export default function MessagesPage() {
                         <span className="truncate">{c.lastMessage?.body ?? msg.noConversations}</span>
                       </p>
                       {c.unreadCount > 0 && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-white text-[10px] font-extrabold flex items-center justify-center">
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-g-on-cta text-[10px] font-extrabold flex items-center justify-center">
                           {c.unreadCount}
                         </span>
                       )}
@@ -1394,6 +1421,7 @@ export default function MessagesPage() {
             <p className="text-base font-semibold text-[#0f1729]">{mp.selectConversation}</p>
             <p className="text-sm text-[#6b7382] max-w-sm">{msg.subtitle}</p>
             {error && <p className="text-xs text-red-500">{error}</p>}
+            {gatedPeer && <FriendGateNotice lang={uiLang} peerId={gatedPeer.id} under13={gatedPeer.under13} />}
           </div>
         ) : !detail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
@@ -1416,10 +1444,10 @@ export default function MessagesPage() {
                   onClick={() => openPeerProfile(detail.peer?.id)}
                   className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-g-blue-50 px-1 py-0.5"
                 >
-                <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
+                <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
                 <div className="min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
-                    {detail.peer?.displayName ?? 'Learner'}
+                    {peerName(detail.peer, 'Learner')}
                   </div>
                   <div className={cx(
                     'text-[11px] truncate',
@@ -1430,7 +1458,11 @@ export default function MessagesPage() {
                   </div>
                 </button>
               </div>
-              <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
+              <div className="flex items-center gap-1 shrink-0">
+                {detail.peer?.id && <ReportButton lang={uiLang} target={{ kind: 'user', userId: detail.peer.id, conversationId: detail.id }} />}
+                {detail.peer?.id && <BlockButton lang={uiLang} userId={detail.peer.id} onBlocked={() => { setSelectedId(null); void loadInbox(search.trim() || undefined); }} />}
+                <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
+              </div>
             </header>
 
             {!tipDismissed && (
@@ -1480,7 +1512,7 @@ export default function MessagesPage() {
                   const replyName = m.replyTo
                     ? m.replyTo.senderId === user?.id
                       ? mp.you
-                      : (detail.peer?.displayName ?? copy.nav.library)
+                      : (peerName(detail.peer, copy.nav.library))
                     : null;
                   return (
                     <div
@@ -1493,9 +1525,9 @@ export default function MessagesPage() {
                             type="button"
                             className="hidden sm:block mb-0.5"
                             onClick={() => openPeerProfile(detail.peer?.id)}
-                            aria-label={detail.peer?.displayName ?? 'Learner'}
+                            aria-label={peerName(detail.peer, 'Learner')}
                           >
-                            <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={28} />
+                            <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={28} />
                           </button>
                         )}
                         <div
@@ -1504,7 +1536,7 @@ export default function MessagesPage() {
                             m.deleted
                               ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic shadow-none'
                               : mine
-                                ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-white'
+                                ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-g-on-cta'
                                 : 'rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-gray-900',
                           )}
                         >
@@ -1668,12 +1700,17 @@ export default function MessagesPage() {
               </div>
             ) : null}
 
+            {detail.peer?.deleted || peerGone ? (
+              <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0" data-testid="composer-deleted">
+                <p className="text-center text-sm text-[#6a7282]">{deletedAccountLine(uiLocale)}</p>
+              </footer>
+            ) : (
             <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
               {(replyTo || editing) && (
                 <div className="mb-2 flex items-start gap-2 rounded-xl bg-g-blue-50 px-3 py-2">
                   <div className="min-w-0 flex-1 border-l-2 border-g-blue-700 pl-2">
                     <p className="text-[11px] font-bold text-g-blue-700">
-                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (detail.peer?.displayName ?? mp.you))}
+                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (peerName(detail.peer, mp.you)))}
                     </p>
                     <p className="text-xs text-[#6a7282] truncate">
                       {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false }, mp.messageDeleted)}
@@ -1714,13 +1751,14 @@ export default function MessagesPage() {
                   type="button"
                   disabled={sending || !draft.trim()}
                   onClick={() => void send()}
-                  className="w-10 h-10 rounded-full bg-g-blue-700 text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
+                  className="w-10 h-10 rounded-full bg-g-blue-700 text-g-on-cta flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
                   aria-label={editing ? copy.common.saveChanges : msg.send}
                 >
                   <Send className="w-4 h-4" />
                 </button>
               </div>
             </footer>
+            )}
             {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
           </>
         )}

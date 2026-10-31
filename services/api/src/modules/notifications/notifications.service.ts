@@ -1,3 +1,4 @@
+import { deletedUserName, isDeletedAccount } from '../../common/deleted-user';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
 import {
@@ -257,7 +258,8 @@ export class NotificationsService {
         !part.lastReadAt || last.createdAt.getTime() > part.lastReadAt.getTime();
       if (!unread) continue;
       const peer = part.conversation.participants[0]?.user;
-      const peerName =
+      // Privacy §11: a deleted account shows as "Deleted user" in the recipient's UI language.
+      const peerName = isDeletedAccount(peer) ? deletedUserName(locale) :
         peer?.displayName?.trim() ||
         peer?.email?.split('@')[0] ||
         'A learner';

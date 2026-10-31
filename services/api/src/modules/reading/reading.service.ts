@@ -1,3 +1,4 @@
+import { canReadUserImport } from '../content/user-import-privacy';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { WordStatus } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
@@ -150,6 +151,8 @@ export class ReadingService {
       };
     }
 
+    const target = await this.prisma.contentItem.findUnique({ where: { id: contentId }, select: { contentSource: true, contentType: true, createdById: true } });
+    if (!target || !canReadUserImport(target, userId)) throw new NotFoundException('Content not found');
     const existing = await this.prisma.readingProgress.findUnique({
       where: { userId_contentId: { userId, contentId } },
     });

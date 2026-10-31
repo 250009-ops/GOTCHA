@@ -1,7 +1,13 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { AuthUserPayload, CurrentUser } from '../../common/decorators';
-import { EditMessageDto, SendMessageDto, StartConversationDto, TypingDto } from './dto/messaging.dto';
+import {
+  EditMessageDto,
+  ReportUserDto,
+  SendMessageDto,
+  StartConversationDto,
+  TypingDto,
+} from './dto/messaging.dto';
 import { MessagingService } from './messaging.service';
 
 @ApiTags('messaging')
@@ -94,6 +100,27 @@ export class MessagingController {
       lang,
       sameReadings === '1' || sameReadings === 'true',
     );
+  }
+
+  // P3b report & block (Play UGC policy).
+  @Get('blocks')
+  blocks(@CurrentUser() user: AuthUserPayload) {
+    return this.messaging.listBlocks(user.sub);
+  }
+
+  @Post('blocks/:userId')
+  block(@CurrentUser() user: AuthUserPayload, @Param('userId', ParseUUIDPipe) userId: string) {
+    return this.messaging.block(user.sub, userId);
+  }
+
+  @Delete('blocks/:userId')
+  unblock(@CurrentUser() user: AuthUserPayload, @Param('userId', ParseUUIDPipe) userId: string) {
+    return this.messaging.unblock(user.sub, userId);
+  }
+
+  @Post('reports')
+  report(@CurrentUser() user: AuthUserPayload, @Body() dto: ReportUserDto) {
+    return this.messaging.report(user.sub, dto);
   }
 
   @Get('peers/:id')

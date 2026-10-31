@@ -1,19 +1,28 @@
+import { limitDayStart } from '../../common/plan-limits';
 import {
   Injectable,
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { PLUS_FAIR_USE_DEFAULTS, PLUS_FAIR_USE_KEYS, activeSubWhere, fairUseCap } from '../../common/plan-active';
 import { createHash } from 'crypto';
+import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, lookupMode, usageDayStart, userCapPlan, type PlanCaps } from '../../common/plan-caps';
+
+type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number };
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
-import { languagePromptLabel, ttsLocale } from '@gotcha/shared';
+import { DAILY_CAP_FALLBACKS, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, languagePromptLabel, slowDownMessage, ttsLocale } from '@gotcha/shared';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
+import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
+import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, ttsLimitError, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -45,6 +54,7 @@ import {
   looksLikeDefinitionGloss,
   needsLookupRepair,
   normalizeLemmaKey,
+  normalizePartOfSpeech,
   normalizeSentenceForHash,
   packLookupNote,
   sanitizeContextualMeaning,
@@ -124,6 +134,62 @@ export class AiService {
     return parseAiPlatformSettings(map);
   }
 
+  private readonly ttsCounter = new DailyCounter(ttsDailyLimit);
+
+  /**
+   * WL4-10: TTS daily counter in the DB (ai_usage_daily.tts_count), so it survives restarts and is shared by
+   * every instance. One atomic statement: increments only while under the limit; no row back = limit hit.
+   */
+  async hitTts(userId: string, now = new Date()): Promise<number> {
+    if (this.useMemory()) {
+      this.ttsCounter.hit(userId, now);
+      return 0;
+    }
+    const limit = ttsDailyLimit();
+    const day = usageDayStart(now).toISOString().slice(0, 10); // same Tashkent usage day as lookups/quizzes (payments-02)
+    const cap = limit > 0 ? limit : 2_147_483_647;
+    const rows = await this.prisma.$queryRaw<Array<{ tts_count: number }>>`
+      INSERT INTO "ai_usage_daily" ("user_id", "usage_date", "tts_count")
+      VALUES (${userId}::uuid, ${day}::date, 1)
+      ON CONFLICT ("user_id", "usage_date") DO UPDATE SET "tts_count" = "ai_usage_daily"."tts_count" + 1
+      WHERE "ai_usage_daily"."tts_count" < ${cap}
+      RETURNING "tts_count"`;
+    if (!rows.length) throw ttsLimitError();
+    return Number(rows[0].tts_count);
+  }
+
+  /**
+   * S7 + AI-1: per-user AI gate. Throws AI_DISABLED when support/admin turned AI off for the
+   * account; returns the age band so prompts/moderation can be tightened for minors.
+   */
+  async userAiGate(userId?: string): Promise<{ band: AgeBand; uiLanguage?: string }> {
+    if (!userId || this.useMemory()) return { band: ageBand(null) };
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { aiDisabled: true, aiDisabledBy: true, birthYear: true, uiLanguage: true },
+    });
+    if (u?.aiDisabled) throw aiDisabledError(u.aiDisabledBy);
+    return { band: ageBand(u?.birthYear ?? null), uiLanguage: u?.uiLanguage ?? undefined };
+  }
+
+  /** AI-1: OpenAI moderation on text shown to minors. Fails CLOSED (503) if moderation is unavailable. */
+  /** WL4-04: moderate every text field of a lookup shown to a minor; flagged → localized placeholder. */
+  private async moderateLookupForMinor(band: AgeBand, l: MemoryLookup, uiLanguage?: string): Promise<MemoryLookup> {
+    if (!isMinorBand(band)) return l;
+    const all = [l.translation, l.contextualMeaning, l.phrase].filter(Boolean).join('\n');
+    const checked = await this.moderateForMinor(band, all, uiLanguage);
+    if (checked === all) return l;
+    return { ...l, translation: checked, contextualMeaning: null, phrase: null, grammarNote: null };
+  }
+
+  private async moderateForMinor(band: AgeBand, text: string, uiLanguage?: string): Promise<string> {
+    if (!isMinorBand(band) || !text.trim()) return text;
+    const client = this.getClient();
+    if (!client) return text;
+    // Kai 31 Oct: fail CLOSED — if moderation can't run, the output is not shown.
+    return moderateOrBlock(client, text, (m) => this.logger.warn(`moderation failed (blocked output): ${m}`), uiLanguage);
+  }
+
   private async assertAiAvailable(settings: AiPlatformSettings) {
     if (!settings.enabled) {
       throw new ForbiddenException(
@@ -138,8 +204,7 @@ export class AiService {
       return;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -165,7 +230,7 @@ export class AiService {
    * Stable shared cache key: normalized lemma + language pair + sentence hash.
    * Does not store raw user text in the key beyond a hash; safe to share across users.
    */
-  private buildLookupCacheKey(dto: LookupDto, surface: string, context: string) {
+  private buildLookupCacheKey(dto: LookupDto, surface: string, context: string, band?: AgeBand) {
     const lemma = normalizeLemmaKey(dto.lemma?.trim() || surface) || normalizeLemmaKey(surface);
     const hash = this.contentHash(
       [
@@ -174,6 +239,8 @@ export class AiService {
         dto.sourceLang,
         dto.targetLang,
         this.sentenceHash(context),
+        // WL4-04: minors never share cache entries with adults (child-safe prompt + moderated output).
+        ...(band && isMinorBand(band) ? ['minor'] : []),
       ].join('|'),
     );
     return { lemma, hash };
@@ -199,40 +266,67 @@ export class AiService {
   }
 
   private async checkQuota(userId: string, defaultUserQuota: number) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
 
     if (this.useMemory()) {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
       const used = this.memoryUsage.get(key) ?? 0;
-      const quota = defaultUserQuota;
-      if (quota > 0 && quota < 1_000_000 && used >= quota) {
-        throw new ForbiddenException(
-          'Daily AI lookup limit reached. Try again tomorrow.',
-        );
-      }
-      return { quota, usage: { lookupCount: used }, today, memoryKey: key };
+      void defaultUserQuota; // final-5: legacy aiDefaultUserQuota ignored in memory mode too; caps.free.lookups only
+      const quota = (await getPlanCaps(this.prisma)).free.lookups;
+      assertUnderCap('lookups', 'free', { free: { lookups: quota, quizzes: 0 }, plus: { lookups: DAILY_CAP_FALLBACKS.plus.lookups, quizzes: 0 }, plusLookupHardCap: null }, used);
+      return { quota, usage: { lookupCount: used }, today, memoryKey: key, mode: 'ai' as const };
     }
 
-    const sub = await this.prisma.userSubscription.findFirst({
-      where: { userId, status: 'active' },
-      include: { plan: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    const quota = resolveLearnerDailyAiQuota(sub?.plan.aiDailyQuota, defaultUserQuota);
-
+    // Lookups/day from platform_settings caps.free.lookups (WLF-12; Free 20, Plus no daily cap), runtime DB config cached ≤ 60 s.
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
+    const quota = caps[plan].lookups;
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },
     });
+    // 429 at the cap (Free 20; Plus hidden hard cap). Plus past its AI quota → 'dictionary' (no OpenAI).
+    const mode = lookupMode(plan, caps, usage?.lookupCount ?? 0);
 
-    // Values >= 1e6 match Premium "Unlimited AI lookups" from Landing pricing.
-    if (quota > 0 && quota < 1_000_000 && (usage?.lookupCount ?? 0) >= quota) {
-      throw new ForbiddenException(
-        'Daily AI lookup limit reached. Try again tomorrow.',
-      );
+    return { quota, usage, today, memoryKey: null as string | null, mode, plan, caps };
+  }
+
+  /** True when the real Postgres client is behind `this.prisma` (unit fakes lack it → legacy path). */
+  private hasRawDb(): boolean {
+    const p = this.prisma as unknown as { $transaction?: unknown; $queryRaw?: unknown };
+    return !this.useMemory() && typeof p.$transaction === 'function' && typeof p.$queryRaw === 'function';
+  }
+
+  /**
+   * PAY2-09: atomic lookup slot. One conditional `UPDATE … SET lookup_count = lookup_count + 1
+   * WHERE lookup_count < limit` per request; parallel requests serialise on the (user, day) row so the
+   * Free cap (20) can never be overshot. Plus: unlimited AI (unconditional increment) or, if a Plus AI
+   * quota is configured, AI → dormant dictionary → hidden hard cap. Returns the mode actually claimed;
+   * throws the daily-limit 429 when no slot is left. Call releaseLookupSlot() if nothing was served.
+   */
+  private async reserveLookupSlot(userId: string, today: Date, plan: 'free' | 'plus', caps: PlanCaps): Promise<'ai' | 'dictionary'> {
+    await this.prisma.aiUsageDaily.createMany({ data: [{ userId, usageDate: today, lookupCount: 0 }], skipDuplicates: true });
+    const claim = async (limit: number | null) => {
+      const { count } = await this.prisma.aiUsageDaily.updateMany({
+        where: limit == null ? { userId, usageDate: today } : { userId, usageDate: today, lookupCount: { lt: limit } },
+        data: { lookupCount: { increment: 1 } },
+      });
+      return count > 0;
+    };
+    const aiCap = capOf(caps, plan, 'lookups');
+    if (await claim(aiCap ?? null)) return 'ai';
+    if (plan === 'plus') {
+      const hard = caps.plusLookupHardCap;
+      if (await claim(hard ?? null)) return 'dictionary';
+      throw dailyLimitException('lookups', plan, caps, new Date(), true);
     }
+    throw dailyLimitException('lookups', plan, caps);
+  }
 
-    return { quota, usage, today, memoryKey: null as string | null };
+  /** PAY2-09: give back a reserved lookup slot (OpenAI failed / nothing billable served). Never below 0. */
+  private async releaseLookupSlot(userId: string, today: Date) {
+    await this.prisma.aiUsageDaily.updateMany({
+      where: { userId, usageDate: today, lookupCount: { gt: 0 } },
+      data: { lookupCount: { decrement: 1 } },
+    }).catch(() => undefined);
   }
 
   private async incrementUsage(
@@ -262,15 +356,27 @@ export class AiService {
    * Quota / Admin AI Usage (`lookupCount`) increment only on successful uncached OpenAI calls.
    * Pure cache hits never burn quota or platform daily OpenAI budget.
    */
+  /** Word lookup: silent speed guard → cached/AI lookup → per-lookup cost log (ai_lookup_costs + structured log). */
   async lookup(userId: string, dto: LookupDto) {
+    await this.burstGuard(userId);
+    const meta: LookupMeta = {};
+    const res = await this.lookupInner(userId, dto, meta);
+    void this.logLookupCost(userId, meta, Boolean((res as { cached?: boolean }).cached), (res as { mode?: string }).mode ?? 'ai');
+    // 14:36: no mode field in responses (dictionary mode dropped; dormant path stays internal).
+    const { mode: _mode, dictionaryMiss: _miss, ...out } = res as typeof res & { mode?: string; dictionaryMiss?: boolean };
+    return out;
+  }
+
+  private async lookupInner(userId: string, dto: LookupDto, meta: LookupMeta) {
+    const { band, uiLanguage } = await this.userAiGate(userId);
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
     const kind = classifyLookup(surface, context);
-    const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context);
+    const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context, band);
 
     const fromMemory = this.memoryGet(hash);
     if (fromMemory) {
-      return this.presentLookup(fromMemory, surface, context, true);
+      return this.presentLookup(await this.moderateLookupForMinor(band, fromMemory, uiLanguage), surface, context, true);
     }
 
     if (!this.useMemory()) {
@@ -297,14 +403,25 @@ export class AiService {
           partOfSpeech: cached.partOfSpeech ?? null,
         };
         this.memorySet(hash, payload);
-        return this.presentLookup(payload, surface, context, true);
+        return this.presentLookup(await this.moderateLookupForMinor(band, payload, uiLanguage), surface, context, true);
       }
     }
 
     // Miss path only: enforce platform + user quota before spending OpenAI.
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const { today, memoryKey } = await this.checkQuota(userId, settings.defaultUserQuota);
+    const quota = await this.checkQuota(userId, settings.defaultUserQuota);
+    const { today, memoryKey } = quota;
+    let mode = quota.mode;
+    // PAY2-09: claim the slot atomically BEFORE spending OpenAI (DB mode); released below if unused.
+    const reserved = this.hasRawDb() && 'plan' in quota && quota.caps;
+    if (reserved) mode = await this.reserveLookupSlot(userId, today, quota.plan, quota.caps);
+    if (mode === 'dictionary') {
+      const row = await this.dictionaryGloss(cacheKeyLemma, dto.sourceLang, dto.targetLang);
+      if (!reserved) await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
+      const payload: MemoryLookup = { lemma: row?.lemma || cacheKeyLemma, translation: row?.translation ?? surface, contextualMeaning: null, phrase: null, grammarNote: null, partOfSpeech: row?.partOfSpeech ?? null };
+      return { ...this.presentLookup(payload, surface, context, true), contextualMeaning: null, mode: 'dictionary' as const, dictionaryMiss: !row };
+    }
 
     const client = this.getClient();
     const limits = glossLimitsFor(kind);
@@ -314,7 +431,7 @@ export class AiService {
     let contextualMeaning: string | null = null;
     let phrase: string | null = kind === 'phrase' ? surface.trim() : null;
     const grammarNote: string | null = null;
-    const partOfSpeech: string | null = null;
+    let partOfSpeech: string | null = null;
     const model = settings.lookupModel;
     let usedOpenAi = false;
 
@@ -332,7 +449,7 @@ export class AiService {
           max_tokens: lookupMaxTokens(kind, surface),
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
+            { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, band) },
             {
               role: 'user',
               content: [
@@ -349,6 +466,9 @@ export class AiService {
           ],
         });
         usedOpenAi = true;
+        meta.model = model;
+        meta.promptTokens = response.usage?.prompt_tokens ?? 0;
+        meta.completionTokens = response.usage?.completion_tokens ?? 0;
 
         try {
           const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
@@ -356,7 +476,9 @@ export class AiService {
             translation?: string;
             contextualMeaning?: string;
             phraseIfAny?: string | null;
+            partOfSpeech?: string;
           };
+          partOfSpeech = kind === 'sentence' ? null : (kind === 'phrase' ? normalizePartOfSpeech(parsed.partOfSpeech) ?? 'phrase' : normalizePartOfSpeech(parsed.partOfSpeech));
           phrase = sanitizePhrase(parsed.phraseIfAny, context, surface, kind)
             ?? (kind === 'phrase' ? surface.trim() : null);
           lemma = normalizeLemmaKey(parsed.lemma || phrase || cacheKeyLemma) || cacheKeyLemma;
@@ -372,7 +494,7 @@ export class AiService {
 
         try {
           if (kind === 'word' && looksLikeDefinitionGloss(translation)) {
-            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang);
+            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang, band, partOfSpeech);
             if (strict) translation = sanitizeGloss(strict, translation, limits, kind);
           }
           if (
@@ -390,6 +512,7 @@ export class AiService {
               sourceLang: dto.sourceLang,
               targetLang: dto.targetLang,
               kind,
+              band,
             });
             if (repaired) {
               phrase = sanitizePhrase(repaired.phraseIfAny, context, surface, kind)
@@ -414,6 +537,7 @@ export class AiService {
       } catch (err) {
         // Do not cache errors / billing failures.
         const detail = err instanceof Error ? err.message : 'OpenAI request failed';
+        if (reserved) await this.releaseLookupSlot(userId, today); // PAY2-09: nothing served → slot back
         throw new ServiceUnavailableException(
           `AI lookup failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
         );
@@ -431,14 +555,22 @@ export class AiService {
       phrase = null;
       contextualMeaning = null;
     }
-    const payload: MemoryLookup = {
-      lemma,
-      translation,
-      contextualMeaning,
-      phrase,
-      grammarNote,
-      partOfSpeech,
-    };
+    // WL4-04: minors' output is moderated BEFORE it is cached or returned; moderation down → 503 (fail closed).
+    // PAY2-13: moderation down (503) means nothing was served → give the reserved slot back before rethrowing.
+    let payload: MemoryLookup;
+    try {
+      payload = await this.moderateLookupForMinor(band, {
+        lemma,
+        translation,
+        contextualMeaning,
+        phrase,
+        grammarNote,
+        partOfSpeech,
+      }, uiLanguage);
+    } catch (err) {
+      if (reserved) await this.releaseLookupSlot(userId, today);
+      throw err;
+    }
     this.memorySet(hash, payload);
 
     if (!this.useMemory()) {
@@ -475,7 +607,9 @@ export class AiService {
     }
 
     // Admin cost metrics + user daily quota: only count real OpenAI spend.
-    if (usedOpenAi) {
+    if (reserved) {
+      if (!usedOpenAi) await this.releaseLookupSlot(userId, today);
+    } else if (usedOpenAi) {
       await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
     }
 
@@ -488,6 +622,8 @@ export class AiService {
     model: string,
     word: string,
     glossLang: string,
+    band?: AgeBand,
+    partOfSpeech?: string | null,
   ): Promise<string | null> {
     try {
       const response = await client.chat.completions.create({
@@ -498,12 +634,14 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
+            content: withChildSafe(
               'You are a bilingual dictionary. Return ONLY JSON: {"translation":""}. translation is the short base/dictionary gloss of ONE word in the requested language. No context phrases, no alternatives, no punctuation.',
+              band ?? ageBand(null),
+            ),
           },
           {
             role: 'user',
-            content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}`,
+            content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}${partOfSpeech && partOfSpeech !== 'phrase' ? `\nPart of speech: ${partOfSpeech} (the gloss must be a ${partOfSpeech} too)` : ''}`,
           },
         ],
       });
@@ -525,6 +663,7 @@ export class AiService {
       sourceLang: string;
       targetLang: string;
       kind: 'word' | 'phrase' | 'sentence';
+      band?: AgeBand;
     },
   ): Promise<{
     lemma?: string;
@@ -539,7 +678,7 @@ export class AiService {
         max_tokens: 250,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
+          { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, opts.band ?? ageBand(null)) },
           {
             role: 'user',
             content: [
@@ -568,6 +707,107 @@ export class AiService {
     }
   }
 
+  // ---- Silent speed guard (Sarvarbek 14:32): per-user sliding windows, config-driven, never a ban.
+  private burst = new Map<string, number[]>();
+  private burstCfg: { at: number; perMinute: number; perHour: number } | null = null;
+
+  private async burstLimits() {
+    const now = Date.now();
+    if (this.burstCfg && now - this.burstCfg.at < 60_000) return this.burstCfg;
+    const rows = await Promise.resolve()
+      .then(() => this.prisma.platformSetting.findMany({ where: { key: { in: [LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_KEYS.perHour] } } }))
+      .catch(() => [] as Array<{ key: string; value: unknown }>);
+    const v = (k: string, d: number) => { const n = Number(rows.find((r) => r.key === k)?.value); return Number.isInteger(n) && n > 0 ? n : d; };
+    this.burstCfg = { at: now, perMinute: v(LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_FALLBACKS.perMinute), perHour: v(LOOKUP_BURST_KEYS.perHour, LOOKUP_BURST_FALLBACKS.perHour) };
+    return this.burstCfg;
+  }
+
+  /** 429 {code:'lookup_slow_down', retryAfterSec, messages}; logs the event. Refused calls are not counted. */
+  async burstGuard(userId: string, now = Date.now()) {
+    const { perMinute, perHour } = await this.burstLimits();
+    if (this.hasRawDb()) return this.burstGuardDb(userId, now, perMinute, perHour);
+    const hits = (this.burst.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+    const lastMinute = hits.filter((t) => now - t < 60_000);
+    const window = lastMinute.length >= perMinute ? 'minute' : hits.length >= perHour ? 'hour' : null;
+    if (window) {
+      this.burst.set(userId, hits);
+      const oldest = window === 'minute' ? lastMinute[0] : hits[0];
+      const retryAfterSec = Math.max(1, Math.ceil(((window === 'minute' ? 60_000 : 3_600_000) - (now - oldest)) / 1000));
+      this.logger.warn(JSON.stringify({ event: 'lookup_burst', userId, window, perMinute, perHour, retryAfterSec }));
+      const messages = { en: slowDownMessage('en'), uz: slowDownMessage('uz'), ru: slowDownMessage('ru') };
+      throw new HttpException({ statusCode: 429, code: 'lookup_slow_down', retryAfterSec, message: messages.en, messages }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+    hits.push(now);
+    this.burst.set(userId, hits);
+    if (this.burst.size > 50_000) for (const [k, ts] of this.burst) if (!ts.length || now - ts[ts.length - 1] > 3_600_000) this.burst.delete(k);
+  }
+
+  private slowDown(userId: string, window: 'minute' | 'hour', perMinute: number, perHour: number, retryAfterSec: number): never {
+    this.logger.warn(JSON.stringify({ event: 'lookup_burst', userId, window, perMinute, perHour, retryAfterSec }));
+    const messages = { en: slowDownMessage('en'), uz: slowDownMessage('uz'), ru: slowDownMessage('ru') };
+    throw new HttpException({ statusCode: 429, code: 'lookup_slow_down', retryAfterSec, message: messages.en, messages }, HttpStatus.TOO_MANY_REQUESTS);
+  }
+
+  /**
+   * PAY2-09: Postgres-backed sliding windows (lookup_burst_hits) so the guard holds across API processes.
+   * Per-user transaction-scoped advisory lock serialises check+insert; rows older than 1 h are pruned.
+   */
+  private async burstGuardDb(userId: string, now: number, perMinute: number, perHour: number) {
+    const at = new Date(now);
+    const hourAgo = new Date(now - 3_600_000), minuteAgo = new Date(now - 60_000);
+    const refused = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${'lookup_burst:' + userId}))`;
+      await tx.$executeRaw`DELETE FROM "lookup_burst_hits" WHERE "user_id" = ${userId} AND "hit_at" <= ${hourAgo}`;
+      const rows = await tx.$queryRaw<Array<{ hour: bigint; minute: bigint; oldest_h: Date | null; oldest_m: Date | null }>>`
+        SELECT count(*) AS hour,
+               count(*) FILTER (WHERE "hit_at" > ${minuteAgo}) AS minute,
+               min("hit_at") AS oldest_h,
+               min("hit_at") FILTER (WHERE "hit_at" > ${minuteAgo}) AS oldest_m
+        FROM "lookup_burst_hits" WHERE "user_id" = ${userId} AND "hit_at" > ${hourAgo}`;
+      const r = rows[0];
+      const minute = Number(r?.minute ?? 0), hour = Number(r?.hour ?? 0);
+      const window = minute >= perMinute ? 'minute' : hour >= perHour ? 'hour' : null;
+      if (window) {
+        const oldest = (window === 'minute' ? r?.oldest_m : r?.oldest_h)?.getTime() ?? now;
+        const retryAfterSec = Math.max(1, Math.ceil(((window === 'minute' ? 60_000 : 3_600_000) - (now - oldest)) / 1000));
+        return { window, retryAfterSec } as const;
+      }
+      await tx.$executeRaw`INSERT INTO "lookup_burst_hits" ("user_id", "hit_at") VALUES (${userId}, ${at})`;
+      return null;
+    });
+    if (refused) this.slowDown(userId, refused.window, perMinute, perHour, refused.retryAfterSec);
+  }
+
+  // ---- Per-lookup cost log. Prices (USD per 1M tokens) from env OPENAI_LOOKUP_USD_PER_1M_IN / _OUT.
+  private async logLookupCost(userId: string, meta: LookupMeta, cacheHit: boolean, mode: string) {
+    try {
+      const inP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_IN ?? 0.15);
+      const outP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_OUT ?? 0.6);
+      const promptTokens = meta.promptTokens ?? 0, completionTokens = meta.completionTokens ?? 0;
+      const estCostUsd = Number(((promptTokens * inP + completionTokens * outP) / 1_000_000).toFixed(6));
+      const plan = await userCapPlan(this.prisma, userId);
+      const row = { userId, usageDate: usageDayStart(), plan, mode, cacheHit, model: meta.model ?? null, promptTokens, completionTokens, estCostUsd };
+      this.logger.log(JSON.stringify({ event: 'lookup_cost', ...row, usageDate: row.usageDate.toISOString().slice(0, 10) }));
+      const t = (this.prisma as unknown as { aiLookupCost?: { create?: (a: unknown) => Promise<unknown> } }).aiLookupCost;
+      if (!this.useMemory() && typeof t?.create === 'function') await t.create({ data: row });
+    } catch {
+      // Never fail a lookup on cost logging.
+    }
+  }
+
+  /** Dictionary-mode answer (Plus past its AI quota): any cached gloss for the same lemma + language pair,
+   *  newest first, ignoring the sentence context. Never calls OpenAI. */
+  private async dictionaryGloss(lemma: string, sourceLang: LookupDto['sourceLang'], targetLang: LookupDto['targetLang']) {
+    if (this.useMemory()) return null;
+    return Promise.resolve()
+      .then(() => this.prisma.lemmaCache.findFirst({
+        where: { lemma, sourceLang, targetLang, NOT: { modelVersion: 'offline' } },
+        orderBy: { createdAt: 'desc' },
+        select: { lemma: true, translation: true, partOfSpeech: true },
+      }))
+      .catch(() => null);
+  }
+
   private presentLookup(row: MemoryLookup, surface: string, context: string, cached: boolean) {
     const kind = classifyLookup(surface, context);
     const translation = sanitizeGloss(row.translation, surface, glossLimitsFor(kind), kind);
@@ -589,11 +829,6 @@ export class AiService {
    * Does not consume the per-learner word-lookup quota (that cap is for tap lookups).
    * Still respects admin AI enabled + platform daily OpenAI budget.
    * Never logs raw message text.
-   */
-  /**
-   * Optional AI judge for typed answers the deterministic grader rejected (synonyms,
-   * alternative spellings, valid inflections). Returns null when AI is unavailable,
-   * disabled, slow (3.5s timeout) or unsure — callers must fall back to the strict verdict.
    */
   async judgeAnswer(opts: {
     expected: string;
@@ -647,6 +882,7 @@ export class AiService {
   }
 
   async translate(userId: string, dto: TranslateDto) {
+    const { band, uiLanguage } = await this.userAiGate(userId);
     const text = (dto.text ?? '').trim();
     if (!text) {
       return { translation: '', sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: true };
@@ -661,7 +897,7 @@ export class AiService {
     const cached = this.memoryGet(hash);
     if (cached?.translation) {
       return {
-        translation: cached.translation,
+        translation: await this.moderateForMinor(band, cached.translation, uiLanguage),
         sourceLang: dto.sourceLang,
         targetLang: dto.targetLang,
         cached: true,
@@ -683,8 +919,10 @@ export class AiService {
           messages: [
             {
               role: 'system',
-              content:
+              content: withChildSafe(
                 'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Translate the ENTIRE message into the target language. Keep every clause, meaning, and tone. Do not summarize, omit, add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
+                band,
+              ),
             },
             {
               role: 'user',
@@ -718,13 +956,18 @@ export class AiService {
       grammarNote: null,
       partOfSpeech: null,
     });
-    return { translation, sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: false };
+    return {
+      translation: await this.moderateForMinor(band, translation, uiLanguage),
+      sourceLang: dto.sourceLang,
+      targetLang: dto.targetLang,
+      cached: false,
+    };
   }
 
   async generateQuiz(
     segmentText: string,
     practiceType: PracticeType,
-    langs?: { questionLang?: string | null; passageLang?: string | null },
+    langs?: { questionLang?: string | null; passageLang?: string | null; userId?: string },
   ): Promise<
     Array<{
       prompt: string;
@@ -733,6 +976,7 @@ export class AiService {
       explanation?: string;
     }>
   > {
+    const { band } = await this.userAiGate(langs?.userId);
     if (!segmentText.trim()) return [];
 
     const settings = await this.getPlatformAiSettings();
@@ -794,8 +1038,10 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
+            content: withChildSafe(
               'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}. For cloze/writing types, options may be empty arrays.',
+              band,
+            ),
           },
           {
             role: 'user',
@@ -806,7 +1052,11 @@ export class AiService {
 
       try {
         const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}');
-        return parsed.questions ?? [];
+        const questions = (parsed.questions ?? []) as Array<{ prompt: string; options?: string[]; correctAnswer: string; explanation?: string }>;
+        // AI-1: drop the quiz for a minor if moderation flags any of it.
+        const all = questions.map((q) => [q.prompt, ...(q.options ?? []), q.correctAnswer, q.explanation ?? ''].join('\n')).join('\n');
+        if ((await this.moderateForMinor(band, all)) !== all) return [];
+        return questions;
       } catch {
         return [];
       }
@@ -833,6 +1083,12 @@ export class AiService {
     },
   ): Promise<ExtractedChapter[]> {
     if (!chapters.length || !isImportAiCleanupEnabled()) return chapters;
+    // S7: AI turned off for this account → skip cleanup silently (deterministic extract is kept).
+    try {
+      await this.userAiGate(opts.userId);
+    } catch {
+      return chapters;
+    }
 
     const client = this.getClient();
     if (!client) {
@@ -924,8 +1180,7 @@ export class AiService {
     if (this.useMemory()) {
       return this.memoryPlatformLookups < settings.dailyLimit;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -939,14 +1194,9 @@ export class AiService {
       this.memoryPlatformLookups += 1;
       return;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    // Reuse quizCount bucket for platform metrics (no schema migration).
-    await this.prisma.aiUsageDaily.upsert({
-      where: { userId_usageDate: { userId, usageDate: today } },
-      create: { userId, usageDate: today, quizCount: 1 },
-      update: { quizCount: { increment: 1 } },
-    });
+    const today = limitDayStart();
+    // final-5: import clean-up no longer writes the learner's quizCount (it used up the Free 10 quizzes/day).
+    void userId; void today;
   }
 
   private async cleanupImportChunkWithRetry(
@@ -1013,9 +1263,12 @@ export class AiService {
   }
 
   /** Word/phrase pronunciation for the reader speaker button. Cached on disk. */
-  async speak(text: string, lang: string): Promise<Buffer> {
+  async speak(text: string, lang: string, userId?: string): Promise<Buffer> {
+    await this.userAiGate(userId);
     const input = text.replace(/\s+/g, ' ').trim().slice(0, 400);
     if (!input) throw new BadRequestException('Nothing to pronounce');
+    // P1 TTS per-user daily quota (cache hits count too: it caps scripted abuse of the endpoint).
+    if (userId) await this.hitTts(userId);
     const locale = ttsLocale(lang);
     const cacheKey = createHash('sha256').update(`${locale}|${input}`).digest('hex').slice(0, 40);
     const dir = join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'tts');

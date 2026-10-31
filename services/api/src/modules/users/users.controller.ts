@@ -19,6 +19,7 @@ import {
   AddTargetLanguageDto,
   ChangePasswordDto,
   DeleteAccountDto,
+  SetAgeDto, SetAiPreferenceDto,
   UpdatePreferencesDto,
   UpdateProfileDto,
   UpdateTargetLanguageDto,
@@ -42,6 +43,18 @@ export class UsersController {
   @Get('me/export')
   exportData(@CurrentUser() user: AuthUserPayload) {
     return this.users.exportData(user.sub);
+  }
+
+  /** W-12 one-time age prompt (also "prefer not to say"). */
+  @Post('me/age')
+  setAge(@CurrentUser() user: AuthUserPayload, @Body() dto: SetAgeDto) {
+    return this.users.setAge(user.sub, dto.birthYear);
+  }
+
+  /** Learner AI-off switch (Settings). Same per-account flag support uses. */
+  @Patch('me/ai')
+  setAi(@CurrentUser() user: AuthUserPayload, @Body() dto: SetAiPreferenceDto) {
+    return this.users.setAiPreference(user.sub, dto.aiDisabled);
   }
 
   @Patch('me')

@@ -76,10 +76,8 @@ function toFsrsCard(row: CardRow, now: Date): Card {
 export function reviewCard(row: CardRow, rating: SrsRatingValue, now = new Date(), fuzzSeed?: string): CardUpdate {
   if (srsAlgorithm() === 'sm2') {
     const next = scheduleReview(row, rating, now, fuzzSeed);
-    const capped = capInterval(next.intervalDays, next.dueAt, now);
     return {
       ...next,
-      ...capped,
       lapses: row.lapses + (rating === 'again' && row.repetitions > 0 ? 1 : 0),
       stability: row.stability,
       difficulty: row.difficulty,
@@ -88,14 +86,13 @@ export function reviewCard(row: CardRow, rating: SrsRatingValue, now = new Date(
     };
   }
   const { card } = scheduler.next(toFsrsCard(row, now), now, RATING[rating]);
-  // QA N9: the cap is inclusive. FSRS's maximum_interval plus fuzz/rounding could still land on 366.
-  const { intervalDays, dueAt } = capInterval(Math.round((card.due.getTime() - now.getTime()) / 86_400_000), card.due, now);
+  const intervalDays = Math.max(0, Math.round((card.due.getTime() - now.getTime()) / 86_400_000));
   return {
     // Legacy columns kept in sync (read-only for 2 releases) so old clients still render.
     easeFactor: Math.round((2.5 + (5 - card.difficulty) / 4) * 100) / 100,
     intervalDays,
     repetitions: card.reps,
-    dueAt,
+    dueAt: card.due,
     mastered: card.stability >= MASTERED_STABILITY_DAYS,
     lapses: card.lapses,
     stability: Math.round(card.stability * 10000) / 10000,
@@ -113,11 +110,4 @@ export function applySrsReview(
   fuzzSeed?: string,
 ): SrsState {
   return scheduleReview(current, rating, now, fuzzSeed);
-}
-
-/** QA N9: never schedule more than MAX_INTERVAL_DAYS (inclusive) ahead; interval and due date agree. */
-export function capInterval(intervalDays: number, dueAt: Date, now: Date): { intervalDays: number; dueAt: Date } {
-  const maxDue = new Date(now.getTime() + MAX_INTERVAL_DAYS * 86_400_000);
-  const days = Math.max(0, Math.min(MAX_INTERVAL_DAYS, intervalDays));
-  return { intervalDays: days, dueAt: dueAt.getTime() > maxDue.getTime() ? maxDue : dueAt };
 }

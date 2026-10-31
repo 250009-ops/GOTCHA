@@ -1,4 +1,5 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { limitDayStart } from '../../common/plan-limits';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -14,6 +15,8 @@ import { calendarDateKey, effectiveStreakCount, STREAK_TIMEZONE } from '../../se
 
 import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
+import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
+import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -29,8 +32,9 @@ import {
 
 export class UsersService {
 
-  constructor(
+  private readonly logger = new Logger('UsersService');
 
+  constructor(
     private prisma: PrismaService,
 
     private devAuth: DevAuthService,
@@ -148,10 +152,12 @@ export class UsersService {
       },
     });
     if (!refreshed) throw new NotFoundException('User not found');
-
-    const { passwordHash: _, ...safe } = refreshed;
-
-    return safe;
+    const { passwordHash: _, consentIp: _consentIp, ...safe } = refreshed;
+    return {
+      ...safe,
+      ageBand: ageBand(refreshed.birthYear),
+      needsAgePrompt: needsAgePrompt(refreshed),
+    };
 
   }
 
@@ -347,6 +353,12 @@ export class UsersService {
   async uploadAvatar(userId: string, file: Express.Multer.File) {
     if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
       throw new BadRequestException('Photo upload is not available for demo accounts.');
+    }
+
+    // Privacy §2/§12: children under 13 cannot upload a profile photo.
+    const ageRow = await this.prisma.user.findUnique({ where: { id: userId }, select: { birthYear: true } });
+    if (ageBand(ageRow?.birthYear) === 'under13') {
+      throw new ForbiddenException({ statusCode: 403, code: 'AVATAR_UNDER13', message: 'Profile photos are not available for this account.' });
     }
 
     const extByMime: Record<string, string> = {
@@ -602,6 +614,8 @@ export class UsersService {
           deletedAt: new Date(),
           emailVerificationToken: null,
           passwordResetToken: null,
+          birthYear: null,
+          consentIp: null, // WL4-11: IP dropped; consent version + time kept as the record of acceptance
         },
       }),
       this.prisma.authRefreshToken.updateMany({
@@ -609,8 +623,114 @@ export class UsersService {
         data: { revokedAt: new Date() },
       }),
     ]);
+    const purged = await this.purgeUserData(userId);
+    // LG4-09: a failed purge step must alert (admin health flag + support email/stub), never stay silent.
+    const failedSteps = Object.entries(purged).filter(([, v]) => v === 'error').map(([k]) => k);
+    if (failedSteps.length) await recordJobFailure('account-purge', new Error(`user ${userId}: failed steps ${failedSteps.join(', ')}`));
+    else recordJobSuccess('account-purge', 'last purge complete');
+    return { deleted: true, purged };
+  }
 
-    return { deleted: true };
+  /**
+   * S1 delete-account REAL purge (Privacy §8/§11). Deletes the learner's learning data, imports (with their private
+   * content and uploaded files), avatar, notifications, friend links, blocks and AI usage counters.
+   * Messages the user SENT are kept in the recipients' conversations and show as from "Deleted user" through the
+   * anonymised user row (name, email, photo removed in deleteAccount). Safety reports are kept for safety review and
+   * unlinked from the user: the user's reporter / reported-user id and the report's conversationId are nulled; the
+   * reported message stays attached via messageId (messageSnapshot and details kept). Reports are deleted about 1 year
+   * after closing by ReportRetentionJob. consent_ip is cleared (version + time kept). Still kept: payment and purchase
+   * rows, audit logs. Each step is best-effort and logged.
+   */
+  async purgeUserData(userId: string): Promise<Record<string, number | string>> {
+    const out: Record<string, number | string> = {};
+    const step = async (name: string, fn: () => Promise<{ count: number } | number>) => {
+      try {
+        const r = await fn();
+        out[name] = typeof r === 'number' ? r : r.count;
+      } catch (err) {
+        out[name] = 'error';
+        this.logger.warn(`purge ${name} failed for ${userId}: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const p = this.prisma;
+    await step('imports', async () => {
+      const rows = await p.userImport.findMany({ where: { userId } });
+      for (const row of rows) {
+        await p.userImport.delete({ where: { id: row.id } });
+        if (row.contentId) {
+          await p.ingestionJob.updateMany({ where: { contentId: row.contentId }, data: { contentId: null } });
+          await p.contentItem.delete({ where: { id: row.contentId } }).catch(() => undefined);
+        }
+        if (row.fileKey) await rm(join(root, row.fileKey), { force: true }).catch(() => undefined);
+      }
+      return rows.length;
+    });
+    await step('vocabulary', () => p.userVocabulary.deleteMany({ where: { userId } }));
+    await step('knownWords', () => p.userKnownWord.deleteMany({ where: { userId } }));
+    await step('readingProgress', () => p.readingProgress.deleteMany({ where: { userId } }));
+    await step('readingSessions', () => p.readingSession.deleteMany({ where: { userId } }));
+    await step('practiceSessions', () => p.practiceSession.deleteMany({ where: { userId } }));
+    await step('bookmarks', () => p.contentBookmark.deleteMany({ where: { userId } }));
+    await step('placementResults', () => p.placementResult.deleteMany({ where: { userId } }));
+    await step('aiUsageDaily', () => p.aiUsageDaily.deleteMany({ where: { userId } }));
+    await step('notifications', () => p.userNotification.deleteMany({ where: { userId } }));
+    await step('friendRequests', () =>
+      p.friendRequest.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
+    );
+    await step('blocks', () => p.userBlock.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }));
+    // Privacy §8/§11: sent messages are NOT deleted; they stay, shown as from "Deleted user".
+    // Recipients' stored message notifications may still carry the old name: drop them (they regenerate as "Deleted user").
+    await step('peerMessageNotifications', async () => {
+      const convs = await p.conversationParticipant.findMany({ where: { userId }, select: { conversationId: true } });
+      const ids = convs.map((c) => c.conversationId);
+      if (!ids.length) return 0;
+      return p.userNotification.deleteMany({ where: { kind: 'message', refId: { in: ids }, userId: { not: userId } } });
+    });
+    await step('reportsUnlinked', async () => {
+      const a = await p.userReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null, conversationId: null } });
+      const b = await p.userReport.updateMany({ where: { reportedUserId: userId }, data: { reportedUserId: null, conversationId: null } });
+      const c = await p.contentReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
+      return a.count + b.count + c.count;
+    });
+    await step('targetLanguages', () => p.userTargetLanguage.deleteMany({ where: { userId } }));
+    await step('preferences', () => p.userPreferences.deleteMany({ where: { userId } }));
+    await step('avatarFiles', async () => {
+      for (const ext of ['jpg', 'jpeg', 'png', 'webp']) await rm(join(root, 'avatars', `${userId}.${ext}`), { force: true });
+      return 1;
+    });
+    return out;
+  }
+
+  /** W-12 one-time age prompt. The user sets the year once; later changes go through support. */
+  async setAge(userId: string, birthYear: number | null | undefined) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (birthYear != null && user.birthYear != null && user.birthYear !== birthYear) {
+      throw new ConflictException('Your birth year is already set. Contact support@gotchaa.uz to change it.');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { agePromptedAt: new Date(), ...(birthYear != null ? { birthYear } : {}) },
+    });
+    return this.getProfile(userId);
+  }
+
+  async setAiPreference(userId: string, aiDisabled: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { aiDisabled: true, aiDisabledBy: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!aiDisabled && user.aiDisabled && user.aiDisabledBy === 'admin') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'AI_DISABLED_BY_SUPPORT',
+        message: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.',
+      });
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { aiDisabled, aiDisabledBy: aiDisabled ? 'user' : null },
+    });
+    return this.getProfile(userId);
   }
 
 }
@@ -637,7 +757,6 @@ export function buildStatsHistory(
   vocab: Array<{ createdAt: Date }>,
   progress: Array<{ contentId: string; completedAt: Date | null; lastReadAt: Date }>,
   heatmapDays: number,
-  now: Date = new Date(),
 ) {
   const dailyMinutes = new Map<string, number>();
   const dailyWordsSaved = new Map<string, number>();
@@ -673,8 +792,7 @@ export function buildStatsHistory(
     weeklyVocab.set(week, (weeklyVocab.get(week) ?? 0) + 1);
   }
 
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
+  const today = limitDayStart();
 
   const daily: Array<{ date: string; minutes: number; wordsSaved: number }> = [];
   const heatmap: StatsHeatmapDay[] = [];

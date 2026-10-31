@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import { handleLimitError } from '../lib/limits';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Check, GraduationCap, Loader2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError } from '../lib/dailyLimit';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
@@ -16,7 +18,7 @@ interface PracticeQuestion {
   questionIndex: number;
   prompt: string;
   options?: string[] | null;
-  correctAnswer: string;
+  correctAnswer?: string; // W-24: sent only with results
   explanation?: string | null;
 }
 
@@ -103,7 +105,7 @@ export default function ChapterQuizPage() {
       setFreeText('');
       setResults(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      if (!isDailyLimitError(e) && !handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setStarting(false);
     }
@@ -154,7 +156,7 @@ export default function ChapterQuizPage() {
       );
       setResults(res);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      if (!isDailyLimitError(e) && !handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setSubmitting(false);
     }

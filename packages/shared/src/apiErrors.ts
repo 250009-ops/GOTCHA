@@ -22,8 +22,16 @@ Object.assign(BY_CODE, {
   payment_not_paid: { en: 'This payment cannot be refunded.', ru: 'Этот платёж нельзя вернуть.', uz: 'Bu toʻlovni qaytarib boʻlmaydi.' },
   item_answered: { en: 'This exercise was already answered.', ru: 'На это задание уже ответили.', uz: 'Bu mashqqa allaqachon javob berilgan.' },
   item_not_issued: { en: 'This exercise is no longer available. Start a new session.', ru: 'Задание недоступно. Начните новую сессию.', uz: 'Mashq mavjud emas. Yangi sessiyani boshlang.' },
-  rate_limited: { en: 'Too many requests. Please wait a moment and try again.', ru: 'Слишком много запросов. Подождите немного и попробуйте снова.', uz: 'Soʻrovlar juda koʻp. Biroz kuting va qayta urinib koʻring.' },
   session_completed: { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
+});
+
+// Launch safety (Kai 31 Oct): AI off switch + moderation fails closed.
+Object.assign(BY_CODE, {
+  AI_MODERATION_UNAVAILABLE: { en: 'This answer could not be checked right now. Please try again.', ru: 'Сейчас не удалось проверить ответ. Попробуйте ещё раз.', uz: 'Hozir javobni tekshirib boʻlmadi. Qayta urinib koʻring.' },
+  AVATAR_UNDER13: { en: 'Profile photos are not available for this account.', ru: 'Фото профиля недоступно для этого аккаунта.', uz: 'Bu hisob uchun profil surati mavjud emas.' },
+  AI_OFF_BY_USER: { en: 'You turned AI features off. Turn them back on in Settings.', ru: 'Вы отключили функции ИИ. Включить их можно в настройках.', uz: 'Siz AI funksiyalarini oʻchirgansiz. Ularni Sozlamalarda qayta yoqishingiz mumkin.' },
+  AI_DISABLED: { en: 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключены для этого аккаунта. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'Bu hisob uchun AI funksiyalari oʻchirilgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
+  AI_DISABLED_BY_SUPPORT: { en: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключила поддержка. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'AI funksiyalarini qoʻllab-quvvatlash xizmati oʻchirgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
 });
 
 const BY_MESSAGE: Record<string, T3> = {
@@ -56,7 +64,7 @@ const BY_MESSAGE: Record<string, T3> = {
 
 const BY_STATUS: Record<string, T3> = {
   network: { en: 'No connection to the server. Check your internet.', ru: 'Нет связи с сервером. Проверьте интернет.', uz: 'Server bilan aloqa yoʻq. Internetni tekshiring.' },
-  '400': { en: 'Please check the entered data.', ru: 'Проверьте введённые данные.', uz: 'Kiritilgan ma’lumotlarni tekshiring.' },
+  '400': { en: 'Please check the entered data.', ru: 'Проверьте введённые данные.', uz: 'Kiritilgan maʼlumotlarni tekshiring.' },
   '401': { en: 'Please sign in again.', ru: 'Войдите снова.', uz: 'Qaytadan kiring.' },
   '403': { en: 'You don’t have access to this.', ru: 'Нет доступа.', uz: 'Bunga ruxsatingiz yoʻq.' },
   '404': { en: 'Not found.', ru: 'Не найдено.', uz: 'Topilmadi.' },
@@ -73,8 +81,6 @@ export function localizeApiError(
   const raw = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? '').trim();
   const hit = (err.code && BY_CODE[err.code]) || BY_MESSAGE[raw] || BY_MESSAGE[raw.replace(/\.$/, '')];
   if (hit) return hit[l];
-  // QA N8: never show the raw ThrottlerException text, in any language.
-  if (err.status === 429 || /ThrottlerException|Too Many Requests/i.test(raw)) return BY_CODE.rate_limited[l];
   if (l === 'en' && raw && !Array.isArray(err.message)) return raw;
   const s = err.status ?? 0;
   const key = s >= 500 ? '5xx' : s === 0 ? 'network' : String(s);

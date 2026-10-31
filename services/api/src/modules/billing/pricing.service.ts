@@ -1,5 +1,6 @@
+import { resetPlanCapsCache } from '../../common/plan-caps';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { ImportPaymentStatus, Prisma, type PromoCode, type SubscriptionPlan } from '@prisma/client';
+import { Prisma, type PromoCode, type SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type PricingLang = 'en' | 'ru' | 'uz';
@@ -43,6 +44,7 @@ export class PricingService {
       period: p.period,
       currency: 'UZS' as const,
       aiDailyQuota: p.aiDailyQuota,
+      quizDailyQuota: p.quizDailyQuota,
       importLimit: p.importLimit,
       offlineEnabled: p.offlineEnabled,
       features: Array.isArray(p.features) ? (p.features as string[]) : [],
@@ -61,15 +63,7 @@ export class PricingService {
     if (!promo || !promo.active) throw bad('promo_invalid', 'This promo code is not valid.');
     if (promo.appliesTo !== 'all' && promo.appliesTo !== scope) throw bad('promo_not_applicable', 'This promo code does not apply here.');
     if ((promo.validFrom && now < promo.validFrom) || (promo.validTo && now > promo.validTo)) throw bad('promo_expired', 'This promo code has expired.');
-    // m-p2-5: open (pending, unexpired) checkouts hold a slot, so concurrent checkouts can't overshoot the cap.
-    const holding = { promoCodeId: promo.id, status: ImportPaymentStatus.pending, expiresAt: { gt: now } };
-    if (promo.maxRedemptions != null) {
-      // n-7: the caller's own abandoned checkouts don't block them (a retry replaces them).
-      const open = await this.prisma.importPayment.count({ where: { ...holding, NOT: { userId } } });
-      if (promo.redemptions + open >= promo.maxRedemptions) throw bad('promo_exhausted', 'This promo code has been used up.');
-    }
-    // Only completed redemptions count per user; if two of their own checkouts both get paid, redeemForPayment's
-    // conditional increment flags the overshoot.
+    if (promo.maxRedemptions != null && promo.redemptions >= promo.maxRedemptions) throw bad('promo_exhausted', 'This promo code has been used up.');
     const used = await this.prisma.importPayment.count({ where: { userId, promoCodeId: promo.id, promoRedeemed: true } });
     if (used >= promo.perUserLimit) throw bad('promo_used', 'You have already used this promo code.');
     return promo;
@@ -81,14 +75,7 @@ export class PricingService {
     if (!p?.promoCodeId || p.promoRedeemed) return false;
     const claimed = await this.prisma.importPayment.updateMany({ where: { id: paymentId, promoRedeemed: false }, data: { promoRedeemed: true } });
     if (claimed.count !== 1) return false;
-    // m-p2-5: conditional increment; the cap is never exceeded in the counter. If a race slipped past checkout
-    // (the payment is already charged with the discount), keep the sale and flag it for review.
-    const n = await this.prisma.$executeRaw`UPDATE "promo_codes" SET "redemptions" = "redemptions" + 1, "updated_at" = NOW()
-      WHERE "id" = ${p.promoCodeId}::uuid AND ("max_redemptions" IS NULL OR "redemptions" < "max_redemptions")`;
-    if (n !== 1) {
-      await this.prisma.importPayment.update({ where: { id: paymentId }, data: { needsAttention: true } });
-      return false;
-    }
+    await this.prisma.promoCode.update({ where: { id: p.promoCodeId }, data: { redemptions: { increment: 1 } } });
     return true;
   }
 
@@ -155,7 +142,8 @@ export class PricingService {
       data.period = body.period;
     }
     if (body.aiDailyQuota != null) data.aiDailyQuota = clampInt(body.aiDailyQuota, 0, 1_000_000);
-    if (body.importLimit != null) data.importLimit = clampInt(body.importLimit, 0, 1_000_000);
+    if (body.quizDailyQuota != null) data.quizDailyQuota = clampInt(body.quizDailyQuota, 0, 1_000_000);
+    if (body.importLimit != null) data.importLimit = clampInt(body.importLimit, 0, 1_000_000); // WLF-12: legacy column, not enforced or shown (importFreeLimits is)
     if (body.offlineEnabled != null) data.offlineEnabled = !!body.offlineEnabled;
     if (body.features != null) {
       if (!Array.isArray(body.features) || body.features.some((f) => typeof f !== 'string' || !/^[a-z0-9_]{2,40}$/.test(f))) {
@@ -168,6 +156,7 @@ export class PricingService {
       data.active = !!body.active;
     }
     const updated = await this.prisma.subscriptionPlan.update({ where: { id: plan.id }, data });
+    resetPlanCapsCache();
     return { before: plan, after: updated };
   }
 
@@ -204,6 +193,7 @@ export type PlanUpdate = {
   priceUzs?: number;
   period?: string;
   aiDailyQuota?: number;
+  quizDailyQuota?: number;
   importLimit?: number;
   offlineEnabled?: boolean;
   features?: string[];

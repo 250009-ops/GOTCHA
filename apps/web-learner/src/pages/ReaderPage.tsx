@@ -1,3 +1,5 @@
+import { ReportButton } from '../components/safety/SafetyActions';
+import { handleLimitError } from '../lib/limits';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -24,17 +26,19 @@ import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { pagesLabel } from '../lib/pagesLabel';
 import { formatUzs } from '../lib/importBilling';
 import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
+import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
 
-function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
+function displayChapterTitle(title: string | undefined | null, fallbackIndex: number, chapterN: (n: number) => string) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
-  if (!raw) return `Chapter ${fallbackIndex + 1}`;
+  if (!raw) return chapterN(fallbackIndex + 1); // WL4-06: localised fallback
   return raw;
 }
 
@@ -203,7 +207,7 @@ function DictionaryPanel({
               })}>
                 {statusLabel}
               </div>
-              <span className="text-[#99a1af]">→ Mark as:</span>
+              <span className="text-[#99a1af]">{copy.reader.markAsLabel}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -260,10 +264,11 @@ function DictionaryPanel({
 
 export default function ReaderPage() {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale(); // WL4-05: Report follows the active UI language
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, preferences, updatePreferences, refreshVocab } = useAuth();
+  const { preferences, updatePreferences, refreshVocab, refreshProfile } = useAuth();
   const goToLibrary = useCallback(() => {
     navigate(resolveReaderLibraryReturn(location.state));
   }, [navigate, location.state]);
@@ -284,6 +289,8 @@ export default function ReaderPage() {
   const [chaptersOpen, setChaptersOpen] = useState(true);
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -324,7 +331,7 @@ export default function ReaderPage() {
       if (!group) {
         group = {
           key,
-          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key),
+          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key, copy.reader.chapterN),
           firstIndex: i,
           pageCount: 0,
         };
@@ -352,7 +359,8 @@ export default function ReaderPage() {
     const pos = pages.findIndex(({ index }) => index === segmentIndex);
     return { current: Math.max(1, pos + 1), total: Math.max(1, pages.length) };
   }, [outline, segmentIndex, currentChapter, pageCount]);
-  const targetLang = user?.nativeLanguage ?? 'en';
+  // Lookup bug (b): glosses answer in the active UI language (owner decision).
+  const targetLang = locale;
   const sourceLang = content?.language ?? 'en';
 
   const pronounceWord = useCallback(() => {
@@ -402,8 +410,10 @@ export default function ReaderPage() {
     setOutline([]);
     Promise.all([
       api<ContentItem>(`/content/${id}`),
-      api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
+      // W-23: a known-words hiccup must not hide the whole book.
+      api<Array<{ lemma: string; status: string }>>('/reading/known-words').catch(() => []),
     ]).then(async ([item, known]) => {
+      setLoadError(false);
       setContent(item);
       const trialCount = item.trialSegmentCount ?? 0;
       const canTrial = item.accessGranted === false && trialCount > 0;
@@ -452,8 +462,12 @@ export default function ReaderPage() {
       }
       setWordStatuses(map);
       lastProgressAtRef.current = Date.now();
-    }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  }, [id, accessNonce]);
+    }).catch((e) => {
+      // W-23: a network/parse failure (e.g. a truncated large-book response) is not "not found".
+      if ((e as { status?: number }).status !== 404) setLoadError(true);
+      toast.error(e.message);
+    }).finally(() => setLoading(false));
+  }, [id, accessNonce, reloadNonce]);
 
   const lemmaStatus = useCallback(
     (lemma: string): WordStatus => wordStatuses[lemma.toLowerCase()] ?? 'unknown',
@@ -521,9 +535,20 @@ export default function ReaderPage() {
         setVocabMarkable(isVocabMarkableSelection(surface, tokenCount, res.kind ?? (sentenceLike ? 'sentence' : undefined)));
         if (head) setActiveWord(head);
       } catch (e) {
+        if (handleLimitError(e)) return;
         const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if (isSlowDownError(e)) {
+          // Silent speed guard: neutral note (server text, localized), not an error.
+          toast.message(raw, { id: 'lookup-slow-down' });
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
@@ -534,7 +559,7 @@ export default function ReaderPage() {
         } else if (/AI lookup failed/i.test(raw)) {
           message = 'AI lookup failed. Please try again in a moment.';
         }
-        toast.error(message);
+        if (message) toast.error(message);
       } finally {
         setLookupLoading(false);
       }
@@ -582,6 +607,8 @@ export default function ReaderPage() {
       setWordStatuses((p) => ({ ...p, [activeWord]: 'learning' }));
       toast.success(`"${activeWord}" ${copy.reader.savedToVocab}`);
       void refreshVocab().catch(() => undefined);
+      // W-19b: the home "Words" card reads stats from /users/me/stats; refresh it too.
+      void refreshProfile().catch(() => undefined);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : copy.errors.saveFailed);
     }
@@ -699,6 +726,21 @@ export default function ReaderPage() {
     );
   }
 
+  if (!content && loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-g-reader-bg p-6 text-sm text-[#6a7282]">
+        <p>{copy.reader.contentLoadFailed}</p>
+        <button
+          type="button"
+          onClick={() => setReloadNonce((n) => n + 1)}
+          className="rounded-full bg-g-blue-700 px-4 py-2 font-medium text-g-on-cta"
+        >
+          {copy.reader.tryAgain}
+        </button>
+      </div>
+    );
+  }
+
   if (!content) {
     return (
       <div className="min-h-screen flex flex-col bg-g-reader-bg">
@@ -750,7 +792,15 @@ export default function ReaderPage() {
           <div className="text-center text-[#99a1af]">
             <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <div className="text-[#4a5565] font-medium">{copy.reader.noSegments}</div>
-            <div className="text-sm mt-1">This item may still be processing.</div>
+            <div className="text-sm mt-1">{copy.reader.stillProcessing}</div>
+            {/* WL4-09: localised empty state with a retry (re-fetches the item). */}
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              className="mt-4 rounded-full bg-g-blue-700 px-4 py-2 text-sm font-medium text-g-on-cta"
+            >
+              {copy.reader.tryAgain}
+            </button>
           </div>
         </div>
       </div>
@@ -758,7 +808,7 @@ export default function ReaderPage() {
   }
 
   const currentChapterLabel = currentChapter?.title
-    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex);
+    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex, copy.reader.chapterN);
   const zoomPct = Math.round(fontScale * 100);
   const readerTheme = preferences?.readerTheme ?? 'light';
   const pageTone =
@@ -785,6 +835,8 @@ export default function ReaderPage() {
           <span className="font-semibold text-[#1e2939] text-sm truncate">{content.title}</span>
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
         </div>
+        {/* AI-1 / Play UGC: report a book or imported text. */}
+        <ReportButton lang={locale} target={{ kind: 'content', contentId: content.id }} />
 
         <div className="hidden lg:flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">
@@ -878,7 +930,7 @@ export default function ReaderPage() {
                           </div>
                           {group.pageCount > 1 && (
                             <div className={cn('text-xs mt-0.5', activeHere ? 'text-g-blue-700' : 'text-[#99a1af]')}>
-                              {group.pageCount} pages
+                              {pagesLabel(group.pageCount, locale)}
                             </div>
                           )}
                         </button>
@@ -900,7 +952,7 @@ export default function ReaderPage() {
                             {pageCount > 1 ? copy.reader.page(i + 1) : copy.reader.content}
                           </div>
                           <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-g-blue-900' : 'text-[#4a5565]')}>
-                            {displayChapterTitle(seg.chapterTitle || seg.title, i)}
+                            {displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN)}
                           </div>
                         </button>
                       );
@@ -935,7 +987,7 @@ export default function ReaderPage() {
           <div className="md:hidden flex gap-2 overflow-x-auto px-4 pt-3 pb-1 scrollbar-hide">
             {(chapterGroups ?? outline.map((seg, i) => ({
               key: i,
-              title: displayChapterTitle(seg.chapterTitle || seg.title, i),
+              title: displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN),
               firstIndex: i,
               pageCount: 1,
             }))).map((group) => (
@@ -967,8 +1019,8 @@ export default function ReaderPage() {
             <div className="mb-8">
               <div className="text-xs font-semibold text-g-blue-500 uppercase tracking-[1.2px] mb-1">
                 {chapterGroups
-                  ? `Chapter ${(chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1} of ${chapterGroups.length}`
-                  : `${segmentIndex + 1} of ${pageCount}`}
+                  ? copy.reader.chapterOf((chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1, chapterGroups.length)
+                  : copy.reader.pageOf(segmentIndex + 1, pageCount)}
               </div>
               <h1 className="text-2xl font-bold text-[#101828] font-serif leading-8">
                 {currentChapterLabel}

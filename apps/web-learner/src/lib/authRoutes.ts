@@ -43,10 +43,9 @@ export function authSwitchSearch(
   if (returnUrl) next.set('returnUrl', returnUrl);
   if (goingTo === 'register') {
     const plan = params.get('plan');
-    const lang = params.get('lang');
     if (plan) next.set('plan', plan);
-    if (lang) next.set('lang', lang);
   }
+  copyLocaleParams(params, next);
   return next.toString();
 }
 
@@ -58,6 +57,7 @@ export function authFlowSearch(
   const next = new URLSearchParams();
   const returnUrl = params.get('returnUrl');
   if (returnUrl) next.set('returnUrl', returnUrl);
+  copyLocaleParams(params, next);
   if (extra) {
     for (const [key, value] of Object.entries(extra)) {
       if (value) next.set(key, value);
@@ -70,4 +70,23 @@ export function authFlowSearch(
 export function loginPathWithReturn(params: URLSearchParams): string {
   const q = authFlowSearch(params);
   return q ? `/login?${q}` : '/login';
+}
+
+/** Locale params the app honours (`lang` = learning/native pick, `ui` = interface language). */
+export const LOCALE_PARAMS = ['lang', 'ui'] as const;
+
+/** Copy only the locale params so redirects keep the visitor's language (and nothing else). */
+export function copyLocaleParams(from: URLSearchParams, to: URLSearchParams): URLSearchParams {
+  for (const k of LOCALE_PARAMS) {
+    const v = from.get(k);
+    if (v && !to.has(k)) to.set(k, v);
+  }
+  return to;
+}
+
+/** `path` plus the current locale params, e.g. `/app?lang=ru`. */
+export function withLocaleParams(path: string, search: string): string {
+  const [base, q = ''] = path.split('?');
+  const next = copyLocaleParams(new URLSearchParams(search), new URLSearchParams(q)).toString();
+  return next ? `${base}?${next}` : base;
 }

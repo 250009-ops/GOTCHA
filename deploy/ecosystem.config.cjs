@@ -17,15 +17,17 @@ module.exports = {
       max_memory_restart: '1024M',
     },
     {
-      name: 'gotcha-worker',
-      cwd: path.join(appDir, 'services/worker'),
-      script: 'dist/index.js',
+      // Postgres import queue. The old Bull worker in services/worker stays on disk and is not started.
+      name: 'gotcha-import-worker',
+      cwd: path.join(appDir, 'services/api'),
+      script: 'dist/worker.js',
       instances: 1,
       exec_mode: 'fork',
+      kill_timeout: 30000,
       env: {
         NODE_ENV: 'production',
       },
-      max_memory_restart: '512M',
+      max_memory_restart: '1024M',
     },
   ],
 };

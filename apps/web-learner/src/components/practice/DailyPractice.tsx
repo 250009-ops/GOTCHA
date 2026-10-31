@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError } from '../../lib/dailyLimit';
 import { DAILY_GOAL_OPTIONS, practiceCopyFor, type ExerciseType, type PracticeCopy, type SrsRatingValue } from '@gotcha/shared';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
@@ -85,7 +86,7 @@ export default function DailyPractice() {
         setOverview(o);
         setStats({ xpToday: o.xpToday, dailyGoalXp: o.dailyGoalXp, streakCount: o.streakCount, streakFreezes: o.streakFreezes });
       })
-      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e))));
   }, []);
 
   useEffect(loadOverview, [loadOverview]);
@@ -108,7 +109,7 @@ export default function DailyPractice() {
       setStats({ xpToday: s.xpToday, dailyGoalXp: s.dailyGoalXp, streakCount: s.streakCount, streakFreezes: s.streakFreezes });
       setPhase('play');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
       setPhase('hub');
     }
   };
@@ -122,7 +123,7 @@ export default function DailyPractice() {
       setStats({ xpToday: s.xpToday, dailyGoalXp: s.dailyGoalXp, streakCount: s.streakCount, streakFreezes: s.streakFreezes });
       setPhase('summary');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
       setPhase('hub');
     }
   };
@@ -219,7 +220,7 @@ export default function DailyPractice() {
             setStats((s) => ({ ...s, dailyGoalXp: g }));
             setOverview((o) => (o ? { ...o, dailyGoalXp: g } : o));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : String(e));
+            (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
           }
         }}
         onLibrary={() => navigate('/app')}
@@ -587,7 +588,7 @@ function ExercisePlayer({
         onNext();
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }
@@ -992,9 +993,9 @@ function FeedbackSheet({
   }, []);
   const verdict = skipped ? 'skipped' : result?.verdict ?? 'wrong';
   const tone = {
-    correct: { bg: 'bg-g-ok-bg', text: 'text-g-ok', btn: 'bg-g-ok hover:opacity-90 text-g-on-fill', icon: <Check className="w-5 h-5" />, title: t.correct },
+    correct: { bg: 'bg-g-ok-bg', text: 'text-g-ok', btn: 'bg-g-ok hover:brightness-90 text-g-on-fill', icon: <Check className="w-5 h-5" />, title: t.correct },
     almost: { bg: 'bg-g-warn-bg', text: 'text-g-warn', btn: 'bg-g-cta hover:bg-g-cta-hover text-white', icon: <Sparkles className="w-5 h-5" />, title: t.almost },
-    wrong: { bg: 'bg-g-bad-bg', text: 'text-g-bad', btn: 'bg-g-bad hover:opacity-90 text-g-on-fill', icon: <X className="w-5 h-5" />, title: t.incorrect },
+    wrong: { bg: 'bg-g-bad-bg', text: 'text-g-bad', btn: 'bg-g-bad hover:brightness-90 text-g-on-fill', icon: <X className="w-5 h-5" />, title: t.incorrect },
     skipped: { bg: 'bg-g-card-2', text: 'text-g-text-2', btn: 'bg-g-cta hover:bg-g-cta-hover text-white', icon: <RotateCcw className="w-5 h-5" />, title: t.willRetry },
   }[verdict];
   const note =

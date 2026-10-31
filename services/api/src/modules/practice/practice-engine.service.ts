@@ -289,7 +289,6 @@ export class PracticeEngineService {
       data: { attempts: { increment: 1 }, answeredAt: new Date(), requeue: false },
     });
     if (claim.count === 0) throw new ConflictException({ message: 'This exercise was already answered', code: 'item_answered' });
-    try {
 
     const vocab = await this.prisma.userVocabulary.findFirst({ where: { id: dto.vocabId, userId } });
     if (!vocab) throw new NotFoundException('Vocabulary entry not found');
@@ -425,14 +424,6 @@ export class PracticeEngineService {
       mastered: updated.mastered,
       ...progress,
     };
-    } catch (e) {
-      // m-p2-9: grading/review failed after the claim → release it so the learner can answer again.
-      await this.prisma.practiceSessionItem.updateMany({
-        where: { id: item.id, attempts: item.attempts + 1 },
-        data: { attempts: item.attempts, answeredAt: item.answeredAt, requeue: item.requeue },
-      }).catch(() => undefined);
-      throw e;
-    }
   }
 
   private aiJudgeCallsToday(userId: string) {

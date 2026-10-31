@@ -24,7 +24,8 @@ function matchesQuery(lang: LanguageOption, query: string) {
 function display(lang?: LanguageOption, code?: string) {
   return {
     flag: lang?.flagEmoji ?? languageFlag(code ?? lang?.code),
-    name: lang?.name ?? languageLabel(code ?? lang?.code),
+    // WL4-06: a language is shown by its own name (Oʻzbekcha, Русский…), never only the English one.
+    name: lang?.nativeName || lang?.name || languageLabel(code ?? lang?.code),
   };
 }
 
@@ -36,6 +37,7 @@ export function LanguageSearchInput({
   multiple = true,
   placeholder,
   id,
+  labelledBy,
 }: {
   options: LanguageOption[];
   value: string[];
@@ -44,6 +46,8 @@ export function LanguageSearchInput({
   multiple?: boolean;
   placeholder?: string;
   id?: string;
+  /** WL4-08: id of the visible label for this input. */
+  labelledBy?: string;
 }) {
   const copy = useLearnerCopy();
   const resolvedPlaceholder = placeholder ?? copy.languageInput.searchPlaceholder;
@@ -64,11 +68,12 @@ export function LanguageSearchInput({
   }, [exclude, options, query, value]);
 
   useEffect(() => {
-    const onDoc = (e: MouseEvent) => {
+    const onDoc = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('mousedown', onDoc);
-    return () => document.removeEventListener('mousedown', onDoc);
+    // W-17: pointerdown also covers touch, so a tap on "Create free account" closes the list first.
+    document.addEventListener('pointerdown', onDoc);
+    return () => document.removeEventListener('pointerdown', onDoc);
   }, []);
 
   useEffect(() => {
@@ -79,9 +84,10 @@ export function LanguageSearchInput({
     if (!code || value.includes(code) || exclude.includes(code)) return;
     onChange(multiple ? [...value, code] : [code]);
     setQuery('');
-    setOpen(multiple);
+    // W-17: close after each pick. The open list sat over the submit button and intercepted the tap.
+    // Typing (or ArrowDown) re-opens it to add another language.
+    setOpen(false);
     if (multiple) inputRef.current?.focus();
-    else setOpen(false);
   };
 
   const remove = (code: string) => {
@@ -116,7 +122,13 @@ export function LanguageSearchInput({
   };
 
   return (
-    <div ref={rootRef} className="relative">
+    <div
+      ref={rootRef}
+      className="relative"
+      onBlur={(e) => {
+        if (!rootRef.current?.contains(e.relatedTarget as Node | null)) setOpen(false);
+      }}
+    >
       <div
         className={cn(
           'min-h-11 w-full px-2.5 py-1.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] flex flex-wrap items-center gap-1.5',
@@ -152,6 +164,7 @@ export function LanguageSearchInput({
           <input
             ref={inputRef}
             id={id}
+            aria-labelledby={labelledBy}
             value={query}
             autoComplete="off"
             spellCheck={false}
@@ -168,6 +181,7 @@ export function LanguageSearchInput({
               setOpen(true);
             }}
             onFocus={() => setOpen(true)}
+            onClick={() => setOpen(true)}
             onKeyDown={onKeyDown}
           />
         </div>
@@ -193,8 +207,8 @@ export function LanguageSearchInput({
                 >
                   <span className="text-base leading-none">{flag}</span>
                   <span className="font-medium">{name}</span>
-                  {lang.nativeName && lang.nativeName !== name ? (
-                    <span className="text-xs text-[#9ca3af] truncate">{lang.nativeName}</span>
+                  {lang.name && lang.name !== name ? (
+                    <span className="text-xs text-[#9ca3af] truncate">{lang.name}</span>
                   ) : null}
                 </button>
               );

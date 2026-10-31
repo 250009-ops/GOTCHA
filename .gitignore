@@ -32,4 +32,5 @@ apps/mobile/pubspec.lock
 apps/android/*.txt
 apps/android/**/build/
 apps/android/.gradle/
+apps/android/.gradle-isolated/
 apps/android/local.properties

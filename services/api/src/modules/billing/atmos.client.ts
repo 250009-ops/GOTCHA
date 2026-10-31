@@ -356,7 +356,7 @@ export class AtmosClient {
 
     if (!res.ok || resultCode !== 'OK' || !Number.isFinite(transactionId)) {
       this.logger.error(
-        `Atmos merchant/pay/create failed: ${res.status} code=${resultCode} ${JSON.stringify(raw)}`,
+        `Atmos merchant/pay/create failed: ${res.status} code=${resultCode} ${atmosLogSummary(raw)}`,
       );
       throw new ServiceUnavailableException(mapAtmosCreateError(raw.result?.code, raw.result?.description));
     }
@@ -411,7 +411,7 @@ export class AtmosClient {
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
 
     if (!res.ok || resultCode !== 'OK') {
-      this.logger.error(`Atmos merchant/pay/pre-apply failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.error(`Atmos merchant/pay/pre-apply failed: ${res.status} ${atmosLogSummary(raw)}`);
       throw new ServiceUnavailableException(mapAtmosCardError(raw.result?.description));
     }
 
@@ -453,7 +453,7 @@ export class AtmosClient {
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
 
     if (!res.ok || resultCode !== 'OK') {
-      this.logger.error(`Atmos merchant/pay/pre-apply (token) failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.error(`Atmos merchant/pay/pre-apply (token) failed: ${res.status} ${atmosLogSummary(raw)}`);
       const detail = raw.result?.description || `HTTP ${res.status}`;
       throw new ServiceUnavailableException(`Card token verification failed (${detail}).`);
     }
@@ -530,7 +530,7 @@ export class AtmosClient {
     }
 
     if (!res.ok || resultCode !== 'OK') {
-      this.logger.error(`Atmos merchant/pay/apply failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.error(`Atmos merchant/pay/apply failed: ${res.status} ${atmosLogSummary(raw)}`);
       throw new BadRequestException(mapAtmosApplyError(raw.result?.code, raw.result?.description));
     }
 
@@ -569,7 +569,7 @@ export class AtmosClient {
     const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
 
     if (!res.ok) {
-      this.logger.warn(`Atmos merchant/pay/get failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.warn(`Atmos merchant/pay/get failed: ${res.status} ${atmosLogSummary(raw)}`);
       return null;
     }
 
@@ -593,13 +593,12 @@ export class AtmosClient {
    * 5. Cancel Transaction (Reverse)
    * POST /merchant/pay/reverse
    * Cancels a transaction and refunds the card.
-   * Atmos documents no idempotency key for this call (docs.atmos.uz, "Отмена транзакции": only transaction_id,
-   * hold_amount, reason). Double refunds are prevented on our side (paid→refunding claim) and by Atmos itself,
-   * which rejects reversing an already-reversed transaction. See docs/ATMOS.md §Refunds.
    */
   async reverseTransaction(params: {
     transactionId: number;
     reason?: string;
+    /** Sent as Idempotency-Key (our payment id) so a retried reverse can be de-duplicated. */
+    idempotencyKey?: string;
   }): Promise<{ transactionId: number; raw: unknown }> {
     const token = await this.getAccessToken();
 
@@ -608,32 +607,23 @@ export class AtmosClient {
     };
     if (params.reason) payload.reason = params.reason;
 
-    let res: Response;
-    try {
-      res = await fetch(`${this.baseUrl()}/merchant/pay/reverse`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(30_000),
-      });
-    } catch (e) {
-      // Network error / timeout: Atmos may or may not have reversed. NOT a definite rejection (N-M1).
-      throw new AtmosReverseError(`Unable to cancel transaction (${e instanceof Error ? e.message : 'network error'}).`, false);
-    }
-    const parsed = (await res.json().catch(() => null)) as AtmosMerchantResponse | null;
-    const raw = parsed ?? {};
+    const res = await fetch(`${this.baseUrl()}/merchant/pay/reverse`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(params.idempotencyKey ? { 'Idempotency-Key': params.idempotencyKey } : {}),
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+    const raw = (await res.json().catch(() => ({}))) as AtmosMerchantResponse;
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
 
     if (!res.ok || resultCode !== 'OK') {
-      this.logger.error(`Atmos merchant/pay/reverse failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.error(`Atmos merchant/pay/reverse failed: ${res.status} ${atmosLogSummary(raw)}`);
       const detail = raw.result?.description || `HTTP ${res.status}`;
-      // Definite only when Atmos answered (non-5xx) with an explicit non-OK result code.
-      const definite = res.status < 500 && parsed !== null && resultCode !== '';
-      throw new AtmosReverseError(`Unable to cancel transaction (${detail}).`, definite, resultCode || null);
+      throw new ServiceUnavailableException(`Unable to cancel transaction (${detail}).`);
     }
 
     return {
@@ -667,7 +657,7 @@ export class AtmosClient {
     const resultCode = String(raw.result?.code ?? '').toUpperCase();
 
     if (!res.ok || resultCode !== 'OK') {
-      this.logger.error(`Atmos merchant/pay/retry-otp failed: ${res.status} ${JSON.stringify(raw)}`);
+      this.logger.error(`Atmos merchant/pay/retry-otp failed: ${res.status} ${atmosLogSummary(raw)}`);
       const detail = raw.result?.description || `HTTP ${res.status}`;
       throw new ServiceUnavailableException(`Unable to resend OTP (${detail}).`);
     }
@@ -700,12 +690,10 @@ export class AtmosClient {
   }
 }
 
-/**
- * reverseTransaction failure. `definite` = Atmos answered with an explicit non-OK result code, so the charge was
- * certainly NOT reversed. Timeouts, network errors, 5xx and unparsable bodies are ambiguous (REVIEW-p2b N-M1).
- */
-export class AtmosReverseError extends ServiceUnavailableException {
-  constructor(message: string, readonly definite: boolean, readonly atmosCode: string | null = null) {
-    super(message);
-  }
+/** PAY1-06: log only Atmos result code + description; never the raw body (masked card, phone, card tokens). */
+export function atmosLogSummary(raw: unknown): string {
+  const r = (raw && typeof raw === 'object' ? (raw as { result?: { code?: unknown; description?: unknown } }).result : undefined) ?? {};
+  const code = typeof r.code === 'string' || typeof r.code === 'number' ? String(r.code) : '?';
+  const desc = typeof r.description === 'string' ? r.description.replace(/[\d*][\d* ]{2,}[\d*]/g, '****').slice(0, 160) : '';
+  return `code=${code} ${desc}`.trim();
 }

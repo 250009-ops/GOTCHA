@@ -7,7 +7,7 @@ const API = 'https://gotchaa.uz/api/v1';
 const login = await fetch(`${API}/auth/login`, {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({ email: 'admin@gotcha.app', password: process.env.ADMIN_PASSWORD }),
+  body: JSON.stringify({ email: 'admin@gotcha.app', password: '<REDACTED-admin-pw>' }),
 }).then((r) => r.json());
 
 for (const [name, sourceUrl] of pdfs) {

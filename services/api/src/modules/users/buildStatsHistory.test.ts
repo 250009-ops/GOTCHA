@@ -7,37 +7,41 @@ import {
 
 const day = (iso: string) => new Date(`${iso}T12:00:00.000Z`);
 
+// WL4-13: dates relative to today so the 30-day window never drifts past them.
+const isoDaysAgo = (n: number) => new Date(Date.now() - n * 86_400_000).toISOString().slice(0, 10);
+const D1 = isoDaysAgo(5);
+const D2 = isoDaysAgo(4);
+
 const contentA = '11111111-1111-1111-1111-111111111111';
 const contentB = '22222222-2222-2222-2222-222222222222';
 
 const { history } = buildStatsHistory(
   [
-    { startedAt: day('2026-08-20'), durationSeconds: 600, contentId: contentA },
-    { startedAt: day('2026-08-20'), durationSeconds: 300, contentId: contentA },
-    { startedAt: day('2026-08-21'), durationSeconds: 300, contentId: contentB },
+    { startedAt: day(D1), durationSeconds: 600, contentId: contentA },
+    { startedAt: day(D1), durationSeconds: 300, contentId: contentA },
+    { startedAt: day(D2), durationSeconds: 300, contentId: contentB },
   ],
-  [{ createdAt: day('2026-08-20') }, { createdAt: day('2026-08-21') }, { createdAt: day('2026-08-21') }],
+  [{ createdAt: day(D1) }, { createdAt: day(D2) }, { createdAt: day(D2) }],
   [
     {
       contentId: contentA,
-      completedAt: day('2026-08-20'),
-      lastReadAt: day('2026-08-20'),
+      completedAt: day(D1),
+      lastReadAt: day(D1),
     },
   ],
   30,
-  day('2026-08-22'), // fixed clock so the 30-day window always contains the fixtures
 );
 
 const byDate = new Map(history.daily.map((d) => [d.date, d]));
-assert.equal(byDate.get('2026-08-20')?.minutes, 15);
-assert.equal(byDate.get('2026-08-21')?.minutes, 5);
-assert.equal(byDate.get('2026-08-20')?.wordsSaved, 1);
-assert.equal(byDate.get('2026-08-21')?.wordsSaved, 2);
+assert.equal(byDate.get(D1)?.minutes, 15);
+assert.equal(byDate.get(D2)?.minutes, 5);
+assert.equal(byDate.get(D1)?.wordsSaved, 1);
+assert.equal(byDate.get(D2)?.wordsSaved, 2);
 
 const heatByDate = new Map(history.heatmap.map((d) => [d.date, d]));
-assert.equal(heatByDate.get('2026-08-20')?.count, 1, 'duplicate session slices dedupe to one content');
-assert.equal(heatByDate.get('2026-08-21')?.count, 1);
-assert.equal(heatByDate.get('2026-08-20')?.finished, 1);
+assert.equal(heatByDate.get(D1)?.count, 1, 'duplicate session slices dedupe to one content');
+assert.equal(heatByDate.get(D2)?.count, 1);
+assert.equal(heatByDate.get(D1)?.finished, 1);
 
 assert.equal(streakQualifyingMinutes(15), 15);
 assert.equal(streakQualifyingMinutes(undefined), 15);

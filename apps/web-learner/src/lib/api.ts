@@ -1,11 +1,16 @@
 import { localizeApiError } from '@gotcha/shared';
 import { readStoredLearnerLocale, detectLearnerLocale } from './learnerLocale';
+import { announceDailyLimit, dailyLimitText, type DailyLimitInfo } from './dailyLimit';
 
-function currentUiLang(): string {
+/** UI language for non-React callers (limit notes). */
+export const learnerLang = (): string => currentUiLang();
+
+import { refreshRejected } from './bootstrapPolicy';
+export function currentUiLang(): string {
   if (typeof document !== 'undefined' && document.documentElement.lang) return document.documentElement.lang.slice(0, 2);
   return readStoredLearnerLocale() ?? detectLearnerLocale();
 }
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
+const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000/api/v1' : '/api/v1');
 
 const ACCESS_KEY = 'gotcha_learner_access';
 const REFRESH_KEY = 'gotcha_learner_refresh';
@@ -66,15 +71,15 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          clearTokens();
+          // WL4-02: only a rejected refresh token ends the session; 5xx keeps tokens for a retry.
+          if (refreshRejected(res.status)) clearTokens();
           return null;
         }
         const data = (await res.json()) as AuthTokens;
         setTokens(data);
         return data.accessToken;
       } catch {
-        clearTokens();
-        return null;
+        return null; // network error: keep the session
       } finally {
         refreshPromise = null;
       }
@@ -120,7 +125,9 @@ export async function api<T>(
       statusCode?: number;
     };
     // BUG-10: never surface raw English server text in RU/UZ.
-    const message = localizeApiError(currentUiLang(), {
+    // Daily caps (Free 20/10, Plus 200/200, admin-editable): the server sends uz/ru/en text naming the limit.
+    const capMsg = (err.code === 'lookup_limit' || err.code === 'quiz_limit' || err.code === 'fair_use_limit' || err.code === 'lookup_slow_down') ? (err as { messages?: Record<string, string> }).messages?.[currentUiLang()] : undefined;
+    const message = capMsg ?? localizeApiError(currentUiLang(), {
       message: err.message,
       code: err.code,
       status: err.statusCode ?? res.status,
@@ -129,8 +136,20 @@ export async function api<T>(
       code?: string;
       email?: string;
       status?: number;
+      body?: Record<string, unknown>;
     };
     if (err.code) error.code = err.code;
+    if (capMsg) (error as { limit?: number }).limit = (err as { limit?: number }).limit;
+    // payments-02: 429 {kind, plan, limit, resetAt} → friendly notice with the reset time (no error toast).
+    const lim = err as Partial<DailyLimitInfo>;
+    if ((err.code === 'lookup_limit' || err.code === 'quiz_limit') && lim.kind && lim.plan && typeof lim.limit === 'number' && lim.resetAt) {
+      const info: DailyLimitInfo = { kind: lim.kind, plan: lim.plan, limit: lim.limit, plusLimit: lim.plusLimit === undefined ? lim.limit : lim.plusLimit, resetAt: lim.resetAt };
+      (error as { dailyLimit?: DailyLimitInfo }).dailyLimit = info;
+      error.message = dailyLimitText(info, currentUiLang()).message;
+      announceDailyLimit(info);
+    }
+    // final-5: keep the full 403 body (limit, resetAt, timezone) for the limit screen.
+    error.body = err as Record<string, unknown>;
     if (err.email) error.email = err.email;
     error.status = err.statusCode ?? res.status;
     throw error;

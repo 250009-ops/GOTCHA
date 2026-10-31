@@ -1,3 +1,4 @@
+import { consentRequired, recordedConsentVersion } from '../../common/safety/consent';
 import {
   BadRequestException,
   ConflictException,
@@ -97,7 +98,8 @@ export class AuthService {
     return (
       this.config.get<string>('ADMIN_APP_URL')?.trim() ||
       this.config.get<string>('VITE_ADMIN_APP_URL')?.trim()?.split(',')?.[0]?.trim() ||
-      'http://localhost:5173/'
+      // WLF-09: dev-only default; production refuses to boot without ADMIN_APP_URL (assertProductionUrlConfig).
+      (process.env.NODE_ENV === 'production' ? 'https://gotchaa.uz/admin' : 'http://localhost:5173/')
     ).replace(/\/?$/, '/');
   }
 
@@ -175,8 +177,17 @@ export class AuthService {
     return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
   }
 
-  async register(dto: RegisterDto, clientPlatformHeader?: string) {
+  async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string, browserOrigin?: string) {
     const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
+    // S3: web sign-ups must tick the single consent box (Terms + Privacy + OpenAI transfer).
+    if (consentRequired(clientPlatform, browserOrigin) && dto.acceptTerms !== true) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Please accept the Terms of Use and the Privacy Policy to create an account.',
+        code: 'CONSENT_REQUIRED',
+      });
+    }
     if (isDevAuthEnabled()) {
       return this.devAuth.register(dto);
     }
@@ -210,6 +221,11 @@ export class AuthService {
       }
     }
 
+    // PAY2-17: store the label version the client showed (.3 when it sends none), refuse unknown versions.
+    const consentVersion = dto.acceptTerms === true ? recordedConsentVersion(dto.consentVersion) : null;
+    if (dto.acceptTerms === true && !consentVersion) {
+      throw new BadRequestException({ statusCode: 400, code: 'consent_version_unknown', message: 'Unknown consent version.' });
+    }
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const primaryTarget = dto.targetLanguages[0];
 
@@ -219,6 +235,12 @@ export class AuthService {
         passwordHash,
         displayName: dto.displayName ?? email.split('@')[0],
         nativeLanguage: dto.nativeLanguage,
+        birthYear: dto.birthYear ?? null,
+        // W-12: asked at sign-up, so no later one-time prompt.
+        agePromptedAt: new Date(),
+        ...(dto.acceptTerms === true
+          ? { consentVersion, consentAt: new Date(), consentIp: ip?.slice(0, 64) ?? null }
+          : {}),
         uiLanguage: dto.uiLanguage && (['en', 'ru', 'uz'] as const).includes(dto.uiLanguage) ? dto.uiLanguage : 'uz',
         emailVerifiedAt: null,
         preferences: { create: { dailyGoalMinutes: 15 } },

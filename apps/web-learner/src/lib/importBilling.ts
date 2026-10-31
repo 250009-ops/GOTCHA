@@ -227,14 +227,8 @@ export function pageWindowLabel(resetCycle: string | null | undefined, billing: 
 
 export function formatFreeAllowance(allowance: ImportFreeAllowance, billing: BillingCopy) {
   const pagesWindow = pageWindowLabel(allowance.resetCycle, billing);
-  if (!allowance.gatewayEnabled) {
-    return `${billing.importsFree} ${billing.configuredPool(
-      allowance.dailyFreeImportsPerUser,
-      allowance.monthlyFreePageLimit,
-      pagesWindow,
-    )}`;
-  }
-  return `${billing.freeImportsLeft(
+  // final-5 (b): the free allowance is enforced with the gateway off too, so always show what is left.
+  const line = `${billing.freeImportsLeft(
     allowance.dailyFreeRemaining,
     allowance.dailyFreeImportsPerUser,
     billing.today,
@@ -243,6 +237,7 @@ export function formatFreeAllowance(allowance: ImportFreeAllowance, billing: Bil
     allowance.monthlyFreePageLimit,
     pagesWindow,
   )}.`;
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 export function isValidCardNumber(cardNumber: string) {

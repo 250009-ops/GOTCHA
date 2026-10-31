@@ -1,4 +1,5 @@
-import { IsIn, IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AppLanguage, CefrLevel } from '@prisma/client';
 
 export class UpdateProfileDto {
@@ -27,10 +28,6 @@ export class UpdatePreferencesDto {
   readerTheme?: string;
 
   @IsOptional()
-  @IsIn(['system', 'light', 'dark'])
-  appTheme?: string;
-
-  @IsOptional()
   @IsNumber()
   @Min(1)
   @Max(2.5)
@@ -49,16 +46,6 @@ export class UpdatePreferencesDto {
   @Min(5)
   @Max(120)
   dailyGoalMinutes?: number;
-
-  @IsOptional()
-  @IsIn([30, 60, 120, 200])
-  dailyGoalXp?: number;
-
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  @Max(50)
-  dailyNewWords?: number;
 
   @IsOptional()
   @IsBoolean()
@@ -99,8 +86,23 @@ export class UpdateTargetLanguageDto {
   isPrimary?: boolean;
 }
 
+export class SetAgeDto {
+  /** Omit/null = "prefer not to say" (unknown-age limits apply). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(new Date().getUTCFullYear())
+  birthYear?: number | null;
+}
+
 export class DeleteAccountDto {
   @IsString()
   @MaxLength(128)
   currentPassword!: string;
+}
+
+export class SetAiPreferenceDto {
+  @IsBoolean()
+  aiDisabled!: boolean;
 }

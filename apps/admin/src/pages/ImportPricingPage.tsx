@@ -25,6 +25,8 @@ interface FreeLimits {
   allowedFormats: string[];
   resetCycle: string;
   allowRollover: boolean;
+  plusDailyImportsPerUser?: number | null;
+  plusMonthlyPageLimit?: number | null;
 }
 
 interface ImportPricingData {
@@ -121,7 +123,10 @@ export default function ImportPricingPage() {
       }>('/admin/ai-usage?range=today').catch(() => null),
     ]);
     setData(res);
-    setLimits(res.freeLimits);
+    setLimits({
+      ...res.freeLimits,
+      resetCycle: res.freeLimits.resetCycle === 'yearly' ? 'yearly' : 'monthly',
+    });
     if (ai) {
       setLookupQuota(ai.settings?.defaultUserQuota ?? 50);
       setLookupDailyLimit(ai.settings?.dailyLimit ?? 0);
@@ -475,13 +480,34 @@ export default function ImportPricingPage() {
               </div>
             </div>
             <label className="flex items-center justify-between gap-3 text-sm">
-              <span>Reset cycle</span>
+              <span>Plus imports per day</span>
+              <Input
+                type="number"
+                min="0"
+                className="w-20"
+                placeholder="Free"
+                value={limits.plusDailyImportsPerUser ?? ''}
+                onChange={(e) => setLimits({ ...limits, plusDailyImportsPerUser: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>Plus pages per month</span>
+              <Input
+                type="number"
+                min="0"
+                className="w-28"
+                placeholder="Free"
+                value={limits.plusMonthlyPageLimit ?? ''}
+                onChange={(e) => setLimits({ ...limits, plusMonthlyPageLimit: e.target.value === '' ? null : Number(e.target.value) })}
+              />
+            </label>
+            <label className="flex items-center justify-between gap-3 text-sm">
+              <span>Page reset</span>
               <Select
                 className="w-28"
-                value={limits.resetCycle}
+                value={limits.resetCycle === 'yearly' ? 'yearly' : 'monthly'}
                 onChange={(e) => setLimits({ ...limits, resetCycle: e.target.value })}
               >
-                <option value="daily">Daily</option>
                 <option value="monthly">Monthly</option>
                 <option value="yearly">Yearly</option>
               </Select>

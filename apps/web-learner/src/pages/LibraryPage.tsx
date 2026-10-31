@@ -12,7 +12,8 @@ import { formatUzs } from '../lib/importBilling';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { openReader } from '../lib/readerReturn';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
-import { type ContentItem, gradientForId } from '../lib/types';
+import { type ContentItem } from '../lib/types';
+import { BookCover, coverDisplayTitle } from '../components/cover/BookCover';
 
 const cefrStyle: Record<string, string> = {
   a1: 'bg-emerald-100 text-emerald-700',
@@ -80,27 +81,9 @@ function itemSubtitle(item: ContentItem) {
   return item.subtitle ?? item.description ?? '';
 }
 
-function CoverArt({ item, className }: { item: ContentItem; className?: string }) {
-  const src = resolveMediaUrl(item.coverImageUrl);
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(src) && !failed;
-  return (
-    <div
-      className={cn('relative flex items-center justify-center overflow-hidden', className)}
-      style={showImage ? undefined : { backgroundImage: gradientForId(item.id) }}
-    >
-      {showImage ? (
-        <img
-          src={src ?? ''}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
-      )}
-    </div>
-  );
+function CoverArt({ item, className, variant = 'card' }: { item: ContentItem; className?: string; variant?: 'card' | 'thumb' }) {
+  // Landing poster when this book has one; otherwise the stored cover image. Same 2:3 frame as the landing page.
+  return <BookCover item={item} variant={variant} resolveUrl={resolveMediaUrl} className={cn('relative', className)} />;
 }
 
 function CefrBadge({ level }: { level: string }) {
@@ -144,7 +127,7 @@ function ContentCard({
           highlightClass,
         )}
       >
-        <CoverArt item={item} className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
+        <CoverArt item={item} variant="thumb" className="w-[3.25rem] aspect-[2/3] rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
@@ -188,23 +171,8 @@ function ContentCard({
         highlightClass,
       )}
     >
-      <div className="relative shrink-0 w-full aspect-[3/4]">
-        <CoverArt item={item} className="absolute inset-0 w-full h-full" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
-        <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[calc(100%-2rem)]">
-          <CefrBadge level={item.cefrLevel} />
-          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/20 backdrop-blur text-white capitalize truncate max-w-[5rem]">
-            {item.contentType.replace('_', ' ')}
-          </span>
-        </div>
-        <div className="absolute top-2 right-2 flex items-center gap-1">
-          {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
-            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-g-blue-700 shadow-sm">
-              {formatUzs(item.priceUzs ?? 0)}
-            </span>
-          )}
-          <span className="text-lg leading-none drop-shadow">{langFlags[item.language] ?? '🌐'}</span>
-        </div>
+      <div className="relative shrink-0 w-full aspect-[2/3]">
+        <CoverArt item={item} className="!absolute inset-0 w-full h-full" />
       </div>
       <div className="p-3 flex-1 flex flex-col min-h-0">
         <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-g-blue-700 transition-colors mb-1">{item.title}</div>
@@ -214,9 +182,13 @@ function ContentCard({
           <div className="mb-auto" />
         )}
         <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-50 text-xs text-gray-400">
-          <span className="flex items-center gap-1 truncate">
+          <span className="flex items-center gap-1.5 truncate min-w-0">
+            <CefrBadge level={item.cefrLevel} />
             <BookOpen className="w-3 h-3 shrink-0" />
             {copy.common.words(item.wordCount)}
+            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+              <span className="text-g-blue-700 font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
+            ) : null}
           </span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
               <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.trySample}</span>
@@ -242,41 +214,35 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
   const navigate = useNavigate();
   const copy = useLearnerCopy();
   const open = () => openReader(navigate, item.id);
-  const cover = resolveMediaUrl(item.coverImageUrl);
+  const title = coverDisplayTitle(item);
   return (
     <div
-      className="relative overflow-hidden rounded-2xl cursor-pointer group h-full min-h-[11rem]"
-      style={cover ? undefined : { backgroundImage: gradientForId(item.id) }}
+      className="flex h-full min-h-[11rem] overflow-hidden rounded-2xl border border-gray-100/80 bg-white cursor-pointer group"
+      data-testid="continue-reading-hero"
       onClick={open}
     >
-      {cover && (
-        <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      <div className="relative p-5 sm:p-6 min-h-[11rem] h-full flex flex-col justify-end">
-        <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">{copy.libraryPage.continueReading}</span>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="text-white font-bold text-lg sm:text-xl leading-tight line-clamp-2 mb-0.5">{item.title}</div>
-            {itemSubtitle(item) && <div className="text-white/60 text-sm line-clamp-1">{itemSubtitle(item)}</div>}
-          </div>
-          <div className="flex items-center justify-between gap-3 sm:ml-4 sm:flex-col sm:items-end sm:gap-2 shrink-0">
-            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
-              <span className="text-white font-bold text-sm sm:text-base">{formatUzs(item.priceUzs ?? 0)}</span>
-            ) : (
-              <span className="text-white/90 font-bold text-xl sm:text-2xl tabular-nums">{item.progressPct ?? 0}%</span>
-            )}
-            <Button
-              size="sm"
-              className="bg-white text-gray-900 hover:bg-white/90 rounded-xl h-8 px-4 text-xs font-semibold shadow-lg"
-              onClick={(e) => { e.stopPropagation(); open(); }}
-            >
-              {copy.libraryPage.resume} <ArrowRight className="w-3 h-3 ml-1" />
-            </Button>
-          </div>
+      <div className="w-[7.5rem] sm:w-[9.5rem] shrink-0 self-stretch">
+        <BookCover item={item} variant="hero" resolveUrl={resolveMediaUrl} className="h-full w-full" />
+      </div>
+      <div className="flex-1 min-w-0 p-4 sm:p-5 flex flex-col justify-end">
+        <span className="text-[11px] font-semibold uppercase tracking-wider mb-2 text-gray-500">{copy.libraryPage.continueReading}</span>
+        <div className="font-semibold text-gray-900 text-base leading-snug line-clamp-2 mb-3" lang={item.language}>{title}</div>
+        <div className="flex items-center justify-between gap-3">
+          {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+            <span className="text-g-blue-700 font-bold text-sm">{formatUzs(item.priceUzs ?? 0)}</span>
+          ) : (
+            <span className="text-gray-900 font-bold text-xl tabular-nums">{item.progressPct ?? 0}%</span>
+          )}
+          <Button
+            size="sm"
+            className="rounded-xl h-8 px-4 text-xs font-semibold"
+            onClick={(e) => { e.stopPropagation(); open(); }}
+          >
+            {copy.libraryPage.resume} <ArrowRight className="w-3 h-3 ml-1" />
+          </Button>
         </div>
-        <div className="mt-3 h-1 bg-white/20 rounded-full overflow-hidden">
-          <div className="h-full bg-white rounded-full" style={{ width: `${item.progressPct ?? 0}%` }} />
+        <div className="mt-3 h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-violet-500 rounded-full" style={{ width: `${item.progressPct ?? 0}%` }} />
         </div>
       </div>
     </div>
@@ -702,7 +668,7 @@ export default function LibraryPage() {
                 onClick={() => setFilter(f)}
                 className={cn(
                   'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all',
-                  activeFilter === f ? 'bg-g-blue-700 text-white border-g-blue-700 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+                  activeFilter === f ? 'bg-g-blue-700 text-g-on-cta border-g-blue-700 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
                 )}
               >
                 {filterLabel(f, copy)}

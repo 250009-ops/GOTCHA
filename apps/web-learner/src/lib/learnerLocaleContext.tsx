@@ -42,6 +42,9 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
   }, [searchParams, user]);
 
   const locale: UiLanguage = useMemo(() => {
+    // WLF-36: an explicit ?ui= on a guest page (landing CTA → /learn/register?ui=en) wins over an older stored choice.
+    const urlUi = (searchParams.get('ui') || '').toLowerCase().slice(0, 2);
+    if (!user && UI_LANGUAGES.includes(urlUi as UiLanguage)) return urlUi as UiLanguage;
     const stored = readStoredLearnerLocale();
     if (stored) return stored;
 
@@ -55,7 +58,7 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
     }
 
     return guestLocale;
-  }, [user?.uiLanguage, guestLocale]);
+  }, [user, user?.uiLanguage, guestLocale, searchParams]);
 
   const copy = useMemo(() => learnerCopyFor(locale), [locale]);
 

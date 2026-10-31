@@ -1,3 +1,8 @@
+import { Onboarding } from '../components/onboarding/Onboarding';
+import { AgePrompt } from '../components/safety/AgePrompt';
+import type { OnboardingStep } from '../lib/onboarding';
+import { LimitDialog } from '../components/LimitDialog';
+import { usePaymentsEnabled } from '../lib/limits';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -22,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../lib/auth';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { GotchaLogo } from '../components/GotchaLogo';
@@ -63,14 +68,17 @@ function shouldShowGlobalSearch(pathname: string) {
 }
 
 export default function LearnerShell() {
+  const payments = usePaymentsEnabled();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, stats, logout } = useAuth();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   useCatalogLanguages();
   const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | 'done'>('done');
 
   const isActive = (path: string, exact = false) => {
     if (exact || path === '/app') {
@@ -121,18 +129,30 @@ export default function LearnerShell() {
     return () => window.clearInterval(id);
   }, [user, location.pathname]);
 
+  const highlightPractice = onboardingStep === 'practice';
+
+  useEffect(() => {
+    if (highlightPractice) setExpanded(true);
+  }, [highlightPractice]);
+
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {
     const label = copy.nav[item.labelKey];
     const active = isActive(item.path, item.exact);
+    const practiceMark = highlightPractice && item.path === '/app/practice';
     const btn = (
       <button
         type="button"
+        data-onboarding={practiceMark ? 'practice' : undefined}
         onClick={() => navigate(item.path)}
+        // W-20: icon-only rail items had no accessible name (1 of 7 labelled).
+        aria-label={label}
+        aria-current={active ? 'page' : undefined}
         className={cn(
           'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group relative',
           collapsed ? 'px-0 py-3 justify-center' : 'px-3 py-2.5',
+          practiceMark && 'z-50 ring-2 ring-white',
           active
-            ? 'bg-g-blue-700 text-white shadow-[0_4px_3px_rgba(33,7,170,0.4),0_2px_2px_rgba(33,7,170,0.4)]'
+            ? 'bg-g-blue-700 text-g-on-cta shadow-[0_4px_3px_rgba(33,7,170,0.4),0_2px_2px_rgba(33,7,170,0.4)]'
             : 'text-white/50 hover:text-white/90 hover:bg-white/[0.07]',
         )}
       >
@@ -175,7 +195,8 @@ export default function LearnerShell() {
         {/* Sidebar — always present for web; icon rail on narrow widths */}
         <div
           className={cn(
-            'shrink-0 relative z-20 h-full transition-[width] duration-200',
+            'shrink-0 relative h-full transition-[width] duration-200',
+            highlightPractice ? 'z-50' : 'z-20',
             expanded ? 'w-60' : 'w-14',
           )}
         >
@@ -189,7 +210,7 @@ export default function LearnerShell() {
               />
             </div>
 
-            <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
+            <nav aria-label={copy.nav.mainLabel} className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
               {primaryNav.map((item) => (
                 <NavLink key={item.path} item={item} collapsed={!expanded} />
               ))}
@@ -200,7 +221,8 @@ export default function LearnerShell() {
             </nav>
 
             <div className="px-2 pb-3 pt-2 border-t border-white/[0.06] space-y-1 shrink-0">
-              {expanded ? (
+              {/* final-5 B4: pay-as-you-go upsell only when payments are on (default off). */}
+              {!payments ? null : expanded ? (
                 <button
                   type="button"
                   onClick={() => navigate('/app/import')}
@@ -218,6 +240,7 @@ export default function LearnerShell() {
                     <button
                       type="button"
                       onClick={() => navigate('/app/import')}
+                      aria-label={copy.shell.payAsYouGo}
                       className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-g-blue-700 to-g-blue-900 border border-white/10"
                     >
                       <Wallet className="w-3.5 h-3.5 text-amber-300" />
@@ -247,9 +270,10 @@ export default function LearnerShell() {
         </div>
 
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
-          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
+          {/* W-20: below 640 px the search used to collapse to a 50-64 px pill; it now gets its own row. */}
+          <header className="min-h-14 py-2 sm:py-0 sm:h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
             {showGlobalSearch ? (
-              <div className="w-full max-w-[400px] min-w-0" data-global-search="library-only">
+              <div className="order-last basis-full sm:order-none sm:basis-auto w-full sm:max-w-[400px] min-w-0" data-global-search="library-only">
                 <GlobalSearch />
               </div>
             ) : (
@@ -325,6 +349,9 @@ export default function LearnerShell() {
             )}
           >
             <Outlet />
+            <Onboarding onStep={setOnboardingStep} />
+            <AgePrompt />
+            <LimitDialog lang={locale} />
           </main>
         </div>
       </div>

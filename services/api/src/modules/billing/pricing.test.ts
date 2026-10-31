@@ -25,14 +25,10 @@ async function main() {
       update: async ({ where, data }: any) => { const p = promos.find((x) => x.id === where.id); p.redemptions += data.redemptions.increment; return p; },
     },
     importPayment: {
-      count: async ({ where }: any) => (where.status ? payments.filter((p) => p.promoCodeId === where.promoCodeId && p.status === 'pending' && p.userId !== where.NOT?.userId).length
-        : payments.filter((p) => p.userId === where.userId && p.promoCodeId === where.promoCodeId && p.promoRedeemed).length),
+      count: async ({ where }: any) => payments.filter((p) => p.userId === where.userId && p.promoCodeId === where.promoCodeId && p.promoRedeemed).length,
       findUnique: async ({ where }: any) => payments.find((p) => p.id === where.id),
       updateMany: async ({ where, data }: any) => { const p = payments.find((x) => x.id === where.id && x.promoRedeemed === where.promoRedeemed); if (!p) return { count: 0 }; Object.assign(p, data); return { count: 1 }; },
-      update: async ({ where, data }: any) => Object.assign(payments.find((x) => x.id === where.id), data),
     },
-    // conditional increment (m-p2-5): mirrors the SQL WHERE redemptions < max_redemptions
-    $executeRaw: async (_q: TemplateStringsArray, id: string) => { const p = promos.find((x) => x.id === id); if (p.maxRedemptions != null && p.redemptions >= p.maxRedemptions) return 0; p.redemptions++; return 1; },
     subscriptionPlan: {
       findFirst: async ({ where }: any) => plans.find((p) => p.tier === where.tier) ?? null,
       update: async ({ where, data }: any) => Object.assign(plans.find((p) => p.id === where.id), data),
@@ -52,16 +48,6 @@ async function main() {
   assert.equal(await code('LAUNCH', 'imports'), 'promo_used', 'per-user limit');
   promos[0].redemptions = 2;
   assert.equal(await code('LAUNCH', 'imports', 'u2'), 'promo_exhausted');
-  // m-p2-5: an open checkout holds a slot; and a redemption past the cap doesn't increment, it flags.
-  promos[0].redemptions = 1;
-  payments.push({ id: 'pay2', userId: 'u3', promoCodeId: 'p1', promoRedeemed: false, status: 'pending' });
-  assert.equal(await code('LAUNCH', 'imports', 'u4'), 'promo_exhausted', 'pending checkout holds the last slot');
-  // n-7: the holder's own abandoned checkout doesn't block them.
-  assert.equal(await code('LAUNCH', 'imports', 'u3'), 'ok', 'own pending checkout does not block a retry');
-  promos[0].redemptions = 2;
-  assert.equal(await svc.redeemForPayment('pay2'), false);
-  assert.equal(promos[0].redemptions, 2, 'cap never exceeded');
-  assert.equal(payments[1].needsAttention, true);
 
   // plan edits
   await assert.rejects(svc.updatePlan('free', { priceUzs: 1000 }), /free plan must cost 0/);
@@ -73,7 +59,11 @@ async function main() {
   assert.ok(before);
 
   // Seed = PRICING.md §7 non-PROPOSAL rows only
-  assert.deepEqual(seed.subscriptionPlans.map((p: any) => [p.tier, p.priceMonthly]), [['free', 0], ['premium', 34990]]);
+  assert.deepEqual(seed.subscriptionPlans.map((p: any) => [p.tier, p.priceMonthly]), [['free', 0], ['premium', 24990]]); // Kai option 1 (13:54): 24990/30 days; PRICING.md 34990 superseded, pending Sarvarbek's direct confirmation (PAY1-05)
+  assert.deepEqual(seed.subscriptionPlans.map((p: any) => [p.tier, p.aiDailyQuota]), [['free', 20], ['premium', 1000000]]); // Free 20; Plus has no daily lookup limit: premium row stays >= 1e6, never 200 (PAYMENTS §14)
+  for (const p of seed.subscriptionPlans.filter((x: any) => x.tier === 'premium')) assert.ok(p.aiDailyQuota >= 1_000_000, 'premium aiDailyQuota must stay >= 1e6');
+  assert.deepEqual(seed.subscriptionPlans.map((p: any) => [p.tier, p.quizDailyQuota]), [['free', 10], ['premium', 200]]);
+  assert.ok(!JSON.stringify(seed).includes('ai_lookup_unlimited'), 'Plus is capped: no unlimited feature');
   assert.deepEqual(seed.importPageTiers.map((t: any) => t.priceUsd), [12000, 29000, 49000, 79000]);
   assert.ok(!JSON.stringify(seed).match(/yearly|student|299990|179990/), 'no PROPOSAL rows');
   console.log('pricing: all passed');

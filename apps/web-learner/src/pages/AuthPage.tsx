@@ -13,39 +13,15 @@ import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
+import { CONSENT_VERSION } from '../components/safety/signupConsent';
+import { LegalLinksLine } from '../components/safety/LegalLinksLine';
+import { safeLearnerReturnPath } from '../lib/learnerReturn';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
 }
 
-function LegalConsent() {
-  const copy = useLearnerCopy();
-  const termsHref = `${MARKETING_URL}/terms`;
-  const privacyHref = `${MARKETING_URL}/privacy`;
-  return (
-    <p className="text-center text-[12px] leading-[18px] text-[#9ca3af]">
-      {copy.auth.legalPrefix}{' '}
-      <a
-        href={termsHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
-      >
-        {copy.auth.termsOfUse}
-      </a>{' '}
-      {copy.auth.legalAnd}{' '}
-      <a
-        href={privacyHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
-      >
-        {copy.auth.privacyPolicy}
-      </a>
-      {copy.auth.legalSuffix}
-    </p>
-  );
-}
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
@@ -54,11 +30,19 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { login, register, updateProfile } = useAuth();
   const copy = useLearnerCopy();
   const { locale } = useLearnerLocale();
+  // S3 consent (unticked by default) + W-12 optional birth year.
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptAi, setAcceptAi] = useState(false);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
   const isLogin = mode === 'login';
   const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  // final-6.1a: learners go back to the /app/* page they came from (returnUrl or the ProtectedRoute state), never off-site.
+  const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const learnerReturn = adminReturnUrl ? null
+    : safeLearnerReturnPath(searchParams.get('returnUrl')) ?? (fromState?.pathname ? safeLearnerReturnPath(`${fromState.pathname}${fromState.search ?? ''}`) : null);
   const authQuery = authFlowSearch(searchParams);
   const forgotPasswordTo = authQuery ? `/forgot-password?${authQuery}` : '/forgot-password';
   const seededEmail = (location.state as { email?: string } | null)?.email?.trim() || '';
@@ -158,12 +142,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           window.location.assign(handoff.toString());
           return;
         }
-        if (searchParams.get('returnUrl')) {
+        if (searchParams.get('returnUrl') && !learnerReturn) {
           toast.message(copy.authToasts.signedInLearner);
         } else {
           toast.success(copy.authToasts.welcomeBack);
         }
-        navigate('/app', { replace: true });
+        navigate(learnerReturn ?? '/app', { replace: true });
       } else {
         if (!nativeLanguage) {
           toast.error(copy.authToasts.pickNativeLanguage);
@@ -176,6 +160,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           nativeLanguage,
           targetLanguages,
           uiLanguage: locale,
+          acceptTerms: acceptTerms && acceptAi,
+          ...(acceptTerms && acceptAi ? { consentVersion: CONSENT_VERSION } : {}),
+          ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {
           toast.success(copy.authToasts.checkInbox);
@@ -188,7 +175,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           /* non-blocking */
         }
         toast.success(copy.authToasts.accountCreated);
-        navigate('/app', { replace: true });
+        navigate(learnerReturn ?? '/app', { replace: true });
       }
     } catch (err) {
       const e = err as Error & { code?: string; email?: string; status?: number };
@@ -275,8 +262,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {showLanguageStep ? (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">{copy.auth.nativeLanguage}</label>
+                <label id="auth-native-label" className="text-xs font-semibold text-[#4a5565]">{copy.auth.nativeLanguage}</label>
                 <LanguageSearchInput
+                  labelledBy="auth-native-label"
                   options={catalogLangs}
                   value={nativeLanguage ? [nativeLanguage] : []}
                   onChange={(codes) => setNativeLanguage((codes[0] as AppLanguage) ?? null)}
@@ -285,18 +273,29 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">
+                <label id="auth-target-label" className="text-xs font-semibold text-[#4a5565]">
                   {copy.auth.targetLanguages}{' '}
                   <span className="text-[#9ca3af] font-normal">{copy.auth.targetLanguagesHint}</span>
                 </label>
                 <LanguageSearchInput
                   options={catalogLangs}
+                  labelledBy="auth-target-label"
                   value={targetLanguages}
                   onChange={(codes) => setTargetLanguages(codes as AppLanguage[])}
                   exclude={nativeLanguage ? [nativeLanguage] : []}
                   placeholder={copy.auth.targetLanguagesPlaceholder}
                 />
               </div>
+              {/* WL4-07: consent + birth year sit ABOVE Create account so they are in view at 360x640. */}
+              <SignupSafetyFields
+                locale={locale}
+                accepted={acceptTerms}
+                onAccepted={setAcceptTerms}
+                aiAccepted={acceptAi}
+                onAiAccepted={setAcceptAi}
+                birthYear={birthYear}
+                onBirthYear={setBirthYear}
+              />
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -308,7 +307,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !nativeLanguage || targetLanguages.length === 0}
+                  disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms || !acceptAi}
                   className="flex-1 h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (
@@ -321,7 +320,6 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   )}
                 </Button>
               </div>
-              <LegalConsent />
             </form>
           ) : (
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
@@ -405,7 +403,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     copy.common.continue
                   )}
               </Button>
-              {!isLogin && <LegalConsent />}
+              {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. WLF-36: plain links. */}
+              {!isLogin && <LegalLinksLine locale={locale} />}
             </form>
           )}
 
@@ -415,6 +414,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <div className="flex-1 h-px bg-[#e5e7eb]" />
           </div>
 
+          {/* final-5: admin sign-in never offers 'Sign up free'. */}
+          {!adminReturnUrl && (
           <div className="flex items-center justify-between gap-3 text-[13px] whitespace-nowrap">
             <span className="text-[#6b7280]">
               {isLogin ? copy.auth.noAccount : copy.auth.hasAccount}
@@ -428,6 +429,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>
           </div>
+          )}
         </div>
 
         <button

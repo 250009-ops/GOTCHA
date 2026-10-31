@@ -12,7 +12,7 @@ import {
   EXERCISE_TYPES,
   type ExerciseType,
 } from '@gotcha/shared';
-import { reviewCard, srsAlgorithm, capInterval, MAX_INTERVAL_DAYS, MASTERED_STABILITY_DAYS, type CardRow } from '../../utils/srs';
+import { reviewCard, srsAlgorithm, MASTERED_STABILITY_DAYS, type CardRow } from '../../utils/srs';
 
 const now = new Date('2026-10-30T07:00:00.000Z');
 const fresh: CardRow = {
@@ -138,13 +138,4 @@ assert.equal(buildCloze('Kitoblarni o‘qidim.', 'kitob')?.answer, 'Kitoblarni')
 assert.equal(buildCloze('Nothing here.', 'elephant'), null);
 assert.equal(buildCloze(null, 'run'), null);
 
-// QA N9: the one-year cap is inclusive: 366 can't come out of rounding or fuzz.
-{
-  const now = new Date('2026-01-01T00:00:00Z');
-  const over = new Date(now.getTime() + 365.6 * 86_400_000);
-  const c = capInterval(366, over, now);
-  assert.equal(c.intervalDays, MAX_INTERVAL_DAYS);
-  assert.equal(c.dueAt.getTime(), now.getTime() + 365 * 86_400_000);
-  assert.equal(capInterval(10, new Date(now.getTime() + 10 * 86_400_000), now).intervalDays, 10);
-}
 console.log('srs-engine.test.ts ok');

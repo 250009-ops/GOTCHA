@@ -11,8 +11,9 @@
       },
       "priceMonthly": 0,
       "period": "month",
-      "aiDailyQuota": 50,
-      "importLimit": 15,
+      "aiDailyQuota": 20,
+      "quizDailyQuota": 10,
+      "importLimit": 3,
       "offlineEnabled": false,
       "features": [
         "reader",
@@ -36,15 +37,16 @@
         "ru": "Plus",
         "uz": "Plus"
       },
-      "priceMonthly": 34990,
+      "priceMonthly": 24990,
       "period": "month",
       "aiDailyQuota": 1000000,
+      "quizDailyQuota": 200,
       "importLimit": 1000000,
       "offlineEnabled": false,
       "features": [
         "reader",
         "library",
-        "ai_lookup_unlimited",
+        "ai_lookup",
         "translate",
         "tts",
         "vocabulary",
@@ -65,7 +67,10 @@
         "news"
       ],
       "resetCycle": "monthly"
-    }
+    },
+    "caps.free.lookups": 20,
+    "caps.free.quizzes": 10,
+    "caps.plus.quizzes": 200
   },
   "importPageTiers": [
     {

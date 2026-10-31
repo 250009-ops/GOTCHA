@@ -1,44 +1,31 @@
-import { BadRequestException, ConflictException, ForbiddenException, HttpException, Injectable, Logger, NotFoundException, OnModuleDestroy, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
-import { EntitlementKind, EntitlementStatus, ImportPaymentStatus, ImportType, Prisma, PublishStatus, PurchaseSource, PurchaseStatus, StorePlatform, StoreProductKind } from '@prisma/client';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { EntitlementKind, EntitlementStatus, ImportPaymentStatus, ImportType, Prisma, PurchaseSource, PurchaseStatus, StorePlatform, StoreProductKind } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { catalogPaymentFormat } from '../content/catalog-access';
 import { EntitlementsService } from './entitlements.service';
-import { GooglePlayClient, openToken, sealToken } from './google-play.client';
+import { GooglePlayClient } from './google-play.client';
 import { ImportCommerceService, type ImportQuoteInput } from './import-commerce.service';
 
-/**
- * The value the app passes as BillingFlowParams.setObfuscatedAccountId; binds a Play purchase to one Gotcha
- * account. Optional server pepper (PLAY_ACCOUNT_PEPPER) makes it unguessable from user ids; changing the pepper
- * after launch orphans bindings, so set it once before the first real purchase.
- */
+/** The value the app passes as BillingFlowParams.setObfuscatedAccountId; binds a Play purchase to one Gotcha account. */
 export function playAccountId(userId: string): string {
-  const pepper = process.env.PLAY_ACCOUNT_PEPPER?.trim() ?? '';
-  return createHash('sha256').update(`gotcha:${pepper}${userId}`).digest('hex').slice(0, 64);
+  return createHash('sha256').update(`gotcha:${userId}`).digest('hex').slice(0, 64);
 }
 
 const tokenHash = (t: string) => createHash('sha256').update(t).digest('hex');
 
-/**
- * Active = Plus granted. ON_HOLD (payment failed after grace) and PAUSED (user paused) are deliberately
- * NOT active: Plus is withheld until Play reports ACTIVE again via RTDN or the refresh job (PM2).
- */
 const ACTIVE_SUB_STATES = new Set(['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED']);
-
-const DAY = 86_400_000;
-export const PLAY_JOB_INTERVAL_MS = 15 * 60_000;
 
 export interface VerifyPlayPurchaseInput {
   sku: string;
   purchaseToken: string;
-  /** Optional for import tiers (PB2): only the import type is taken from it; the credit is bound at import time. */
+  /** Import tiers: the same quote inputs the import screen used; the SKU must match the quoted tier. */
   importQuote?: ImportQuoteInput;
 }
 
 @Injectable()
-export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
+export class PlayBillingService {
   private readonly log = new Logger(PlayBillingService.name);
-  private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(
     private prisma: PrismaService,
@@ -47,28 +34,15 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     private commerce: ImportCommerceService,
   ) {}
 
-  onModuleInit() {
-    if (!this.play.configured() || process.env.NODE_ENV === 'test') return;
-    this.timer = setInterval(() => void this.runJobs().catch((e) => this.log.error(`play jobs: ${e}`)), PLAY_JOB_INTERVAL_MS);
-    this.timer.unref?.();
-  }
-
-  onModuleDestroy() {
-    if (this.timer) clearInterval(this.timer);
-  }
-
   /** Active Play SKUs the app should query with BillingClient.queryProductDetails. */
   async storeProducts(platform: StorePlatform) {
     const rows = await this.prisma.storeProduct.findMany({ where: { platform, active: true }, orderBy: [{ kind: 'asc' }, { priceUzs: 'asc' }] });
     return rows.map((r) => ({ sku: r.sku, kind: r.kind, planTier: r.planTier, importTierId: r.importTierId, contentId: r.contentId, priceUzs: r.priceUzs }));
   }
 
-  /** m-p2-8: only published books expose a SKU. */
   async skuForBook(contentId: string) {
     const r = await this.prisma.storeProduct.findFirst({ where: { platform: StorePlatform.google_play, kind: StoreProductKind.catalog_book, contentId, active: true } });
-    if (!r) return null;
-    const book = await this.prisma.contentItem.findUnique({ where: { id: contentId }, select: { publishStatus: true } });
-    return book?.publishStatus === PublishStatus.published ? { sku: r.sku, priceUzs: r.priceUzs } : null;
+    return r ? { sku: r.sku, priceUzs: r.priceUzs } : null;
   }
 
   /**
@@ -85,12 +59,12 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     }
     if (prior && prior.sku !== input.sku) throw new BadRequestException({ message: 'Token/product mismatch', code: 'play_token_mismatch' });
 
-    if (product.kind === StoreProductKind.subscription) return this.verifySubscription(userId, product, input.purchaseToken, hash);
-    return this.verifyOneTime(userId, product, input, hash);
+    if (product.kind === StoreProductKind.subscription) return this.verifySubscription(userId, product, input, hash);
+    return this.verifyOneTime(userId, product, input, hash, prior);
   }
 
-  private async verifySubscription(userId: string, product: { sku: string; kind: StoreProductKind }, token: string, hash: string) {
-    const sub = await this.play.getSubscription(token);
+  private async verifySubscription(userId: string, product: { sku: string; kind: StoreProductKind }, input: VerifyPlayPurchaseInput, hash: string) {
+    const sub = await this.play.getSubscription(input.purchaseToken);
     if (!sub) throw new BadRequestException({ message: 'Purchase not found', code: 'play_not_found' });
     const line = sub.lineItems?.find((l) => l.productId === product.sku);
     if (!line) throw new BadRequestException({ message: 'Token/product mismatch', code: 'play_token_mismatch' });
@@ -100,40 +74,29 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     const active = ACTIVE_SUB_STATES.has(state) && (!expiresAt || expiresAt > new Date());
     if (state === 'SUBSCRIPTION_STATE_PENDING') return { status: 'pending' as const, entitlements: await this.entitlements.forUser(userId) };
 
-    const linkedHash = sub.linkedPurchaseToken ? tokenHash(sub.linkedPurchaseToken) : null;
     await this.prisma.$transaction(async (tx) => {
-      const before = await tx.playPurchase.findUnique({ where: { tokenHash: hash } });
-      const prevOrderId = before?.orderId ?? null;
-      const prevState = before?.state ?? null;
       await tx.playPurchase.upsert({
         where: { tokenHash: hash },
-        create: { tokenHash: hash, purchaseToken: sealToken(token), userId, sku: product.sku, kind: product.kind, orderId: sub.latestOrderId, state: playSubState(state), expiryTime: expiresAt, autoRenewing: line.autoRenewingPlan?.autoRenewEnabled ?? null, linkedTokenHash: linkedHash, lastCheckedAt: new Date(), raw: sub as Prisma.InputJsonValue },
-        update: { orderId: sub.latestOrderId, state: prevState === 'revoked' && prevOrderId === sub.latestOrderId ? 'revoked' : playSubState(state), expiryTime: expiresAt, autoRenewing: line.autoRenewingPlan?.autoRenewEnabled ?? null, linkedTokenHash: linkedHash, lastCheckedAt: new Date(), raw: sub as Prisma.InputJsonValue },
+        create: { tokenHash: hash, purchaseToken: input.purchaseToken, userId, sku: product.sku, kind: product.kind, orderId: sub.latestOrderId, state: playSubState(state), expiryTime: expiresAt, autoRenewing: line.autoRenewingPlan?.autoRenewEnabled ?? null, raw: sub as Prisma.InputJsonValue },
+        update: { orderId: sub.latestOrderId, state: playSubState(state), expiryTime: expiresAt, autoRenewing: line.autoRenewingPlan?.autoRenewEnabled ?? null, raw: sub as Prisma.InputJsonValue },
       });
-      // PM5: an upgrade/resubscribe replaces the linked token's entitlement, for THIS user only.
-      if (linkedHash) {
-        await tx.entitlement.updateMany({ where: { userId, source: PurchaseSource.google_play, sourceRef: linkedHash, kind: EntitlementKind.plus, status: EntitlementStatus.active }, data: { status: EntitlementStatus.revoked, revokedReason: 'replaced' } });
+      // An upgrade/resubscribe replaces the linked token's entitlement.
+      if (sub.linkedPurchaseToken) {
+        await tx.entitlement.updateMany({ where: { source: PurchaseSource.google_play, sourceRef: tokenHash(sub.linkedPurchaseToken), status: EntitlementStatus.active }, data: { status: EntitlementStatus.revoked, revokedReason: 'replaced' } });
       }
-      const existing = await tx.entitlement.findUnique({ where: { source_sourceRef_kind: { source: PurchaseSource.google_play, sourceRef: hash, kind: EntitlementKind.plus } } });
-      // PM6: a revoked (voided / charged-back) entitlement only comes back with a NEW order (a real renewal).
-      const stayRevoked = existing?.status === EntitlementStatus.revoked && (!sub.latestOrderId || prevOrderId === sub.latestOrderId);
-      const status = stayRevoked ? EntitlementStatus.revoked : active ? EntitlementStatus.active : EntitlementStatus.expired;
       await tx.entitlement.upsert({
         where: { source_sourceRef_kind: { source: PurchaseSource.google_play, sourceRef: hash, kind: EntitlementKind.plus } },
-        create: { userId, kind: EntitlementKind.plus, source: PurchaseSource.google_play, sourceRef: hash, sku: product.sku, expiresAt, status },
-        update: stayRevoked ? { expiresAt } : { expiresAt, status, revokedReason: null },
+        create: { userId, kind: EntitlementKind.plus, source: PurchaseSource.google_play, sourceRef: hash, sku: product.sku, expiresAt, status: active ? EntitlementStatus.active : EntitlementStatus.expired },
+        update: { expiresAt, status: active ? EntitlementStatus.active : EntitlementStatus.expired },
       });
-      await tx.auditLog.create({ data: { actorId: userId, action: 'play.subscription.verified', entityType: 'play_purchase', entityId: null, metadata: { sku: product.sku, orderId: sub.latestOrderId ?? null, state, stayRevoked } } });
+      await tx.auditLog.create({ data: { actorId: userId, action: 'play.subscription.verified', entityType: 'play_purchase', entityId: null, metadata: { sku: product.sku, orderId: sub.latestOrderId ?? null, state } } });
     });
     await this.entitlements.syncPlus(userId);
     if (active && sub.acknowledgementState !== 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED') {
-      // Unacknowledged purchases auto-refund after 3 days; failures are retried by runJobs (PM1).
-      await this.play.acknowledgeSubscription(product.sku, token).then(() => this.markAck(hash)).catch((e) => this.log.warn(`ack failed: ${e}`));
-    } else if (sub.acknowledgementState === 'ACKNOWLEDGEMENT_STATE_ACKNOWLEDGED') {
-      await this.markAck(hash).catch(() => undefined);
+      // Unacknowledged purchases auto-refund after 3 days; a failed ack is retried on the next verify/RTDN.
+      await this.play.acknowledgeSubscription(product.sku, input.purchaseToken).then(() => this.markAck(hash)).catch((e) => this.log.warn(`ack failed: ${e}`));
     }
-    const ent = await this.entitlements.forUser(userId);
-    return { status: ent.plus.active ? ('granted' as const) : ('expired' as const), entitlements: ent };
+    return { status: active ? ('granted' as const) : ('expired' as const), entitlements: await this.entitlements.forUser(userId) };
   }
 
   private async verifyOneTime(
@@ -141,6 +104,7 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     product: { sku: string; kind: StoreProductKind; contentId: string | null; importTierId: string | null; priceUzs: number },
     input: VerifyPlayPurchaseInput,
     hash: string,
+    prior: { id: string } | null,
   ) {
     const p = await this.play.getProduct(product.sku, input.purchaseToken);
     if (!p) throw new BadRequestException({ message: 'Purchase not found', code: 'play_not_found' });
@@ -152,28 +116,26 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     let payment = await this.prisma.importPayment.findUnique({ where: { account } });
     if (!payment) {
       let data: Prisma.ImportPaymentUncheckedCreateInput;
-      // m-p2-3: amountTiyins is the configured store price (an estimate); Play Console is authoritative.
-      const base = { userId, status: ImportPaymentStatus.paid, amountTiyins: product.priceUzs * 100, account, provider: 'google_play', providerPaymentId: p.orderId ?? null, paidAt: new Date() };
       if (product.kind === StoreProductKind.catalog_book) {
         if (!product.contentId) throw new BadRequestException({ message: 'Product is not mapped to a book', code: 'play_unmapped_sku' });
         const exists = await this.prisma.contentItem.findUnique({ where: { id: product.contentId }, select: { id: true } });
         if (!exists) throw new NotFoundException('Book not found');
-        data = { ...base, importType: ImportType.url, contentFormat: catalogPaymentFormat(product.contentId), estimatedPages: 1 };
+        data = { userId, status: ImportPaymentStatus.paid, importType: ImportType.url, contentFormat: catalogPaymentFormat(product.contentId), estimatedPages: 1, amountTiyins: product.priceUzs * 100, account, provider: 'google_play', providerPaymentId: p.orderId ?? null, paidAt: new Date() };
       } else {
-        // PB2: an import credit for the SKU's page tier. No quote needed; the document is bound and checked
-        // against the tier when it is imported (assertPaymentCoversPages).
-        const tier = product.importTierId ? await this.prisma.importPageTier.findUnique({ where: { id: product.importTierId } }) : null;
-        if (!tier) throw new BadRequestException({ message: 'Product is not mapped to a page tier', code: 'play_unmapped_sku' });
-        const importType = input.importQuote?.importType ?? ImportType.pdf;
-        data = { ...base, importType, contentFormat: 'ebook', estimatedPages: tier.maxPages ?? tier.minPages, tierId: tier.id };
+        if (!input.importQuote) throw new BadRequestException({ message: 'importQuote is required for import credits', code: 'play_import_quote_required' });
+        const quote = await this.commerce.quote(userId, { ...input.importQuote, promoCode: undefined });
+        if (!quote.requiresPayment || quote.tier?.id !== product.importTierId) {
+          throw new BadRequestException({ message: 'This product does not match the import size', code: 'play_tier_mismatch' });
+        }
+        data = { userId, status: ImportPaymentStatus.paid, importType: quote.importType, contentFormat: quote.contentFormat, estimatedPages: quote.estimatedPages, tierId: quote.tier.id, amountTiyins: product.priceUzs * 100, account, provider: 'google_play', providerPaymentId: p.orderId ?? null, paidAt: new Date() };
       }
       try {
         payment = await this.prisma.$transaction(async (tx) => {
           const created = await tx.importPayment.create({ data });
           await tx.playPurchase.upsert({
             where: { tokenHash: hash },
-            create: { tokenHash: hash, purchaseToken: sealToken(input.purchaseToken), userId, sku: product.sku, kind: product.kind, orderId: p.orderId, state: 'purchased', lastCheckedAt: new Date(), raw: p as Prisma.InputJsonValue },
-            update: { state: 'purchased', orderId: p.orderId, lastCheckedAt: new Date(), raw: p as Prisma.InputJsonValue },
+            create: { tokenHash: hash, purchaseToken: input.purchaseToken, userId, sku: product.sku, kind: product.kind, orderId: p.orderId, state: 'purchased', raw: p as Prisma.InputJsonValue },
+            update: { state: 'purchased', orderId: p.orderId, raw: p as Prisma.InputJsonValue },
           });
           if (product.kind === StoreProductKind.import_tier) {
             await tx.entitlement.create({ data: { userId, kind: EntitlementKind.import_credit, source: PurchaseSource.google_play, sourceRef: created.id, sku: product.sku, importPaymentId: created.id } });
@@ -189,52 +151,25 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     }
     if (!payment) throw new ConflictException('Purchase is being processed, try again');
     if (product.kind === StoreProductKind.catalog_book) await this.commerce.fulfillCatalogPurchase(payment); // idempotent
-    await this.settle(product.kind, product.sku, input.purchaseToken, hash, p.acknowledgementState === 1, p.consumptionState === 1);
-    return { status: 'granted' as const, paymentId: payment.id, entitlements: await this.entitlements.forUser(userId) };
-  }
 
-  /** Acknowledge books / consume import credits. Failures are retried by runJobs (PM1). */
-  private async settle(kind: StoreProductKind, sku: string, token: string, hash: string, acked: boolean, consumed: boolean) {
-    if (kind === StoreProductKind.catalog_book) {
-      if (acked) return this.markAck(hash).catch(() => undefined);
-      return this.play.acknowledgeProduct(sku, token).then(() => this.markAck(hash)).catch((e) => this.log.warn(`ack failed: ${e}`));
+    if (p.acknowledgementState !== 1 && product.kind === StoreProductKind.catalog_book) {
+      await this.play.acknowledgeProduct(product.sku, input.purchaseToken).then(() => this.markAck(hash)).catch((e) => this.log.warn(`ack failed: ${e}`));
     }
-    if (kind === StoreProductKind.import_tier) {
-      if (consumed) return this.prisma.playPurchase.update({ where: { tokenHash: hash }, data: { consumed: true, acknowledged: true } }).catch(() => undefined);
-      return this.play.consumeProduct(sku, token)
+    if (product.kind === StoreProductKind.import_tier && p.consumptionState !== 1) {
+      // Consumable: credit is granted server-side, so consume here (also acknowledges) and the SKU can be bought again.
+      await this.play.consumeProduct(product.sku, input.purchaseToken)
         .then(() => this.prisma.playPurchase.update({ where: { tokenHash: hash }, data: { consumed: true, acknowledged: true } }))
         .catch((e) => this.log.warn(`consume failed: ${e}`));
     }
+    void prior;
+    return { status: 'granted' as const, paymentId: payment.id, entitlements: await this.entitlements.forUser(userId) };
   }
 
   /**
-   * Real-time developer notification (Pub/Sub push). The payload only says *which* token changed; state is
-   * always re-read from Play, and a void is confirmed against voidedpurchases.list before revoking (PB1).
-   * Domain errors are handled (2xx) so Pub/Sub doesn't retry forever; only Play outages (503) are retried (PM4).
+   * Real-time developer notification (Pub/Sub push). The payload only tells us *which* token changed;
+   * the state is always re-read from the Play API.
    */
-  async handleRtdn(body: { message?: { data?: string; messageId?: string; message_id?: string } }) {
-    const messageId = body?.message?.messageId ?? body?.message?.message_id;
-    // n-5: insert first; the unique key decides which concurrent delivery processes the message.
-    if (messageId) {
-      try {
-        await this.prisma.playRtdnMessage.create({ data: { messageId } });
-      } catch (e) {
-        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') return { ignored: 'duplicate' };
-        throw e;
-      }
-    }
-    return this.processRtdn(body).catch(async (e) => {
-      if (e instanceof ServiceUnavailableException || !(e instanceof HttpException)) {
-        // Retriable: forget the id so Pub/Sub's redelivery is processed again (N-M3).
-        if (messageId) await this.prisma.playRtdnMessage.deleteMany({ where: { messageId } }).catch(() => undefined);
-        throw e;
-      }
-      await this.prisma.auditLog.create({ data: { actorId: null, action: 'play.rtdn.rejected', entityType: 'play_rtdn', entityId: null, metadata: { messageId: messageId ?? null, error: e.message } } }).catch(() => undefined);
-      return { ignored: 'domain_error' };
-    });
-  }
-
-  private async processRtdn(body: { message?: { data?: string } }) {
+  async handleRtdn(body: { message?: { data?: string; messageId?: string } }) {
     const raw = body?.message?.data;
     if (!raw) return { ignored: 'no_data' };
     let n: {
@@ -254,27 +189,18 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     const token = n.subscriptionNotification?.purchaseToken ?? n.oneTimeProductNotification?.purchaseToken ?? n.voidedPurchaseNotification?.purchaseToken;
     if (!token) return { ignored: 'no_token' };
     const rec = await this.prisma.playPurchase.findUnique({ where: { tokenHash: tokenHash(token) } });
-    // Not yet verified by the app: nothing granted yet; the app's verify call picks up the current state.
+    // Not yet verified by the app: nothing granted yet; the app's verify call will pick up the current state.
     if (!rec) return { ignored: 'unknown_token' };
 
     if (n.voidedPurchaseNotification) {
-      // PB1: never trust the payload. Confirm with Play's voided list before revoking. N-M3: a short window
-      // (2 days, 1 page) keeps it cheap; if Play's list hasn't caught up, answer 503 so Pub/Sub redelivers with
-      // backoff (the message id is forgotten), and the runJobs voided sweep is the backstop.
-      const voided = await this.play.voidedPurchases(Date.now() - 2 * DAY, 1);
-      if (!voided.some((v) => v.purchaseToken === token)) {
-        throw new ServiceUnavailableException({ message: 'Void not visible in voidedpurchases yet', code: 'void_not_confirmed' });
-      }
       await this.revoke(rec, 'play_voided');
       return { ok: 'voided' };
     }
     if (rec.kind === StoreProductKind.subscription) {
-      try {
-        await this.verifySubscription(rec.userId, { sku: rec.sku, kind: rec.kind }, token, rec.tokenHash);
-      } catch (e) {
-        if (e instanceof BadRequestException && (e.getResponse() as { code?: string })?.code === 'play_not_found') await this.revoke(rec, 'play_not_found');
-        else throw e;
-      }
+      await this.verifySubscription(rec.userId, { sku: rec.sku, kind: rec.kind }, { sku: rec.sku, purchaseToken: token }, rec.tokenHash).catch(async (e) => {
+        if (e instanceof BadRequestException) await this.revoke(rec, 'play_not_found');
+        else throw e; // 5xx → Pub/Sub retries
+      });
       return { ok: 'subscription' };
     }
     const p = await this.play.getProduct(rec.sku, token);
@@ -288,7 +214,7 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
     await this.prisma.$transaction(async (tx) => {
       await tx.playPurchase.update({ where: { tokenHash: rec.tokenHash }, data: { state: 'revoked' } });
       if (rec.kind === StoreProductKind.subscription) {
-        await tx.entitlement.updateMany({ where: { userId: rec.userId, source: PurchaseSource.google_play, sourceRef: rec.tokenHash, status: EntitlementStatus.active }, data: { status: EntitlementStatus.revoked, revokedReason: reason } });
+        await tx.entitlement.updateMany({ where: { source: PurchaseSource.google_play, sourceRef: rec.tokenHash, status: EntitlementStatus.active }, data: { status: EntitlementStatus.revoked, revokedReason: reason } });
         return;
       }
       const pay = await tx.importPayment.findUnique({ where: { account } });
@@ -307,82 +233,6 @@ export class PlayBillingService implements OnModuleInit, OnModuleDestroy {
       await tx.auditLog.create({ data: { actorId: null, action: 'play.purchase.revoked', entityType: 'import_payment', entityId: pay.id, metadata: { reason, creditAlreadyUsed: used } } });
     });
     if (rec.kind === StoreProductKind.subscription) await this.entitlements.syncPlus(rec.userId);
-  }
-
-  /**
-   * PM2: before a Play Plus entitlement is expired locally, re-read it from Play (at most once per hour per
-   * token), so a late or lost SUBSCRIPTION_RENEWED notification doesn't take Plus away.
-   */
-  async refreshUserSubscriptions(userId: string) {
-    const due = await this.prisma.entitlement.findMany({
-      where: { userId, kind: EntitlementKind.plus, source: PurchaseSource.google_play, status: EntitlementStatus.active, expiresAt: { lt: new Date() } },
-    });
-    for (const e of due) await this.refreshSubscription(e.sourceRef, 60 * 60_000);
-  }
-
-  private async refreshSubscription(hash: string, minAgeMs: number) {
-    const rec = await this.prisma.playPurchase.findUnique({ where: { tokenHash: hash } });
-    if (!rec || rec.state === 'revoked') return;
-    if (rec.lastCheckedAt && Date.now() - rec.lastCheckedAt.getTime() < minAgeMs) return;
-    await this.prisma.playPurchase.update({ where: { tokenHash: hash }, data: { lastCheckedAt: new Date() } });
-    await this.verifySubscription(rec.userId, { sku: rec.sku, kind: rec.kind }, openToken(rec.purchaseToken), hash).catch((e) => this.log.warn(`sub refresh: ${e}`));
-  }
-
-  /**
-   * PM1 + PM2 job (every 15 min):
-   *  - retry acknowledge/consume for verified purchases younger than 3 days (Play auto-refunds after 3 days);
-   *    rows older than 48 h are logged at ERROR for alerting;
-   *  - refresh Play subscriptions expiring within 24 h (6 h minimum between reads);
-   *  - drop RTDN message ids older than 7 days.
-   */
-  async runJobs() {
-    const now = Date.now();
-    const pending = await this.prisma.playPurchase.findMany({
-      where: {
-        createdAt: { gt: new Date(now - 3 * DAY) },
-        // n-4: a subscription cancelled before it was acknowledged still auto-refunds; acknowledge it too.
-        OR: [
-          { state: 'purchased', acknowledged: false },
-          { state: 'purchased', kind: StoreProductKind.import_tier, consumed: false },
-          { state: 'canceled', kind: StoreProductKind.subscription, acknowledged: false },
-        ],
-      },
-      take: 200,
-    });
-    let settled = 0;
-    for (const r of pending) {
-      if (now - r.createdAt.getTime() > 2 * DAY) this.log.error(`ALERT play purchase ${r.tokenHash.slice(0, 12)} (${r.sku}) unacknowledged for >48h`);
-      const token = openToken(r.purchaseToken);
-      if (r.kind === StoreProductKind.subscription) {
-        await this.play.acknowledgeSubscription(r.sku, token).then(() => this.markAck(r.tokenHash)).then(() => settled++).catch(() => undefined);
-      } else {
-        await this.settle(r.kind, r.sku, token, r.tokenHash, r.acknowledged, r.consumed).then(() => settled++);
-      }
-    }
-    const expiring = await this.prisma.playPurchase.findMany({
-      where: { kind: StoreProductKind.subscription, state: { not: 'revoked' }, expiryTime: { lt: new Date(now + DAY), gt: new Date(now - 7 * DAY) } },
-      take: 200,
-    });
-    for (const r of expiring) await this.refreshSubscription(r.tokenHash, 6 * 60 * 60_000);
-    await this.prisma.playRtdnMessage.deleteMany({ where: { receivedAt: { lt: new Date(now - 7 * DAY) } } });
-    const voided = await this.sweepVoided(now).catch((e) => { this.log.warn(`voided sweep failed: ${e}`); return 0; });
-    return { pending: pending.length, settled, refreshed: expiring.length, voided };
-  }
-
-  /** N-M3 backstop: voids Play lists since the last sweep (1 h overlap; 3 days after a restart) get revoked. */
-  private lastVoidSweepMs = 0;
-  async sweepVoided(now = Date.now()) {
-    const since = this.lastVoidSweepMs ? this.lastVoidSweepMs - 60 * 60_000 : now - 3 * DAY;
-    const list = await this.play.voidedPurchases(since);
-    let revoked = 0;
-    for (const v of list) {
-      const rec = await this.prisma.playPurchase.findUnique({ where: { tokenHash: tokenHash(v.purchaseToken) } });
-      if (!rec || rec.state === 'revoked') continue;
-      await this.revoke(rec, 'play_voided');
-      revoked++;
-    }
-    this.lastVoidSweepMs = now;
-    return revoked;
   }
 
   private assertAccount(userId: string, obfuscated: string | undefined) {

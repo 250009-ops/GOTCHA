@@ -5,13 +5,16 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { json, urlencoded, Request, Response, NextFunction } from 'express';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
+import * as compression from 'compression';
 import { AppModule } from './app.module';
 import { ensureLanguageCatalog } from './common/language-catalog';
 import {
   applySecurityHeaders,
   assertProductionAuthConfig,
+  corsOriginsFromEnv,
   isProductionRuntime,
 } from './common/runtime-security';
+import { ImportWorker } from './modules/imports/import-worker';
 import { PrismaService } from './prisma/prisma.service';
 
 function preloadEnvFile(filePath: string) {
@@ -43,12 +46,26 @@ async function bootstrap() {
     bodyParser: false,
   });
   app.set('trust proxy', 1);
-  app.disable('x-powered-by'); // BUG-11
   // Import paste / admin ingest can carry long novels; everything else stays small.
   app.use('/api/v1/imports', json({ limit: '24mb' }));
   app.use('/api/v1/admin/content', json({ limit: '24mb' }));
   app.use(json({ limit: '1mb' }));
   app.use(urlencoded({ extended: true, limit: '1mb' }));
+  // W-23: large book payloads (GET /content/:id is 120-200 kB for 700-1,000-page books) reached
+  // some browsers as "200, empty body" through nginx proxy buffering (spill to proxy_temp), so the
+  // reader showed "Kontent topilmadi". We cannot change VPS2 nginx, so: gzip JSON in the app
+  // (~5x smaller) and tell nginx not to buffer these responses (X-Accel-Buffering is honoured
+  // per response and needs no nginx change). Audio (audio/*) is left uncompressed.
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => !/^audio\//.test(String(res.getHeader('Content-Type') ?? '')) && compression.filter(req, res),
+    }),
+  );
+  app.use('/api/v1/content', (req: Request, res: Response, next: NextFunction) => {
+    if (req.method === 'GET') res.setHeader('X-Accel-Buffering', 'no');
+    next();
+  });
   app.use((_req: Request, res: Response, next: NextFunction) => {
     applySecurityHeaders(res);
     next();
@@ -73,13 +90,7 @@ async function bootstrap() {
     }),
   );
 
-  const corsOrigins = (
-    process.env.API_CORS_ORIGINS ??
-    'http://localhost:5173,http://localhost:5174,http://localhost:5175'
-  )
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
+  const corsOrigins = corsOriginsFromEnv();
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -112,6 +123,10 @@ async function bootstrap() {
     } catch (err) {
       console.error('Language catalog warmup failed', err);
     }
+  }
+  if (process.env.IMPORT_WORKER_IN_API === 'true' && prisma.dbAvailable) {
+    // Dev convenience only; production runs dist/worker.js as its own PM2 process.
+    app.get(ImportWorker).start();
   }
   await app.listen(port);
   console.log(`Gotcha API running on http://localhost:${port}`);

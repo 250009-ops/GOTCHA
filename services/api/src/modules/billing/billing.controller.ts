@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, UnauthorizedException } from '@nestjs/common';
+import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, UnauthorizedException, UseFilters } from '@nestjs/common';
+import { BillingErrorFilter } from './billing-errors';
 import { Throttle } from '@nestjs/throttler';
 import { StorePlatform } from '@prisma/client';
 import { EntitlementsService } from './entitlements.service';
@@ -14,6 +15,7 @@ import { AtmosClient } from './atmos.client';
 
 @ApiTags('billing')
 @Controller('billing')
+@UseFilters(BillingErrorFilter)
 export class BillingController {
   constructor(
     private billing: BillingService,
@@ -28,9 +30,7 @@ export class BillingController {
 
   /** Everything the user owns from any source (web Atmos, Android Play, admin). Clients call this at login. */
   @Get('entitlements')
-  async myEntitlements(@CurrentUser() user: AuthUserPayload) {
-    // PM2: re-read lapsed Play subscriptions (rate-limited) before reporting them expired.
-    await this.playBilling.refreshUserSubscriptions(user.sub).catch(() => undefined);
+  myEntitlements(@CurrentUser() user: AuthUserPayload) {
     return this.entitlements.forUser(user.sub);
   }
 
@@ -57,7 +57,7 @@ export class BillingController {
   @SkipThrottle()
   @Post('play/rtdn')
   @HttpCode(204)
-  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string; messageId?: string } }) {
+  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string } }) {
     if (!(await this.play.verifyPush(auth, token))) throw new UnauthorizedException();
     await this.playBilling.handleRtdn(body);
   }
@@ -72,6 +72,24 @@ export class BillingController {
   @Get('plans')
   plans(@Query('lang') lang?: string) {
     return this.billing.listPlans(lang === 'ru' || lang === 'uz' ? lang : 'en');
+  }
+
+  @Get('payments/:id/receipt')
+  paymentReceipt(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.importCommerce.paymentReceipt(user.sub, id);
+  }
+
+  /** Web Plus pass offer (WEB_PLUS_PASS). One-off, no auto-renew. */
+  @Get('plus/offer')
+  plusOffer(@CurrentUser() user: AuthUserPayload) {
+    return this.importCommerce.plusOffer(user.sub);
+  }
+
+  /** Start an Atmos payment for a 30/365-day pass; card + OTP reuse imports/payments/:id/pre-apply|apply. */
+  @Post('plus/checkout')
+  @HttpCode(200)
+  plusCheckout(@CurrentUser() user: AuthUserPayload, @Body() body: { days?: number; acceptOferta?: boolean }) {
+    return this.importCommerce.plusCheckout(user.sub, Number(body?.days), body?.acceptOferta);
   }
 
   @Public()
@@ -148,6 +166,28 @@ export class BillingController {
     @Body() body: ImportCancelDto,
   ) {
     return this.importCommerce.cancelPayment(user.sub, id, body.reason);
+  }
+
+  /** PAYMENTS §8: unified history (Atmos imports + books, Google Play). `cursor` = createdAt ISO of the last item. */
+  @Get('payments')
+  allPayments(@CurrentUser() user: AuthUserPayload, @Query('limit') limit?: string, @Query('cursor') cursor?: string) {
+    return this.importCommerce.listAllPayments(user.sub, { limit: Number(limit), before: cursor });
+  }
+
+  /** Learner payment history (amount > 0 only). */
+  @Get('imports/payments')
+  payments(
+    @CurrentUser() user: AuthUserPayload,
+    @Query('limit') limit?: string,
+    @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string,
+  ) {
+    return this.importCommerce.listPayments(user.sub, { limit: Number(limit), cursor });
+  }
+
+  /** final-5 (f29902f1): paid import credits not yet used for an import. Declared before :id. */
+  @Get('imports/payments-unused')
+  unusedPaid(@CurrentUser() user: AuthUserPayload) {
+    return this.importCommerce.unusedPaidImports(user.sub);
   }
 
   @Get('imports/payments/:id')

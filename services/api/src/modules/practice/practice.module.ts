@@ -11,4 +11,4 @@ import { PracticeEngineService } from './practice-engine.service';
   controllers: [PracticeController],
   providers: [PracticeService, PracticeEngineService, LimitsService],
 })
-export class PracticeModule {}
+export class PracticeModule {}
