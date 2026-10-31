@@ -1,3 +1,4 @@
+import { jobHealth } from '../../common/jobs/job-health';
 import {
   BadRequestException,
   Body,
@@ -46,6 +47,13 @@ export class AdminController {
   @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor, AdminRole.moderator)
   requestPasswordReset(@CurrentUser() user: AuthUserPayload) {
     return this.admin.requestPasswordReset(user.sub);
+  }
+
+  /** LG4-09: retention/deletion job health (false = a job failed; see lastError). */
+  @Get('health/jobs')
+  @Roles(AdminRole.superadmin, AdminRole.moderator)
+  jobsHealth() {
+    return jobHealth();
   }
 
   @Get('dashboard')

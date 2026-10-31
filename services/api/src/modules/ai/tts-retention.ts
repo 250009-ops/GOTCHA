@@ -1,6 +1,8 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { readdir, stat, unlink } from 'node:fs/promises';
 import { join } from 'node:path';
+import { MailService } from '../../common/mail/mail.service';
+import { runTrackedJob, setJobAlertMailer } from '../../common/jobs/job-health';
 
 /** TTS mp3 cache retention (privacy/terms: 30 days). TTS_RETENTION_DAYS overrides; 0 disables the job. */
 export const DEFAULT_TTS_RETENTION_DAYS = 30;
@@ -17,17 +19,19 @@ export const ttsDir = (env: Record<string, string | undefined> = process.env) =>
   join(env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'tts');
 
 /** Deletes *.mp3 in `dir` whose mtime is older than `days`. Returns counts; never throws on a missing dir. */
-export async function purgeOldTts(dir: string, days: number, now = Date.now()): Promise<{ scanned: number; deleted: number }> {
-  if (days <= 0) return { scanned: 0, deleted: 0 };
+export async function purgeOldTts(dir: string, days: number, now = Date.now()): Promise<{ scanned: number; deleted: number; failed: number }> {
+  if (days <= 0) return { scanned: 0, deleted: 0, failed: 0 };
   let names: string[];
   try {
     names = await readdir(dir);
-  } catch {
-    return { scanned: 0, deleted: 0 };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return { scanned: 0, deleted: 0, failed: 0 };
+    throw e; // LG4-09: permission/IO errors must surface
   }
   const cutoff = now - days * DAY_MS;
   let deleted = 0;
   let scanned = 0;
+  let failed = 0;
   for (const name of names) {
     if (!name.endsWith('.mp3')) continue;
     scanned++;
@@ -38,11 +42,12 @@ export async function purgeOldTts(dir: string, days: number, now = Date.now()): 
         await unlink(file);
         deleted++;
       }
-    } catch {
-      // raced with another delete/write — skip
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') failed++; // ENOENT = raced with another delete
     }
   }
-  return { scanned, deleted };
+  if (failed > 0) throw new Error(`TTS cleanup: ${failed} file(s) could not be deleted (deleted ${deleted}/${scanned})`);
+  return { scanned, deleted, failed };
 }
 
 @Injectable()
@@ -50,6 +55,10 @@ export class TtsRetentionJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger('TtsRetention');
   private timer: ReturnType<typeof setInterval> | undefined;
   private first: ReturnType<typeof setTimeout> | undefined;
+
+  constructor(private readonly mail: MailService) {
+    setJobAlertMailer(mail);
+  }
 
   onModuleInit() {
     if (ttsRetentionDays() === 0) {
@@ -69,8 +78,8 @@ export class TtsRetentionJob implements OnModuleInit, OnModuleDestroy {
 
   async run() {
     const days = ttsRetentionDays();
-    const r = await purgeOldTts(ttsDir(), days);
-    this.logger.log(`TTS cleanup: deleted ${r.deleted}/${r.scanned} mp3 older than ${days} d`);
+    const r = await runTrackedJob('tts-cleanup', () => purgeOldTts(ttsDir(), days), (x) => `deleted ${x.deleted}/${x.scanned}`);
+    if (r) this.logger.log(`TTS cleanup: deleted ${r.deleted}/${r.scanned} mp3 older than ${days} d`);
     return r;
   }
 }

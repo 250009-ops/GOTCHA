@@ -15,6 +15,7 @@ import { calendarDateKey, effectiveStreakCount, STREAK_TIMEZONE } from '../../se
 import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
+import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -621,6 +622,10 @@ export class UsersService {
       }),
     ]);
     const purged = await this.purgeUserData(userId);
+    // LG4-09: a failed purge step must alert (admin health flag + support email/stub), never stay silent.
+    const failedSteps = Object.entries(purged).filter(([, v]) => v === 'error').map(([k]) => k);
+    if (failedSteps.length) await recordJobFailure('account-purge', new Error(`user ${userId}: failed steps ${failedSteps.join(', ')}`));
+    else recordJobSuccess('account-purge', 'last purge complete');
     return { deleted: true, purged };
   }
 

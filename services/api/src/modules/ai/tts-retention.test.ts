@@ -18,10 +18,10 @@ import { purgeOldTts, ttsRetentionDays } from './tts-retention';
     await utimes(f, t, t);
   };
   await mk('old.mp3', 31); await mk('edge.mp3', 29.9); await mk('new.mp3', 1); await mk('keep.txt', 90);
-  assert.deepEqual(await purgeOldTts(dir, 30, now), { scanned: 3, deleted: 1 });
+  assert.deepEqual(await purgeOldTts(dir, 30, now), { scanned: 3, deleted: 1, failed: 0 });
   assert.deepEqual((await readdir(dir)).sort(), ['edge.mp3', 'keep.txt', 'new.mp3']);
-  assert.deepEqual(await purgeOldTts(dir, 0, now), { scanned: 0, deleted: 0 }); // disabled
-  assert.deepEqual(await purgeOldTts(join(dir, 'missing'), 30, now), { scanned: 0, deleted: 0 });
+  assert.deepEqual(await purgeOldTts(dir, 0, now), { scanned: 0, deleted: 0, failed: 0 }); // disabled
+  assert.deepEqual(await purgeOldTts(join(dir, 'missing'), 30, now), { scanned: 0, deleted: 0, failed: 0 });
   await rm(dir, { recursive: true });
   console.log('tts-retention: OK');
 })().catch((e) => { console.error(e); process.exit(1); });
