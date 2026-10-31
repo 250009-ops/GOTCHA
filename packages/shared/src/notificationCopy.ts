@@ -159,6 +159,13 @@ export function formatNotification(
   }
 }
 
+const DELETED_PEER_NAME_BY_LOCALE: Record<string, string> = {
+  en: 'Deleted user',
+  ru: 'Удалённый пользователь',
+  uz: 'Oʻchirilgan foydalanuvchi',
+};
+const DELETED_PEER_NAMES = new Set(Object.values(DELETED_PEER_NAME_BY_LOCALE));
+
 export function localizeNotificationItem(
   locale: UiLanguage,
   item: { kind: string; title: string; body: string },
@@ -167,5 +174,10 @@ export function localizeNotificationItem(
     return { title: item.title, body: item.body };
   }
   const params = parseNotificationParams(item.kind, item.title, item.body);
+  // Privacy §11: the server writes the deleted-account name in the recipient's UI language at send time;
+  // re-render it in the current UI language if the learner switched language since.
+  if (item.kind === 'message' && params.peerName && DELETED_PEER_NAMES.has(params.peerName)) {
+    params.peerName = DELETED_PEER_NAME_BY_LOCALE[locale] ?? DELETED_PEER_NAME_BY_LOCALE.en;
+  }
   return formatNotification(locale, item.kind, params, item);
 }

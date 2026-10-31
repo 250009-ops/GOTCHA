@@ -1,3 +1,4 @@
+import { deletedAccountLine, isUserDeletedError, shownName } from '../lib/deletedUser';
 import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -41,6 +42,8 @@ type Peer = {
   online?: boolean;
   lastSeenAt?: string | null;
   typing?: boolean;
+  /** Privacy §11: the account was deleted; name is localised from this flag, composer is closed. */
+  deleted?: boolean;
 };
 
 type ContentRef = {
@@ -562,6 +565,8 @@ function WordMeaningPanel({
 
 export default function MessagesPage() {
   const { locale: uiLocale } = useLearnerLocale();
+  const peerName = (p: Peer | null | undefined, fallback: string) => shownName(p, uiLocale, fallback) ?? fallback;
+  const [peerGone, setPeerGone] = useState(false);
   const copy = useLearnerCopy();
   const msg = copy.messages;
   const mp = copy.messagesPage;
@@ -935,6 +940,8 @@ export default function MessagesPage() {
     }).catch(() => undefined);
   };
 
+  useEffect(() => setPeerGone(false), [selectedId]);
+
   const send = async () => {
     if (!selectedId || !draft.trim() || sending) return;
     const text = draft.trim();
@@ -1059,6 +1066,7 @@ export default function MessagesPage() {
         status: msg.status ?? 'sent',
       });
     } catch (e) {
+      if (isUserDeletedError(e)) setPeerGone(true);
       if (!editingMsg) {
         setDetail((prev) =>
           prev
@@ -1345,9 +1353,9 @@ export default function MessagesPage() {
                     type="button"
                     onClick={() => openPeerProfile(c.peer?.id)}
                     className="relative shrink-0 rounded-full"
-                    aria-label={`Open ${c.peer?.displayName ?? 'learner'} profile`}
+                    aria-label={`Open ${peerName(c.peer, 'learner')} profile`}
                   >
-                    <UserAvatar name={c.peer?.displayName} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
+                    <UserAvatar name={peerName(c.peer, 'Learner')} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
                   </button>
                   <button
                     type="button"
@@ -1358,7 +1366,7 @@ export default function MessagesPage() {
                     <div className="flex items-center justify-between gap-2 mb-0.5">
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className="font-semibold text-sm text-gray-900 truncate">
-                          {c.peer?.displayName ?? 'Learner'}
+                          {peerName(c.peer, 'Learner')}
                         </span>
                         <span className={cx('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', langBadge(c.language ?? c.peer?.primaryLanguage))}>
                           {(c.language ?? c.peer?.primaryLanguage ?? 'en').toUpperCase().slice(0, 2)}
@@ -1427,10 +1435,10 @@ export default function MessagesPage() {
                   onClick={() => openPeerProfile(detail.peer?.id)}
                   className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-g-blue-50 px-1 py-0.5"
                 >
-                <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
+                <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
                 <div className="min-w-0">
                   <div className="font-bold text-sm text-gray-900 truncate">
-                    {detail.peer?.displayName ?? 'Learner'}
+                    {peerName(detail.peer, 'Learner')}
                   </div>
                   <div className={cx(
                     'text-[11px] truncate',
@@ -1495,7 +1503,7 @@ export default function MessagesPage() {
                   const replyName = m.replyTo
                     ? m.replyTo.senderId === user?.id
                       ? mp.you
-                      : (detail.peer?.displayName ?? copy.nav.library)
+                      : (peerName(detail.peer, copy.nav.library))
                     : null;
                   return (
                     <div
@@ -1508,9 +1516,9 @@ export default function MessagesPage() {
                             type="button"
                             className="hidden sm:block mb-0.5"
                             onClick={() => openPeerProfile(detail.peer?.id)}
-                            aria-label={detail.peer?.displayName ?? 'Learner'}
+                            aria-label={peerName(detail.peer, 'Learner')}
                           >
-                            <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={28} />
+                            <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={28} />
                           </button>
                         )}
                         <div
@@ -1683,12 +1691,17 @@ export default function MessagesPage() {
               </div>
             ) : null}
 
+            {detail.peer?.deleted || peerGone ? (
+              <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0" data-testid="composer-deleted">
+                <p className="text-center text-sm text-[#6a7282]">{deletedAccountLine(uiLocale)}</p>
+              </footer>
+            ) : (
             <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
               {(replyTo || editing) && (
                 <div className="mb-2 flex items-start gap-2 rounded-xl bg-g-blue-50 px-3 py-2">
                   <div className="min-w-0 flex-1 border-l-2 border-g-blue-700 pl-2">
                     <p className="text-[11px] font-bold text-g-blue-700">
-                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (detail.peer?.displayName ?? mp.you))}
+                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (peerName(detail.peer, mp.you)))}
                     </p>
                     <p className="text-xs text-[#6a7282] truncate">
                       {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false }, mp.messageDeleted)}
@@ -1736,6 +1749,7 @@ export default function MessagesPage() {
                 </button>
               </div>
             </footer>
+            )}
             {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
           </>
         )}

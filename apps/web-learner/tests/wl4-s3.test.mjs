@@ -51,3 +51,26 @@ test('WL4-11 v2: Delete copy follows Privacy §8/§11 (messages kept as "Deleted
   assert.doesNotMatch(uz, /[A-Za-z][‘’'][a-z]/u, 'uz uses ʻ U+02BB, not ‘ ’ or apostrophe');
   assert.doesNotMatch(del, /unlimited|fair use|cheksiz|безлимит/i);
 });
+
+test('WL4-11 v3: Delete copy adds payment-records line in en/ru/uz (uz with U+02BB)', () => {
+  const del = readFileSync(new URL('../src/components/safety/DeleteAccount.tsx', import.meta.url), 'utf8');
+  assert.match(del, /Payment records are kept as the law requires\. Unused Plus days are lost\./);
+  assert.match(del, /Платёжные записи хранятся, как того требует закон\. Неиспользованные дни Plus сгорают\./);
+  assert.match(del, /Toʻlov yozuvlari qonun talabiga koʻra saqlanadi\. Foydalanilmagan Plus kunlari yoʻqoladi\./);
+});
+
+test('WL4-11 v3: chat localises deleted peer from the deleted flag and closes the composer', () => {
+  const lib = readFileSync(new URL('../src/lib/deletedUser.ts', import.meta.url), 'utf8');
+  for (const s of ['Oʻchirilgan foydalanuvchi', 'Удалённый пользователь', 'This account has been deleted.', 'Этот аккаунт удалён.', 'Bu hisob oʻchirilgan.', "'USER_DELETED'"]) {
+    assert.ok(lib.includes(s), s);
+  }
+  assert.match(lib, /if \(p\?\.deleted\) return deletedUserName/);
+  const page = readFileSync(new URL('../src/pages/MessagesPage.tsx', import.meta.url), 'utf8');
+  assert.match(page, /detail\.peer\?\.deleted \|\| peerGone \?/);
+  assert.match(page, /data-testid="composer-deleted"/);
+  assert.match(page, /isUserDeletedError\(e\)/);
+  assert.doesNotMatch(page, /\{(c|detail)\.peer\?\.displayName/);
+  assert.doesNotMatch(page, /=== 'Deleted user'/);
+  const notif = readFileSync(new URL('../../../packages/shared/src/notificationCopy.ts', import.meta.url), 'utf8');
+  assert.match(notif, /DELETED_PEER_NAME_BY_LOCALE\[locale\]/);
+});
