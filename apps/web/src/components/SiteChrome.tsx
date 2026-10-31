@@ -56,6 +56,7 @@ function NavLinks({
 }
 
 export function SiteNav() {
+  const { copyLocale } = useWebLocale();
   const copy = useMarketingCopy();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -98,13 +99,13 @@ export function SiteNav() {
           <LanguagePicker className="inline-flex shrink-0" />
           <a
             className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
-            href={loginUrl()}
+            href={loginUrl({ ui: copyLocale })}
           >
             {copy.nav.signIn}
           </a>
           <a
             className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px md:inline-flex"
-            href={registerUrl({ plan: 'free' })}
+            href={registerUrl({ plan: 'free', ui: copyLocale })}
           >
             {copy.nav.getStarted}
           </a>
@@ -145,14 +146,14 @@ export function SiteNav() {
           <div className="flex flex-col gap-2.5">
             <a
               className="flex h-11 items-center justify-center rounded-lg border border-[#e2e8f0] text-sm font-medium text-[#4a5565]"
-              href={loginUrl()}
+              href={loginUrl({ ui: copyLocale })}
               onClick={() => setOpen(false)}
             >
               {copy.nav.signIn}
             </a>
             <a
               className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-white"
-              href={registerUrl({ plan: 'free' })}
+              href={registerUrl({ plan: 'free', ui: copyLocale })}
               onClick={() => setOpen(false)}
             >
               {copy.nav.getStarted}

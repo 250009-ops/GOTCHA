@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "legal:gen": "python3 scripts/gen_legal.py \"$LEGAL_DRAFTS_DIR\"",
     "check:legal": "node scripts/check-legal.mjs",
-    "build:legal-qa": "VITE_LEGAL_V2=true vite build --outDir dist-legal-qa && node scripts/check-legal.mjs"
+    "build:legal-qa": "VITE_LEGAL_V2=true vite build --outDir dist-legal-qa && node scripts/check-legal.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.ts && node scripts/check-legal.mjs"
   },
   "dependencies": {
     "@gotcha/shared": "*",

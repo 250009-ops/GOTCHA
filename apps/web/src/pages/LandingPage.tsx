@@ -9,7 +9,7 @@ import {
 } from '../lib/api';
 import { libraryUrl, registerUrl } from '../lib/links';
 import { resolveMediaUrl } from '../lib/media';
-import { useMarketingCopy } from '../lib/webLocaleContext';
+import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
 
 // v2: drops cached payloads that still carried learner names (hotfix web1).
 const STORAGE_KEY = 'gotcha.landing.v2';
@@ -66,8 +66,9 @@ function CatalogCard({
   item: LandingPayload['catalog']['items'][number];
   languages: LandingPayload['languages'];
 }) {
+  const { copyLocale } = useWebLocale();
   return (
-    <a href={libraryUrl()} className="landing-catalog-card group">
+    <a href={libraryUrl({ ui: copyLocale })} className="landing-catalog-card group">
       <div className="relative h-[320px] w-[220px] overflow-hidden rounded-lg">
         <CatalogCover title={item.title} coverImageUrl={item.coverImageUrl} />
         <span className="absolute right-3 top-3 rounded bg-[#101828] px-2 py-1 font-['Manrope',sans-serif] text-[11px] font-bold text-white">
@@ -199,10 +200,13 @@ function CatalogCover({ title, coverImageUrl }: { title: string; coverImageUrl: 
 
 export default function LandingPage() {
   const copy = useMarketingCopy();
+  const { copyLocale } = useWebLocale();
   const { hash } = useLocation();
   const [payload, setPayload] = useState<LandingPayload | null>(null);
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [selectedLang, setSelectedLang] = useState<string | null>(null);
+  // WL1-04: only pass the learn-language when the visitor actually picked one (not the auto default).
+  const [pickedLang, setPickedLang] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -261,7 +265,8 @@ export default function LandingPage() {
   const catalogLoading = loadState === 'loading' && !payload;
   const registerHref = registerUrl({
     plan: 'free',
-    lang: selectedLang ?? undefined,
+    lang: pickedLang ? (selectedLang ?? undefined) : undefined,
+    ui: copyLocale,
   });
 
   return (
@@ -311,7 +316,10 @@ export default function LandingPage() {
                   <button
                     key={lang.code}
                     type="button"
-                    onClick={() => setSelectedLang(lang.code)}
+                    onClick={() => {
+                      setSelectedLang(lang.code);
+                      setPickedLang(true);
+                    }}
                     className={`rounded-[30px] px-3 py-1.5 text-[13px] font-medium transition-colors ${
                       active
                         ? 'bg-[#101828] text-white'
@@ -399,7 +407,7 @@ export default function LandingPage() {
                 </h2>
               </div>
               <a
-                href={libraryUrl()}
+                href={libraryUrl({ ui: copyLocale })}
                 className="inline-flex items-center gap-2 text-sm font-semibold text-[#2107aa] transition-colors hover:text-[#101828]"
               >
                 {copy.catalog.browse}
