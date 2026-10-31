@@ -27,8 +27,10 @@ export class AuthController {
     @Body() dto: RegisterDto,
     @Headers('x-gotcha-client-platform') clientHeader?: string,
     @Ip() ip?: string,
+    @Headers('origin') origin?: string,
+    @Headers('referer') referer?: string,
   ) {
-    return this.auth.register(dto, clientHeader, ip);
+    return this.auth.register(dto, clientHeader, ip, origin || referer);
   }
 
   @Public()

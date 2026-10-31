@@ -12,7 +12,12 @@ export const CONSENT_LABELS = {
   en: 'I have read and accept the Terms of Use, the Privacy Policy and the Public Offer, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA.',
 } as const;
 
-/** Web sign-ups must tick the box. Android is frozen and its live build cannot send it (flagged to Kai). */
-export function consentRequired(clientPlatform?: string | null): boolean {
+/**
+ * Web sign-ups must tick the box. Android is frozen and its live build cannot send it (flagged to Kai), so a native
+ * request may skip it. WL4-03: a browser always sends Origin on the cross-origin POST, so any request with an Origin
+ * (or a web Referer) needs consent even if it claims clientPlatform 'android'.
+ */
+export function consentRequired(clientPlatform?: string | null, browserOrigin?: string | null): boolean {
+  if (browserOrigin && browserOrigin.trim() && browserOrigin.trim() !== 'null') return true;
   return clientPlatform !== 'android';
 }

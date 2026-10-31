@@ -36,4 +36,8 @@ try {
 assert.equal(consentRequired('web'), true);
 assert.equal(consentRequired(undefined), true);
 assert.equal(consentRequired('android'), false);
+// WL4-03: the android flag can't skip consent from a browser (Origin present).
+assert.equal(consentRequired('android', 'https://app.gotchaa.uz'), true);
+assert.equal(consentRequired('android', 'http://localhost:5173'), true);
+assert.equal(consentRequired('android', ''), false);
 console.log('safety: OK');

@@ -176,10 +176,10 @@ export class AuthService {
     return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
   }
 
-  async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string) {
+  async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string, browserOrigin?: string) {
     const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
     // S3: web sign-ups must tick the single consent box (Terms + Privacy + OpenAI transfer).
-    if (consentRequired(clientPlatform) && dto.acceptTerms !== true) {
+    if (consentRequired(clientPlatform, browserOrigin) && dto.acceptTerms !== true) {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
