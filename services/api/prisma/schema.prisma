@@ -411,6 +411,7 @@ model AiUsageDaily {
   usageDate   DateTime @map("usage_date") @db.Date
   lookupCount Int      @default(0) @map("lookup_count")
   quizCount   Int      @default(0) @map("quiz_count")
+  mashqQuestionCount Int @default(0) @map("mashq_question_count")
   ttsCount    Int      @default(0) @map("tts_count")
   tokensUsed  BigInt   @default(0) @map("tokens_used")
 
@@ -642,6 +643,7 @@ model ContentSegment {
   tokenMap        Json    @map("token_map")
   sentenceMap     Json    @map("sentence_map")
   wordCount       Int     @map("word_count")
+  quizReadyCount  Int     @default(0) @map("quiz_ready_count")
 
   content          ContentItem       @relation(fields: [contentId], references: [id], onDelete: Cascade)
   parentSegment    ContentSegment?   @relation("SegmentHierarchy", fields: [parentSegmentId], references: [id])
@@ -650,6 +652,7 @@ model ContentSegment {
   readingSessions  ReadingSession[]
   vocabulary       UserVocabulary[]
   practiceSessions PracticeSession[]
+  pageQuestions    PageQuestion[]
 
   @@unique([contentId, segmentIndex])
   @@index([contentId, segmentIndex])
@@ -785,8 +788,9 @@ model PracticeSession {
   practiceType  PracticeType @map("practice_type")
   questionCount Int          @map("question_count")
   correctCount  Int?         @map("correct_count")
-  startedAt     DateTime     @default(now()) @map("started_at")
-  completedAt   DateTime?    @map("completed_at")
+  startedAt      DateTime  @default(now()) @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  idempotencyKey String?   @unique @map("idempotency_key")
 
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   ContentItem?          @relation(fields: [contentId], references: [id])
@@ -804,10 +808,12 @@ model PracticeQuestion {
   questionIndex Int     @map("question_index")
   prompt        String
   options       Json?
-  correctAnswer String  @map("correct_answer")
-  explanation   String?
+  correctAnswer  String  @map("correct_answer")
+  explanation    String?
+  pageQuestionId String? @map("page_question_id") @db.Uuid
 
-  session PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session      PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  pageQuestion PageQuestion?   @relation(fields: [pageQuestionId], references: [id], onDelete: SetNull)
   answers PracticeAnswer[]
 
   @@unique([sessionId, questionIndex])
@@ -1445,4 +1451,44 @@ model ImportUpload {
   @@index([userId, createdAt])
   @@index([expiresAt])
   @@map("import_uploads")
+}
+
+/// Questions prepared for one reader page. Served by Mashq; not the on-click chapter quiz.
+model PageQuestion {
+  id            String   @id @default(uuid()) @db.Uuid
+  segmentId     String   @map("segment_id") @db.Uuid
+  contentId     String   @map("content_id") @db.Uuid
+  segmentHash   String   @map("segment_hash")
+  promptI18n    Json     @map("prompt_i18n")
+  optionsI18n   Json     @map("options_i18n")
+  answerIndex   Int      @map("answer_index")
+  evidenceStart Int      @default(0) @map("evidence_start")
+  evidenceEnd   Int      @default(0) @map("evidence_end")
+  evidenceQuote String   @map("evidence_quote")
+  explanationI18n Json   @map("explanation_i18n")
+  status        String   @default("active")
+  timesServed   Int      @default(0) @map("times_served")
+  timesCorrect  Int      @default(0) @map("times_correct")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  segment  ContentSegment       @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+  seen     PageQuestionSeen[]
+  served   PracticeQuestion[]
+
+  @@index([segmentId, status])
+  @@index([contentId, status])
+  @@map("page_questions")
+}
+
+model PageQuestionSeen {
+  userId     String   @map("user_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  correct    Boolean?
+  seenAt     DateTime @default(now()) @map("seen_at")
+
+  question PageQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, questionId])
+  @@index([userId, seenAt])
+  @@map("page_question_seen")
 }

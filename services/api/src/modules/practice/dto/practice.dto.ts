@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMinSize, IsArray, IsEnum, IsOptional, IsString, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, IsBoolean, IsEnum, IsIn, IsInt, IsOptional, IsString, IsUUID, Max, Min, ValidateNested } from 'class-validator';
 import { PracticeType } from '@prisma/client';
 
 export class StartPracticeDto {
@@ -13,6 +13,27 @@ export class StartPracticeDto {
 
   @IsEnum(PracticeType)
   practiceType!: PracticeType;
+
+  /** page_bank serves stored Mashq questions for this page and does not use the chapter-quiz cap. */
+  @IsOptional()
+  @IsIn(['page_bank'])
+  source?: 'page_bank';
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(3)
+  @Max(20)
+  count?: number;
+
+  @IsOptional()
+  @IsUUID()
+  idempotencyKey?: string;
+
+  @IsOptional()
+  @Type(() => Boolean)
+  @IsBoolean()
+  repeatMissed?: boolean;
 }
 
 export class SubmitAnswerDto {

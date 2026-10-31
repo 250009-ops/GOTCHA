@@ -26,7 +26,8 @@ import { Progress } from '../components/ui/progress';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { surfaceCopy } from '@gotcha/shared';
 import type { VocabItem } from '../lib/types';
 
 type SortKey = 'lemma' | 'intervalDays' | 'dueAt' | 'repetitions';
@@ -69,6 +70,7 @@ function ReviewModal({
   onRate: (id: string, rating: string) => Promise<void>;
 }) {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const [index, setIndex] = useState(0);
   const [revealed, setRevealed] = useState(false);
   const [reviewed, setReviewed] = useState(0);
@@ -204,7 +206,7 @@ function ReviewModal({
               >
                 {copy.vocabulary.showAnswer}
                 <span className="block text-[11px] mt-1 opacity-60">
-                  or press <kbd className="font-mono bg-gray-200 px-1 rounded">Space</kbd>
+                  {surfaceCopy(locale).orPressSpace}
                 </span>
               </button>
             ) : (

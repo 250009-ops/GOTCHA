@@ -132,6 +132,47 @@ export class LimitsService {
     if (count === 0) throw dailyLimitException('quizzes', plan, caps);
   }
 
+  /**
+   * Claim up to `n` Mashq questions for today. Plus (null cap) always gets `n`.
+   * Free gets only the room left under the cap, so two tabs cannot pass 20.
+   * Release the unused part if fewer questions are actually served.
+   */
+  async reserveMashq(userId: string, n: number): Promise<number> {
+    if (n <= 0) return 0;
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
+    const usageDate = usageDayStart();
+    const where = { userId_usageDate: { userId, usageDate } };
+    await this.prisma.aiUsageDaily.createMany({ data: [{ userId, usageDate, mashqQuestionCount: 0 }], skipDuplicates: true });
+    const cap = capOf(caps, plan, 'mashq');
+    if (cap == null) {
+      await this.prisma.aiUsageDaily.update({ where, data: { mashqQuestionCount: { increment: n } } });
+      return n;
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const row = await this.prisma.aiUsageDaily.findUnique({ where });
+      const used = row?.mashqQuestionCount ?? 0;
+      const room = cap - used;
+      if (room <= 0) throw dailyLimitException('mashq', plan, caps);
+      const grant = Math.min(n, room);
+      const { count } = await this.prisma.aiUsageDaily.updateMany({
+        where: { userId, usageDate, mashqQuestionCount: used },
+        data: { mashqQuestionCount: { increment: grant } },
+      });
+      if (count === 1) return grant;
+    }
+    throw dailyLimitException('mashq', plan, caps);
+  }
+
+  async releaseMashq(userId: string, n: number) {
+    if (n <= 0) return;
+    const usageDate = usageDayStart();
+    await this.prisma.$executeRaw`
+      UPDATE ai_usage_daily
+      SET mashq_question_count = GREATEST(0, mashq_question_count - ${n})
+      WHERE user_id = ${userId}::uuid AND usage_date = ${usageDate}
+    `.catch(() => undefined);
+  }
+
   /** PAY2-04: give back a reserved slot (never below 0). */
   async releaseQuizSlot(userId: string) {
     await this.prisma.aiUsageDaily.updateMany({

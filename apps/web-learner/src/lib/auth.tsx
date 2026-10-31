@@ -63,8 +63,8 @@ const defaultPreferences: UserPreferences = {
   readerTheme: 'light',
   appTheme: 'system',
   readerLineSpacing: 1.5,
-  showKnownWords: true,
-  ttsEnabled: false,
+  showKnownWords: false,
+  ttsEnabled: true,
   dailyGoalMinutes: 15,
   notificationsEnabled: true,
 };

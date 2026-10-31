@@ -108,6 +108,16 @@ export function isRetryableImportError(err: unknown): boolean {
   return true;
 }
 
+function fileTooBigException() {
+  const limit = formatFileSizeLimit();
+  const messages = {
+    en: `File exceeds the ${limit} limit`,
+    uz: `Fayl ${limit} chegarasidan oshib ketdi`,
+    ru: `Файл больше лимита ${limit}`,
+  };
+  return new BadRequestException({ code: 'file_too_big', message: messages.en, messages });
+}
+
 @Injectable()
 export class ImportsService {
   private readonly logger = new Logger(ImportsService.name);
@@ -232,7 +242,7 @@ export class ImportsService {
       throw new BadRequestException('File is required');
     }
     if (file.size > MAX_FILE_BYTES) {
-      throw new BadRequestException(`File exceeds ${formatFileSizeLimit()} limit`);
+      throw fileTooBigException();
     }
     const { original, ext, mime, isPdf } = this.classifyFile(file);
 
@@ -408,7 +418,7 @@ export class ImportsService {
         throw new BadRequestException('File is required');
       }
       if (file.size > MAX_FILE_BYTES) {
-        throw new BadRequestException(`File exceeds ${formatFileSizeLimit()} limit`);
+        throw fileTooBigException();
       }
       const c = this.classifyFile(file);
       isPdf = c.isPdf;

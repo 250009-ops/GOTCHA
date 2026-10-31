@@ -217,5 +217,6 @@ export * from './apiErrors';
 export * from './promoCopy';
 export * from './payCopy';
 export * from './dailyLimits';
+export * from './mashqCopy';
 export * from './coverTemplate';
 export * from './landingPoster';

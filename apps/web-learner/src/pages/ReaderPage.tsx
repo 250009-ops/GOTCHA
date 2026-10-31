@@ -27,6 +27,8 @@ import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { mashqCopy, surfaceCopy } from '@gotcha/shared';
+import { MashqSheet } from '../components/practice/MashqSheet';
 import { pagesLabel } from '../lib/pagesLabel';
 import { formatUzs } from '../lib/importBilling';
 import { resolveReaderLibraryReturn } from '../lib/readerReturn';
@@ -131,6 +133,7 @@ function DictionaryPanel({
   showPronounce?: boolean;
 }) {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const statusLabel =
     status === 'unknown'
       ? copy.reader.unknown
@@ -258,7 +261,7 @@ function DictionaryPanel({
         {!loading && !result && (
           <div className="text-center py-10 text-[#99a1af]">
             <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Tap a word to catch its phrase, or drag any span — even the whole page</div>
+            <div className="text-sm">{surfaceCopy(locale).tapWord}</div>
           </div>
         )}
       </div>
@@ -317,6 +320,24 @@ export default function ReaderPage() {
     content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
   const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
+  const [mashqStatus, setMashqStatus] = useState<{ unseenCount: number; missedToday: number; remaining: number | null } | null>(null);
+  const [mashqOpen, setMashqOpen] = useState(false);
+  const [mashqStarting, setMashqStarting] = useState(false);
+  const [mashqCardHidden, setMashqCardHidden] = useState(false);
+  useEffect(() => {
+    setMashqOpen(false);
+    setMashqCardHidden(false);
+    const sid = segment?.id;
+    if (!sid || (segment?.wordCount ?? 0) < 60) {
+      setMashqStatus(null);
+      return;
+    }
+    let cancel = false;
+    api<{ unseenCount: number; missedToday: number; remaining: number | null }>(`/practice/pages/${sid}/bank-status`)
+      .then((status) => { if (!cancel) setMashqStatus(status); })
+      .catch(() => { if (!cancel) setMashqStatus(null); });
+    return () => { cancel = true; };
+  }, [segment?.id, segment?.wordCount]);
   const tokens = segment?.tokenMap ?? [];
   const stanzaBreaks = useReaderStanzaBreaks(
     readerBodyRef,
@@ -368,7 +389,7 @@ export default function ReaderPage() {
   const sourceLang = content?.language ?? 'en';
 
   const pronounceWord = useCallback(() => {
-    if (!preferences?.ttsEnabled) return;
+    if (preferences?.ttsEnabled === false) return;
     const spoken = lookupHeadline(
       activeWord ?? '',
       activeLookup?.phrase,
@@ -786,6 +807,33 @@ export default function ReaderPage() {
     );
   }
 
+  const startMashq = async (count: number, repeatMissed: boolean) => {
+    if (!segment?.id || mashqStatus?.remaining === 0) return;
+    setMashqStarting(true);
+    try {
+      const started = await api<{ id: string }>('/practice/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          contentId: id,
+          segmentId: segment.id,
+          practiceType: 'comprehension',
+          source: 'page_bank',
+          count,
+          repeatMissed,
+          idempotencyKey: crypto.randomUUID(),
+        }),
+      });
+      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}`);
+    } catch (e) {
+      const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
+      if (code === 'quiz_empty') toast.error(copy.practice.quizUnavailable);
+      else if (code === 'mashq_burst') toast.message(e instanceof Error ? e.message : '');
+      else if (!isDailyLimitError(e) && !handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+    } finally {
+      setMashqStarting(false);
+    }
+  };
+
   if (!pageCount) {
     return (
       <div className="min-h-screen flex flex-col bg-g-reader-bg">
@@ -894,12 +942,19 @@ export default function ReaderPage() {
           <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
           <button
             type="button"
-            onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment?.id ?? outline[segmentIndex]?.id ?? ''}`)}
+            onClick={() => {
+              const pageId = segment?.id ?? outline[segmentIndex]?.id ?? '';
+              if ((segment?.wordCount ?? 0) >= 60) {
+                setMashqOpen(true);
+                return;
+              }
+              navigate(`/app/practice?contentId=${id}&segmentId=${pageId}`);
+            }}
             className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-g-blue-700 hover:bg-g-blue-50 transition-colors"
-            title={copy.reader.practiceTitle}
+            title={(segment?.wordCount ?? 0) >= 60 ? mashqCopy(locale).pill : copy.reader.practiceTitle}
           >
             <GraduationCap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{copy.reader.practice}</span>
+            <span className="hidden sm:inline">{(segment?.wordCount ?? 0) >= 60 ? mashqCopy(locale).pill : copy.reader.practice}</span>
           </button>
         </div>
       </header>
@@ -1151,7 +1206,7 @@ export default function ReaderPage() {
                 }
                 const key = (token.lemma ?? token.surface).toLowerCase();
                 const status = lemmaStatus(key);
-                const showKnownWords = preferences?.showKnownWords ?? true;
+                const showKnownWords = preferences?.showKnownWords ?? false;
                 const highlightStatus: WordStatus | null = showUnknownOnly
                   ? status === 'unknown'
                     ? 'unknown'
@@ -1202,6 +1257,20 @@ export default function ReaderPage() {
 
           </div>
           </div>
+          {(segment?.wordCount ?? 0) >= 60 && (mashqStatus?.unseenCount ?? 0) >= 3 && !mashqCardHidden ? (
+            <div className="shrink-0 border-t border-[#e5e7eb] bg-[#f8f7ff] px-4 py-3">
+              <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[#101828]">{mashqCopy(locale).cardTitle}</div>
+                  <div className="text-xs text-[#4a5565]">{mashqCopy(locale).cardBody}</div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button type="button" onClick={() => setMashqOpen(true)} className="h-11 px-3 rounded-xl bg-g-blue-700 text-white text-xs font-semibold">{mashqCopy(locale).start}</button>
+                  <button type="button" onClick={() => setMashqCardHidden(true)} className="h-11 px-3 rounded-xl text-xs font-semibold text-[#6b7280]">{mashqCopy(locale).later}</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-4 py-2.5">
             <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
               <Button variant="outline" onClick={goPrev} disabled={segmentIndex === 0} className="rounded-xl gap-1.5">
@@ -1271,7 +1340,7 @@ export default function ReaderPage() {
               onPronounce={pronounceWord}
               loading={lookupLoading}
               showVocabActions={vocabMarkable}
-              showPronounce={preferences?.ttsEnabled === true}
+              showPronounce={preferences?.ttsEnabled !== false}
             />
           ) : (
             <button
@@ -1300,7 +1369,7 @@ export default function ReaderPage() {
             onPronounce={pronounceWord}
             loading={lookupLoading}
             showVocabActions={vocabMarkable}
-            showPronounce={preferences?.ttsEnabled === true}
+            showPronounce={preferences?.ttsEnabled !== false}
           />
         </div>
       )}
@@ -1329,6 +1398,14 @@ export default function ReaderPage() {
           </div>
         </div>
       ) : null}
+      <MashqSheet
+        open={mashqOpen}
+        remaining={mashqStatus?.remaining ?? null}
+        missedToday={mashqStatus?.missedToday ?? 0}
+        starting={mashqStarting}
+        onClose={() => setMashqOpen(false)}
+        onStart={(count, repeat) => { void startMashq(count, repeat); }}
+      />
     </div>
   );
 }

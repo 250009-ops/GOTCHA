@@ -50,6 +50,7 @@ export default function ChapterQuizPage() {
   const p = copy.practice;
   const contentId = searchParams.get('contentId');
   const segmentId = searchParams.get('segmentId');
+  const sessionId = searchParams.get('sessionId');
 
   const typeLabels = useMemo(
     (): Record<PracticeType, string> => ({
@@ -69,6 +70,25 @@ export default function ChapterQuizPage() {
   const [freeText, setFreeText] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [results, setResults] = useState<{ score: number; results: AnswerResult[] } | null>(null);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    let cancel = false;
+    setStarting(true);
+    api<PracticeSession>(`/practice/sessions/${sessionId}`)
+      .then((started) => {
+        if (cancel || !started?.questions?.length) return;
+        setSession(started);
+        setQuestionIdx(0);
+        setAnswers({});
+        setResults(null);
+      })
+      .catch((e) => {
+        if (!cancel) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      })
+      .finally(() => { if (!cancel) setStarting(false); });
+    return () => { cancel = true; };
+  }, [sessionId, copy.commonExt.error]);
 
   useEffect(() => {
     if (!contentId) {
@@ -106,8 +126,11 @@ export default function ChapterQuizPage() {
       setResults(null);
     } catch (e) {
       const raw = e instanceof Error ? e.message : '';
-      if (/could not build a quiz/i.test(raw)) {
+      const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
+      if (code === 'quiz_empty' || /could not build a quiz/i.test(raw)) {
         toast.error(p.quizUnavailable);
+      } else if (code === 'mashq_burst') {
+        toast.message(raw);
       } else if (!isDailyLimitError(e) && !handleLimitError(e)) {
         toast.error(raw || copy.commonExt.error);
       }

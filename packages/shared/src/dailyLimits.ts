@@ -15,7 +15,7 @@ export const DAILY_CAP_FALLBACKS: { free: { lookups: number; quizzes: number; ma
 };
 /** platform_settings keys (admin config). JSON null / missing = unlimited / no cap. */
 /** WLF-12: Free lookups / Free quizzes / Plus quizzes per day live in platform_settings ONLY (never subscription_plans columns). */
-/** Mashq (approved 31 Oct, still coming): questions/day, separate from the on-click quiz cap. Plus null = no daily cap. */
+/** Mashq: questions/day, separate from the on-click quiz cap. Plus null = no daily cap. */
 export const DAILY_CAP_KEYS = {
   freeLookups: 'caps.free.lookups',
   freeQuizzes: 'caps.free.quizzes',

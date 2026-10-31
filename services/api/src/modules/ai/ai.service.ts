@@ -17,6 +17,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
 import { DAILY_CAP_FALLBACKS, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, languagePromptLabel, slowDownMessage, ttsLocale } from '@gotcha/shared';
+import { groundPageItems, groundQuizQuestions, parsePageBankItems, type PageBankItem } from './quiz-grounding';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -78,24 +79,6 @@ const MEMORY_LRU_MAX = 800;
 /** Soft timeout for import cleanup calls (production imports must not hang forever). */
 const IMPORT_CLEANUP_TIMEOUT_MS = 55_000;
 const IMPORT_CLEANUP_MAX_RETRIES = 1;
-
-function quizAnswerKey(value: string) {
-  return value.trim().toLowerCase().replace(/[.?!…]+$/g, '').replace(/\s+/g, ' ');
-}
-
-/** Drop multiple-choice items whose answer is missing, duplicated, or not one of the options. */
-function groundedQuizQuestions<T extends { prompt?: string; options?: string[]; correctAnswer?: string }>(questions: T[]): T[] {
-  return questions.filter((q) => {
-    const prompt = String(q.prompt ?? '').trim();
-    const answer = String(q.correctAnswer ?? '').trim();
-    if (!prompt || !answer) return false;
-    const options = (q.options ?? []).map((option) => String(option).trim()).filter(Boolean);
-    if (options.length === 0) return true;
-    const keys = options.map(quizAnswerKey);
-    if (new Set(keys).size !== keys.length) return false;
-    return keys.includes(quizAnswerKey(answer));
-  });
-}
 
 @Injectable()
 export class AiService {
@@ -1074,7 +1057,12 @@ export class AiService {
         // AI-1: drop the quiz for a minor if moderation flags any of it.
         const all = questions.map((q) => [q.prompt, ...(q.options ?? []), q.correctAnswer, q.explanation ?? ''].join('\n')).join('\n');
         if ((await this.moderateForMinor(band, all)) !== all) return [];
-        return groundedQuizQuestions(questions);
+        const passage = segmentText.slice(0, 4000);
+        return groundQuizQuestions(questions, passage, {
+          requireOptions: practiceType === PracticeType.comprehension,
+          cloze: practiceType === PracticeType.cloze,
+          requireEvidence: false,
+        });
       } catch {
         return [];
       }
@@ -1084,6 +1072,43 @@ export class AiService {
         `AI quiz generation failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
       );
     }
+  }
+
+  /** One grounded bank for a single page, in en, uz and ru. Empty when the model is off or nothing survives the checks. */
+  async generatePageQuiz(passage: string, userId?: string): Promise<PageBankItem[]> {
+    const text = passage.slice(0, 4000);
+    if (text.trim().length < 80) return [];
+    const { band } = await this.userAiGate(userId);
+    const settings = await this.getPlatformAiSettings();
+    await this.assertAiAvailable(settings);
+    const client = this.getClient();
+    if (!client) return [];
+    const response = await client.chat.completions.create({
+      model: settings.quizModel,
+      temperature: 0.2,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content: withChildSafe(
+            'Return JSON {"questions":[{"prompt":{"en":"","uz":"","ru":""},"options":{"en":["","","",""],"uz":["","","",""],"ru":["","","",""]},"answerIndex":0,"evidenceQuote":"","explanation":{"en":"","uz":"","ru":""}}]}. Use ONLY the passage. evidenceQuote must be copied word for word. Exactly 4 options, exactly one correct, answerIndex 0-3. Every number you write must appear in the passage. Uzbek in Latin. Russian in Cyrillic.',
+            band,
+          ),
+        },
+        { role: 'user', content: `Write 8 questions about this page:\n\n${text}` },
+      ],
+    });
+    let parsed: { questions?: unknown } = {};
+    try {
+      parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as { questions?: unknown };
+    } catch {
+      return [];
+    }
+    const items = groundPageItems(parsePageBankItems(parsed.questions), text);
+    const all = items.map((item) => [item.prompt.en, item.prompt.uz, item.prompt.ru, item.evidenceQuote, ...item.options.en, ...item.options.uz, ...item.options.ru].join('\n')).join('\n');
+    if (!all.trim()) return [];
+    if ((await this.moderateForMinor(band, all)) !== all) return [];
+    return items;
   }
 
   /**

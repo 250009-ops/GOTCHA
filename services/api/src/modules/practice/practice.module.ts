@@ -5,10 +5,11 @@ import { AiModule } from '../ai/ai.module';
 import { LimitsService } from '../../services/limits.service';
 import { VocabularyModule } from '../vocabulary/vocabulary.module';
 import { PracticeEngineService } from './practice-engine.service';
+import { MashqService } from './mashq.service';
 
 @Module({
   imports: [AiModule, VocabularyModule],
   controllers: [PracticeController],
-  providers: [PracticeService, PracticeEngineService, LimitsService],
+  providers: [PracticeService, PracticeEngineService, LimitsService, MashqService],
 })
 export class PracticeModule {}

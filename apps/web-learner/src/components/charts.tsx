@@ -1,4 +1,6 @@
 import { useId, useMemo, useState } from 'react';
+import { surfaceCopy } from '@gotcha/shared';
+import { useLearnerLocale } from '../lib/learnerLocaleContext';
 import {
   Area,
   AreaChart,
@@ -322,6 +324,8 @@ export function HeatmapCalendar({
   data: { date: string; count: number; finished?: number }[];
   labels?: { noBooksRead: string; booksRead: (n: number) => string; booksReadFinished: (c: number, f: number) => string };
 }) {
+  const { locale } = useLearnerLocale();
+  const surface = surfaceCopy(locale);
   const activityLabels = labels ?? {
     noBooksRead: 'No books read',
     booksRead: (count: number) => `${count} book${count === 1 ? '' : 's'} read`,
@@ -353,7 +357,7 @@ export function HeatmapCalendar({
   if (!data.length) {
     return (
       <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50 text-xs text-[#99a1af]">
-        Activity heatmap will appear as you learn
+        {surface.heatmapEmpty}
       </div>
     );
   }
@@ -434,11 +438,11 @@ export function HeatmapCalendar({
       ) : null}
 
       <div className="flex items-center justify-end gap-1.5 text-[11px] text-[#99a1af]">
-        <span>Fewer books</span>
+        <span>{surface.fewerBooks}</span>
         {HEATMAP_LEVELS.map((c) => (
           <div key={c} className={cn('h-2.5 w-2.5 rounded-[5px]', c)} />
         ))}
-        <span>More books/day</span>
+        <span>{surface.moreBooks}</span>
       </div>
     </div>
   );

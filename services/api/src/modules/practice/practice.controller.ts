@@ -53,6 +53,11 @@ export class PracticeController {
     return this.engine.complete(user.sub, id);
   }
 
+  @Get('pages/:segmentId/bank-status')
+  bankStatus(@CurrentUser() user: AuthUserPayload, @Param('segmentId', ParseUUIDPipe) segmentId: string) {
+    return this.practice.bankStatus(user.sub, segmentId);
+  }
+
   @Post('sessions')
   start(@CurrentUser() user: AuthUserPayload, @Body() dto: StartPracticeDto) {
     return this.practice.startSession(user.sub, dto);

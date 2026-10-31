@@ -358,7 +358,7 @@ export default function SettingsPage() {
   const [lineSpacing, setLineSpacing] = useState(preferences?.readerLineSpacing ?? 1.5);
   const [theme, setTheme] = useState(preferences?.readerTheme ?? 'light');
   const [showKnownWords, setShowKnownWords] = useState(preferences?.showKnownWords ?? false);
-  const [ttsEnabled, setTtsEnabled] = useState(preferences?.ttsEnabled ?? false);
+  const [ttsEnabled, setTtsEnabled] = useState(preferences?.ttsEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences?.notificationsEnabled ?? true);
   const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
   const [saving, setSaving] = useState(false);
@@ -399,6 +399,12 @@ export default function SettingsPage() {
       setDailyGoal(preferences.dailyGoalMinutes ?? 15);
     }
   }, [preferences]);
+
+  useEffect(() => {
+    if (preferences?.appTheme !== 'dark') return;
+    applyAppTheme('system');
+    void updatePreferences({ appTheme: 'system' }).catch(() => undefined);
+  }, [preferences?.appTheme, updatePreferences]);
 
   useEffect(() => {
     api<SubscriptionInfo>('/billing/subscription')
@@ -679,24 +685,27 @@ export default function SettingsPage() {
         </Row>
         <Row label={practiceCopy.appTheme}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={practiceCopy.appTheme}>
-            {(['system', 'light'] as const).map((t) => (
+            {(['system', 'light'] as const).map((t) => {
+              const selected = (preferences?.appTheme === 'light' ? 'light' : 'system') === t;
+              return (
               <button
                 key={t}
                 type="button"
                 role="radio"
-                aria-checked={(preferences?.appTheme ?? 'system') === t}
+                aria-checked={selected}
                 onClick={() => {
                   applyAppTheme(t);
                   void updatePreferences({ appTheme: t }).catch(() => toast.error(copy.settings.saveFailed));
                 }}
                 className={cn(
                   'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
-                  (preferences?.appTheme ?? 'system') === t ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+                  selected ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
                 )}
               >
                 {t === 'system' ? practiceCopy.themeSystem : practiceCopy.themeLight}
               </button>
-            ))}
+              );
+            })}
           </div>
         </Row>
         <Row label={copy.settings.readerTheme}>

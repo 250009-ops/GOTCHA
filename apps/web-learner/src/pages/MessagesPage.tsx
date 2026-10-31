@@ -32,6 +32,7 @@ import {
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { surfaceCopy } from '@gotcha/shared';
 import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
@@ -460,6 +461,7 @@ function WordMeaningPanel({
 }) {
   const mp = copy.messagesPage;
   const reader = copy.reader;
+  const { locale } = useLearnerLocale();
   const lemma = lookup?.lemma || word;
   const phonetic = lookup?.phonetic?.trim();
   const canAct = !loading && !!lookup?.translation;
@@ -526,7 +528,7 @@ function WordMeaningPanel({
 
         {lookup?.grammarNote && lookup.grammarNote.trim() !== naturalMeaning && lookup.grammarNote.trim() !== lookup.translation?.trim() ? (
           <section>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Grammar note</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">{surfaceCopy(locale).grammarNote}</h3>
             <p className="text-sm text-[#4a5565] leading-6 whitespace-pre-wrap">{lookup.grammarNote}</p>
           </section>
         ) : null}

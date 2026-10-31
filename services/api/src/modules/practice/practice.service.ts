@@ -1,11 +1,12 @@
 import { canReadUserImport } from '../content/user-import-privacy';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
 import { gradeAnswer } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
+import { MashqService, quizEmptyException } from './mashq.service';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 import { shuffleQuestionOptions } from './shuffle-options';
 import { redactSession } from './practice-redact';
@@ -16,9 +17,11 @@ export class PracticeService {
     private prisma: PrismaService,
     private ai: AiService,
     private limits: LimitsService,
+    private mashq: MashqService,
   ) {}
 
   async startSession(userId: string, dto: StartPracticeDto) {
+    if (dto.source === 'page_bank') return this.mashq.start(userId, dto);
     if (!dto.segmentId && dto.practiceType !== PracticeType.flashcard) {
       throw new BadRequestException('segmentId required for this practice type');
     }
@@ -74,7 +77,7 @@ export class PracticeService {
             userId,
           }));
     if (dto.practiceType !== PracticeType.flashcard && questions.length === 0) {
-      throw new ServiceUnavailableException('Could not build a quiz for this chapter. Try again.');
+      throw quizEmptyException();
     }
 
     const session = await this.prisma.practiceSession.create({
@@ -130,6 +133,18 @@ export class PracticeService {
       });
       // Revealed only now, after the server has graded the answer (W-24).
       results.push({ ...saved, correctAnswer: question.correctAnswer, explanation: question.explanation });
+      if (question.pageQuestionId) {
+        await this.prisma.pageQuestionSeen.updateMany({
+          where: { userId, questionId: question.pageQuestionId },
+          data: { correct: isCorrect },
+        });
+        if (isCorrect) {
+          await this.prisma.pageQuestion.update({
+            where: { id: question.pageQuestionId },
+            data: { timesCorrect: { increment: 1 } },
+          });
+        }
+      }
     }
 
     const updated = await this.prisma.practiceSession.update({
@@ -142,6 +157,10 @@ export class PracticeService {
       results,
       score: session.questionCount > 0 ? correctCount / session.questionCount : 0,
     };
+  }
+
+  bankStatus(userId: string, segmentId: string) {
+    return this.mashq.bankStatus(userId, segmentId);
   }
 
   async getSession(userId: string, sessionId: string) {

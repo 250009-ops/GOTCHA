@@ -4,12 +4,12 @@ import type { AppTheme } from '@gotcha/shared';
 const KEY = 'gotcha.appTheme';
 
 export function resolveTheme(pref: AppTheme | undefined | null): 'light' | 'dark' {
-  if (pref === 'light' || pref === 'dark') return pref;
+  if (pref === 'light') return 'light';
   return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
 }
 
 export function applyAppTheme(pref: AppTheme | undefined | null) {
-  const p: AppTheme = pref ?? 'system';
+  const p: AppTheme = pref === 'light' ? 'light' : 'system';
   try {
     localStorage.setItem(KEY, p);
   } catch {
@@ -22,8 +22,9 @@ export function applyAppTheme(pref: AppTheme | undefined | null) {
 export function useAppTheme(pref: AppTheme | undefined | null) {
   useEffect(() => {
     if (pref == null) return; // not loaded yet — keep the pre-paint value from index.html
-    applyAppTheme(pref);
-    if ((pref ?? 'system') !== 'system') return;
+    const effective: AppTheme = pref === 'light' ? 'light' : 'system';
+    applyAppTheme(effective);
+    if (effective !== 'system') return;
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
     const on = () => applyAppTheme('system');
     mq.addEventListener('change', on);

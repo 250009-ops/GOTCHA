@@ -25,7 +25,8 @@ import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { surfaceCopy } from '@gotcha/shared';
 import { PromoCodeField } from '../components/PromoCodeField';
 import { CardForm, OtpForm, PayTrust, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
 import { refundRequestHref } from '@gotcha/shared';
@@ -271,6 +272,7 @@ function PasteForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: {
 
 function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { file: File; title: string; lang: string }) => void }) {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const [file, setFile] = useState<File | null>(null);
   const [title, setTitle] = useState('');
   const [lang, setLang] = useState('en');
@@ -293,7 +295,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
     }
     if (next.size > MAX_FILE_BYTES) {
       setFile(null);
-      setFileError(`File exceeds the ${MAX_FILE_MB} MB limit`);
+      setFileError(surfaceCopy(locale).fileTooBig(MAX_FILE_MB));
       return;
     }
     setFile(next);
