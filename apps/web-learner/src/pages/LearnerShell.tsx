@@ -1,6 +1,6 @@
 import { AgePrompt } from '../components/safety/AgePrompt';
 import { LimitDialog } from '../components/LimitDialog';
-import { paymentsEnabled } from '../lib/limits';
+import { usePaymentsEnabled } from '../lib/limits';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -66,6 +66,7 @@ function shouldShowGlobalSearch(pathname: string) {
 }
 
 export default function LearnerShell() {
+  const payments = usePaymentsEnabled();
   const navigate = useNavigate();
   const location = useLocation();
   const { user, stats, logout } = useAuth();
@@ -208,7 +209,7 @@ export default function LearnerShell() {
 
             <div className="px-2 pb-3 pt-2 border-t border-white/[0.06] space-y-1 shrink-0">
               {/* final-5 B4: pay-as-you-go upsell only when payments are on (default off). */}
-              {!paymentsEnabled() ? null : expanded ? (
+              {!payments ? null : expanded ? (
                 <button
                   type="button"
                   onClick={() => navigate('/app/import')}

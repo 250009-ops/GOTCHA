@@ -82,14 +82,16 @@ test('learner src: no 05:00 resets, no UTC-midnight reset helpers', () => {
 
 test('payments flag defaults off and gates the upsells', () => {
   const lim = readFileSync(join(SRC, 'lib', 'limits.ts'), 'utf8');
-  assert.match(lim, /VITE_PAYMENTS_ENABLED === 'true'/);
+  assert.doesNotMatch(lim, /import\.meta\.env|VITE_PAYMENTS/); // final-5.1: server-only flag
+  assert.match(lim, /\/billing\/gateway-status/);
+  assert.match(lim, /paymentGatewayEnabled === true/);
   const shell = readFileSync(join(SRC, 'pages', 'LearnerShell.tsx'), 'utf8');
-  assert.match(shell, /!paymentsEnabled\(\) \? null : expanded/);
+  assert.match(shell, /!payments \? null : expanded/);
   assert.match(shell, /<LimitDialog/);
   const settings = readFileSync(join(SRC, 'pages', 'SettingsPage.tsx'), 'utf8');
-  assert.match(settings, /\{payments && \(\s*<button[\s\S]*?importMoreContent/);
+  assert.match(settings, /\{payments && \((?:<>)?\s*<button[\s\S]*?importMoreContent/);
   const imp = readFileSync(join(SRC, 'pages', 'ImportPage.tsx'), 'utf8');
-  assert.match(imp, /gatewayEnabled && paymentsEnabled\(\)\s*\? copy\.importPage\.paidImportsHint/);
+  assert.match(imp, /gatewayEnabled && payments\s*\? copy\.importPage\.paidImportsHint/);
   assert.equal((imp.match(/if \(blockedByFreeLimit\(quote\)\) return;/g) || []).length, 3);
   const auth = readFileSync(join(SRC, 'pages', 'AuthPage.tsx'), 'utf8');
   assert.match(auth, /\{!adminReturnUrl && \([\s\S]*?signUpFree/);
@@ -104,5 +106,14 @@ test('r3b: limit bodies never say Free/Free tarif (Plus users see them too), all
       shared.limitNoticeFromError({ code: 'IMPORT_LIMIT_REACHED', body: { limit: 'monthly_pages', monthlyFreePageLimit: 50 } }, lang).body,
     ];
     for (const b of bodies) { assert.ok(!/\bFree\b|Free tarif|includes|входит/.test(b), `${lang}: ${b}`); assert.ok(!/\bmust\b/i.test(b)); }
+  }
+});
+
+test('final-5.1: no code forces payments off; flag is server-only', () => {
+  const walk = (d) => readdirSync(d).flatMap((n) => statSync(join(d, n)).isDirectory() ? walk(join(d, n)) : [join(d, n)]);
+  for (const f of walk(SRC).filter((f) => /\.(ts|tsx)$/.test(f))) {
+    const s = readFileSync(f, 'utf8');
+    assert.doesNotMatch(s, /VITE_PAYMENTS_ENABLED/, f);
+    assert.doesNotMatch(s, /(paymentsEnabled|paymentGatewayEnabled|gatewayEnabled)\s*[:=]\s*false\b/, f);
   }
 });

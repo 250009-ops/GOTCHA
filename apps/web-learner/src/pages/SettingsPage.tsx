@@ -30,7 +30,7 @@ import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { persistLearnerLocale } from '../lib/learnerLocale';
 import type { UiLanguage } from '@gotcha/shared';
 import { payCopyFor, practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
-import { paymentsEnabled } from '../lib/limits';
+import { usePaymentsEnabled } from '../lib/limits';
 import { applyAppTheme } from '../lib/appTheme';
 import {
   CEFR_LEVELS,
@@ -455,7 +455,7 @@ export default function SettingsPage() {
   const rawQuizQuota = subscription?.usage.quizQuota;
   const quizQuota = typeof rawQuizQuota === 'number' && rawQuizQuota > 0 && rawQuizQuota < 1_000_000 ? rawQuizQuota : null;
   const quizzesToday = subscription?.usage.quizzesToday ?? 0;
-  const payments = paymentsEnabled();
+  const payments = usePaymentsEnabled();
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
     () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),

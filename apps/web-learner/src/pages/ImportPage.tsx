@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { handleLimitError, paymentsEnabled } from '../lib/limits';
+import { handleLimitError, paymentsEnabled, usePaymentsEnabled } from '../lib/limits';
 import {
   AlertCircle,
   CheckCircle2,
@@ -732,6 +732,7 @@ function blockedByFreeLimit(quote: ImportQuote): boolean {
 }
 
 export default function ImportPage() {
+  const payments = usePaymentsEnabled();
   const copy = useLearnerCopy();
   const navigate = useNavigate();
   const [tab, setTab] = useState<ImportTab>('url');
@@ -1098,7 +1099,7 @@ export default function ImportPage() {
               </div>
             )}
             <p className="text-[11px] text-[#99a1af] mb-3 leading-relaxed break-words">
-              {gatewayEnabled && paymentsEnabled()
+              {gatewayEnabled && payments
                 ? copy.importPage.paidImportsHint
                 : copy.importPage.freeImportsHint}
             </p>

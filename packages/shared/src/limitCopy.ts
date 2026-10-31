@@ -5,7 +5,7 @@
  * cap, so "Free includes N …" was wrong for them.
  */
 export type LimitLang = 'en' | 'ru' | 'uz';
-export const LIMIT_TIME_ZONE = 'Asia/Tashkent';
+import { LIMIT_TIME_ZONE } from './dailyLimits';
 
 export type LimitCopy = {
   lookupsLeft: (left: number, total: number) => string;
