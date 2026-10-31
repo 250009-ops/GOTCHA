@@ -1,4 +1,4 @@
-import { Controller, Get, Header, Query } from '@nestjs/common';
+import { Controller, Get, GoneException, Header, Query } from '@nestjs/common';
 import { planLang } from './plan-copy';
 import { ApiTags } from '@nestjs/swagger';
 import { Public } from '../../common/decorators';
@@ -22,10 +22,12 @@ export class MarketingController {
     return this.marketing.plans(planLang(lang));
   }
 
+  /** WLF-35 (Kai 6.1a): the old landing-content endpoint is retired. The new landing makes no API calls and the
+   *  admin never used it; the learner login page now reads /marketing/stats only. 410 so caches/CDNs drop it. */
   @Public()
-  @Header('Cache-Control', 'public, max-age=15')
+  @Header('Cache-Control', 'no-store')
   @Get('landing')
-  landing() {
-    return this.marketing.landing();
+  landing(): never {
+    throw new GoneException({ code: 'endpoint_retired', message: 'GET /marketing/landing was retired in final-6.1; use /marketing/stats and /marketing/plans.' });
   }
 }

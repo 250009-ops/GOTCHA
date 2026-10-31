@@ -59,6 +59,11 @@ chk 401 POST /practice/daily/00000000-0000-0000-0000-000000000000/complete
 chk 401 GET /practice/sessions/00000000-0000-0000-0000-000000000000
 chk 200 GET /health/version
 grep -q '"sha"' "$W/r" && say "PASS S4 build id: $(head -c 80 "$W/r")" || fail "health/version lacks sha"
+chk 410 GET /marketing/landing   # WLF-35 retired
+chk 200 GET /billing/plans
+grep -q '"priceMonthly":24990' "$W/r" && grep -q '"priceHidden":false' "$W/r" && ! grep -q 'pages of imports a day' "$W/r" && say "PASS Kai 6.1a: Plus 24990 shown, pages a month" || fail "billing/plans price/cycle"
+chk 200 GET '/marketing/plans?lang=en'
+grep -q '"priceMonthly":24990' "$W/r" && say "PASS marketing/plans Plus 24990" || fail "marketing/plans lacks Plus 24990"
 chk 401 POST /auth/login '{"email":"nobody@example.com","password":"wrong-password-123"}'
 sleep 1; kill -0 $APIPID 2>/dev/null || fail "API died after requests"
 if grep -nE "Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND" "$W/app.log" "$W/npm.log" "$W/mig.log" | tee -a "$R"; then fail "module-not-found in logs"; fi

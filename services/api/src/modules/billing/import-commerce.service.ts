@@ -226,7 +226,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return {
       ...merged,
       allowedFormats: normalizeAllowedFormats(merged.allowedFormats),
-      resetCycle: ['daily', 'monthly', 'yearly'].includes(merged.resetCycle) ? merged.resetCycle : 'monthly',
+      // WLF-37: page pool is monthly (Kai/Sarvarbek 31 Oct); a stale 'daily' setting no longer shrinks it to a day.
+      resetCycle: merged.resetCycle === 'yearly' ? 'yearly' : 'monthly',
       allowRollover: false,
     };
   }

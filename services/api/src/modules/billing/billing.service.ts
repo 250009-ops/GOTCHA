@@ -7,9 +7,10 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { formatSom, planCopy, publicPlanPriceUzs, type PlanLang } from '../marketing/plan-copy';
 import { ImportCommerceService } from './import-commerce.service';
 import { PricingService, type PricingLang } from './pricing.service';
+import { PLUS_SETTING_KEYS, plusPassConfig } from './plus-pass';
 
 /** Subscription view of a plan row: DB values only (no prices or feature copy in code). */
-export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups, freeImportsDay?: number, plusQuizzes: number = DAILY_CAP_FALLBACKS.plus.quizzes, freePages: FreeImportPages = DEFAULT_FREE_IMPORT_PAGES, plusImports?: PlusImportLimits) {
+export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups, freeImportsDay?: number, plusQuizzes: number = DAILY_CAP_FALLBACKS.plus.quizzes, freePages: FreeImportPages = DEFAULT_FREE_IMPORT_PAGES, plusImports?: PlusImportLimits, passPrices?: PlusPassPrices) {
   const t = planCopy(lang);
   const isPremium = plan.tier === 'premium';
   if (!isPremium) {
@@ -34,8 +35,9 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
   }
   // Premium = Plus, a 30-day pass (no auto-renew). Field names (incl. priceMonthly) are kept for old clients;
   // priceMonthly now means "price of the 30-day pass". A price < 1000 soʻm (e.g. the live USD "9") is hidden.
-  const priceUzs = publicPlanPriceUzs(plan.priceMonthly);
-  const priceYearUzs = publicPlanPriceUzs(yearRaw);
+  // Kai 6.1a: Plus shows the price checkout charges (plusPassConfig: admin setting > env > 24990/199990), never the stale row (USD "9").
+  const priceUzs = publicPlanPriceUzs(passPrices?.p30 ?? plan.priceMonthly);
+  const priceYearUzs = publicPlanPriceUzs(passPrices?.p365 ?? yearRaw);
   return {
     ...plan,
     name: t.plusName,
@@ -77,8 +79,29 @@ export async function freeImportPages(prisma: { platformSetting: { findUnique(a:
   const row = await prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } }).catch(() => null);
   const v = (row?.value && typeof row.value === 'object' ? row.value : {}) as { monthlyFreePageLimit?: unknown; resetCycle?: unknown };
   const n = Math.floor(Number(v.monthlyFreePageLimit ?? DEFAULT_FREE_IMPORT_PAGES.pages));
-  const cycle = v.resetCycle === 'daily' || v.resetCycle === 'yearly' ? v.resetCycle : 'monthly';
+  // WLF-37: the page pool is monthly by product decision (daily is the 3-imports cap); a stale 'daily' reads as monthly.
+  const cycle = v.resetCycle === 'yearly' ? 'yearly' : 'monthly';
   return { pages: Number.isFinite(n) && n >= 0 ? n : DEFAULT_FREE_IMPORT_PAGES.pages, cycle };
+}
+
+/** Kai 6.1a: the Plus pass prices checkout charges (same source as import-commerce plusConfig). */
+export type PlusPassPrices = { p30: number; p365: number };
+type SettingsReader = { platformSetting: { findUnique(a: { where: { key: string } }): Promise<{ value: unknown } | null> } };
+export async function plusPassPrices(prisma: SettingsReader): Promise<PlusPassPrices> {
+  const get = (key: string) => prisma.platformSetting.findUnique({ where: { key } }).then((r) => r?.value, () => undefined);
+  const [p30, p365] = await Promise.all([get(PLUS_SETTING_KEYS.price30), get(PLUS_SETTING_KEYS.price365)]);
+  const cfg = plusPassConfig(process.env, 0, { [PLUS_SETTING_KEYS.price30]: p30, [PLUS_SETTING_KEYS.price365]: p365 });
+  const of = (d: number) => cfg.plans.find((x) => x.days === d)?.priceUzs ?? 0;
+  return { p30: of(30), p365: of(365) };
+}
+/** Plan cards for /billing/plans (and the Plus card on /marketing/plans). */
+export async function buildPlanCards(prisma: PrismaService, lang: PlanLang = 'en') {
+  const [plans, caps, freeImports, freePages, plusImports, passPrices] = await Promise.all([
+    prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } }),
+    getPlanCaps(prisma),
+    freeImportsPerDay(prisma), freeImportPages(prisma), plusImportLimits(prisma), plusPassPrices(prisma),
+  ]);
+  return plans.map((p) => enrichPlan(p, lang, undefined, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, freeImports, caps.plus.quizzes, freePages, plusImports, passPrices));
 }
 
 /** WLF-29: Plus import pool = importFreeLimits.plusDailyImportsPerUser / plusMonthlyPageLimit; unset falls back to Free (same rule as import-commerce capOf). */
@@ -102,13 +125,7 @@ export class BillingService {
   /** No prices in code: everything comes from subscription_plans (PRICING.md seed, admin-edited). */
   /** wlive behaviour kept: localized plan cards (enrichPlan) with the enforced payments-02 caps. */
   async listPlans(lang: PricingLang = 'en') {
-    const [plans, year, caps] = await Promise.all([
-      this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } }),
-      this.prisma.platformSetting.findUnique({ where: { key: 'plus.pass.price_365_uzs' } }).catch(() => null),
-      getPlanCaps(this.prisma),
-    ]);
-    const [freeImports, freePages, plusImports] = await Promise.all([freeImportsPerDay(this.prisma), freeImportPages(this.prisma), plusImportLimits(this.prisma)]);
-    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, freeImports, caps.plus.quizzes, freePages, plusImports));
+    return buildPlanCards(this.prisma, lang as PlanLang);
   }
 
   async getSubscription(userId: string) {
@@ -129,7 +146,7 @@ export class BillingService {
     const quota = caps[plan].lookups;
 
     return {
-      subscription: sub ? { ...sub, plan: enrichPlan(sub.plan, 'en', undefined, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, await freeImportsPerDay(this.prisma), caps.plus.quizzes, await freeImportPages(this.prisma), await plusImportLimits(this.prisma)) } : null,
+      subscription: sub ? { ...sub, plan: enrichPlan(sub.plan, 'en', undefined, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, await freeImportsPerDay(this.prisma), caps.plus.quizzes, await freeImportPages(this.prisma), await plusImportLimits(this.prisma), await plusPassPrices(this.prisma)) } : null,
       usage: {
         lookupsToday: usage?.lookupCount ?? 0,
         quizzesToday: usage?.quizCount ?? 0,

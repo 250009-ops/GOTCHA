@@ -10,6 +10,7 @@ import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
 import { paymentsUiEnabled } from '../../common/payments-ui';
 import { getPlanCaps } from '../../common/plan-caps';
+import { buildPlanCards } from '../billing/billing.service';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
 const LANDING_CACHE_TTL_MS = 60_000;
@@ -209,7 +210,10 @@ export class MarketingService {
     };
 
     // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENT_GATEWAY_ENABLED, default off).
-    return paymentsUiEnabled() ? [free, payPerImport] : [free];
+    if (!paymentsUiEnabled()) return [free];
+    // Kai 6.1a: Plus card with the charged pass prices (24 990 / 199 990 by default), same as /billing/plans.
+    const plus = (await buildPlanCards(this.prisma as unknown as PrismaService, lang).catch(() => [] as Awaited<ReturnType<typeof buildPlanCards>>)).find((p) => p.tier === 'premium');
+    return plus ? [free, payPerImport, plus] : [free, payPerImport];
   }
 
   async landing(): Promise<LandingPayload> {
@@ -311,8 +315,9 @@ export class MarketingService {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
     if (!row?.value || typeof row.value !== 'object') return DEFAULT_FREE_LIMITS;
     const merged = { ...DEFAULT_FREE_LIMITS, ...(row.value as object) } as typeof DEFAULT_FREE_LIMITS;
-    const cycle = ['daily', 'monthly', 'yearly'].includes(merged.resetCycle)
-      ? (merged.resetCycle as LandingImportPricing['freeLimits']['resetCycle'])
+    // WLF-37: pages are a monthly pool; stale 'daily' reads as monthly (same as import-commerce).
+    const cycle = merged.resetCycle === 'yearly'
+      ? 'yearly'
       : 'monthly';
     return {
       dailyFreeImportsPerUser: Number(merged.dailyFreeImportsPerUser) || 0,
