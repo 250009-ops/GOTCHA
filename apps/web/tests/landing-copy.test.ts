@@ -135,3 +135,15 @@ test('uz web copy: no plain/curly apostrophes inside words (ʻ/ʼ only)', () => 
   assert.doesNotMatch(m, /\p{L}[’‘]\p{L}/u);
   for (const v of Object.values(LANDING_COPY.uz).flat(3)) if (typeof v === 'string') assert.doesNotMatch(v, /\p{L}['’‘]\p{L}/u, v);
 });
+
+test('Plus headline/lead/bullets verbatim from PLUS-OFFER; no 500 cap, no trial', () => {
+  assert.equal(LANDING_COPY.en.plusT, 'Look up 200 words a day with Plus.');
+  assert.equal(LANDING_COPY.uz.plusT, 'Plus bilan kuniga 200 ta soʻz qidiring.');
+  assert.equal(LANDING_COPY.ru.plusT, 'С Plus: 200 подсказок по словам в день.');
+  for (const l of ['uz', 'ru', 'en'] as const) {
+    const c = LANDING_COPY[l];
+    const t = [c.plusT, c.plusLead, ...c.plusB, c.plusOpt, c.plusNote].join(' ');
+    assert.doesNotMatch(t, /\b500\b|trial|sinov|пробн/i, l);
+    assert.equal(c.plusB.length, 3, l);
+  }
+});
