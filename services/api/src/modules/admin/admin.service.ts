@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig } from '../billing/plus-pass';
 import { PLUS_FAIR_USE_KEYS, fairUseCap } from '../../common/plan-active';
+import { UsersService } from '../users/users.service';
 import { getPlanCaps, resetPlanCapsCache } from '../../common/plan-caps';
 import {
   AppLanguage,
@@ -73,6 +74,13 @@ export const isSelfDeleted = (u: { email: string; deletedAt: Date | null }) => B
 /** Self-service deletion: anonymised row kept 1 year, then purged (Privacy §8). Null for suspended / active users. */
 export function deletionPurgeAfter(u: { email: string; deletedAt: Date | null }): Date | null {
   return isSelfDeleted(u) ? new Date(u.deletedAt!.getTime() + DELETION_RETENTION_DAYS * 86_400_000) : null;
+}
+
+/** WLF-13: rows that must outlive the user (payments / purchases / entitlements). Missing delegates (unit fakes) count 0. */
+export async function countPaymentRecords(prisma: unknown, userId: string): Promise<number> {
+  const p = prisma as Record<string, { count?: (a: unknown) => Promise<number> } | undefined>;
+  const n = await Promise.all(['importPayment', 'contentPurchase', 'entitlement', 'playPurchase'].map((m) => p[m]?.count?.({ where: { userId } }) ?? 0));
+  return n.reduce((x, y) => x + y, 0);
 }
 
 @Injectable()
@@ -800,6 +808,28 @@ export class AdminService {
     const purgeAfter = deletionPurgeAfter(user);
     if (purgeAfter && purgeAfter.getTime() > (opts.now ?? new Date()).getTime()) {
       throw new BadRequestException(`Deletion request is in the 1-year retention window; permanent purge from ${purgeAfter.toISOString().slice(0, 10)}.`);
+    }
+    // WLF-13 (S2): payment records (import payments, purchases, entitlements, Play purchases) are NEVER deleted with the
+    // user (Privacy: "payment records are kept as the law requires"; FKs are RESTRICT / SET NULL, never CASCADE). A payer
+    // is anonymised + purged like a self-delete and the anonymised row is kept as the owner of those records.
+    const paymentRecordsKept = await countPaymentRecords(this.prisma, id);
+    if (paymentRecordsKept > 0) {
+      const at = opts.now ?? new Date();
+      await this.prisma.$transaction([
+        this.prisma.user.update({
+          where: { id },
+          data: {
+            email: `deleted-${id}@deleted.gotcha.app`, displayName: 'Deleted user', avatarUrl: null, passwordHash: null,
+            deletedAt: user.deletedAt ?? at, emailVerificationToken: null, passwordResetToken: null, birthYear: null, consentIp: null,
+          },
+        }),
+        this.prisma.authRefreshToken.updateMany({ where: { userId: id, revokedAt: null }, data: { revokedAt: at } }),
+      ]);
+      const purged = await new UsersService(this.prisma, undefined as never).purgeUserData(id);
+      await this.prisma.auditLog
+        .create({ data: { actorId: opts.actorId ?? null, action: 'user.hard_delete_anonymised', entityType: 'user', entityId: id, metadata: { selfDeleted: isSelfDeleted(user), paymentRecordsKept } } })
+        .catch(() => undefined);
+      return { deleted: false, anonymised: true, id, paymentRecordsKept, purged };
     }
     // final-5 WL4-11 option B: keep the user's sent messages for the other participants, anonymised as 'Deleted user'.
     await this.prisma.$transaction([

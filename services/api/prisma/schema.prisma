@@ -583,7 +583,7 @@ model ImportPayment {
   refundState          String?             @map("refund_state")
   refundedAt           DateTime?           @map("refunded_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict) // WLF-13: payment records are never deleted with the user
 
   refundReason      String?   @map("refund_reason")
   refundRequestedBy String?   @map("refund_requested_by") @db.Uuid
@@ -1225,7 +1225,7 @@ model Entitlement {
   createdAt       DateTime          @default(now()) @map("created_at")
   updatedAt       DateTime          @default(now()) @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict) // WLF-13: payment records are never deleted with the user
 
   @@unique([source, sourceRef, kind])
   @@index([userId, status])
@@ -1252,7 +1252,7 @@ model PlayPurchase {
   createdAt     DateTime         @default(now()) @map("created_at")
   updatedAt     DateTime         @default(now()) @updatedAt @map("updated_at")
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Restrict) // WLF-13: payment records are never deleted with the user
 
   @@index([userId])
   @@index([orderId])
