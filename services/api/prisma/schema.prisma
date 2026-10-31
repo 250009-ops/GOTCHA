@@ -233,6 +233,16 @@ model User {
   createdAt        DateTime  @default(now()) @map("created_at")
   updatedAt        DateTime  @updatedAt @map("updated_at")
   deletedAt        DateTime? @map("deleted_at")
+  /// 0023 (staging): optional birth year; unknown = treated per AGE_UNKNOWN_BAND (default teen).
+  birthYear        Int?      @map("birth_year")
+  /// 0024: S7 per-account AI-off switch (support/admin; consent withdrawal).
+  aiDisabled       Boolean   @default(false) @map("ai_disabled")
+  /// 0024: S3 sign-up consent record (tick-box label version, time, IP).
+  consentVersion   String?   @map("consent_version")
+  consentAt        DateTime? @map("consent_at")
+  consentIp        String?   @map("consent_ip")
+  /// 0024: W-12 one-time age prompt for existing users (set when shown/answered).
+  agePromptedAt    DateTime? @map("age_prompted_at")
 
   targetLanguages  UserTargetLanguage[]
   preferences      UserPreferences?
@@ -257,6 +267,13 @@ model User {
   conversationParticipants ConversationParticipant[]
   sentMessages      Message[]
   notifications     UserNotification[]
+  blocksMade        UserBlock[]        @relation("BlocksMade")
+  blocksReceived    UserBlock[]        @relation("BlocksReceived")
+  reportsMade       UserReport[]       @relation("ReportsMade")
+  reportsReceived   UserReport[]       @relation("ReportsReceived")
+  friendRequestsSent     FriendRequest[] @relation("FriendRequestsSent")
+  friendRequestsReceived FriendRequest[] @relation("FriendRequestsReceived")
+  contentReports    ContentReport[]
 
   @@map("users")
 }
@@ -426,6 +443,9 @@ model ContentItem {
   bookmarks        ContentBookmark[]
   purchases        ContentPurchase[]
   conversations    Conversation[]
+  ageRating        AgeRating     @default(all_ages) @map("age_rating")
+  glosses          ContentGloss[]
+  questions        ComprehensionQuestion[]
 
   @@index([publishStatus, language, cefrLevel])
   @@map("content_items")
@@ -968,4 +988,140 @@ model Message {
   @@index([conversationId, createdAt])
   @@index([replyToId])
   @@map("messages")
+}
+
+enum AgeRating {
+  all_ages
+  teen_13
+  mature_18
+}
+
+model ContentGloss {
+  id           String      @id @default(uuid()) @db.Uuid
+  contentId    String      @map("content_id") @db.Uuid
+  chapterIndex Int         @default(0) @map("chapter_index")
+  word         String
+  uz           String?
+  ru           String?
+  sortOrder    Int         @default(0) @map("sort_order")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  content      ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, word])
+  @@index([contentId, chapterIndex])
+  @@map("content_glosses")
+}
+
+model ComprehensionQuestion {
+  id           String      @id @default(uuid()) @db.Uuid
+  contentId    String      @map("content_id") @db.Uuid
+  chapterIndex Int         @default(0) @map("chapter_index")
+  question     String
+  answer       String
+  /// PM question type, e.g. short_answer | multiple_choice (free text, validated by the importer).
+  type         String      @default("short_answer")
+  /// MCQ options, stored as the full set incl. the answer; served shuffled. Empty = open question.
+  options      String[]    @default([])
+  sortOrder    Int         @default(0) @map("sort_order")
+  createdAt    DateTime    @default(now()) @map("created_at")
+  content      ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+
+  @@unique([contentId, sortOrder])
+  @@index([contentId, chapterIndex])
+  @@map("comprehension_questions")
+}
+
+enum UserReportReason {
+  spam
+  harassment
+  inappropriate
+  underage
+  other
+}
+
+enum UserReportStatus {
+  open
+  reviewed
+  actioned
+  dismissed
+}
+
+model UserBlock {
+  blockerId String   @map("blocker_id") @db.Uuid
+  blockedId String   @map("blocked_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+
+  blocker User @relation("BlocksMade", fields: [blockerId], references: [id], onDelete: Cascade)
+  blocked User @relation("BlocksReceived", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@id([blockerId, blockedId])
+  @@index([blockedId])
+  @@map("user_blocks")
+}
+
+model UserReport {
+  id              String           @id @default(uuid()) @db.Uuid
+  reporterId      String           @map("reporter_id") @db.Uuid
+  reportedUserId  String           @map("reported_user_id") @db.Uuid
+  conversationId  String?          @map("conversation_id") @db.Uuid
+  messageId       String?          @map("message_id") @db.Uuid
+  reason          UserReportReason
+  details         String?
+  messageSnapshot String?          @map("message_snapshot")
+  status          UserReportStatus @default(open)
+  createdAt       DateTime         @default(now()) @map("created_at")
+  reviewedAt      DateTime?        @map("reviewed_at")
+
+  reporter     User @relation("ReportsMade", fields: [reporterId], references: [id], onDelete: Cascade)
+  reportedUser User @relation("ReportsReceived", fields: [reportedUserId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@index([reportedUserId])
+  @@map("user_reports")
+}
+
+enum FriendRequestStatus {
+  pending
+  accepted
+  declined
+}
+
+enum ContentReportStatus {
+  open
+  reviewed
+  actioned
+  dismissed
+}
+
+model FriendRequest {
+  id          String              @id @default(uuid()) @db.Uuid
+  requesterId String              @map("requester_id") @db.Uuid
+  addresseeId String              @map("addressee_id") @db.Uuid
+  status      FriendRequestStatus @default(pending)
+  createdAt   DateTime            @default(now()) @map("created_at")
+  respondedAt DateTime?           @map("responded_at")
+
+  requester User @relation("FriendRequestsSent", fields: [requesterId], references: [id], onDelete: Cascade)
+  addressee User @relation("FriendRequestsReceived", fields: [addresseeId], references: [id], onDelete: Cascade)
+
+  @@unique([requesterId, addresseeId])
+  @@index([addresseeId, status])
+  @@map("friend_requests")
+}
+
+model ContentReport {
+  id         String              @id @default(uuid()) @db.Uuid
+  reporterId String              @map("reporter_id") @db.Uuid
+  contentId  String?             @map("content_id") @db.Uuid
+  importId   String?             @map("import_id") @db.Uuid
+  reason     UserReportReason
+  details    String?
+  status     ContentReportStatus @default(open)
+  createdAt  DateTime            @default(now()) @map("created_at")
+  reviewedAt DateTime?           @map("reviewed_at")
+
+  reporter User @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  @@index([status, createdAt])
+  @@map("content_reports")
 }

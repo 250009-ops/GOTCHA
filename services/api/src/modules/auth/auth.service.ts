@@ -1,3 +1,4 @@
+import { CONSENT_VERSION, consentRequired } from '../../common/safety/consent';
 import {
   BadRequestException,
   ConflictException,
@@ -175,8 +176,17 @@ export class AuthService {
     return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
   }
 
-  async register(dto: RegisterDto, clientPlatformHeader?: string) {
+  async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string) {
     const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
+    // S3: web sign-ups must tick the single consent box (Terms + Privacy + OpenAI transfer).
+    if (consentRequired(clientPlatform) && dto.acceptTerms !== true) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Please accept the Terms of Use and the Privacy Policy to create an account.',
+        code: 'CONSENT_REQUIRED',
+      });
+    }
     if (isDevAuthEnabled()) {
       return this.devAuth.register(dto);
     }
@@ -219,6 +229,12 @@ export class AuthService {
         passwordHash,
         displayName: dto.displayName ?? email.split('@')[0],
         nativeLanguage: dto.nativeLanguage,
+        birthYear: dto.birthYear ?? null,
+        // W-12: asked at sign-up, so no later one-time prompt.
+        agePromptedAt: new Date(),
+        ...(dto.acceptTerms === true
+          ? { consentVersion: CONSENT_VERSION, consentAt: new Date(), consentIp: ip?.slice(0, 64) ?? null }
+          : {}),
         uiLanguage: dto.uiLanguage && (['en', 'ru', 'uz'] as const).includes(dto.uiLanguage) ? dto.uiLanguage : 'uz',
         emailVerifiedAt: null,
         preferences: { create: { dailyGoalMinutes: 15 } },

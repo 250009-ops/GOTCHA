@@ -1,4 +1,5 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AppLanguage, CefrLevel } from '@prisma/client';
 
 export class UpdateProfileDto {
@@ -83,6 +84,16 @@ export class UpdateTargetLanguageDto {
   @IsOptional()
   @IsBoolean()
   isPrimary?: boolean;
+}
+
+export class SetAgeDto {
+  /** Omit/null = "prefer not to say" (unknown-age limits apply). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(new Date().getUTCFullYear())
+  birthYear?: number | null;
 }
 
 export class DeleteAccountDto {

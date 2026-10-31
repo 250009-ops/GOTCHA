@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -14,6 +14,7 @@ import { calendarDateKey, effectiveStreakCount, STREAK_TIMEZONE } from '../../se
 
 import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
+import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -29,8 +30,9 @@ import {
 
 export class UsersService {
 
-  constructor(
+  private readonly logger = new Logger('UsersService');
 
+  constructor(
     private prisma: PrismaService,
 
     private devAuth: DevAuthService,
@@ -148,10 +150,12 @@ export class UsersService {
       },
     });
     if (!refreshed) throw new NotFoundException('User not found');
-
-    const { passwordHash: _, ...safe } = refreshed;
-
-    return safe;
+    const { passwordHash: _, consentIp: _consentIp, ...safe } = refreshed;
+    return {
+      ...safe,
+      ageBand: ageBand(refreshed.birthYear),
+      needsAgePrompt: needsAgePrompt(refreshed),
+    };
 
   }
 
@@ -602,6 +606,7 @@ export class UsersService {
           deletedAt: new Date(),
           emailVerificationToken: null,
           passwordResetToken: null,
+          birthYear: null,
         },
       }),
       this.prisma.authRefreshToken.updateMany({
@@ -609,8 +614,76 @@ export class UsersService {
         data: { revokedAt: new Date() },
       }),
     ]);
+    const purged = await this.purgeUserData(userId);
+    return { deleted: true, purged };
+  }
 
-    return { deleted: true };
+  /**
+   * S1 delete-account REAL purge. Deletes the learner's learning data, imports (with their private
+   * content and uploaded files), avatar, notifications, friend links, blocks and AI usage counters.
+   * KEPT on purpose (flag for Kai/legal; retention periods are not invented here): payment and purchase
+   * rows, audit logs, safety reports, sent chat messages (attached to the anonymised "Deleted user"),
+   * and the consent record. Each step is best-effort and logged.
+   */
+  async purgeUserData(userId: string): Promise<Record<string, number | string>> {
+    const out: Record<string, number | string> = {};
+    const step = async (name: string, fn: () => Promise<{ count: number } | number>) => {
+      try {
+        const r = await fn();
+        out[name] = typeof r === 'number' ? r : r.count;
+      } catch (err) {
+        out[name] = 'error';
+        this.logger.warn(`purge ${name} failed for ${userId}: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const p = this.prisma;
+    await step('imports', async () => {
+      const rows = await p.userImport.findMany({ where: { userId } });
+      for (const row of rows) {
+        await p.userImport.delete({ where: { id: row.id } });
+        if (row.contentId) {
+          await p.ingestionJob.updateMany({ where: { contentId: row.contentId }, data: { contentId: null } });
+          await p.contentItem.delete({ where: { id: row.contentId } }).catch(() => undefined);
+        }
+        if (row.fileKey) await rm(join(root, row.fileKey), { force: true }).catch(() => undefined);
+      }
+      return rows.length;
+    });
+    await step('vocabulary', () => p.userVocabulary.deleteMany({ where: { userId } }));
+    await step('knownWords', () => p.userKnownWord.deleteMany({ where: { userId } }));
+    await step('readingProgress', () => p.readingProgress.deleteMany({ where: { userId } }));
+    await step('readingSessions', () => p.readingSession.deleteMany({ where: { userId } }));
+    await step('practiceSessions', () => p.practiceSession.deleteMany({ where: { userId } }));
+    await step('bookmarks', () => p.contentBookmark.deleteMany({ where: { userId } }));
+    await step('placementResults', () => p.placementResult.deleteMany({ where: { userId } }));
+    await step('aiUsageDaily', () => p.aiUsageDaily.deleteMany({ where: { userId } }));
+    await step('notifications', () => p.userNotification.deleteMany({ where: { userId } }));
+    await step('friendRequests', () =>
+      p.friendRequest.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
+    );
+    await step('blocks', () => p.userBlock.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }));
+    await step('targetLanguages', () => p.userTargetLanguage.deleteMany({ where: { userId } }));
+    await step('preferences', () => p.userPreferences.deleteMany({ where: { userId } }));
+    await step('avatarFiles', async () => {
+      for (const ext of ['jpg', 'jpeg', 'png', 'webp']) await rm(join(root, 'avatars', `${userId}.${ext}`), { force: true });
+      return 1;
+    });
+    return out;
+  }
+
+  /** W-12 one-time age prompt. The user sets the year once; later changes go through support. */
+  async setAge(userId: string, birthYear: number | null | undefined) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (birthYear != null && user.birthYear != null && user.birthYear !== birthYear) {
+      throw new ConflictException('Your birth year is already set. Contact support@gotchaa.uz to change it.');
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { agePromptedAt: new Date(), ...(birthYear != null ? { birthYear } : {}) },
+    });
+    return this.getProfile(userId);
   }
 
 }

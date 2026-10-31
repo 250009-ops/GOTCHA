@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Ip, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { Public } from '../../common/decorators';
@@ -26,8 +26,9 @@ export class AuthController {
   register(
     @Body() dto: RegisterDto,
     @Headers('x-gotcha-client-platform') clientHeader?: string,
+    @Ip() ip?: string,
   ) {
-    return this.auth.register(dto, clientHeader);
+    return this.auth.register(dto, clientHeader, ip);
   }
 
   @Public()
