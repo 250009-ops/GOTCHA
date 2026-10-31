@@ -64,6 +64,8 @@ export interface LearnerCopyExt {
     known: string;
     ignore: string;
     contentNotFound: string;
+    contentLoadFailed: string;
+    tryAgain: string;
     noSegments: string;
     backToLibrary: string;
     unknown: string;
@@ -435,6 +437,8 @@ const EXT_EN: LearnerCopyExt = {
     known: 'Known',
     ignore: 'Ignore',
     contentNotFound: 'Content not found',
+    contentLoadFailed: 'Could not load this book. Check your connection and try again.',
+    tryAgain: 'Try again',
     noSegments: 'No content segments available',
     backToLibrary: 'Library',
     unknown: 'unknown',
@@ -810,6 +814,8 @@ const EXT_RU: LearnerCopyExt = {
     known: 'Знаю',
     ignore: 'Игнор',
     contentNotFound: 'Контент не найден',
+    contentLoadFailed: 'Не удалось загрузить книгу. Проверьте подключение и попробуйте снова.',
+    tryAgain: 'Повторить',
     noSegments: 'Нет доступных фрагментов',
     backToLibrary: 'Библиотека',
     unknown: 'неизвестно',
@@ -1185,6 +1191,8 @@ const EXT_UZ: LearnerCopyExt = {
     known: 'Ma’lum',
     ignore: 'E’tiborsiz',
     contentNotFound: 'Kontent topilmadi',
+    contentLoadFailed: 'Kitobni yuklab boʻlmadi. Internetni tekshirib, qayta urinib koʻring.',
+    tryAgain: 'Qayta urinish',
     noSegments: 'Boʻlimlar mavjud emas',
     backToLibrary: 'Kutubxona',
     unknown: 'noma’lum',

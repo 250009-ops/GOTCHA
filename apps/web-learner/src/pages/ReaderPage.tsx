@@ -284,6 +284,8 @@ export default function ReaderPage() {
   const [chaptersOpen, setChaptersOpen] = useState(true);
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
   const [paywallOpen, setPaywallOpen] = useState(false);
@@ -402,8 +404,10 @@ export default function ReaderPage() {
     setOutline([]);
     Promise.all([
       api<ContentItem>(`/content/${id}`),
-      api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
+      // W-23: a known-words hiccup must not hide the whole book.
+      api<Array<{ lemma: string; status: string }>>('/reading/known-words').catch(() => []),
     ]).then(async ([item, known]) => {
+      setLoadError(false);
       setContent(item);
       const trialCount = item.trialSegmentCount ?? 0;
       const canTrial = item.accessGranted === false && trialCount > 0;
@@ -452,8 +456,12 @@ export default function ReaderPage() {
       }
       setWordStatuses(map);
       lastProgressAtRef.current = Date.now();
-    }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  }, [id, accessNonce]);
+    }).catch((e) => {
+      // W-23: a network/parse failure (e.g. a truncated large-book response) is not "not found".
+      if ((e as { status?: number }).status !== 404) setLoadError(true);
+      toast.error(e.message);
+    }).finally(() => setLoading(false));
+  }, [id, accessNonce, reloadNonce]);
 
   const lemmaStatus = useCallback(
     (lemma: string): WordStatus => wordStatuses[lemma.toLowerCase()] ?? 'unknown',
@@ -695,6 +703,21 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex items-center justify-center bg-g-reader-bg">
         <div className="w-8 h-8 border-2 border-violet-300 border-t-g-blue-700 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!content && loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-g-reader-bg p-6 text-sm text-[#6a7282]">
+        <p>{copy.reader.contentLoadFailed}</p>
+        <button
+          type="button"
+          onClick={() => setReloadNonce((n) => n + 1)}
+          className="rounded-full bg-g-blue-700 px-4 py-2 font-medium text-white"
+        >
+          {copy.reader.tryAgain}
+        </button>
       </div>
     );
   }
