@@ -115,7 +115,7 @@ export default function PlusPage() {
               : <span key={i}>{p.text}</span>)}</span>
           </label>
           {gate.needsOferta && <p id="oferta-hint" className="text-xs" style={{ color: 'var(--g-text-2)' }} data-testid="oferta-hint">{oc.hint}</p>}
-          <button type="button" disabled={gate.disabled} onClick={start} data-testid="plus-pay" className="w-full min-h-[48px] rounded-[14px] font-bold text-white disabled:opacity-50" style={{ background: 'var(--g-cta)' }}>
+          <button type="button" disabled={gate.disabled} onClick={start} data-testid="plus-pay" className="w-full min-h-[48px] rounded-[14px] font-bold text-[var(--g-on-cta)] disabled:opacity-50" style={{ background: 'var(--g-cta)' }}>
             {loading ? <Loader2 className="inline w-4 h-4 animate-spin" /> : null} {plan ? `${t('pay.amount')} ${som(plan.priceUzs)}` : t('plus.cta')}
           </button>
           <p className="text-[12px]" style={{ color: 'var(--g-text-3)' }}>{t('plus.noRenew')} {plusSmallPrint(t('plus.small'), nums.pct)}</p>

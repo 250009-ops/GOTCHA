@@ -25,6 +25,7 @@
 
 :root {
   --brand: #2107aa;
+  --g-on-cta: #ffffff; /* r3b: text + icons on the purple fills (#2107aa, #5550ec), light and dark */
   --brand-deep: #101828;
   --brand-purple: #6c1d95;
   --brand-cta-from: #7008e7;

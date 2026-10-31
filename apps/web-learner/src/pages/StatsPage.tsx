@@ -21,7 +21,7 @@ function GLogo({ size = 40 }: { size?: number }) {
       className="bg-[#2107aa] rounded-[14px] flex items-center justify-center shrink-0"
       style={{ width: size, height: size }}
     >
-      <span className="font-brand text-white leading-none" style={{ fontSize: size * 0.6 }}>G</span>
+      <span className="font-brand text-[var(--g-on-cta)] leading-none" style={{ fontSize: size * 0.6 }}>G</span>
     </div>
   );
 }

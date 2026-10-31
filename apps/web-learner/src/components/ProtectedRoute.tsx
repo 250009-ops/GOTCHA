@@ -19,7 +19,7 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
       <div role="alert" className="min-h-screen flex flex-col items-center justify-center gap-4 bg-[#F5F3FF] px-6 text-center">
         <p className="text-base font-semibold text-[#101828]">Gotcha is temporarily unavailable.</p>
         <p className="text-sm text-[#4a5565]">You are still signed in. Please try again in a moment.</p>
-        <button type="button" onClick={retrySession} className="h-11 rounded-lg bg-[#2107aa] px-5 text-sm font-semibold text-white">
+        <button type="button" onClick={retrySession} className="h-11 rounded-lg bg-[#2107aa] px-5 text-sm font-semibold text-[var(--g-on-cta)]">
           Try again
         </button>
       </div>

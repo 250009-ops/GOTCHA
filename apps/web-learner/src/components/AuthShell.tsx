@@ -87,7 +87,7 @@ export function AuthBrandMark({ light }: { light?: boolean }) {
         style={{ width: 40, height: 40 }}
       >
         <span
-          className="text-white text-2xl leading-none"
+          className="text-[var(--g-on-cta)] text-2xl leading-none"
           style={{ fontFamily: 'Bagel Fat One, cursive' }}
         >
           G

@@ -70,7 +70,7 @@ function CancelLink({ onCancel, disabled }: { onCancel?: () => void; disabled?: 
   if (!onCancel) return null;
   return (
     <button type="button" onClick={onCancel} disabled={disabled} data-testid="pay-cancel-link"
-      className="w-full min-h-[36px] text-sm font-extrabold disabled:opacity-50" style={{ color: 'var(--g-accent)' }}>{t('summary.cancel')}</button>
+      className="w-full min-h-[44px] text-sm font-extrabold disabled:opacity-50" style={{ color: 'var(--g-accent)' }}>{t('summary.cancel')}</button>
   );
 }
 
@@ -109,7 +109,7 @@ export function CardForm({ pan, exp, onPan, onExp, onSubmit, amountUzs, loading,
 export function PayButton({ label, disabled, loading, onClick, type = 'submit' }: { label: string; disabled?: boolean; loading?: boolean; onClick?: () => void; type?: 'submit' | 'button' }) {
   return (
     <button type={type} onClick={onClick} disabled={disabled || loading} aria-busy={loading}
-      className="w-full min-h-[48px] rounded-[14px] font-bold text-white disabled:opacity-50 flex items-center justify-center gap-2"
+      className="w-full min-h-[48px] rounded-[14px] font-bold text-[var(--g-on-cta)] disabled:opacity-50 flex items-center justify-center gap-2"
       style={{ background: 'var(--g-cta)' }}>
       {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}{label}
     </button>
@@ -134,7 +134,7 @@ export function OtpForm({ cardMask, otp, onOtp, onSubmit, onResend, loading, err
       {error && <p role="alert" className="text-sm" style={{ color: 'var(--g-bad)' }}>{error}</p>}
       <PayButton disabled={!ok} loading={loading} label={t('otp.confirm')} />
       <button type="button" disabled={left > 0 || loading} onClick={() => { setLeft(30); onResend(); }}
-        className="w-full text-sm font-semibold disabled:opacity-60" style={{ color: 'var(--g-accent)' }}>
+        className="w-full min-h-[44px] text-sm font-semibold disabled:opacity-60" style={{ color: 'var(--g-accent)' }}>
         {left > 0 ? payFill(t('otp.resendIn'), { seconds: left }) : t('otp.resend')}
       </button>
       <CancelLink onCancel={onCancel} disabled={loading} />
@@ -148,7 +148,7 @@ export function PayResult({ tone, title, body, reference, children }: { tone: 'o
   const color = tone === 'ok' ? 'var(--g-ok)' : tone === 'bad' ? 'var(--g-bad)' : 'var(--g-text-3)';
   return (
     <div className="flex flex-col items-center text-center gap-3 w-full" role={tone === 'bad' ? 'alert' : 'status'} aria-live="polite">
-      <Icon className="w-16 h-16" style={{ color }} aria-hidden />
+      <Icon className="w-16 h-16" strokeWidth={2.5} style={{ color }} aria-hidden data-testid={`pay-result-icon-${tone}`} />
       <h2 className="text-xl font-bold" style={{ color: 'var(--g-text)' }}>{title}</h2>
       {body && <div className="text-sm" style={muted}>{body}</div>}
       {reference && <p className="text-xs" style={{ color: 'var(--g-text-3)' }}>{t('pending.ref')}: <span className="font-mono">{reference}</span></p>}
@@ -220,7 +220,7 @@ export function CancelConfirm({ open, onKeep, onConfirm, busy }: { open: boolean
         <p className="text-sm" style={muted}>{t('cancel.reversed')}</p>
         <div className="flex gap-2">
           <button type="button" onClick={onKeep} className="flex-1 min-h-[44px] rounded-xl border font-semibold" style={card}>{t('cancel.keep')}</button>
-          <button type="button" onClick={onConfirm} disabled={busy} className="flex-1 min-h-[44px] rounded-xl font-bold text-white disabled:opacity-50" style={{ background: 'var(--g-bad)' }}>{t('cancel.yes')}</button>
+          <button type="button" onClick={onConfirm} disabled={busy} className="flex-1 min-h-[44px] rounded-xl font-bold disabled:opacity-50" style={{ background: 'var(--g-bad)', color: 'var(--g-on-fill)' }}>{t('cancel.yes')}</button>
         </div>
       </div>
     </div>

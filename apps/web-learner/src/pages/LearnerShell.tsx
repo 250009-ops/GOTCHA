@@ -181,7 +181,7 @@ export default function LearnerShell() {
           <aside className="h-full w-full bg-[#0E0B2A] flex flex-col overflow-hidden">
             <div className={cn('flex items-center border-b border-white/[0.06] shrink-0', expanded ? 'px-4 py-[14px] gap-3' : 'px-0 py-[14px] justify-center')}>
               <div className="w-8 h-8 bg-[#2107aa] rounded-[10px] flex items-center justify-center shrink-0 shadow-[0_10px_7.5px_rgba(77,23,154,0.5),0_4px_3px_rgba(77,23,154,0.5)]">
-                <span className="font-brand text-white text-lg leading-none">G</span>
+                <span className="font-brand text-[var(--g-on-cta)] text-lg leading-none">G</span>
               </div>
               {expanded && (
                 <div>

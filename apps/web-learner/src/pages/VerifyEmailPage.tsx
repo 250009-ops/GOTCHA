@@ -21,7 +21,7 @@ function EnvelopeIllustration() {
         width={150}
         height={150}
       />
-      <div className="absolute left-0 top-6 rounded-[10px] bg-[#2107aa] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(33,7,170,0.2)]">
+      <div className="absolute left-0 top-6 rounded-[10px] bg-[#2107aa] px-3 py-1.5 text-sm font-extrabold text-[var(--g-on-cta)] shadow-[0_4px_4px_rgba(33,7,170,0.2)]">
         A
       </div>
       <div className="absolute right-0 top-4 rounded-[10px] bg-[#6c1d95] px-3 py-1.5 text-sm font-extrabold text-white shadow-[0_4px_4px_rgba(108,29,149,0.2)]">

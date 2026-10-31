@@ -370,7 +370,7 @@ function FileForm({ loading, onSubmit }: { loading: boolean; onSubmit: (data: { 
 function ImportLogoMark() {
   return (
     <div className="bg-[#2107aa] w-9 h-9 rounded-[14px] flex items-center justify-center shrink-0">
-      <span className="font-brand text-white text-lg leading-none">G</span>
+      <span className="font-brand text-[var(--g-on-cta)] text-lg leading-none">G</span>
     </div>
   );
 }
@@ -1159,7 +1159,10 @@ export default function ImportPage() {
             )}
             {freeAllowance && (
               <div className="flex items-start gap-2 p-3 mb-4 bg-[#f5f3ff] border border-[#ddd6ff] rounded-[14px]">
-                <p className="text-xs text-[#5b21b6] leading-relaxed">{formatFreeAllowance(freeAllowance)}</p>
+                <div className="flex flex-col gap-1">
+                  <p className="text-xs text-[#5b21b6] leading-relaxed">{formatFreeAllowance(freeAllowance)}</p>
+                  {(freeAllowance.resetCycle ?? 'monthly') === 'monthly' && <p data-testid="imp-cap-reset" className="text-xs text-[#5b21b6] leading-relaxed">{payCopy.t('imp.cap.pre.reset')}</p>}
+                </div>
               </div>
             )}
             <p className="text-[11px] text-[#99a1af] mb-3">

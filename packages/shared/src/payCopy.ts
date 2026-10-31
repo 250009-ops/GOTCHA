@@ -181,6 +181,7 @@ export type PayKey =
   | 'imp.freeRetry'
   | 'imp.retryUsing'
   | 'imp.refundDue'
+  | 'imp.cap.pre.reset'
   | 'imp.paidNoResult.title'
   | 'imp.paidNoResult.body'
   | 'imp.paidNoResult.refund'
@@ -246,7 +247,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "fail.noCharge": "No money was taken. If you see a hold on your card, it will be released by your bank.",
     "fail.other": "Use a different card",
     "fail.title": "Payment failed",
-    "help.refundA": "Yes, but we fix it first. If a purchase is faulty, we fix it or add Plus days. Money is returned only for duplicate or failed charges, or if we can't deliver within 10 working days. Tell us at support@gotchaa.uz (the only channel) within 14 calendar days of purchase, with the payment reference; approved refunds are returned within 10 working days.",
+    "help.refundA": "Yes, but we fix it first: we re-run the import, unlock the book again or extend Plus by the days you lost. Money is returned only for a duplicate charge, a failed charge, or a purchase we can't deliver within 10 working days of your claim. Write to support@gotchaa.uz (the only channel) within 14 calendar days of purchase, with your account email, the payment date and what went wrong; approved refunds go back to your card within 10 working days. No refunds for a change of mind or unused Plus days.",
     "help.refundQ": "Can I get a refund?",
     "history.amount": "Amount",
     "history.book": "Book",
@@ -270,6 +271,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "An import you paid for didn't finish. Try it again: it's free, you won't be charged twice.",
     "imp.retryUsing": "Using your earlier payment: no new charge.",
     "imp.refundDue": "An import you paid for kept failing. We'll refund it: no need to do anything. Questions: support@gotchaa.uz.",
+    "imp.cap.pre.reset": "Free pages reset on the 1st of the month, 00:00 Tashkent time.",
     "imp.paidNoResult.title": "Payment received, import not finished",
     "imp.paidNoResult.body": "We'll try the import again. If it still fails, we'll refund you within 10 working days.",
     "imp.paidNoResult.refund": "Ask for a refund",
@@ -377,8 +379,8 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "summary.total": "Total",
     "support.review": "We are checking this payment by hand. If money was taken and nothing arrived, write to support@gotchaa.uz with the reference within 14 calendar days of purchase. If a purchase is faulty, we fix it or add Plus days. Money is returned only for duplicate or failed charges, or if we can't deliver within 10 working days.",
     "trust.cards": "Pay via Atmos · Uzcard · Humo",
-    "trust.refund": "If a purchase is faulty, we fix it: we re-run the import or unlock the book again. Money is returned only for duplicate or failed charges, or if we can't deliver within 10 working days. Tell us at support@gotchaa.uz within 14 calendar days of purchase; approved refunds are returned within 10 working days.",
-    "trust.refundPlus": "If a purchase is faulty, we fix it or add Plus days. Money is returned only for duplicate or failed charges, or if we can't deliver within 10 working days. Tell us at support@gotchaa.uz within 14 calendar days of purchase; approved refunds are returned within 10 working days.",
+    "trust.refund": "If a purchase is faulty, we fix it first: we re-run the import or unlock the book again. Money is returned only for a duplicate charge, a failed charge, or a purchase we can't deliver within 10 working days of your claim. Write to support@gotchaa.uz within 14 calendar days of purchase; approved refunds go back to your card within 10 working days.",
+    "trust.refundPlus": "If a purchase is faulty, we fix it first or extend Plus by the days you lost. Money is returned only for a duplicate charge, a failed charge, or a purchase we can't deliver within 10 working days of your claim. Write to support@gotchaa.uz within 14 calendar days of purchase; approved refunds go back to your card within 10 working days.",
     "trust.secure": "Secure card payment via Atmos. Gotcha never stores your card number.",
     "trust.support": "Questions? support@gotchaa.uz"
   },
@@ -437,7 +439,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "fail.noCharge": "Деньги не списаны. Если банк заблокировал сумму, он её вернёт.",
     "fail.other": "Другая карта",
     "fail.title": "Оплата не прошла",
-    "help.refundA": "Да, но сначала мы исправляем проблему. Если с покупкой что-то не так, мы исправим проблему или добавим дни Plus. Деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку в течение 10 рабочих дней. Напишите на support@gotchaa.uz (единственный канал) в течение 14 календарных дней после покупки и укажите номер платежа; одобренный возврат поступит в течение 10 рабочих дней.",
+    "help.refundA": "Да, но сначала мы исправляем проблему: повторно выполним импорт, снова откроем доступ к книге или продлим Plus на потерянные дни. Деньги возвращаются только при двойном списании, неудавшемся платеже или если мы не можем предоставить покупку в течение 10 рабочих дней после вашего обращения. Напишите на support@gotchaa.uz (единственный канал) в течение 14 календарных дней после покупки; укажите email аккаунта, дату платежа и что пошло не так. Одобренный возврат поступит на вашу карту в течение 10 рабочих дней. Деньги не возвращаются, если вы передумали, а также за неиспользованные дни Plus.",
     "help.refundQ": "Можно ли вернуть деньги?",
     "history.amount": "Сумма",
     "history.book": "Книга",
@@ -461,6 +463,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "Оплаченный импорт не завершился. Попробуйте ещё раз — это бесплатно, повторно деньги не спишутся.",
     "imp.retryUsing": "Используем прошлую оплату — новых списаний нет.",
     "imp.refundDue": "Оплаченный импорт так и не получился. Мы вернём деньги, ничего делать не нужно. Вопросы: support@gotchaa.uz.",
+    "imp.cap.pre.reset": "Бесплатные страницы обновляются 1-го числа в 00:00 по Ташкенту.",
     "imp.paidNoResult.title": "Оплата получена, импорт не завершён",
     "imp.paidNoResult.body": "Мы попробуем импортировать снова. Если не получится, вернём деньги в течение 10 рабочих дней.",
     "imp.paidNoResult.refund": "Запросить возврат",
@@ -568,8 +571,8 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "summary.total": "Итого",
     "support.review": "Мы проверяем этот платёж вручную. Если деньги списаны, а покупка не пришла, напишите на support@gotchaa.uz с номером платежа в течение 14 календарных дней после покупки. Если с покупкой что-то не так, мы исправим проблему или добавим дни Plus. Деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку в течение 10 рабочих дней.",
     "trust.cards": "Оплата через Atmos · Uzcard · Humo",
-    "trust.refund": "Если с покупкой что-то не так, мы исправим проблему: повторно выполним импорт или снова откроем доступ к книге. Деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку в течение 10 рабочих дней. Напишите на support@gotchaa.uz в течение 14 календарных дней после покупки; одобренный возврат поступит в течение 10 рабочих дней.",
-    "trust.refundPlus": "Если с покупкой что-то не так, мы исправим проблему или добавим дни Plus. Деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку в течение 10 рабочих дней. Напишите на support@gotchaa.uz в течение 14 календарных дней после покупки; одобренный возврат поступит в течение 10 рабочих дней.",
+    "trust.refund": "Если с покупкой что-то не так, мы сначала исправим проблему: повторно выполним импорт или снова откроем доступ к книге. Деньги возвращаются только при двойном списании, неудавшемся платеже или если мы не можем предоставить покупку в течение 10 рабочих дней после вашего обращения. Напишите на support@gotchaa.uz в течение 14 календарных дней после покупки; одобренный возврат поступит на вашу карту в течение 10 рабочих дней.",
+    "trust.refundPlus": "Если с покупкой что-то не так, мы сначала исправим проблему или продлим Plus на потерянные дни. Деньги возвращаются только при двойном списании, неудавшемся платеже или если мы не можем предоставить покупку в течение 10 рабочих дней после вашего обращения. Напишите на support@gotchaa.uz в течение 14 календарных дней после покупки; одобренный возврат поступит на вашу карту в течение 10 рабочих дней.",
     "trust.secure": "Безопасная оплата картой через Atmos. Gotcha не хранит номер вашей карты.",
     "trust.support": "Вопросы? support@gotchaa.uz"
   },
@@ -628,7 +631,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "fail.noCharge": "Pul yechilmadi. Agar bank summani band qilgan boʻlsa, uni qaytaradi.",
     "fail.other": "Boshqa karta",
     "fail.title": "Toʻlov oʻtmadi",
-    "help.refundA": "Ha, lekin avvalo muammoni tuzatamiz. Xaridda muammo boʻlsa, uni tuzatamiz yoki Plus kunlarini qoʻshamiz. Pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga (yagona kanal) toʻlov raqami bilan yozing; maʼqullangan pul 10 ish kuni ichida qaytariladi.",
+    "help.refundA": "Ha, lekin avvalo muammoni tuzatamiz: importni qayta bajaramiz, kitobni qayta ochib beramiz yoki Plusʼni yoʻqotilgan kunlarga uzaytiramiz. Pul faqat ikki marta yechilgan toʻlov, muvaffaqiyatsiz toʻlov yoki xaridni murojaatingizdan keyin 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga (yagona kanal) yozing; hisobingiz emailini, toʻlov sanasini va nima notoʻgʻri boʻlganini koʻrsating. Maʼqullangan pul 10 ish kuni ichida kartangizga qaytariladi. Fikringiz oʻzgargan boʻlsa yoki Plusning foydalanilmagan kunlari uchun pul qaytarilmaydi.",
     "help.refundQ": "Pulni qaytarib olsa boʻladimi?",
     "history.amount": "Summa",
     "history.book": "Kitob",
@@ -652,6 +655,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "Toʻlangan import yakunlanmadi. Qayta urinib koʻring — bu bepul, pul ikkinchi marta yechilmaydi.",
     "imp.retryUsing": "Avvalgi toʻlovingizdan foydalanamiz — yangi toʻlov yoʻq.",
     "imp.refundDue": "Toʻlangan import baribir chiqmadi. Pulni qaytaramiz, hech narsa qilish shart emas. Savollar: support@gotchaa.uz.",
+    "imp.cap.pre.reset": "Bepul sahifalar har oyning 1-kuni soat 00:00 da (Toshkent vaqti) yangilanadi.",
     "imp.paidNoResult.title": "Toʻlov qabul qilindi, import yakunlanmadi",
     "imp.paidNoResult.body": "Importni qayta urinib koʻramiz. Agar yana bajarilmasa, pulingizni 10 ish kuni ichida qaytaramiz.",
     "imp.paidNoResult.refund": "Pulni qaytarishni soʻrash",
@@ -759,8 +763,8 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "summary.total": "Jami",
     "support.review": "Bu toʻlovni qoʻlda tekshiryapmiz. Pul yechilgan, lekin xarid kelmagan boʻlsa, xariddan keyin 14 kalendar kuni ichida raqamni koʻrsatib support@gotchaa.uz ga yozing. Xaridda muammo boʻlsa, uni tuzatamiz yoki Plus kunlarini qoʻshamiz. Pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni 10 ish kuni ichida yetkaza olmasak qaytariladi.",
     "trust.cards": "Atmos orqali toʻlov · Uzcard · Humo",
-    "trust.refund": "Xaridda muammo boʻlsa, uni tuzatamiz: importni qayta bajaramiz yoki kitobni qayta ochib beramiz. Pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga yozing; maʼqullangan pul 10 ish kuni ichida qaytariladi.",
-    "trust.refundPlus": "Xaridda muammo boʻlsa, uni tuzatamiz yoki Plus kunlarini qoʻshamiz. Pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga yozing; maʼqullangan pul 10 ish kuni ichida qaytariladi.",
+    "trust.refund": "Xaridda muammo boʻlsa, avvalo uni tuzatamiz: importni qayta bajaramiz yoki kitobni qayta ochib beramiz. Pul faqat ikki marta yechilgan toʻlov, muvaffaqiyatsiz toʻlov yoki xaridni murojaatingizdan keyin 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga yozing; maʼqullangan pul 10 ish kuni ichida kartangizga qaytariladi.",
+    "trust.refundPlus": "Xaridda muammo boʻlsa, avvalo uni tuzatamiz yoki Plusʼni yoʻqotilgan kunlarga uzaytiramiz. Pul faqat ikki marta yechilgan toʻlov, muvaffaqiyatsiz toʻlov yoki xaridni murojaatingizdan keyin 10 ish kuni ichida yetkaza olmasak qaytariladi. Xariddan keyin 14 kalendar kuni ichida support@gotchaa.uz manziliga yozing; maʼqullangan pul 10 ish kuni ichida kartangizga qaytariladi.",
     "trust.secure": "Atmos orqali xavfsiz karta toʻlovi. Gotcha karta raqamingizni saqlamaydi.",
     "trust.support": "Savollar boʻlsa: support@gotchaa.uz"
   }

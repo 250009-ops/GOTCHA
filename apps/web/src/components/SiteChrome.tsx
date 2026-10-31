@@ -80,7 +80,7 @@ export function SiteNav() {
             Sign in
           </a>
           <a
-            className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px md:inline-flex"
+            className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px md:inline-flex"
             href={registerUrl({ plan: 'free' })}
           >
             Get started
@@ -128,7 +128,7 @@ export function SiteNav() {
               Sign in
             </a>
             <a
-              className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-white"
+              className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-[var(--g-on-cta)]"
               href={registerUrl({ plan: 'free' })}
               onClick={() => setOpen(false)}
             >
