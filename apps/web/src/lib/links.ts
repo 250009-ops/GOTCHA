@@ -1,8 +1,8 @@
 /** Web-learner app base URL (Sign in / Get started). */
 const ENV: Record<string, string | undefined> = (import.meta as { env?: Record<string, string | undefined> }).env ?? {};
 // Vite folds `import.meta.env.DEV` to false in production, so the localhost dev default never reaches dist
-// (bundle gate tools/check-dist-hosts.mjs). Node tests have no import.meta.env, hence the guard.
-const IS_DEV = typeof import.meta.env === 'undefined' ? true : import.meta.env.DEV;
+// (bundle gate tools/check-dist-hosts.mjs). Node tests have no import.meta.env, hence `?.` (true there).
+const IS_DEV: boolean = import.meta.env?.DEV ?? true;
 export const LEARNER_APP_URL = (ENV.VITE_LEARNER_APP_URL ?? (IS_DEV ? 'http://localhost:5175' : '/learn')).replace(/\/$/, '');
 
 /** WL1-04: every /learn CTA carries the landing page's UI language as `ui` (uz | ru | en). */
