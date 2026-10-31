@@ -882,11 +882,16 @@ export function ensureChapterLineBreaks(text: string): string {
   const glued = new RegExp(`(^|\\n\\s*\\n|[.!?…]["”’']?\\s+)(${SPELLED_RE})\\s+(?=[“"‘A-Z])`, 'gi');
   const keep = new Set<number>();
   let expect = 1;
+  let gaps = 0;
   for (const m of out.matchAll(glued)) {
     const n = spelledToInt(m[2]);
-    if (n != null && n >= expect && n <= expect + 1) { keep.add(m.index!); expect = n + 1; } // tolerate one missed heading
+    if (n != null && n >= expect && n <= expect + 1) {
+      if (n > expect) gaps++; // tolerate a rare missed heading, not prose "One… Three… Five…"
+      keep.add(m.index!);
+      expect = n + 1;
+    }
   }
-  if (keep.size >= 3) {
+  if (keep.size >= 3 && gaps * 10 <= keep.size) {
     out = out.replace(glued, (full: string, pre: string, word: string, offset: number) =>
       keep.has(offset) ? `${pre.trimEnd()}\n\n${word}\n\n` : full);
   }
@@ -969,7 +974,9 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
   const collected = collectHeadings(lines);
   // W-28: a lone "One" line is prose; spelled-out headings count only as a run of 3+.
   const spelledCount = collected.filter((h) => h.spelled).length;
-  const usable = spelledCount >= 3 ? collected : collected.filter((h) => !h.spelled);
+  // Books with explicit "Chapter I…" headings never use bare spelled words.
+  const explicit = collected.length - spelledCount;
+  const usable = spelledCount >= 3 && explicit < 3 ? collected : collected.filter((h) => !h.spelled);
   const headings = preferNumberedSequence(dropTableOfContents(usable)).filter(
     (h) => !isTocOrContentsTitle(h.title),
   );
@@ -982,9 +989,46 @@ export function splitAccurateChapters(text: string, fallbackTitle = 'Chapter 1')
   const candidates = [fromToc, fromHeadings].filter((c): c is SplitChapter[] => Boolean(c && c.length));
   candidates.sort((a, b) => scoreSplit(b) - scoreSplit(a));
   const best = candidates.find((c) => c.length >= 2 && chaptersHaveRealTitles(c)) ?? candidates[0];
-  if (best?.length) return orderAndDedupChapters(best);
+  if (best?.length) return labelPartsOrDedup(best);
 
   return [{ title: fallbackTitle.slice(0, 160), text: stripped }];
+}
+
+/**
+ * S4 (Crime and Punishment): "Part I: Chapter I…VII, Part II: Chapter I…" restarts numbering. Deduping by
+ * number would keep one "Chapter I" and DROP the other parts' text, so restarted runs become parts instead.
+ */
+function labelPartsOrDedup(chapters: SplitChapter[]): SplitChapter[] {
+  const nums = chapters.map((c) => parseChapterOrdinal(c.title));
+  let part = 1;
+  let label = '';
+  let prev = 0;
+  let run = 0;
+  let resets = 0;
+  const labels: string[] = [];
+  nums.forEach((n, i) => {
+    if (n == null) {
+      // A named section after the parts started ("Epilogue") becomes the next part's label.
+      if (resets > 0 || run >= 3) { label = chapters[i].title.replace(/^chapter\s+[ivxlcdm\d]+\.?\s*/i, '').trim(); run = 0; prev = 0; }
+    } else {
+      if (n === 1 && ((prev >= 3 && run >= 3) || label)) {
+        if (!label) part++;
+        resets++;
+      }
+      run++;
+      prev = n;
+    }
+    labels.push(label || `Part ${toRoman(part)}`);
+  });
+  if (resets < 1) return orderAndDedupChapters(chapters);
+  return chapters.map((c, i) => (nums[i] == null ? c : { ...c, title: `${labels[i]} · ${c.title}`.slice(0, 160) }));
+}
+
+function toRoman(n: number): string {
+  const map: Array<[number, string]> = [[10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  let out = '';
+  for (const [v, r] of map) while (n >= v) { out += r; n -= v; }
+  return out;
 }
 
 /** Keep the longest body for each chapter number and restore I…XV order if a TOC leftover landed first. */
