@@ -1,4 +1,5 @@
 import type { UiLanguage } from './index';
+import { pluralRu } from './plural';
 
 export interface NotificationParams {
   streakCount?: number;
@@ -41,15 +42,13 @@ const EN: Templates = {
 };
 
 const RU: Templates = {
-  streakTitle: (days) => `Не потеряйте серию ${days} ${days === 1 ? 'день' : days < 5 ? 'дня' : 'дней'}!`,
+  streakTitle: (days) => `Не потеряйте серию ${days} ${pluralRu(days, 'день', 'дня', 'дней')}!`,
   streakBody: (name) => `${name}, прочитайте несколько минут сегодня, чтобы сохранить серию.`,
   goalTitle: 'Дневная цель чтения',
   goalBody: (left, goal) => `Осталось ${left} мин до цели ${goal} мин на сегодня.`,
   vocabTitle: 'Повтор слов готов',
   vocabBody: (count) =>
-    count === 1
-      ? '1 слово ждёт повторения.'
-      : `${count} ${count < 5 ? 'слова' : 'слов'} готовы к повторению.`,
+    `${count} ${pluralRu(count, 'слово ждёт', 'слова ждут', 'слов ждут')} повторения.`,
   messageTitle: (peer) => `Новое сообщение от ${peer}`,
   contentTitle: (kind) => {
     const labels = { book: 'книга', article: 'статья', story: 'рассказ', news: 'новость' } as const;

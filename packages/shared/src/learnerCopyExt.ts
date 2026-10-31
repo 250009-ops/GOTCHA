@@ -1096,9 +1096,9 @@ const EXT_RU: LearnerCopyExt = {
     noWordSavesYet: 'Слов пока не сохранено',
     noWordsInRange: 'Нет сохранённых слов за период',
     noBooksRead: 'Книг не прочитано',
-    booksRead: (count) => `${count} книг${count === 1 ? 'а' : count < 5 ? 'и' : ''} прочитано`,
+    booksRead: (count) => `${count} ${pluralRu(count, 'книга прочитана', 'книги прочитаны', 'книг прочитано')}`,
     booksReadFinished: (count, finished) =>
-      `${count} книг прочитано · ${finished} завершено`,
+      `Прочитано: ${count} ${pluralRu(count, 'книга', 'книги', 'книг')} · завершено: ${finished}`,
   },
   errors: {
     lookupFailed: 'Поиск не удался',
