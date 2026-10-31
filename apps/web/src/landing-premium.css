@@ -307,3 +307,4 @@ body:has(.lp){font-family:Manrope,system-ui,sans-serif}
 .lp.lp-page{min-height:100vh;display:flex;flex-direction:column}
 .lp.lp-page>main{flex:1 0 auto}
 .lp.lp-page>footer{border-top:1px solid var(--l-line,#e2e8f0)}
+@media(max-width:399px){.lp .nav .bar{gap:8px}.lp .nav .bar .right{gap:2px}.lp .nav .bar .right>.login{padding:0 4px}.lp .nav .bar .ls-btn{padding:0 6px}}
