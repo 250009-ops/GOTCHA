@@ -243,7 +243,7 @@ export default function SettingsPage() {
                   onChange={(e) => setSettings({ ...settings, aiDailyLimit: Number(e.target.value) })}
                 />
                 <span className="text-xs text-slate-400 mt-1 block">
-                  Shared cap for lookups + quizzes today. 0 = unlimited. Learners are blocked when this is reached.
+                  Shared cap for lookups + quizzes today. 0 = no limit. Learners are blocked when this is reached.
                 </span>
               </label>
               <label className="text-sm">
@@ -256,7 +256,7 @@ export default function SettingsPage() {
                 />
                 <span className="text-xs text-slate-400 mt-1 block">
                   Each learner’s word lookups per day in books and chat. Editable here and on Import & Pricing / AI Usage.
-                  0 = unlimited. This is the warning they see after tapping too many words.
+                  0 = no limit. This is the warning they see after tapping too many words.
                 </span>
               </label>
               <label className="text-sm">

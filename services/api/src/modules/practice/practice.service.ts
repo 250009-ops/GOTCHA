@@ -17,12 +17,22 @@ export class PracticeService {
   ) {}
 
   async startSession(userId: string, dto: StartPracticeDto) {
-    if (dto.practiceType !== PracticeType.flashcard) {
-      await this.limits.assertQuizAllowed(userId);
-    }
     if (!dto.segmentId && dto.practiceType !== PracticeType.flashcard) {
       throw new BadRequestException('segmentId required for this practice type');
     }
+    // Flashcards never count as a quiz (wlive behaviour).
+    if (dto.practiceType === PracticeType.flashcard) return this.createQuizSession(userId, dto);
+    // PAY2-04: claim the quiz slot atomically up front; give it back if no quiz is delivered.
+    await this.limits.reserveQuizSlot(userId);
+    try {
+      return await this.createQuizSession(userId, dto);
+    } catch (e) {
+      await this.limits.releaseQuizSlot(userId);
+      throw e;
+    }
+  }
+
+  private async createQuizSession(userId: string, dto: StartPracticeDto) {
 
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -81,9 +91,6 @@ export class PracticeService {
       include: { questions: { orderBy: { questionIndex: 'asc' } } },
     });
 
-    if (dto.practiceType !== PracticeType.flashcard) {
-      await this.limits.incrementQuizUsage(userId);
-    }
     return redactSession(session);
   }
   async submitAnswers(userId: string, sessionId: string, dto: SubmitPracticeDto) {

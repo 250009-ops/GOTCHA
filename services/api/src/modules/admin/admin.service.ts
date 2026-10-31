@@ -4,6 +4,9 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig } from '../billing/plus-pass';
+import { PLUS_FAIR_USE_KEYS, fairUseCap } from '../../common/plan-active';
+import { getPlanCaps, resetPlanCapsCache } from '../../common/plan-caps';
 import {
   AppLanguage,
   CampaignChannel,
@@ -57,7 +60,7 @@ import {
   isAppLanguageCode,
   assertEnabledLanguage,
 } from '../../common/language-catalog';
-import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, languageFlag, languageLabel } from '@gotcha/shared';
+import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, languageFlag, languageLabel } from '@gotcha/shared';
 
 @Injectable()
 export class AdminService {
@@ -611,7 +614,98 @@ export class AdminService {
     return this.getUser(id);
   }
 
-  async adjustUserTier(id: string, tierRaw: string) {
+  /** Plus admin settings: pass prices (soʻm) + hidden fair-use caps. Defaults = relayed option C / PLUS-OFFER.md. */
+  async plusSettings() {
+    const keys = [PLUS_SETTING_KEYS.price30, PLUS_SETTING_KEYS.price365, PLUS_SETTING_KEYS.benefits, PLUS_FAIR_USE_KEYS.lookups, PLUS_FAIR_USE_KEYS.quizzes, LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_KEYS.perHour];
+    const rows = await this.prisma.platformSetting.findMany({ where: { key: { in: keys } } });
+    const v = (k: string) => rows.find((r) => r.key === k)?.value;
+    resetPlanCapsCache();
+    const caps = await getPlanCaps(this.prisma);
+    return {
+      price30Uzs: fairUseCap(v(PLUS_SETTING_KEYS.price30), PLUS_DEFAULT_PRICES[30]),
+      price365Uzs: fairUseCap(v(PLUS_SETTING_KEYS.price365), PLUS_DEFAULT_PRICES[365]),
+      // 14:18: caps live on subscription_plans (premium/free rows); these mirror them for the Plus admin form.
+      // 14:32: Plus lookups have no daily limit by default (plus.ai_lookup_quota = null).
+      plusAiLookupQuota: caps.plus.lookups,
+      plusLookupHardCap: caps.plusLookupHardCap,
+      lookupBurstPerMinute: fairUseCap(v(LOOKUP_BURST_KEYS.perMinute), LOOKUP_BURST_FALLBACKS.perMinute),
+      lookupBurstPerHour: fairUseCap(v(LOOKUP_BURST_KEYS.perHour), LOOKUP_BURST_FALLBACKS.perHour),
+      fairUseQuizzesPerDay: caps.plus.quizzes,
+      freeLookupsPerDay: caps.free.lookups,
+      freeQuizzesPerDay: caps.free.quizzes,
+      // Sarvarbek 13:57: Plus import discount default 50% (combined with promo capped at 70%).
+      importDiscountPct: plusPassConfig(process.env, 500, { [PLUS_SETTING_KEYS.benefits]: v(PLUS_SETTING_KEYS.benefits) }).benefits.importDiscountPct,
+      webPlusPassEnabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.WEB_PLUS_PASS ?? '').toLowerCase()),
+    };
+  }
+
+  async updatePlusSettings(body: { price30Uzs?: unknown; price365Uzs?: unknown; plusAiLookupQuota?: unknown; plusLookupHardCap?: unknown; lookupBurstPerMinute?: unknown; lookupBurstPerHour?: unknown; fairUseQuizzesPerDay?: unknown; freeLookupsPerDay?: unknown; freeQuizzesPerDay?: unknown; importDiscountPct?: unknown }) {
+    const minSom = Math.max(1, Math.round(Number(process.env.ATMOS_MIN_AMOUNT_SOM) || 500));
+    const writes: Array<[string, number]> = [];
+    const int = (x: unknown, name: string, min: number, max: number) => {
+      const n = Number(x);
+      if (!Number.isInteger(n) || n < min || n > max) throw new BadRequestException(`${name} must be a whole number between ${min} and ${max}.`);
+      return n;
+    };
+    if (body.price30Uzs !== undefined) writes.push([PLUS_SETTING_KEYS.price30, int(body.price30Uzs, 'price30Uzs', minSom, 10_000_000)]);
+    if (body.price365Uzs !== undefined) writes.push([PLUS_SETTING_KEYS.price365, int(body.price365Uzs, 'price365Uzs', minSom, 50_000_000)]);
+    const planWrites: Array<[tier: 'premium' | 'free', field: 'aiDailyQuota' | 'quizDailyQuota', value: number]> = [];
+    const nullable: Array<[string, unknown, string]> = [[PLUS_AI_LOOKUP_QUOTA_KEY, body.plusAiLookupQuota, 'plusAiLookupQuota'], [PLUS_LOOKUP_HARD_CAP_KEY, body.plusLookupHardCap, 'plusLookupHardCap']];
+    const nullWrites: Array<[string, number | null]> = [];
+    for (const [key, raw, name] of nullable) if (raw !== undefined) nullWrites.push([key, raw === null || raw === '' ? null : int(raw, name, 1, 1_000_000)]);
+    if (body.lookupBurstPerMinute !== undefined) writes.push([LOOKUP_BURST_KEYS.perMinute, int(body.lookupBurstPerMinute, 'lookupBurstPerMinute', 1, 10_000)]);
+    if (body.lookupBurstPerHour !== undefined) writes.push([LOOKUP_BURST_KEYS.perHour, int(body.lookupBurstPerHour, 'lookupBurstPerHour', 1, 100_000)]);
+    if (body.fairUseQuizzesPerDay !== undefined) planWrites.push(['premium', 'quizDailyQuota', int(body.fairUseQuizzesPerDay, 'fairUseQuizzesPerDay', 1, 10_000)]);
+    if (body.freeLookupsPerDay !== undefined) planWrites.push(['free', 'aiDailyQuota', int(body.freeLookupsPerDay, 'freeLookupsPerDay', 0, 100_000)]);
+    if (body.freeQuizzesPerDay !== undefined) planWrites.push(['free', 'quizDailyQuota', int(body.freeQuizzesPerDay, 'freeQuizzesPerDay', 0, 10_000)]);
+    for (const [tier, field, value] of planWrites) {
+      await this.prisma.subscriptionPlan.updateMany({ where: { tier }, data: { [field]: value } });
+      if (tier === 'free' && field === 'aiDailyQuota') {
+        await this.prisma.platformSetting.upsert({ where: { key: AI_SETTING_KEYS.defaultUserQuota }, update: { value }, create: { key: AI_SETTING_KEYS.defaultUserQuota, value } });
+      }
+    }
+    for (const [key, value] of nullWrites) {
+      const json = value === null ? Prisma.JsonNull : value;
+      await this.prisma.platformSetting.upsert({ where: { key }, update: { value: json }, create: { key, value: json } });
+    }
+    if (planWrites.length || nullWrites.length) resetPlanCapsCache();
+    if (body.importDiscountPct !== undefined) {
+      const pctV = int(body.importDiscountPct, 'importDiscountPct', 0, 70);
+      const cur = (await this.prisma.platformSetting.findUnique({ where: { key: PLUS_SETTING_KEYS.benefits } }))?.value;
+      const obj = cur && typeof cur === 'object' && !Array.isArray(cur) ? (cur as Record<string, unknown>) : {};
+      await this.prisma.platformSetting.upsert({ where: { key: PLUS_SETTING_KEYS.benefits }, update: { value: { ...obj, importDiscountPct: pctV } as never }, create: { key: PLUS_SETTING_KEYS.benefits, value: { ...obj, importDiscountPct: pctV } as never } });
+    }
+    for (const [key, value] of writes) {
+      await this.prisma.platformSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    }
+    return this.plusSettings();
+  }
+
+  /** Admin daily lookup-cost summary (ai_lookup_costs), newest day first. */
+  async lookupCostSummary(daysRaw?: unknown) {
+    const days = Math.min(90, Math.max(1, Math.floor(Number(daysRaw) || 14)));
+    const since = new Date(Date.now() - days * 86_400_000);
+    const rows = await this.prisma.aiLookupCost.groupBy({
+      by: ['usageDate', 'plan'],
+      where: { usageDate: { gte: since } },
+      _count: { _all: true },
+      _sum: { promptTokens: true, completionTokens: true, estCostUsd: true },
+    });
+    const hits = await this.prisma.aiLookupCost.groupBy({ by: ['usageDate', 'plan'], where: { usageDate: { gte: since }, cacheHit: true }, _count: { _all: true } });
+    return rows
+      .map((r) => ({
+        date: r.usageDate.toISOString().slice(0, 10),
+        plan: r.plan,
+        lookups: r._count._all,
+        cacheHits: hits.find((h) => h.plan === r.plan && +h.usageDate === +r.usageDate)?._count._all ?? 0,
+        promptTokens: r._sum.promptTokens ?? 0,
+        completionTokens: r._sum.completionTokens ?? 0,
+        estCostUsd: Number(r._sum.estCostUsd ?? 0),
+      }))
+      .sort((a, b) => b.date.localeCompare(a.date) || a.plan.localeCompare(b.plan));
+  }
+
+  async adjustUserTier(id: string, tierRaw: string, grant: { days?: number | string | null; until?: string | null } = {}) {
     const tierKey = tierRaw.trim().toLowerCase();
     if (tierKey !== 'free' && tierKey !== 'premium') {
       throw new BadRequestException('tier must be "free" or "premium"');
@@ -635,31 +729,26 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Admin grant: 7 / 30 / 365 days or a custom date (PLUS-OFFER.md §5.11). Free = no end.
+    let periodEnd: Date | null = null;
+    if (tierKey === 'premium') {
+      try { periodEnd = adminGrantEnd(grant); } catch (e) { throw new BadRequestException((e as Error).message); }
+    }
     if (existing) {
       await this.prisma.userSubscription.update({
         where: { id: existing.id },
-        data: {
-          planId: plan.id,
-          status: 'active',
-          currentPeriodEnd:
-            tierKey === 'premium'
-              ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-              : null,
-        },
+        data: { planId: plan.id, status: 'active', currentPeriodEnd: periodEnd },
       });
     } else {
       await this.prisma.userSubscription.create({
-        data: {
-          userId: id,
-          planId: plan.id,
-          status: 'active',
-          currentPeriodEnd:
-            tierKey === 'premium'
-              ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-              : null,
-          provider: 'admin',
-        },
+        data: { userId: id, planId: plan.id, status: 'active', currentPeriodEnd: periodEnd, provider: 'admin' },
       });
+    }
+    if (periodEnd) {
+      // Ledger row so the learner's payment history shows the grant (no price).
+      await this.prisma.entitlement.create({
+        data: { userId: id, kind: 'plus', source: 'admin', sourceRef: `admin_grant:${Date.now()}`, sku: 'plus_admin_grant', status: 'active', expiresAt: periodEnd },
+      }).catch(() => undefined);
     }
 
     return this.getUser(id);
@@ -1431,7 +1520,7 @@ export class AdminService {
         ? null
         : Math.floor(Number(maxRaw));
     if (maxPages != null && (!Number.isFinite(maxPages) || maxPages < minPages)) {
-      throw new BadRequestException('Max pages must be empty (unlimited) or ≥ min pages.');
+      throw new BadRequestException('Max pages must be empty (no maximum) or ≥ min pages.');
     }
     return { minPages, maxPages };
   }
@@ -2608,7 +2697,7 @@ export class AdminService {
         OR: [
           { channel: CampaignChannel.email },
           { name: { in: ['Premium Upsell', 'Welcome Push', 'Streak Reminder'] } },
-          { subject: 'Unlock unlimited AI lookups' },
+          { subject: 'No daily limit on word lookups with Plus' },
         ],
       },
     });
@@ -2814,6 +2903,7 @@ export class AdminService {
         where: { tier: 'free' },
         data: { aiDailyQuota: nextBody[AI_SETTING_KEYS.defaultUserQuota] as number },
       });
+      resetPlanCapsCache();
     }
     return this.settings();
   }

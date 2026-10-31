@@ -2,20 +2,25 @@ import {
   Injectable,
   BadRequestException,
   ForbiddenException,
+  HttpException,
+  HttpStatus,
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
+import { PLUS_FAIR_USE_DEFAULTS, PLUS_FAIR_USE_KEYS, activeSubWhere, fairUseCap } from '../../common/plan-active';
 import { createHash } from 'crypto';
+import { assertUnderCap, getPlanCaps, lookupMode, usageDayStart, userCapPlan } from '../../common/plan-caps';
+
+type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number };
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
-import { languagePromptLabel, ttsLocale } from '@gotcha/shared';
+import { DAILY_CAP_FALLBACKS, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, languagePromptLabel, slowDownMessage, ttsLocale } from '@gotcha/shared';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
-import { lookupCapped, planLimits } from '../../common/plan-limits';
 import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, ttsLimitError, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
@@ -140,7 +145,7 @@ export class AiService {
       return 0;
     }
     const limit = ttsDailyLimit();
-    const day = now.toISOString().slice(0, 10);
+    const day = usageDayStart(now).toISOString().slice(0, 10); // same Tashkent usage day as lookups/quizzes (payments-02)
     const cap = limit > 0 ? limit : 2_147_483_647;
     const rows = await this.prisma.$queryRaw<Array<{ tts_count: number }>>`
       INSERT INTO "ai_usage_daily" ("user_id", "usage_date", "tts_count")
@@ -198,8 +203,7 @@ export class AiService {
       return;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -261,41 +265,26 @@ export class AiService {
   }
 
   private async checkQuota(userId: string, defaultUserQuota: number) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
 
     if (this.useMemory()) {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
       const used = this.memoryUsage.get(key) ?? 0;
       const quota = defaultUserQuota;
-      if (quota > 0 && quota < 1_000_000 && used >= quota) {
-        throw new ForbiddenException(
-          'Daily AI lookup limit reached. Try again tomorrow.',
-        );
-      }
-      return { quota, usage: { lookupCount: used }, today, memoryKey: key };
+      assertUnderCap('lookups', 'free', { free: { lookups: quota, quizzes: 0 }, plus: { lookups: DAILY_CAP_FALLBACKS.plus.lookups, quizzes: 0 }, plusLookupHardCap: null }, used);
+      return { quota, usage: { lookupCount: used }, today, memoryKey: key, mode: 'ai' as const };
     }
 
-    const sub = await this.prisma.userSubscription.findFirst({
-      where: { userId, status: 'active' },
-      include: { plan: true },
-      orderBy: { createdAt: 'desc' },
-    });
-    // 31 Oct 14:40: per-plan limits from config (Free 20 / Plus no cap = null); admin default only applies to memory mode.
-    const quota = planLimits(sub?.plan.tier).lookupsPerDay;
-
+    // Lookups/day from the plan's ai_daily_quota (Free 20, Plus 200), runtime DB config cached ≤ 60 s.
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
+    const quota = caps[plan].lookups;
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },
     });
+    // 429 at the cap (Free 20; Plus hidden hard cap). Plus past its AI quota → 'dictionary' (no OpenAI).
+    const mode = lookupMode(plan, caps, usage?.lookupCount ?? 0);
 
-    // null (Plus) / 0 / >= 1e6 = no daily lookup cap.
-    if (lookupCapped(quota) && (usage?.lookupCount ?? 0) >= quota) {
-      throw new ForbiddenException(
-        'Daily AI lookup limit reached. Try again tomorrow.',
-      );
-    }
-
-    return { quota, usage, today, memoryKey: null as string | null };
+    return { quota, usage, today, memoryKey: null as string | null, mode };
   }
 
   private async incrementUsage(
@@ -325,7 +314,18 @@ export class AiService {
    * Quota / Admin AI Usage (`lookupCount`) increment only on successful uncached OpenAI calls.
    * Pure cache hits never burn quota or platform daily OpenAI budget.
    */
+  /** Word lookup: silent speed guard → cached/AI lookup → per-lookup cost log (ai_lookup_costs + structured log). */
   async lookup(userId: string, dto: LookupDto) {
+    await this.burstGuard(userId);
+    const meta: LookupMeta = {};
+    const res = await this.lookupInner(userId, dto, meta);
+    void this.logLookupCost(userId, meta, Boolean((res as { cached?: boolean }).cached), (res as { mode?: string }).mode ?? 'ai');
+    // 14:36: no mode field in responses (dictionary mode dropped; dormant path stays internal).
+    const { mode: _mode, dictionaryMiss: _miss, ...out } = res as typeof res & { mode?: string; dictionaryMiss?: boolean };
+    return out;
+  }
+
+  private async lookupInner(userId: string, dto: LookupDto, meta: LookupMeta) {
     const { band, uiLanguage } = await this.userAiGate(userId);
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
@@ -368,7 +368,13 @@ export class AiService {
     // Miss path only: enforce platform + user quota before spending OpenAI.
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const { today, memoryKey } = await this.checkQuota(userId, settings.defaultUserQuota);
+    const { today, memoryKey, mode } = await this.checkQuota(userId, settings.defaultUserQuota);
+    if (mode === 'dictionary') {
+      const row = await this.dictionaryGloss(cacheKeyLemma, dto.sourceLang, dto.targetLang);
+      await this.incrementUsage(userId, today, 'lookupCount', memoryKey);
+      const payload: MemoryLookup = { lemma: row?.lemma || cacheKeyLemma, translation: row?.translation ?? surface, contextualMeaning: null, phrase: null, grammarNote: null, partOfSpeech: row?.partOfSpeech ?? null };
+      return { ...this.presentLookup(payload, surface, context, true), contextualMeaning: null, mode: 'dictionary' as const, dictionaryMiss: !row };
+    }
 
     const client = this.getClient();
     const limits = glossLimitsFor(kind);
@@ -413,6 +419,9 @@ export class AiService {
           ],
         });
         usedOpenAi = true;
+        meta.model = model;
+        meta.promptTokens = response.usage?.prompt_tokens ?? 0;
+        meta.completionTokens = response.usage?.completion_tokens ?? 0;
 
         try {
           const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
@@ -639,6 +648,70 @@ export class AiService {
     } catch {
       return null;
     }
+  }
+
+  // ---- Silent speed guard (Sarvarbek 14:32): per-user sliding windows, config-driven, never a ban.
+  private burst = new Map<string, number[]>();
+  private burstCfg: { at: number; perMinute: number; perHour: number } | null = null;
+
+  private async burstLimits() {
+    const now = Date.now();
+    if (this.burstCfg && now - this.burstCfg.at < 60_000) return this.burstCfg;
+    const rows = await Promise.resolve()
+      .then(() => this.prisma.platformSetting.findMany({ where: { key: { in: [LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_KEYS.perHour] } } }))
+      .catch(() => [] as Array<{ key: string; value: unknown }>);
+    const v = (k: string, d: number) => { const n = Number(rows.find((r) => r.key === k)?.value); return Number.isInteger(n) && n > 0 ? n : d; };
+    this.burstCfg = { at: now, perMinute: v(LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_FALLBACKS.perMinute), perHour: v(LOOKUP_BURST_KEYS.perHour, LOOKUP_BURST_FALLBACKS.perHour) };
+    return this.burstCfg;
+  }
+
+  /** 429 {code:'lookup_slow_down', retryAfterSec, messages}; logs the event. Refused calls are not counted. */
+  async burstGuard(userId: string, now = Date.now()) {
+    const { perMinute, perHour } = await this.burstLimits();
+    const hits = (this.burst.get(userId) ?? []).filter((t) => now - t < 3_600_000);
+    const lastMinute = hits.filter((t) => now - t < 60_000);
+    const window = lastMinute.length >= perMinute ? 'minute' : hits.length >= perHour ? 'hour' : null;
+    if (window) {
+      this.burst.set(userId, hits);
+      const oldest = window === 'minute' ? lastMinute[0] : hits[0];
+      const retryAfterSec = Math.max(1, Math.ceil(((window === 'minute' ? 60_000 : 3_600_000) - (now - oldest)) / 1000));
+      this.logger.warn(JSON.stringify({ event: 'lookup_burst', userId, window, perMinute, perHour, retryAfterSec }));
+      const messages = { en: slowDownMessage('en'), uz: slowDownMessage('uz'), ru: slowDownMessage('ru') };
+      throw new HttpException({ statusCode: 429, code: 'lookup_slow_down', retryAfterSec, message: messages.en, messages }, HttpStatus.TOO_MANY_REQUESTS);
+    }
+    hits.push(now);
+    this.burst.set(userId, hits);
+    if (this.burst.size > 50_000) for (const [k, ts] of this.burst) if (!ts.length || now - ts[ts.length - 1] > 3_600_000) this.burst.delete(k);
+  }
+
+  // ---- Per-lookup cost log. Prices (USD per 1M tokens) from env OPENAI_LOOKUP_USD_PER_1M_IN / _OUT.
+  private async logLookupCost(userId: string, meta: LookupMeta, cacheHit: boolean, mode: string) {
+    try {
+      const inP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_IN ?? 0.15);
+      const outP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_OUT ?? 0.6);
+      const promptTokens = meta.promptTokens ?? 0, completionTokens = meta.completionTokens ?? 0;
+      const estCostUsd = Number(((promptTokens * inP + completionTokens * outP) / 1_000_000).toFixed(6));
+      const plan = await userCapPlan(this.prisma, userId);
+      const row = { userId, usageDate: usageDayStart(), plan, mode, cacheHit, model: meta.model ?? null, promptTokens, completionTokens, estCostUsd };
+      this.logger.log(JSON.stringify({ event: 'lookup_cost', ...row, usageDate: row.usageDate.toISOString().slice(0, 10) }));
+      const t = (this.prisma as unknown as { aiLookupCost?: { create?: (a: unknown) => Promise<unknown> } }).aiLookupCost;
+      if (!this.useMemory() && typeof t?.create === 'function') await t.create({ data: row });
+    } catch {
+      // Never fail a lookup on cost logging.
+    }
+  }
+
+  /** Dictionary-mode answer (Plus past its AI quota): any cached gloss for the same lemma + language pair,
+   *  newest first, ignoring the sentence context. Never calls OpenAI. */
+  private async dictionaryGloss(lemma: string, sourceLang: LookupDto['sourceLang'], targetLang: LookupDto['targetLang']) {
+    if (this.useMemory()) return null;
+    return Promise.resolve()
+      .then(() => this.prisma.lemmaCache.findFirst({
+        where: { lemma, sourceLang, targetLang, NOT: { modelVersion: 'offline' } },
+        orderBy: { createdAt: 'desc' },
+        select: { lemma: true, translation: true, partOfSpeech: true },
+      }))
+      .catch(() => null);
   }
 
   private presentLookup(row: MemoryLookup, surface: string, context: string, cached: boolean) {
@@ -962,8 +1035,7 @@ export class AiService {
     if (this.useMemory()) {
       return this.memoryPlatformLookups < settings.dailyLimit;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -977,8 +1049,7 @@ export class AiService {
       this.memoryPlatformLookups += 1;
       return;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     // Reuse quizCount bucket for platform metrics (no schema migration).
     await this.prisma.aiUsageDaily.upsert({
       where: { userId_usageDate: { userId, usageDate: today } },

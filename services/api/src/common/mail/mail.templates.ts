@@ -165,7 +165,7 @@ export function emailVerificationEmail(
     titleSubtitle: 'Подтвердите email · Verify your email',
     bodyHtml: trilingualBlock([
       {
-        lang: "O'zbekcha",
+        lang: "Oʻzbekcha",
         greeting: `Salom, <strong>${escapeHtml(safeName)}</strong>!`,
         paragraphs: [
           '<strong>GOTCHA</strong> hisobingiz uchun rahmat.',
@@ -253,7 +253,7 @@ export function passwordResetEmail(
     titleSubtitle: 'Сброс пароля · Reset your password',
     bodyHtml: trilingualBlock([
       {
-        lang: "O'zbekcha",
+        lang: "Oʻzbekcha",
         greeting: `Salom, <strong>${escapeHtml(safeName)}</strong>!`,
         paragraphs: [
           '<strong>GOTCHA</strong> parolingizni tiklash so‘rovi qabul qilindi.',

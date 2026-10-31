@@ -123,7 +123,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     const safePage = Math.max(1, Math.floor(page) || 1);
     const safePageSize = Math.min(100, Math.max(1, Math.floor(pageSize) || 20));
 
-    const [items, total, quota, freeAllowance] = await Promise.all([
+    const [items, total, quota, freeAllowance, retryState] = await Promise.all([
       this.prisma.userImport.findMany({
         where: { userId },
         orderBy: { createdAt: 'desc' },
@@ -134,9 +134,12 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       this.prisma.userImport.count({ where: { userId } }),
       this.limits.getImportQuota(userId),
       this.importCommerce.learnerAllowance(userId),
+      this.importCommerce.importRetryState(userId),
     ]);
 
     return {
+      /** payments-02: a failed paid import → free retry on the same payment, or refund-due. */
+      paidImportRetry: retryState,
       items: items.map((item) => presentImport(item)),
       total,
       page: safePage,
@@ -617,7 +620,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  private async failStaleImports() {
+  async failStaleImports() {
     const now = Date.now();
     const urlCutoff = new Date(now - STALE_URL_IMPORT_MS);
     const fileCutoff = new Date(now - STALE_FILE_IMPORT_MS);
@@ -628,12 +631,16 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     ];
 
     try {
+      // import-p0 coordination: imports with an import_queue_jobs row are the queue worker's; never touch them.
+      const owned = [...(await this.importCommerce.queueOwnedImportIds())];
+      const notOwned = owned.length ? { id: { notIn: owned } } : {};
       const [urlResult, fileResult, urlJobs, fileJobs] = await Promise.all([
         this.prisma.userImport.updateMany({
           where: {
             ingestionStatus: { in: pendingStatuses },
             importType: { in: [ImportType.url, ImportType.paste] },
             createdAt: { lt: urlCutoff },
+            ...notOwned,
           },
           data: { ingestionStatus: 'failed', errorMessage: STALE_URL_MESSAGE },
         }),
@@ -642,6 +649,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
             ingestionStatus: { in: pendingStatuses },
             importType: { in: [ImportType.pdf, ImportType.epub] },
             createdAt: { lt: fileCutoff },
+            ...notOwned,
           },
           data: { ingestionStatus: 'failed', errorMessage: STALE_FILE_MESSAGE },
         }),
@@ -676,6 +684,9 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
       if (n > 0) {
         this.logger.warn(`Marked ${n} stale import record(s) as failed`);
       }
+      // payments-02: no paid import may end charged with no result → free retry on the same payment, or refund-due.
+      const settled = await this.importCommerce.settleFailedImports();
+      if (settled.retry || settled.refundDue) this.logger.warn(`Paid failed imports: ${settled.retry} released for free retry, ${settled.refundDue} refund-due`);
     } catch (err) {
       this.logger.warn(
         `Stale import watchdog failed: ${err instanceof Error ? err.message : err}`,
@@ -710,6 +721,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
         data: { ingestionStatus: 'failed', errorMessage: message },
       })
       .catch(() => undefined);
+    await this.importCommerce.settleFailedImport(importId).catch(() => undefined);
     return this.prisma.userImport.findUniqueOrThrow({
       where: { id: importId },
       include: { content: true },

@@ -110,7 +110,7 @@ export function LookupLimitsCard({
           />
           <span className="text-xs text-slate-400 mt-1 block">
             {formatNumber(usersAtQuota)} learner{usersAtQuota === 1 ? '' : 's'} at cap today.
-            0 = unlimited.
+            0 = no limit.
           </span>
         </label>
         <label className="text-sm">
@@ -126,7 +126,7 @@ export function LookupLimitsCard({
           <span className="text-xs text-slate-400 mt-1 block">
             {todayPlatformUsed != null ? `Today: ${formatNumber(todayPlatformUsed)}` : null}
             {dailyLimit ? ` / ${formatNumber(dailyLimit)}` : ''}.
-            0 = unlimited.
+            0 = no limit.
           </span>
         </label>
         <div className="md:col-span-2 flex items-center gap-3">

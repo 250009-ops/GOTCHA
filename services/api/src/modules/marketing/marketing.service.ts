@@ -1,5 +1,5 @@
+import { DAILY_CAP_FALLBACKS } from '@gotcha/shared';
 import { formatSom, planCopy, type PlanLang } from './plan-copy';
-import { freeLimits } from '../../common/plan-limits';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
@@ -10,7 +10,6 @@ import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
-const UNLIMITED_THRESHOLD = 1_000_000;
 const LANDING_CACHE_TTL_MS = 60_000;
 const CATALOG_CAP = 12;
 
@@ -157,7 +156,7 @@ export class MarketingService {
     const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = freeLimits().lookupsPerDay;
+    const aiDailyQuota = freePlan?.aiDailyQuota ?? DAILY_CAP_FALLBACKS.free.lookups;
     // WLF-04: the Free card states the real import allowance (admin Import & Pricing → platform setting
     // importFreeLimits, defaults 3 a day / 50 pages a month), the same numbers import-commerce enforces.
     const importFree = await this.getImportFreeLimits().catch(() => DEFAULT_FREE_LIMITS);
@@ -174,14 +173,13 @@ export class MarketingService {
       aiDailyQuota,
       importLimit,
       offlineEnabled: false,
-      unlimitedLookups: aiDailyQuota >= UNLIMITED_THRESHOLD,
+      unlimitedLookups: false, // Free has a daily lookup cap (20 by default)
       unlimitedImports: false,
       popular: false,
       cta: t.freeCta,
       features: [
         t.library,
         t.lookupsDay(aiDailyQuota),
-        t.quizzesDay(freeLimits().quizzesPerDay),
         t.importsDay(importLimit),
         t.importPages(pageLimit, importFree.resetCycle),
         t.review,

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError } from '../lib/dailyLimit';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
 import { UserAvatar } from '../components/UserAvatar';
 import { api, getAccessToken } from '../lib/api';
@@ -1149,7 +1150,13 @@ export default function MessagesPage() {
       } catch (e) {
         const raw = e instanceof Error ? e.message : 'Lookup failed';
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';

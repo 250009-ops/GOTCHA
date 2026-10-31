@@ -1,4 +1,4 @@
-import { PrismaClient, AppLanguage, CefrLevel, ContentType, ContentSource, PublishStatus, LicenseStatus, AdminRole, WordStatus } from '@prisma/client';
+import { Prisma, PrismaClient, AppLanguage, CefrLevel, ContentType, ContentSource, PublishStatus, LicenseStatus, AdminRole, WordStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { tokenizeText, slugify, uniqueWordCount } from '../src/utils/tokenizer';
 import {
@@ -199,40 +199,18 @@ async function main() {
   // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
   // Premium (Plus): no daily word-lookup cap, 200 quizzes/day (14:40) — see common/plan-limits.ts. The DB quota column is not read.
   const UNLIMITED = 1_000_000;
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'free' },
-    update: {
-      name: 'Free',
-      priceMonthly: 0,
-      offlineEnabled: false,
-    },
-    create: {
-      tier: 'free',
-      name: 'Free',
-      priceMonthly: 0,
-      aiDailyQuota: 20, // display/enforcement come from common/plan-limits.ts (Free 20 lookups / 10 quizzes)
-      importLimit: 15,
-      offlineEnabled: false,
-    },
-  });
-
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'premium' },
-    update: {
-      name: 'Plus',
-      priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      importLimit: UNLIMITED,
-      offlineEnabled: false,
-    },
-    create: {
-      tier: 'premium',
-      name: 'Plus',
-      priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      aiDailyQuota: UNLIMITED, // no lookup cap for Plus; enforcement is common/plan-limits.ts (lookupsPerDay null)
-      importLimit: UNLIMITED,
-      offlineEnabled: false,
-    },
-  });
+  // Prices/limits come from prisma/pricing-seed.json (PRICING.md §7, non-PROPOSAL rows); admins edit them later.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const pricing = require('./pricing-seed.json') as {
+    subscriptionPlans: Array<{ tier: 'free' | 'premium'; name: string; nameI18n: Record<string, string>; priceMonthly: number; period: string; aiDailyQuota: number; quizDailyQuota?: number; importLimit: number; offlineEnabled: boolean; features: string[] }>;
+  };
+  for (const [i, p] of pricing.subscriptionPlans.entries()) {
+    const data = {
+      name: p.name, priceMonthly: p.priceMonthly, aiDailyQuota: Math.min(p.aiDailyQuota, UNLIMITED), quizDailyQuota: Math.min(p.quizDailyQuota ?? (p.tier === 'premium' ? 200 : 10), UNLIMITED), importLimit: Math.min(p.importLimit, UNLIMITED),
+      offlineEnabled: p.offlineEnabled, nameI18n: p.nameI18n, period: p.period, features: p.features, active: true, sortOrder: i,
+    };
+    await prisma.subscriptionPlan.upsert({ where: { tier: p.tier }, update: data, create: { tier: p.tier, ...data } });
+  }
 
   const license = await prisma.license.upsert({
     where: { id: '00000000-0000-4000-8000-000000000001' },
@@ -990,6 +968,12 @@ async function main() {
   const existingAiUserQuota = await prisma.platformSetting.findUnique({ where: { key: 'aiDefaultUserQuota' } });
   if (!existingAiUserQuota) {
     await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 20 } });
+  }
+  // payments-02 (Sarvarbek 14:32): Plus has no daily lookup cap (null), silent speed guard 30/min, 300/hour.
+  for (const [key, value] of [['plus.ai_lookup_quota', null], ['plus.lookup_hard_cap', null], ['lookup.burst_per_minute', 30], ['lookup.burst_per_hour', 300]] as const) {
+    if (!(await prisma.platformSetting.findUnique({ where: { key } }))) {
+      await prisma.platformSetting.create({ data: { key, value: value === null ? Prisma.JsonNull : value } });
+    }
   }
 
   await prisma.notificationCampaign.deleteMany({

@@ -24,6 +24,7 @@ import { formatUzs, formatFreeAllowance, inspectImportFile, type ImportQuote, ty
 import { countPdfPagesFromFile } from '../lib/pdfPageCount';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { useAuth } from '../lib/auth';
+import { usePay } from '../components/payments';
 
 interface ImportItem {
   id: string;
@@ -48,6 +49,8 @@ interface ImportListResponse {
   hasMore: boolean;
   importLimit?: number | null;
   importRemaining?: number | null;
+  /** payments-02: failed paid imports → free retry on the same payment, or refund-due / review (PAY2-08). */
+  paidImportRetry?: PaidImportRetry;
   importsUnlimited?: boolean;
   freeAllowance?: ImportFreeAllowance;
 }
@@ -370,6 +373,8 @@ function ImportLogoMark() {
     </div>
   );
 }
+
+type PaidImportRetry = { freeRetries: { paymentId: string; importType: string }[]; refundDue: number; review?: number };
 
 type PaymentModalState = {
   open: boolean;
@@ -808,6 +813,19 @@ export default function ImportPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
   const [paymentModal, setPaymentModal] = useState<PaymentModalState>({ open: false, quote: null, importTitle: '', importType: '', onPaid: null });
+  const [paidRetry, setPaidRetry] = useState<PaidImportRetry>({ freeRetries: [], refundDue: 0, review: 0 });
+  const payCopy = usePay();
+  /** A failed (or result-less, PAY2-08) paid import is retried free on the SAME payment (no new charge) instead of opening checkout. */
+  const openPayOrRetry = (modal: PaymentModalState) => {
+    const free = paidRetry.freeRetries.find((r) => r.importType === modal.importType);
+    if (free && modal.onPaid) {
+      toast.message(payCopy.t('imp.retryUsing'));
+      setPaidRetry((s) => ({ ...s, freeRetries: s.freeRetries.filter((r) => r.paymentId !== free.paymentId) }));
+      void modal.onPaid(free.paymentId);
+      return;
+    }
+    setPaymentModal(modal);
+  };
 
   const atImportLimit = !importsUnlimited && importRemaining !== null && importRemaining <= 0;
 
@@ -820,6 +838,7 @@ export default function ImportPage() {
       setImportLimit(res.importLimit ?? null);
       setImportRemaining(res.importRemaining ?? null);
       setImportsUnlimited(!!res.importsUnlimited);
+      setPaidRetry(res.paidImportRetry ?? { freeRetries: [], refundDue: 0, review: 0 });
       if (res.freeAllowance) {
         setFreeAllowance(res.freeAllowance);
         setGatewayEnabled(res.freeAllowance.gatewayEnabled);
@@ -903,7 +922,7 @@ export default function ImportPage() {
       const quote = await getQuote({ importType: 'url', contentFormat: 'article', textLength: 6000 });
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title || data.url,
@@ -960,7 +979,7 @@ export default function ImportPage() {
       const quote = await getQuote(quoteParams);
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title,
@@ -1017,7 +1036,7 @@ export default function ImportPage() {
       const quote = await getQuote(quoteParams);
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title || data.file.name,
@@ -1117,6 +1136,16 @@ export default function ImportPage() {
                     ? 'Import allowance reached. Delete an old import or pay per material size via Atmos.'
                     : 'Import allowance reached. Delete an old import to free up space — paid imports are not available right now.'}
                 </p>
+              </div>
+            )}
+            {paidRetry.freeRetries.length > 0 && (
+              <div role="status" data-testid="imp-free-retry" className="p-3 mb-4 rounded-[14px] border border-emerald-200 bg-emerald-50 text-xs leading-relaxed text-emerald-900">
+                {payCopy.t('imp.freeRetry')}
+              </div>
+            )}
+            {(paidRetry.refundDue > 0 || (paidRetry.review ?? 0) > 0) && (
+              <div role="status" data-testid="imp-refund-due" className="p-3 mb-4 rounded-[14px] border border-amber-200 bg-amber-50 text-xs leading-relaxed text-amber-900">
+                {payCopy.t('imp.refundDue')}
               </div>
             )}
             {freeAllowance && (

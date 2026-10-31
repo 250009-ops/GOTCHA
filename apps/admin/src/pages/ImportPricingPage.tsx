@@ -202,7 +202,7 @@ export default function ImportPricingPage() {
       return null;
     }
     if (maxPages != null && (!Number.isFinite(maxPages) || maxPages < minPages)) {
-      setPricingError('Max pages must be empty (unlimited) or ≥ min pages.');
+      setPricingError('Max pages must be empty (no maximum) or ≥ min pages.');
       return null;
     }
     const label = tierLabel.trim() || (maxPages == null ? `${minPages}+ pages` : `${minPages} - ${maxPages} pages`);
@@ -356,7 +356,7 @@ export default function ImportPricingPage() {
           Atmos: {data.atmosConfigured ? 'configured' : 'not configured'}
         </Badge>
         <Badge className={data.paymentGatewayEnabled ? 'bg-violet-50 text-[#6c1d95]' : 'bg-amber-50 text-amber-800'}>
-          Gateway: {data.paymentGatewayEnabled ? 'enabled' : 'disabled (imports unlimited)'}
+          Gateway: {data.paymentGatewayEnabled ? 'enabled' : 'disabled (imports not charged)'}
         </Badge>
         <Badge className="bg-slate-50 text-slate-600">Currency: {data.currency || 'UZS'}</Badge>
         <Badge className="bg-slate-50 text-slate-600">Atmos minimum: {formatMoney(atmosMinSom)}</Badge>
@@ -427,7 +427,7 @@ export default function ImportPricingPage() {
             <div className="text-sm text-slate-500">
               Applied at quote time: daily free imports, page cap, and allowed formats. Unused credits do not roll over.
               Check every format learners actually import — unchecked formats always require payment, which looks like a coverage gap.
-              0 daily imports or 0 pages means no free pool (unlike lookup caps, where 0 = unlimited).
+              0 daily imports or 0 pages means no free pool (unlike lookup caps, where 0 = no limit).
             </div>
           </div>
           <div className="space-y-4">

@@ -1,4 +1,12 @@
 import { refreshRejected } from './authErrors';
+import { announceDailyLimit, dailyLimitText, type DailyLimitInfo } from './dailyLimit';
+
+/** UI language for non-React callers (limit notes); LearnerShell sets <html lang> from the profile. */
+export const learnerLang = (): string => currentUiLang();
+function currentUiLang(): string {
+  const l = typeof document !== 'undefined' ? document.documentElement.lang.slice(0, 2) : '';
+  return l === 'uz' || l === 'ru' ? l : 'en';
+}
 
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
@@ -113,15 +121,26 @@ export async function api<T>(
       email?: string;
       statusCode?: number;
     };
-    const message = Array.isArray(err.message)
+    // Daily caps / speed guard: the server sends uz/ru/en text naming the limit (payments-02).
+    const capMsg = (err.code === 'lookup_limit' || err.code === 'quiz_limit' || err.code === 'fair_use_limit' || err.code === 'lookup_slow_down') ? (err as { messages?: Record<string, string> }).messages?.[currentUiLang()] : undefined;
+    const message = capMsg ?? (Array.isArray(err.message)
       ? err.message.join(', ')
-      : (err.message ?? 'Request failed');
+      : (err.message ?? 'Request failed'));
     const error = new Error(message) as Error & {
       code?: string;
       email?: string;
       status?: number;
     };
     if (err.code) error.code = err.code;
+    if (capMsg) (error as { limit?: number }).limit = (err as { limit?: number }).limit;
+    // payments-02: 429 {kind, plan, limit, resetAt} → friendly notice with the reset time (no error toast).
+    const lim = err as Partial<DailyLimitInfo>;
+    if ((err.code === 'lookup_limit' || err.code === 'quiz_limit') && lim.kind && lim.plan && typeof lim.limit === 'number' && lim.resetAt) {
+      const info: DailyLimitInfo = { kind: lim.kind, plan: lim.plan, limit: lim.limit, plusLimit: lim.plusLimit === undefined ? lim.limit : lim.plusLimit, resetAt: lim.resetAt };
+      (error as { dailyLimit?: DailyLimitInfo }).dailyLimit = info;
+      error.message = dailyLimitText(info, currentUiLang()).message;
+      announceDailyLimit(info);
+    }
     if (err.email) error.email = err.email;
     error.status = err.statusCode ?? res.status;
     throw error;

@@ -5,6 +5,7 @@ import { Toaster } from 'sonner';
 import App from './App';
 import { AuthProvider } from './lib/auth';
 import { DocumentTitle } from './components/DocumentTitle';
+import { DailyLimitNotice } from './components/DailyLimitNotice';
 import './styles/index.css';
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
@@ -15,6 +16,7 @@ createRoot(document.getElementById('root')!).render(
       <AuthProvider>
         <DocumentTitle />
         <App />
+        <DailyLimitNotice />
         <Toaster
           position="top-right"
           richColors

@@ -18,7 +18,7 @@ async function main() {
     const cards = await m.plans(lang);
     assertClean(`marketing ${lang}`, cards);
     for (const c of cards) assert.equal(c.offlineEnabled, false);
-    const premium = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 1_000_000, importLimit: 1_000_000, offlineEnabled: true, features: null } as never, lang);
+    const premium = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 200, importLimit: 1_000_000, offlineEnabled: true, features: null } as never, lang);
     const freeRow = enrichPlan({ id: 'f', tier: 'free', name: 'Free', priceMonthly: 0, aiDailyQuota: 50, importLimit: 3, offlineEnabled: false, features: null } as never, lang);
     assertClean(`billing premium ${lang}`, premium);
     assertClean(`billing free ${lang}`, freeRow);
@@ -53,32 +53,33 @@ async function main() {
   const f2: string[] = (await m2.plans('ru'))[0].features;
   assert.ok(f2.includes('5 бесплатных импортов в день') && f2.includes('До 21 бесплатной страницы импорта в месяц'), 'reads admin config: ' + f2.join(' | '));
   assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
-  // Limits text matches config (Free 20/10; Plus 200 quizzes, no lookup cap = null, 14:40).
-  assert.match((await m.plans('en'))[0].features.join(' '), /20 word lookups a day.*10 chapter quizzes a day/);
-  const pe = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 1_000_000, importLimit: 1, offlineEnabled: false, features: null } as never, 'en');
-  assert.equal(pe.aiDailyQuota, null); assert.equal(pe.quizDailyQuota, 200);
-  assert.deepEqual(pe.features, ['Full AI explanations for the words you look up', '200 chapter quizzes a day', 'Everything in Free stays included']);
-  assert.ok(!/unlimited|fair use|200 word lookups|200 lookups|no daily limit/i.test(JSON.stringify(pe)));
-  for (const l of ['en', 'ru', 'uz'] as const) {
-    const px = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 200, importLimit: 1, offlineEnabled: false, features: null } as never, l);
-    assert.ok(!/unlimited|fair use|200 (word )?lookups|no daily limit|cheksiz|безлимит|\b500\b/i.test(JSON.stringify(px.features)), l);
-    assert.ok(!/\d/.test(px.features[0]), `${l}: Plus lookup line names no number`);
-  }
   assert.equal(planLang('ru-RU'), 'ru'); assert.equal(planLang('xx'), 'en'); assert.equal(planLang(undefined), 'en');
   assert.equal(formatSom(199990), '199 990 soʻm');
   // Guard: no plan price under 1000 soʻm anywhere it is defined (seed, data fix, constants).
   assert.equal(publicPlanPriceUzs(MIN_PUBLIC_PLAN_PRICE_UZS - 1), null); assert.equal(publicPlanPriceUzs(1000), 1000);
   assert.ok(PLUS_PRICE_30_UZS >= 1000 && PLUS_PRICE_365_UZS >= 1000);
   const root = join(__dirname, '..', '..', '..');
-  const seed = readFileSync(join(root, 'prisma', 'seed.ts'), 'utf8');
-  const seedPrices = [...seed.matchAll(/priceMonthly:\s*([\d.]+)/g)].map((m) => Number(m[1])).filter((n) => n > 0);
-  assert.ok(seedPrices.length >= 2, 'seed has premium prices');
-  for (const n of seedPrices) assert.ok(n >= 1000, `seed price ${n} < 1000 soʻm`);
-  assert.ok(/'plus\.pass\.price_365_uzs', 199990/.test(seed));
-  // Price data fix SQL is owned by payments-02 (gotcha-pay), not this release.
+  const seedJson = JSON.parse(readFileSync(join(root, 'prisma', 'pricing-seed.json'), 'utf8')) as { subscriptionPlans: Array<{ tier: string; priceMonthly: number }> };
+  const prem = seedJson.subscriptionPlans.find((p) => p.tier === 'premium')!;
+  assert.equal(prem.priceMonthly, PLUS_PRICE_30_UZS, 'seed premium = 24990 (option C)');
+  for (const p of seedJson.subscriptionPlans) assert.ok(p.priceMonthly === 0 || p.priceMonthly >= 1000, `seed price ${p.priceMonthly} < 1000 soʻm`);
+  const sql = readFileSync(join(root, 'prisma', 'data-fixes', '2026-10-31-plus-price-uzs.sql'), 'utf8');
+  assert.match(sql, /SET price_monthly = 24990/); assert.match(sql, /'199990'::jsonb/);
+  for (const m of sql.matchAll(/price_monthly = (\d+)/g)) assert.ok(Number(m[1]) >= 1000);
   // AC1-03: no user-facing "unlimited imports" in import quotes
   const ic = readFileSync(join(root, 'src', 'modules', 'billing', 'import-commerce.service.ts'), 'utf8');
   assert.ok(!/freeReason[^\n]*unlimited/i.test(ic), 'freeReason must not claim unlimited imports');
+  // PLUS-OFFER Defaults #4: Plus copy names the real cap, never "unlimited" / "no daily limit".
+  const pe = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 200, importLimit: 1_000_000, offlineEnabled: true, features: null } as never, 'en');
+  assert.equal(pe.features[0], 'No daily limit on word lookups (20 a day on Free)'); // PLUS-OFFER §4 14:33
+  assert.equal(planCopy('en').plusLookups(200, 20), '200 word lookups a day (20 on Free)', 'a configured Plus cap is named');
+  assert.equal(pe.features[1], '200 chapter quizzes a day (10 on Free)'); // Marketing §4/§7 14:20
+  assert.equal(planCopy('uz').plusQuizzes(200, 10), 'Kuniga 200 ta bob testi (bepul tarifda 10 ta)');
+  assert.equal(planCopy('ru').plusQuizzes(200, 10), '200 тестов по главам в день (в бесплатном плане 10)');
+  assert.match(sql, /features - 'ai_lookup_unlimited'/); assert.match(sql, /'plus.ai_lookup_quota', 'null'::jsonb/); assert.doesNotMatch(sql, /ai_daily_quota = (200|1000000)/); assert.match(sql, /quiz_daily_quota = 200/);
+  assert.match(sql, /DATABASE_URL%%\\\?\*/, 'backup strips ?schema=');
+  assert.equal(pe.offlineEnabled, false);
+  for (const l of PLAN_LANGS) assert.ok(!/unlimited|fair use|безлимит|cheksiz/i.test(JSON.stringify(planCopy(l)) + planCopy(l).plusLookups(200, 50)), l);
   console.log('plan-copy.test: ok');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

@@ -1,32 +1,95 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
-import { planLang } from '../marketing/plan-copy';
+import { Body, Controller, Get, Headers, HttpCode, Param, ParseUUIDPipe, Post, Query, UnauthorizedException, UseFilters } from '@nestjs/common';
+import { BillingErrorFilter } from './billing-errors';
+import { Throttle } from '@nestjs/throttler';
+import { StorePlatform } from '@prisma/client';
+import { EntitlementsService } from './entitlements.service';
+import { PlayBillingService, playAccountId } from './play-billing.service';
+import { GooglePlayClient } from './google-play.client';
 import { ApiTags } from '@nestjs/swagger';
 import { SkipThrottle } from '@nestjs/throttler';
 import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
 import { BillingService } from './billing.service';
 import { ImportCommerceService } from './import-commerce.service';
-import { ImportCheckoutDto, ImportQuoteDto, ImportPreApplyDto, ImportApplyDto, ImportCancelDto } from './dto/import-commerce.dto';
+import { ImportCheckoutDto, ImportQuoteDto, ImportPreApplyDto, ImportApplyDto, ImportCancelDto, CatalogCheckoutDto, VerifyPlayPurchaseDto } from './dto/import-commerce.dto';
 import { AtmosClient } from './atmos.client';
 
 @ApiTags('billing')
 @Controller('billing')
+@UseFilters(BillingErrorFilter)
 export class BillingController {
   constructor(
     private billing: BillingService,
     private importCommerce: ImportCommerceService,
     private atmos: AtmosClient,
+    private entitlements: EntitlementsService,
+    private playBilling: PlayBillingService,
+    private play: GooglePlayClient,
   ) {}
+
+  // ---------------------------------------------------------------- unified entitlements + Google Play
+
+  /** Everything the user owns from any source (web Atmos, Android Play, admin). Clients call this at login. */
+  @Get('entitlements')
+  myEntitlements(@CurrentUser() user: AuthUserPayload) {
+    return this.entitlements.forUser(user.sub);
+  }
+
+  /** SKUs for the app to query from Play, plus the account id to pass as obfuscatedAccountId. */
+  @Get('play/products')
+  async playProducts(@CurrentUser() user: AuthUserPayload) {
+    return { obfuscatedAccountId: playAccountId(user.sub), products: await this.playBilling.storeProducts(StorePlatform.google_play) };
+  }
+
+  @Get('play/books/:contentId')
+  playBookSku(@Param('contentId', ParseUUIDPipe) contentId: string) {
+    return this.playBilling.skuForBook(contentId);
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post('play/verify')
+  @HttpCode(200)
+  verifyPlay(@CurrentUser() user: AuthUserPayload, @Body() body: VerifyPlayPurchaseDto) {
+    return this.playBilling.verify(user.sub, body);
+  }
+
+  /** Real-time developer notifications (Cloud Pub/Sub push). 2xx = ack; 401/5xx = Pub/Sub retries. */
+  @Public()
+  @SkipThrottle()
+  @Post('play/rtdn')
+  @HttpCode(204)
+  async playRtdn(@Headers('authorization') auth: string | undefined, @Query('token') token: string | undefined, @Body() body: { message?: { data?: string } }) {
+    if (!(await this.play.verifyPush(auth, token))) throw new UnauthorizedException();
+    await this.playBilling.handleRtdn(body);
+  }
 
   @Get('subscription')
   subscription(@CurrentUser() user: AuthUserPayload) {
     return this.billing.getSubscription(user.sub);
   }
 
-  /** Raw plan rows — prefer `/marketing/plans` for Landing feature copy. */
+  /** Active plans from the DB (admin-editable): localized name, price in UZS, period, feature keys. */
   @Public()
   @Get('plans')
   plans(@Query('lang') lang?: string) {
-    return this.billing.listPlans(planLang(lang));
+    return this.billing.listPlans(lang === 'ru' || lang === 'uz' ? lang : 'en');
+  }
+
+  @Get('payments/:id/receipt')
+  paymentReceipt(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
+    return this.importCommerce.paymentReceipt(user.sub, id);
+  }
+
+  /** Web Plus pass offer (WEB_PLUS_PASS). One-off, no auto-renew. */
+  @Get('plus/offer')
+  plusOffer(@CurrentUser() user: AuthUserPayload) {
+    return this.importCommerce.plusOffer(user.sub);
+  }
+
+  /** Start an Atmos payment for a 30/365-day pass; card + OTP reuse imports/payments/:id/pre-apply|apply. */
+  @Post('plus/checkout')
+  @HttpCode(200)
+  plusCheckout(@CurrentUser() user: AuthUserPayload, @Body() body: { days?: number }) {
+    return this.importCommerce.plusCheckout(user.sub, Number(body?.days));
   }
 
   @Public()
@@ -105,6 +168,22 @@ export class BillingController {
     return this.importCommerce.cancelPayment(user.sub, id, body.reason);
   }
 
+  /** PAYMENTS §8: unified history (Atmos imports + books, Google Play). `cursor` = createdAt ISO of the last item. */
+  @Get('payments')
+  allPayments(@CurrentUser() user: AuthUserPayload, @Query('limit') limit?: string, @Query('cursor') cursor?: string) {
+    return this.importCommerce.listAllPayments(user.sub, { limit: Number(limit), before: cursor });
+  }
+
+  /** Learner payment history (amount > 0 only). */
+  @Get('imports/payments')
+  payments(
+    @CurrentUser() user: AuthUserPayload,
+    @Query('limit') limit?: string,
+    @Query('cursor', new ParseUUIDPipe({ optional: true })) cursor?: string,
+  ) {
+    return this.importCommerce.listPayments(user.sub, { limit: Number(limit), cursor });
+  }
+
   @Get('imports/payments/:id')
   payment(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.importCommerce.getPayment(user.sub, id);
@@ -116,8 +195,12 @@ export class BillingController {
   }
 
   @Post('content/:id/checkout')
-  catalogCheckout(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.importCommerce.catalogCheckout(user.sub, id, user.isAdmin);
+  catalogCheckout(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: CatalogCheckoutDto = {},
+  ) {
+    return this.importCommerce.catalogCheckout(user.sub, id, user.isAdmin, body?.promoCode);
   }
 
   /**

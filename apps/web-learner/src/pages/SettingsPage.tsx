@@ -23,6 +23,8 @@ import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
+import { useLearnerLocale } from '../lib/learnerLocaleContext';
+import { payCopyFor } from '@gotcha/shared';
 import {
   CEFR_LEVELS,
   LANGUAGE_META,
@@ -312,6 +314,7 @@ function TargetLanguageModal({
 export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
+  const { locale } = useLearnerLocale();
 
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
@@ -700,6 +703,13 @@ export default function SettingsPage() {
                     className="w-full h-9 rounded-[14px] bg-white text-[#7008e7] text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
                   >
                     <Zap className="w-4 h-4" />Import more content
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/payments')}
+                    className="w-full min-w-0 h-9 px-3 rounded-[14px] text-white/90 text-sm font-medium underline hover:text-white"
+                  >
+                    {payCopyFor(locale)['history.title']}
                   </button>
                 </div>
               </div>

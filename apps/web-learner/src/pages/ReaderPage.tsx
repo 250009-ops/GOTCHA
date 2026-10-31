@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
@@ -516,7 +517,17 @@ export default function ReaderPage() {
       } catch (e) {
         const raw = e instanceof Error ? e.message : 'Lookup failed';
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if (isSlowDownError(e)) {
+          // Silent speed guard: neutral note (server text, localized), not an error.
+          toast.message(raw, { id: 'lookup-slow-down' });
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
@@ -527,7 +538,7 @@ export default function ReaderPage() {
         } else if (/AI lookup failed/i.test(raw)) {
           message = 'AI lookup failed. Please try again in a moment.';
         }
-        toast.error(message);
+        if (message) toast.error(message);
       } finally {
         setLookupLoading(false);
       }

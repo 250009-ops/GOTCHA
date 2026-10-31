@@ -1,0 +1,102 @@
+{
+  "source": "team/PRICING.md v0.2 §7 (non-PROPOSAL rows only)",
+  "subscriptionPlans": [
+    {
+      "tier": "free",
+      "name": "Free",
+      "nameI18n": {
+        "en": "Free",
+        "ru": "Бесплатно",
+        "uz": "Bepul"
+      },
+      "priceMonthly": 0,
+      "period": "month",
+      "aiDailyQuota": 20,
+      "quizDailyQuota": 10,
+      "importLimit": 15,
+      "offlineEnabled": false,
+      "features": [
+        "reader",
+        "library",
+        "ai_lookup",
+        "translate",
+        "tts",
+        "vocabulary",
+        "srs_review",
+        "practice",
+        "imports_free_pool",
+        "stats",
+        "messaging"
+      ]
+    },
+    {
+      "tier": "premium",
+      "name": "Plus",
+      "nameI18n": {
+        "en": "Plus",
+        "ru": "Plus",
+        "uz": "Plus"
+      },
+      "priceMonthly": 24990,
+      "period": "month",
+      "aiDailyQuota": 1000000,
+      "quizDailyQuota": 200,
+      "importLimit": 1000000,
+      "offlineEnabled": false,
+      "features": [
+        "reader",
+        "library",
+        "ai_lookup",
+        "translate",
+        "tts",
+        "vocabulary",
+        "srs_review",
+        "practice",
+        "imports_free_pool",
+        "stats",
+        "messaging"
+      ]
+    }
+  ],
+  "platformSettings": {
+    "importFreeLimits": {
+      "dailyFreeImportsPerUser": 3,
+      "monthlyFreePageLimit": 50,
+      "allowedFormats": [
+        "article",
+        "news"
+      ],
+      "resetCycle": "monthly"
+    }
+  },
+  "importPageTiers": [
+    {
+      "label": "1 - 10 pages",
+      "minPages": 1,
+      "maxPages": 10,
+      "priceUsd": 12000,
+      "sortOrder": 1
+    },
+    {
+      "label": "11 - 50 pages",
+      "minPages": 11,
+      "maxPages": 50,
+      "priceUsd": 29000,
+      "sortOrder": 2
+    },
+    {
+      "label": "51 - 100 pages",
+      "minPages": 51,
+      "maxPages": 100,
+      "priceUsd": 49000,
+      "sortOrder": 3
+    },
+    {
+      "label": "100+ pages",
+      "minPages": 101,
+      "maxPages": null,
+      "priceUsd": 79000,
+      "sortOrder": 4
+    }
+  ]
+}

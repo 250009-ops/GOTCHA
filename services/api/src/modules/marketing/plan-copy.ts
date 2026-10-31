@@ -32,9 +32,6 @@ const T = {
     freeName: 'Free', freeUnit: 'to start', freeCta: 'Get started',
     library: 'Access to the public library',
     lookupsDay: (n: number) => `${n} word lookups a day`,
-    quizzesDay: (n: number) => `${n} chapter quizzes a day`,
-    plusLookups: 'Full AI explanations for the words you look up',
-    plusQuizzes: (q: number) => `${q} chapter quizzes a day`,
     importsDay: (n: number) => `${n} free ${n === 1 ? 'import' : 'imports'} a day`,
     importPages: (n: number, c: Cycle) => `Up to ${n} free ${n === 1 ? 'page' : 'pages'} of imports a ${c === 'daily' ? 'day' : c === 'yearly' ? 'year' : 'month'}`,
     review: 'Vocabulary review',
@@ -42,6 +39,9 @@ const T = {
     everythingFree: 'Everything in Free',
     payOnce: 'Need more than your free imports? Pay once per import via Atmos',
     upfront: 'Price shown upfront, based on document length',
+    // PLUS-OFFER.md §4 (14:33): null = no Plus lookup cap configured.
+    plusLookups: (n: number | null, free: number) => (n == null ? `No daily limit on word lookups (${free} a day on Free)` : `${n} word lookups a day (${free} on Free)`),
+    plusQuizzes: (n: number, free: number) => `${n} chapter quizzes a day (${free} on Free)`,
     plusFree: 'Everything in Free stays included',
     free: 'Free',
     plusName: 'Plus', passUnit: '30-day pass',
@@ -50,9 +50,6 @@ const T = {
     freeName: 'Бесплатно', freeUnit: 'для начала', freeCta: 'Начать',
     library: 'Доступ к открытой библиотеке',
     lookupsDay: (n: number) => `${n} подсказок по словам в день`,
-    quizzesDay: (n: number) => `${n} тестов по главам в день`,
-    plusLookups: 'Полные AI-объяснения слов, которые вы ищете',
-    plusQuizzes: (q: number) => `${q} тестов по главам в день`,
     importsDay: (n: number) => `${n} ${ruForm(n, 'бесплатный импорт', 'бесплатных импорта', 'бесплатных импортов')} в день`,
     importPages: (n: number, c: Cycle) => `До ${n} ${ruForm(n, 'бесплатной страницы', 'бесплатных страниц', 'бесплатных страниц')} импорта в ${c === 'daily' ? 'день' : c === 'yearly' ? 'год' : 'месяц'}`,
     review: 'Повторение слов',
@@ -60,6 +57,8 @@ const T = {
     everythingFree: 'Всё из бесплатного плана',
     payOnce: 'Нужно больше бесплатных импортов? Разовая оплата за импорт через Atmos',
     upfront: 'Цена видна заранее и зависит от объёма документа',
+    plusLookups: (n: number | null, free: number) => (n == null ? `Без дневного лимита на подсказки по словам (в бесплатном плане ${free} в день)` : `${n} подсказок по словам в день (${free} на Free)`),
+    plusQuizzes: (n: number, free: number) => `${n} тестов по главам в день (в бесплатном плане ${free})`,
     plusFree: 'Всё из бесплатного плана остаётся с вами',
     free: 'Бесплатно',
     plusName: 'Plus', passUnit: 'доступ на 30 дней',
@@ -68,9 +67,6 @@ const T = {
     freeName: 'Bepul', freeUnit: 'boshlash uchun', freeCta: 'Boshlash',
     library: 'Ochiq kutubxonadan foydalanish',
     lookupsDay: (n: number) => `Kuniga ${n} ta soʻz qidiruvi`,
-    quizzesDay: (n: number) => `Kuniga ${n} ta bob testi`,
-    plusLookups: 'Qidirgan soʻzlaringiz uchun toʻliq AI izoh',
-    plusQuizzes: (q: number) => `Kuniga ${q} ta bob testi`,
     importsDay: (n: number) => `Kuniga ${n} ta bepul import`,
     importPages: (n: number, c: Cycle) => `${c === 'daily' ? 'Kuniga' : c === 'yearly' ? 'Yiliga' : 'Oyiga'} ${n} sahifagacha bepul import`,
     review: "Soʻzlarni takrorlash",
@@ -78,6 +74,8 @@ const T = {
     everythingFree: 'Bepul tarifdagi hamma narsa',
     payOnce: "Bepul importlar yetmayaptimi? Har bir import uchun Atmos orqali bir marta toʻlang",
     upfront: "Narx oldindan koʻrsatiladi va hujjat hajmiga bogʻliq",
+    plusLookups: (n: number | null, free: number) => (n == null ? `Soʻz qidirishda kunlik cheklov yoʻq (bepul tarifda kuniga ${free} ta)` : `Kuniga ${n} ta soʻz qidiruvi (Free tarifida ${free} ta)`),
+    plusQuizzes: (n: number, free: number) => `Kuniga ${n} ta bob testi (bepul tarifda ${free} ta)`,
     plusFree: 'Bepul tarifdagi hamma narsa sizda qoladi',
     free: 'Bepul',
     plusName: 'Plus', passUnit: '30 kunlik muddat',
@@ -88,9 +86,8 @@ export const planCopy = (lang: PlanLang) => T[lang];
 
 export const BANNED_PLAN_CLAIMS = [
   /offline/i, /oflayn/i, /офлайн/i,
-  /no monthly fee/i, /unlimited (content )?imports/i, /priority support/i, /no ads/i,
+  /no monthly fee/i, /unlimited/i, /fair use/i, /безлимит/i, /cheksiz/i, /unlimited (content )?imports/i, /priority support/i, /no ads/i,
   /\$/,
-  /unlimited/i, /fair use/i, /200 (word )?lookups/i, /no daily limit/i, /cheksiz/i, /безлимит/i,
 ];
 
 /**
