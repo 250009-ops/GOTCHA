@@ -21,7 +21,7 @@ import { AtmosClient, validateCardForAtmos } from './atmos.client';
 import { isSellableTier } from './page-tiers';
 import { capTotalDiscountTiyins, OFERTA_VERSION, PLUS_ACCOUNT_PREFIX, PLUS_SETTING_KEYS, dueReminder, plusDiscountTiyins, plusPassConfig, plusPassDaysFromFormat, plusPassExpiry, plusPassFormat, type PlusPassDays } from './plus-pass';
 import { projectPlus } from './entitlements.service';
-import { getPlanCaps } from '../../common/plan-caps';
+import { getPlanCaps, userCapPlan } from '../../common/plan-caps';
 import { AI_SETTING_KEYS, coerceNonNegInt, defaultAiPlatformSettings, resolveLearnerDailyAiQuota } from '../ai/ai-settings';
 import { PricingService, promoDiscountTiyins } from './pricing.service';
 import {
@@ -90,6 +90,8 @@ export type LearnerImportAllowance = {
   monthlyFreePageLimit: number;
   monthlyPagesUsed: number;
   monthlyPagesRemaining: number;
+  /** WLF-15: which import pool applies ('plus' = active Plus entitlement; caps from importFreeLimits.plus*). */
+  tier?: 'free' | 'plus';
 };
 
 export type CheckoutResult = {
@@ -210,6 +212,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       allowedFormats: ['article', 'news'] as string[],
       resetCycle: 'monthly',
       allowRollover: true,
+      // WLF-15: Plus import pool (admin Import & Pricing → importFreeLimits). Unset = same numbers as Free (PM to set).
+      plusDailyImportsPerUser: null as number | null,
+      plusMonthlyPageLimit: null as number | null,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
     const merged = { ...defaults, ...(row.value as object) } as typeof defaults;
@@ -279,9 +284,16 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   async learnerAllowance(userId: string, excludePaymentId?: string): Promise<LearnerImportAllowance> {
     const freeLimits = await this.getFreeLimits();
     const usage = await this.freeUsage(userId, freeLimits.resetCycle, excludePaymentId);
-    const dailyCap = Math.max(0, Math.floor(Number(freeLimits.dailyFreeImportsPerUser) || 0));
-    const pageCap = Math.max(0, Math.floor(Number(freeLimits.monthlyFreePageLimit) || 0));
+    // WLF-15: an active Plus user gets the Plus import pool, never the Free one.
+    const isPlus =
+      (await userCapPlan(this.prisma, userId).catch(() => 'free')) === 'plus' ||
+      (await this.plusBenefitsFor(userId).then(Boolean, () => false));
+    const capOf = (plusV: unknown, freeV: unknown) =>
+      Math.max(0, Math.floor(Number(isPlus && plusV != null && plusV !== '' ? plusV : freeV) || 0));
+    const dailyCap = capOf(freeLimits.plusDailyImportsPerUser, freeLimits.dailyFreeImportsPerUser);
+    const pageCap = capOf(freeLimits.plusMonthlyPageLimit, freeLimits.monthlyFreePageLimit);
     return {
+      tier: isPlus ? 'plus' : 'free',
       gatewayEnabled: this.gatewayEnabled(),
       resetCycle: freeLimits.resetCycle,
       allowedFormats: freeLimits.allowedFormats,
@@ -332,7 +344,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         allowance.dailyFreeUsed < allowance.dailyFreeImportsPerUser &&
         allowance.monthlyPagesUsed + estimatedPages <= allowance.monthlyFreePageLimit;
       isFree = within;
-      freeReason = within ? 'Within free import allowance' : 'Free import limit reached';
+      freeReason = within ? 'Within free import allowance' : allowance.tier === 'plus' ? 'Import limit reached' : 'Free import limit reached';
     }
 
     if (gatewayEnabled) {
@@ -1358,9 +1370,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       throw new ForbiddenException({
         statusCode: 403,
         code: 'IMPORT_LIMIT_REACHED',
+        tier: allowance.tier ?? 'free',
         message: overDaily
-          ? `Free import limit reached: ${allowance.dailyFreeImportsPerUser} imports a day.`
-          : `Free import limit reached: ${allowance.monthlyFreePageLimit} pages a month (${allowance.monthlyPagesRemaining} left).`,
+          ? `${allowance.tier === 'plus' ? 'Import' : 'Free import'} limit reached: ${allowance.dailyFreeImportsPerUser} imports a day.`
+          : `${allowance.tier === 'plus' ? 'Import' : 'Free import'} limit reached: ${allowance.monthlyFreePageLimit} pages a month (${allowance.monthlyPagesRemaining} left).`,
         limit: overDaily ? 'daily_imports' : 'monthly_pages',
         dailyFreeImportsPerUser: allowance.dailyFreeImportsPerUser,
         monthlyFreePageLimit: allowance.monthlyFreePageLimit,

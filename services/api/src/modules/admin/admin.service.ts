@@ -463,8 +463,10 @@ export class AdminService {
       tierKey === 'premium' || tierKey === 'payg' || tierKey === 'pay as you go';
     if (wantsPayg) {
       rows = rows.filter((r) => r.billingTier.toLowerCase().includes('pay'));
+    } else if (tierKey === 'plus') {
+      rows = rows.filter((r) => r.billingTier === 'Plus');
     } else if (tierKey === 'free') {
-      rows = rows.filter((r) => !r.billingTier.toLowerCase().includes('pay'));
+      rows = rows.filter((r) => r.billingTier === 'Free');
     }
 
     const [total, suspended] = await Promise.all([
@@ -3136,12 +3138,15 @@ export class AdminService {
       createdAt: Date;
       streakCount: number;
       targetLanguages: Array<{ targetLanguage: AppLanguage; cefrLevel: string; isPrimary: boolean }>;
-      subscriptions: Array<{ status: string; plan: { name: string; tier: string } }>;
+      subscriptions: Array<{ status: string; currentPeriodEnd?: Date | null; plan: { name: string; tier: string } }>;
     },
     opts?: { payAsYouGo?: boolean },
   ) {
     const primary = u.targetLanguages.find((t) => t.isPrimary) ?? u.targetLanguages[0];
     const payAsYouGo = Boolean(opts?.payAsYouGo);
+    // WLF-17: an active premium subscription is Plus (same rule as userCapPlan/activeSubWhere), ahead of Pay as you go.
+    const sub = u.subscriptions[0];
+    const plus = sub?.status === 'active' && sub.plan?.tier === 'premium' && (!sub.currentPeriodEnd || +sub.currentPeriodEnd > Date.now());
     return {
       id: u.id,
       email: u.email,
@@ -3152,7 +3157,7 @@ export class AdminService {
       targetLanguage: primary ? this.langLabel(primary.targetLanguage) : '—',
       targetLanguageCode: primary?.targetLanguage ?? null,
       cefrLevel: primary?.cefrLevel ?? null,
-      billingTier: payAsYouGo ? 'Pay as you go' : 'Free',
+      billingTier: plus ? 'Plus' : payAsYouGo ? 'Pay as you go' : 'Free',
       subscriptionStatus: u.subscriptions[0]?.status ?? 'none',
     };
   }
