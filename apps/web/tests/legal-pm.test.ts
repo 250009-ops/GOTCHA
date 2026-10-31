@@ -57,9 +57,9 @@ test('WLF-07: built bundle serves the PM text for all 6 documents (run after vit
   for (const re of OLD) assert.ok(!re.test(js), `dist has legacy text ${re}`);
 });
 
-// PM final legal set for final-3 (Kai/PM 31 Oct 15:56): sha256 prefixes of the exact files /terms and /privacy must serve.
+// PM final legal set (final-4: WLF-11, Terms §7 has no Plus numbers, PM 31 Oct 16:15; privacy unchanged since final-3): sha256 prefixes of the exact files /terms and /privacy must serve.
 const PINNED: Record<string, string> = {
-  'terms-en': '3b71791b94d1', 'terms-ru': '4e034c8facfc', 'terms-uz': 'e97df950395a',
+  'terms-en': '7fbebb1c0c45', 'terms-ru': '218c55be148e', 'terms-uz': '5ef128039511',
   'privacy-en': '6b9ee013ac3c', 'privacy-ru': 'a00adb3fca19', 'privacy-uz': 'cef024962382',
 };
 test('final-3: served legal text hashes match the pinned PM files; no "(Public Offer)" in any title', async () => {
@@ -78,4 +78,21 @@ test('final-3: served legal text hashes match the pinned PM files; no "(Public O
     const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(join('dist/assets', f), 'utf8')).join('\n');
     for (const k of Object.keys(PINNED)) assert.ok(js.includes(JSON.stringify(readFileSync(`legal-pm/${k}.html`, 'utf8')).slice(1, -1)) || js.includes(readFileSync(`legal-pm/${k}.html`, 'utf8')), `${k} not in dist`);
   }
+});
+
+// WLF-11 (final-4): no served legal file may state 200 word lookups per day (Plus has no lookup cap; §7 has no Plus numbers).
+const LOOKUP_200 = [
+  /200[^.;:()<>]{0,40}(?:word\s*)?look-?ups?/i, /look-?ups?[^.;:()<>]{0,40}\b200\b/i,
+  /200[^.;:()<>]{0,40}(?:поиск|запрос|пояснени|слов)/i, /(?:поиск|запрос|пояснени)[^.;:()<>]{0,40}\b200\b/i,
+  /200[^.;:()<>]{0,40}(?:qidiruv|soʻz|izoh)/i, /(?:qidiruv|izoh)[^.;:()<>]{0,40}\b200\b/i,
+];
+const plain = (h: string) => h.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ');
+test('WLF-11: no served legal file says 200 word lookups per day (en/ru/uz)', () => {
+  for (const d of DOCS) for (const l of LOCALES) {
+    const t = plain(readFileSync(`legal-pm/${d}-${l}.html`, 'utf8'));
+    for (const re of LOOKUP_200) assert.ok(!re.test(t), `${d}-${l}: ${t.match(re)?.[0]}`);
+  }
+  // self-check: the guard catches the final-3 §7 wording in all 3 locales
+  for (const bad of ['up to <strong>200 word lookups per day</strong>', 'до <strong>200 пояснений слов в день</strong>', 'kuniga <strong>200 tagacha soʻz izohi</strong>'])
+    assert.ok(LOOKUP_200.some((re) => re.test(plain(bad))), bad);
 });
