@@ -14,6 +14,7 @@ import {
   corsOriginsFromEnv,
   isProductionRuntime,
 } from './common/runtime-security';
+import { ImportWorker } from './modules/imports/import-worker';
 import { PrismaService } from './prisma/prisma.service';
 
 function preloadEnvFile(filePath: string) {
@@ -122,6 +123,10 @@ async function bootstrap() {
     } catch (err) {
       console.error('Language catalog warmup failed', err);
     }
+  }
+  if (process.env.IMPORT_WORKER_IN_API === 'true' && prisma.dbAvailable) {
+    // Dev convenience only; production runs dist/worker.js as its own PM2 process.
+    app.get(ImportWorker).start();
   }
   await app.listen(port);
   console.log(`Gotcha API running on http://localhost:${port}`);

@@ -27,7 +27,10 @@
     "test:streak": "ts-node --transpile-only src/services/streak.service.test.ts",
     "test:mail": "ts-node --transpile-only src/common/mail/mail.templates.test.ts",
     "test:shuffle": "ts-node --transpile-only src/modules/practice/shuffle-options.test.ts",
-    "test:epub-dist": "nest build && ts-node --transpile-only src/modules/imports/epub-dist.test.ts"
+    "test:epub-dist": "nest build && ts-node --transpile-only src/modules/imports/epub-dist.test.ts",
+    "start:worker": "node dist/worker.js",
+    "test:import-p0": "ts-node --transpile-only src/modules/imports/import-p0.test.ts",
+    "test:import-queue": "ts-node --transpile-only src/modules/imports/import-queue.pg.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

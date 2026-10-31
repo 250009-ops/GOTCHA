@@ -577,6 +577,10 @@ model ImportPayment {
   createdAt            DateTime            @default(now()) @map("created_at")
   paidAt               DateTime?           @map("paid_at")
   expiresAt            DateTime?           @map("expires_at")
+  /// import-p0 (queue-owned imports only): refund lifecycle null → "due" | "processing" → "refunded" | "reverse_failed".
+  /// Claimed with a conditional UPDATE so it can never run twice. refund_reason/refund_requested_at are wlive 0019's columns.
+  refundState          String?             @map("refund_state")
+  refundedAt           DateTime?           @map("refunded_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -840,10 +844,16 @@ model UserImport {
   progressPagesTotal Int?            @map("progress_pages_total")
   isPublic           Boolean         @default(false) @map("is_public")
   createdAt          DateTime        @default(now()) @map("created_at")
+  /// import-p0: structured user-facing notice (e.g. "ocr_page_cap", "pdf_page_cap"); UI renders uz/ru/en copy from it.
+  noticeCode         String?         @map("notice_code")
+  noticeData         Json?           @map("notice_data")
+  /// import-p0: user-triggered retries (POST /imports/:id/retry). Never charges again.
+  manualRetries      Int             @default(0) @map("manual_retries")
 
   user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   content    ContentItem?      @relation(fields: [contentId], references: [id])
   moderation ModerationQueue[]
+  queueJob ImportQueueJob?
 
   @@map("user_imports")
 }
@@ -1385,4 +1395,49 @@ model ContentReport {
 
   @@index([status, createdAt])
   @@map("content_reports")
+}
+
+/// Durable Postgres-backed import queue (claimed with FOR UPDATE SKIP LOCKED by the worker process).
+model ImportQueueJob {
+  id           String    @id @default(uuid()) @db.Uuid
+  userImportId String    @unique @map("user_import_id") @db.Uuid
+  kind         String    /// file | url | paste
+  status       String    @default("queued") /// queued | running | done | failed
+  attempts     Int       @default(0)
+  maxAttempts  Int       @default(3) @map("max_attempts")
+  runAfter     DateTime  @default(now()) @map("run_after")
+  lockedBy     String?   @map("locked_by")
+  lockedAt     DateTime? @map("locked_at")
+  heartbeatAt  DateTime? @map("heartbeat_at")
+  lastError    String?   @map("last_error")
+  payload      Json
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at")
+  finishedAt   DateTime? @map("finished_at")
+
+  userImport UserImport @relation(fields: [userImportId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAfter])
+  @@index([status, heartbeatAt])
+  @@map("import_queue_jobs")
+}
+
+/// Stored upload from /imports/inspect so /imports/file does not need the bytes again.
+model ImportUpload {
+  id           String     @id @default(uuid()) @db.Uuid
+  userId       String     @map("user_id") @db.Uuid
+  fileKey      String     @map("file_key")
+  originalName String     @map("original_name")
+  mimeType     String     @map("mime_type")
+  sizeBytes    Int        @map("size_bytes")
+  sha256       String
+  importType   ImportType @map("import_type")
+  pageCount    Int        @map("page_count")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  expiresAt    DateTime   @map("expires_at")
+  consumedAt   DateTime?  @map("consumed_at")
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("import_uploads")
 }

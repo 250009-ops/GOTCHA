@@ -52,4 +52,9 @@ export class ImportFileDto {
   @IsOptional()
   @IsUUID()
   paymentId?: string;
+
+  /** Stored upload from POST /imports/inspect — import without sending the bytes again. */
+  @IsOptional()
+  @IsUUID()
+  uploadId?: string;
 }
