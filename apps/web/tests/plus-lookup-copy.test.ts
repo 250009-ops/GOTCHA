@@ -4,7 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 // 31 Oct 14:40: Plus has no daily lookup cap. Shipped web copy names no Plus lookup number and no limit claim;
 // "No daily limit on word lookups" ships only with payments-02 (release guard G1). Plan bullets come from the API.
-// legalHtml.generated.ts is the QA-only VITE_LEGAL_V2 build (not in the shipped dist) and is reported, not scanned.
+// legalHtml.generated.ts (wl01 legal drafts) was retired in web-launch-04; the filter below is a no-op kept for safety.
 const walk = (d: string): string[] => readdirSync(d).flatMap((n) => { const p = join(d, n); return statSync(p).isDirectory() ? walk(p) : [p]; });
 const BANNED = /\b(unlimited|fair use|200 word lookups|200 lookups|no daily limit)\b|cheksiz|безлимит/i;
 const STRING = /(['"`])((?:\\.|(?!\1).)*)\1/g;
