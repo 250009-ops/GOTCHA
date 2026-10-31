@@ -14,6 +14,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
+import { CONSENT_VERSION } from '../components/safety/signupConsent';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
@@ -153,6 +154,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           targetLanguages,
           uiLanguage: locale,
           acceptTerms,
+          ...(acceptTerms ? { consentVersion: CONSENT_VERSION } : {}),
           ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {

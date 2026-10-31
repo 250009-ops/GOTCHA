@@ -3,6 +3,9 @@
  * 'Sign-up tick-box labels' (Terms of Use, Privacy Policy and Public Offer). Must match the API's CONSENT_LABELS
  * (services/api/src/common/safety/consent.ts, CONSENT_VERSION web-2026-10-31.4; was .3 pre-oferta).
  */
+/** PAY2-17: the label version this client displays; sent with sign-up so the API records exactly this (never a newer one). */
+export const CONSENT_VERSION = 'web-2026-10-31.4';
+
 export type ConsentLocale = 'uz' | 'ru' | 'en';
 
 export const CONSENT_LABELS: Record<ConsentLocale, string> = {

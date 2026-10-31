@@ -39,6 +39,7 @@ interface AuthContextValue {
     targetLanguages: string[];
     uiLanguage?: string;
     acceptTerms?: boolean;
+    consentVersion?: string;
     birthYear?: number;
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
@@ -223,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       nativeLanguage: string;
       targetLanguages: string[];
       acceptTerms?: boolean;
+      consentVersion?: string;
       birthYear?: number;
       uiLanguage?: string;
     }) => {
