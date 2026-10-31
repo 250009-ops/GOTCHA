@@ -39,7 +39,7 @@ function envFlagTrue(value: string | undefined): boolean {
 
 /** ~500 words / page ≈ 3000 chars as a conservative page estimate. */
 const CHARS_PER_PAGE = 3000;
-const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
+import { TASHKENT_OFFSET_MS } from '../../common/tashkent-window';
 const WORDS_PER_PAGE = 500;
 
 export type ImportQuoteInput = {

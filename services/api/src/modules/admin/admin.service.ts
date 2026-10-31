@@ -61,6 +61,7 @@ import {
   assertEnabledLanguage,
 } from '../../common/language-catalog';
 import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, languageFlag, languageLabel } from '@gotcha/shared';
+import { tashkentDayStart, tashkentMonthStart } from '../../common/tashkent-window';
 
 @Injectable()
 export class AdminService {
@@ -1362,15 +1363,12 @@ export class AdminService {
 
   async importPricing(range = '12m') {
     const months = range === '3m' ? 3 : range === '6m' ? 6 : 12;
-    const dayStart = new Date();
-    dayStart.setUTCHours(0, 0, 0, 0);
-    const monthStart = new Date(Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth(), 1));
-    const rangeStart = new Date(
-      Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth() - (months - 1), 1),
-    );
-    const priorStart = new Date(
-      Date.UTC(dayStart.getUTCFullYear(), dayStart.getUTCMonth() - (months * 2 - 1), 1),
-    );
+    // r3b: report windows start at 00:00 Asia/Tashkent (today, this month, range), same as the limit resets.
+    const now = new Date();
+    const dayStart = tashkentDayStart(now);
+    const monthStart = tashkentMonthStart(now);
+    const rangeStart = tashkentMonthStart(now, -(months - 1));
+    const priorStart = tashkentMonthStart(now, -(months * 2 - 1));
     const priorEnd = new Date(rangeStart.getTime() - 1);
 
     const [rules, tiers, freeLimits, importCount, paidRange, paidPrior, paidMonth, freeMonth, importsToday] =
@@ -2591,7 +2589,7 @@ export class AdminService {
 
   async levelTests() {
     const now = new Date();
-    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthStart = tashkentMonthStart(now); // r3b: Tashkent month
 
     const [results, total, monthTotal, avgAgg, byLevel] = await Promise.all([
       this.prisma.placementResult.findMany({
