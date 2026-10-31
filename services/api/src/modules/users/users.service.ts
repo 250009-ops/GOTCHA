@@ -353,6 +353,12 @@ export class UsersService {
       throw new BadRequestException('Photo upload is not available for demo accounts.');
     }
 
+    // Privacy §2/§12: children under 13 cannot upload a profile photo.
+    const ageRow = await this.prisma.user.findUnique({ where: { id: userId }, select: { birthYear: true } });
+    if (ageBand(ageRow?.birthYear) === 'under13') {
+      throw new ForbiddenException({ statusCode: 403, code: 'AVATAR_UNDER13', message: 'Profile photos are not available for this account.' });
+    }
+
     const extByMime: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
