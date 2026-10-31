@@ -1,0 +1,34 @@
+-- Expand AppLanguage so admin can enable major world languages for
+-- learner signup, settings, content, and AI lookup/translate.
+
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'ar';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'bn';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'bg';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'ca';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'zh';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'hr';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'cs';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'da';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'nl';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'fi';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'el';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'he';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'hi';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'hu';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'id';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'it';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'ms';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'no';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'fa';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'pl';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'ro';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'sr';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'sk';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'sw';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'sv';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'tl';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'th';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'tr';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'uk';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'ur';
+ALTER TYPE "AppLanguage" ADD VALUE IF NOT EXISTS 'vi';
