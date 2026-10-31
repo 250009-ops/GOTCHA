@@ -213,3 +213,4 @@ export * from './payCopy';
 export * from './dailyLimits';
 export * from './practice';
 export * from './plural';
+export * from './coverTemplate';

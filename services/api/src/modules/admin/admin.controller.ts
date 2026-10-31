@@ -289,6 +289,13 @@ export class AdminController {
     return this.admin.uploadContentCover(id, file);
   }
 
+  /** covers-01: 'Use template' / 'Use upload' / 'Revert to original' per book. */
+  @Patch('content/:id/cover-mode')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  setCoverMode(@Param('id') id: string, @Body() body: { coverMode?: unknown }, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.setContentCoverMode(id, body?.coverMode, actorIdOf(user));
+  }
+
   @Patch('content/:id/reingest')
   @Roles(AdminRole.superadmin, AdminRole.editor)
   reingestContent(@Param('id') id: string, @Body() body: Record<string, unknown>) {

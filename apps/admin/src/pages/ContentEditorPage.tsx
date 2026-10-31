@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, ChevronRight, Eye, FileText, ImagePlus, Sparkles } from 'lucide-react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { LibraryPreviewModal } from '../components/LibraryPreviewModal';
+import { BookCover } from '../components/cover/BookCover';
 import { Button, Card, ErrorBlock, Input, PageHeader, Select, Textarea } from '../components/ui';
 import { api, apiUpload } from '../lib/api';
 import {
@@ -58,6 +59,12 @@ export default function ContentEditorPage() {
   const [pdfFile, setPdfFile] = useState<File | null>(null);
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
+  // covers-01: per-book cover choice (template default for every new and backfilled book).
+  const [coverMode, setCoverMode] = useState<'template' | 'upload' | 'original'>('template');
+  const [originalCoverUrl, setOriginalCoverUrl] = useState<string | null>(null);
+  const [uploadedCoverUrl, setUploadedCoverUrl] = useState<string | null>(null);
+  const [coverBusy, setCoverBusy] = useState(false);
+  const [coverMsg, setCoverMsg] = useState<string | null>(null);
   const [preview, setPreview] = useState<IngestPreview | null>(null);
   const [openChapters, setOpenChapters] = useState<Record<number, boolean>>({});
   const [busy, setBusy] = useState(false);
@@ -185,6 +192,10 @@ export default function ContentEditorPage() {
       priceUzs?: number;
       sourceUrl?: string | null;
       coverImageKey?: string | null;
+      coverMode?: 'template' | 'upload' | 'original';
+      coverImageUrl?: string | null;
+      originalCoverUrl?: string | null;
+      uploadedCoverUrl?: string | null;
       publishStatus?: string;
       chapters?: ChapterPreview[];
     }>(`/admin/content/${id}`)
@@ -202,7 +213,10 @@ export default function ContentEditorPage() {
         setPriceUsd(String(item.priceUzs ?? item.priceUsd ?? 0));
         setSourceUrl(item.sourceUrl ?? '');
         setPublishStatus(item.publishStatus ?? 'draft');
-        if (item.coverImageKey) setCoverPreview(coverSrc(item.coverImageKey));
+        setCoverMode(item.coverMode ?? 'template');
+        setOriginalCoverUrl(item.originalCoverUrl ?? null);
+        setUploadedCoverUrl(item.uploadedCoverUrl ?? null);
+        setCoverPreview(item.coverImageUrl ? coverSrc(item.coverImageUrl) : null);
         if (item.chapters?.length) {
           setPreview({
             wordCount: item.chapters.reduce((s, c) => s + c.wordCount, 0),
@@ -324,6 +338,26 @@ export default function ContentEditorPage() {
     }
   }
 
+  async function applyCoverMode(mode: 'template' | 'upload' | 'original') {
+    if (!id) return;
+    setCoverBusy(true);
+    setCoverMsg(null);
+    try {
+      const r = await api<{ coverMode: 'template' | 'upload' | 'original'; coverImageUrl: string | null }>(
+        `/admin/content/${id}/cover-mode`,
+        { method: 'PATCH', body: JSON.stringify({ coverMode: mode }) },
+      );
+      setCoverMode(r.coverMode);
+      setCoverFile(null);
+      setCoverPreview(r.coverImageUrl ? coverSrc(r.coverImageUrl) : null);
+      setCoverMsg('Cover updated.');
+    } catch (err) {
+      setCoverMsg(err instanceof Error ? err.message : 'Cover update failed');
+    } finally {
+      setCoverBusy(false);
+    }
+  }
+
   const outlineLabel = useMemo(() => {
     if (!preview) return literary(contentType) ? 'Chapters appear here after AI analyze' : 'Tight article/news body — no chapter tree';
     if (!literary(contentType)) return 'Single body (article / news)';
@@ -405,27 +439,66 @@ export default function ContentEditorPage() {
                 </p>
               </label>
             )}
-            <label className="block">
-              <span className="text-sm font-medium text-slate-600">Cover image</span>
-              <div className="mt-2 flex items-center gap-3">
-                <div className="size-20 rounded-xl border border-dashed border-slate-300 overflow-hidden bg-slate-50 grid place-items-center">
-                  {coverPreview ? (
-                    <img src={coverPreview} alt="" className="size-full object-cover" />
-                  ) : (
-                    <ImagePlus className="size-6 text-slate-400" />
-                  )}
-                </div>
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0] ?? null;
-                    setCoverFile(file);
-                    setCoverPreview(file ? URL.createObjectURL(file) : coverPreview);
+            <div className="block" data-testid="cover-panel">
+              <span className="text-sm font-medium text-slate-600">Cover</span>
+              <div className="mt-2 flex items-start gap-4">
+                <BookCover
+                  item={{
+                    title: title.trim() || 'Untitled',
+                    genre: genre || null,
+                    language,
+                    author: author || null,
+                    coverMode: coverFile ? 'upload' : coverMode,
+                    coverImageUrl: coverPreview,
                   }}
+                  variant="card"
+                  className="w-[160px] aspect-[3/4] rounded-xl border border-slate-200 shrink-0"
                 />
+                <div className="min-w-0 space-y-2 text-sm">
+                  <p className="text-xs text-slate-500" data-testid="cover-mode-label">
+                    {coverFile
+                      ? 'New upload (saved with the book)'
+                      : coverMode === 'template'
+                        ? 'Template cover (landing style, drawn from title/author/genre)'
+                        : coverMode === 'upload'
+                          ? 'Uploaded cover'
+                          : 'Original cover'}
+                  </p>
+                  {editing ? (
+                    <div className="flex flex-wrap gap-2">
+                      <Button type="button" variant={coverMode === 'template' ? 'primary' : 'secondary'} disabled={coverBusy || coverMode === 'template'} onClick={() => void applyCoverMode('template')}>
+                        Use template
+                      </Button>
+                      {uploadedCoverUrl ? (
+                        <Button type="button" variant={coverMode === 'upload' ? 'primary' : 'secondary'} disabled={coverBusy || coverMode === 'upload'} onClick={() => void applyCoverMode('upload')}>
+                          Use upload
+                        </Button>
+                      ) : null}
+                      {originalCoverUrl ? (
+                        <Button type="button" variant={coverMode === 'original' ? 'primary' : 'secondary'} disabled={coverBusy || coverMode === 'original'} onClick={() => void applyCoverMode('original')}>
+                          Revert to original
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-slate-500">New books get the template cover automatically.</p>
+                  )}
+                  <label className="block">
+                    <span className="text-xs text-slate-500 flex items-center gap-1"><ImagePlus className="size-3.5" /> Upload override (JPG/PNG/WebP, ≤4 MB)</span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] ?? null;
+                        setCoverFile(file);
+                        if (file) setCoverPreview(URL.createObjectURL(file));
+                      }}
+                    />
+                  </label>
+                  {coverMsg ? <p className="text-xs text-slate-600">{coverMsg}</p> : null}
+                </div>
               </div>
-            </label>
+            </div>
             <label className="block">
               <span className="text-sm font-medium text-slate-600">Source PDF</span>
               <div className="mt-2 flex items-center gap-3">
@@ -574,6 +647,8 @@ export default function ContentEditorPage() {
             priceUzs: Number(priceUsd) || 0,
             publishStatus,
             coverImageKey: coverPreview,
+            coverMode: coverFile ? 'upload' : coverMode,
+            genre: genre || null,
           }}
           onClose={() => setShowLibraryPreview(false)}
         />

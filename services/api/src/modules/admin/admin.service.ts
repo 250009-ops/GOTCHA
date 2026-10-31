@@ -1,3 +1,4 @@
+import { COVER_MODES, resolveCoverKey, type CoverMode } from '@gotcha/shared';
 import { limitDayStart } from '../../common/plan-limits';
 import {
   BadRequestException,
@@ -82,6 +83,17 @@ export async function countPaymentRecords(prisma: unknown, userId: string): Prom
   const n = await Promise.all(['importPayment', 'contentPurchase', 'entitlement', 'playPurchase'].map((m) => p[m]?.count?.({ where: { userId } }) ?? 0));
   return n.reduce((x, y) => x + y, 0);
 }
+
+/** covers-01: cover fields for admin DTOs. coverImageUrl = what learners see (null ⇒ template). */
+function coverFields(item: { coverMode: string; coverImageKey: string | null; originalCoverKey: string | null }) {
+  return {
+    coverMode: item.coverMode as CoverMode,
+    coverImageUrl: resolveCoverKey(item),
+    originalCoverUrl: item.originalCoverKey ?? null,
+    uploadedCoverUrl: item.coverImageKey && item.coverImageKey !== item.originalCoverKey ? item.coverImageKey : null,
+  };
+}
+const isCoverMode = (m: unknown): m is CoverMode => typeof m === 'string' && (COVER_MODES as readonly string[]).includes(m);
 
 @Injectable()
 export class AdminService {
@@ -1035,7 +1047,9 @@ export class AdminService {
         author: item.author,
         subtitle: item.subtitle,
         description: item.description,
+        genre: item.genre,
         coverImageKey: item.coverImageKey,
+        ...coverFields(item),
       };
     });
   }
@@ -1254,6 +1268,7 @@ export class AdminService {
       priceUzs: Number(item.priceUsd ?? 0),
       sourceUrl: item.sourceUrl,
       coverImageKey: item.coverImageKey,
+      ...coverFields(item),
       publishStatus: item.publishStatus,
       wordCount: item.wordCount,
       uniqueWordCount: item.uniqueWordCount,
@@ -1341,14 +1356,39 @@ export class AdminService {
     const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
     const dir = join(root, 'covers');
     await mkdir(dir, { recursive: true });
-    const fileName = `${id}.${ext}`;
-    await writeFile(join(dir, fileName), file.buffer);
-    const coverImageKey = `/uploads/covers/${fileName}?v=${Date.now()}`;
-    return this.prisma.contentItem.update({
+    // covers-01: a NEW file per upload (never overwrite the original /uploads/covers/<id>.<ext> on disk).
+    const stamp = Date.now();
+    const fileName = `${id}-u${stamp}.${ext}`;
+    await writeFile(join(dir, fileName), file.buffer, { flag: 'wx' });
+    const coverImageKey = `/uploads/covers/${fileName}?v=${stamp}`;
+    const updated = await this.prisma.contentItem.update({
       where: { id },
-      data: { coverImageKey },
-      select: { id: true, coverImageKey: true },
+      data: {
+        coverImageKey,
+        coverMode: 'upload',
+        // First upload on a book that pre-dates covers-01 but was never snapshotted: keep the old key as the original.
+        ...(existing.originalCoverKey == null && existing.coverImageKey ? { originalCoverKey: existing.coverImageKey } : {}),
+      },
     });
+    return { id: updated.id, coverImageKey: updated.coverImageKey, ...coverFields(updated) };
+  }
+
+  /** covers-01: per-book cover choice. 'template' = code-drawn; 'upload' = last admin upload; 'original' = pre-covers-01 cover. */
+  async setContentCoverMode(id: string, mode: unknown, actorId?: string | null) {
+    if (!isCoverMode(mode)) throw new BadRequestException('coverMode must be template, upload or original.');
+    const existing = await this.prisma.contentItem.findUnique({ where: { id } });
+    if (!existing) throw new NotFoundException('Content not found');
+    if (mode === 'original' && !existing.originalCoverKey) {
+      throw new BadRequestException('This book has no original cover to revert to.');
+    }
+    if (mode === 'upload' && !(existing.coverImageKey && existing.coverImageKey !== existing.originalCoverKey)) {
+      throw new BadRequestException('Upload a cover image first.');
+    }
+    const updated = await this.prisma.contentItem.update({ where: { id }, data: { coverMode: mode } });
+    await this.prisma.auditLog
+      .create({ data: { actorId: actorId ?? null, action: 'content.cover_mode', entityType: 'content', entityId: id, metadata: { from: existing.coverMode, to: mode } } })
+      .catch(() => undefined);
+    return { id, coverImageKey: updated.coverImageKey, ...coverFields(updated) };
   }
 
   async updateContent(id: string, body: Record<string, unknown>) {
