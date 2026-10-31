@@ -1,4 +1,4 @@
--- 0033_import_queue (import-p0, rebased onto wlive dfe421f + payments-02 0027-0032; replaces import-p0's old 0030_import_queue).
+-- 0036_import_queue (renumbered after final-5 0027-0029 in r3b; was 0033) (import-p0, rebased onto wlive dfe421f + payments-02 0027-0032; replaces import-p0's old 0030_import_queue).
 -- PAY2-15: regenerated with `prisma migrate diff --from-migrations --to-schema-datamodel` on the combined line.
 -- refund_reason / refund_requested_at already exist (wlive 0019_review_p1) and are reused, NOT re-added (old 0030 failed P3018).
 -- Idempotent: every statement is IF NOT EXISTS / guarded, so it also applies on a DB that already ran the old import-p0 0030
