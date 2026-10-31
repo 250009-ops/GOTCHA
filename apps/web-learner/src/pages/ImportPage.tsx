@@ -27,6 +27,7 @@ import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { PromoCodeField } from '../components/PromoCodeField';
 import { CardForm, OtpForm, PayTrust, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
+import { refundRequestHref } from '@gotcha/shared';
 import { cancelScreen } from '@gotcha/shared';
 import { BrandMark } from '../components/GotchaLogo';
 
@@ -58,7 +59,7 @@ interface ImportListResponse {
   importsUnlimited?: boolean;
   freeAllowance?: ImportFreeAllowance;
   /** payments-02: failed paid imports → free retry on the same payment, or refund-due. */
-  paidImportRetry?: { freeRetries: { paymentId: string; importType: string }[]; refundDue: number };
+  paidImportRetry?: { freeRetries: { paymentId: string; importType: string; reason?: 'paid_late' }[]; refundDue: number };
 }
 
 const PAGE_SIZE = 8;
@@ -732,7 +733,7 @@ export default function ImportPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
-  const [paidRetry, setPaidRetry] = useState<{ freeRetries: { paymentId: string; importType: string }[]; refundDue: number }>({ freeRetries: [], refundDue: 0 });
+  const [paidRetry, setPaidRetry] = useState<{ freeRetries: { paymentId: string; importType: string; reason?: 'paid_late' }[]; refundDue: number }>({ freeRetries: [], refundDue: 0 });
   const payCopy = usePay();
   /** A failed paid import is retried free on the SAME payment (no new charge) instead of opening checkout. */
   const openPayOrRetry = (modal: PaymentModalState) => {
@@ -1056,11 +1057,19 @@ export default function ImportPage() {
                 </p>
               </div>
             )}
-            {paidRetry.freeRetries.length > 0 && (
+            {paidRetry.freeRetries.some((r) => r.reason !== 'paid_late') && (
               <div role="status" data-testid="imp-free-retry" className="p-3 mb-4 rounded-[14px] border text-xs leading-relaxed" style={{ background: 'var(--g-card)', borderColor: 'var(--g-ok)' }}>
                 {payCopy.t('imp.freeRetry')}
               </div>
             )}
+            {/* PAY2-08: paid, but the import never ran (payment confirmed late). imp.refundDue stays for the refund-due case. */}
+            {paidRetry.freeRetries.filter((r) => r.reason === 'paid_late').map((r) => (
+              <div key={r.paymentId} role="status" data-testid="imp-paid-no-result" className="p-3 mb-4 rounded-[14px] border text-xs leading-relaxed" style={{ background: 'var(--g-card)', borderColor: 'var(--g-line)', color: 'var(--g-text)' }}>
+                <p className="font-bold text-sm mb-1">{payCopy.t('imp.paidNoResult.title')}</p>
+                <p>{payCopy.t('imp.paidNoResult.body')}</p>
+                <a href={refundRequestHref(r.paymentId)} data-testid="imp-paid-no-result-refund" className="mt-2 inline-flex min-h-[44px] items-center font-semibold underline">{payCopy.t('imp.paidNoResult.refund')}</a>
+              </div>
+            ))}
             {paidRetry.refundDue > 0 && (
               <div role="status" data-testid="imp-refund-due" className="p-3 mb-4 rounded-[14px] border text-xs leading-relaxed" style={{ background: 'var(--g-card)', borderColor: 'var(--g-line)' }}>
                 {payCopy.t('imp.refundDue')}
