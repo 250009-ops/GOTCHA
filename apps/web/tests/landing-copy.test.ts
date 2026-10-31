@@ -94,6 +94,33 @@ test('P2: no Google Fonts; Manrope self-hosted; header switcher hidden while bur
   assert.ok(existsSync(new URL('../public/fonts/manrope-subset.woff2', import.meta.url)));
   const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
   assert.ok(css.includes('manrope-subset.woff2') && !/Geist|Sora/.test(css));
-  for (const f of ['../src/pages/LegalPage.tsx', '../src/components/SiteChrome.tsx']) assert.ok(!/Geist|Sora|Inter'/.test(readFileSync(new URL(f, import.meta.url), 'utf8')), f);
+  for (const f of ['../src/pages/LegalV2Page.tsx', '../src/components/SiteChrome.tsx']) assert.ok(!/Geist|Sora|Inter'/.test(readFileSync(new URL(f, import.meta.url), 'utf8')), f);
   assert.ok(readFileSync(new URL('../src/landing-premium.css', import.meta.url), 'utf8').includes('.nav.menu-open .ls{visibility:hidden}'));
+});
+
+test('legal: canonical PM HTML verbatim, publish guard, oferta unlinked', async () => {
+  const { LEGAL_HTML_V2 } = await import('../src/lib/legalHtml.generated.ts');
+  // @ts-expect-error plain .mjs
+  const { legalPublishProblems } = await import('../scripts/legal-guard.mjs');
+  for (const l of ['uz', 'ru', 'en'] as const) for (const d of ['privacy', 'terms', 'oferta'] as const) {
+    const html: string = LEGAL_HTML_V2[l][d];
+    assert.equal(html, readFileSync(new URL(`../legal-src/${d}-${l}.html`, import.meta.url), 'utf8'), `${d}-${l} verbatim`);
+    assert.ok(!/gotcha\.app|privacy@|Gotcha Language Learning|Inc\./.test(html), `${d}-${l} contacts`);
+    assert.deepEqual([...new Set(html.match(/[\w.+-]+@[\w.-]+\.\w+/g) ?? [])], ['support@gotchaa.uz'], `${d}-${l} only support@`);
+    if (l === 'uz') assert.ok(!/\p{L}['‘’]\p{L}/u.test(html), `${d}-uz uses ʻ/ʼ only`);
+  }
+  const src = readFileSync(new URL('../src/lib/legalHtml.generated.ts', import.meta.url), 'utf8');
+  assert.ok(src.includes('[EFFECTIVE DATE]'));
+  assert.ok(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: src }).some((p: string) => p.includes('[EFFECTIVE DATE]')), 'prod build blocked');
+  assert.equal(legalPublishProblems({ mode: 'production', qaBuild: true, legalSource: src }).length, 0, 'QA build allowed');
+  assert.equal(legalPublishProblems({ mode: 'production', qaBuild: false, legalSource: '<p>Effective date: 1 Dec 2026</p>' }).length, 0);
+  for (const f of ['../src/components/SiteChrome.tsx', '../src/pages/LandingPage.tsx']) assert.ok(!readFileSync(new URL(f, import.meta.url), 'utf8').includes('oferta'), `${f} must not link /oferta`);
+  assert.ok(readFileSync(new URL('../src/App.tsx', import.meta.url), 'utf8').includes('path="/oferta"'));
+  assert.ok(readFileSync(new URL('../src/pages/LegalV2Page.tsx', import.meta.url), 'utf8').includes('QA_BUILD && ('));
+});
+
+test('uz web copy: no plain/curly apostrophes inside words (ʻ/ʼ only)', () => {
+  const m = readFileSync(new URL('../src/lib/marketingCopy.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(m, /\p{L}[’‘]\p{L}/u);
+  for (const v of Object.values(LANDING_COPY.uz).flat(3)) if (typeof v === 'string') assert.doesNotMatch(v, /\p{L}['’‘]\p{L}/u, v);
 });

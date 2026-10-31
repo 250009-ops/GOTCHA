@@ -1,13 +1,29 @@
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { readFileSync } from 'node:fs';
+import { defineConfig, loadEnv, type Plugin } from 'vite';
+// @ts-expect-error plain .mjs helper shared with tests
+import { legalPublishProblems } from './scripts/legal-guard.mjs';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 const sharedRoot = fileURLToPath(new URL('../../packages/shared/src', import.meta.url));
 
-export default defineConfig({
+function legalPublishGuard(mode: string): Plugin {
+  return {
+    name: 'legal-publish-guard',
+    apply: 'build',
+    buildStart() {
+      const env = { ...loadEnv(mode, process.cwd(), 'VITE_'), ...process.env };
+      const legalSource = readFileSync(new URL('./src/lib/legalHtml.generated.ts', import.meta.url), 'utf8');
+      const problems: string[] = legalPublishProblems({ mode, qaBuild: env.VITE_LEGAL_V2 === 'true', legalSource });
+      if (problems.length) this.error('legal-publish-guard: ' + problems.join('; '));
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => ({
   base: process.env.VITE_BASE || '/',
-  plugins: [tailwindcss(), react()],
+  plugins: [legalPublishGuard(mode), tailwindcss(), react()],
   resolve: {
     alias: {
       '@gotcha/shared/learner-copy': `${sharedRoot}/learnerCopy.ts`,
@@ -15,4 +31,4 @@ export default defineConfig({
     },
   },
   server: { port: 5174, strictPort: true },
-});
+}));

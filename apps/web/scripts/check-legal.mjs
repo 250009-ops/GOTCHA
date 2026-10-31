@@ -6,7 +6,8 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
 const publish = process.argv.includes('--publish');
-const MARKERS = ['<!--', '-->', 'TODO', 'FIXME', 'LAWYER', 'lawyer review', 'TODO(lawyer', 'TODO(owner', 'TODO(eng', 'TODO(pm', 'TODO(devops', 'NOT PUBLISHED'];
+const MARKERS = ['<!--', '-->', 'TODO', 'FIXME', 'LAWYER', 'lawyer review', 'TODO(lawyer', 'TODO(owner', 'TODO(eng', 'TODO(pm', 'TODO(devops'];
+// The oferta's visible 'DRAFT, NOT PUBLISHED' line is PM legal text (not a note); scripts/legal-guard.mjs blocks it in a production build.
 const PLACEHOLDERS = ['[EFFECTIVE DATE]', '[CLAIM PERIOD]', '[TTS RETENTION'];
 
 function walk(dir) {

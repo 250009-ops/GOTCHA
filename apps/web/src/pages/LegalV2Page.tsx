@@ -5,13 +5,15 @@ import { useWebLocale } from '../lib/webLocaleContext';
 import { marketingLocaleFor } from '../lib/webLocale';
 
 /**
- * web-launch-02 legal pages from PM's 31 Oct drafts (comments stripped by scripts/gen_legal.py).
- * NOT FOR DEPLOY: only compiled in when VITE_LEGAL_V2=true (QA build). Needs the lawyer review and
- * Sarvarbek's go; the deploy build (.env.production) keeps the current live pages.
+ * Legal pages from PM's canonical HTML (team/pm/legal/web, embedded verbatim by scripts/gen_legal.py).
+ * QA build (VITE_LEGAL_V2=true): red NOT FOR DEPLOY banner. Production build: blocked by the
+ * legal-publish-guard while [EFFECTIVE DATE] is unfilled; the banner disappears only once it can publish.
  */
+const QA_BUILD = import.meta.env.VITE_LEGAL_V2 === 'true';
 const TITLES = {
   terms: { uz: 'Foydalanish shartlari', ru: 'Условия использования', en: 'Terms of Use' },
   privacy: { uz: 'Maxfiylik siyosati', ru: 'Политика конфиденциальности', en: 'Privacy Policy' },
+  oferta: { uz: 'Ommaviy oferta', ru: 'Публичная оферта', en: 'Public offer' },
 } as const;
 
 const PROSE =
@@ -23,7 +25,7 @@ const PROSE =
   '[&_th]:bg-[#f9fafb] [&_th]:p-2 [&_th]:text-left [&_td]:border [&_td]:border-[#e5e7eb] [&_td]:p-2 [&_td]:align-top ' +
   '[&_mark]:bg-yellow-200';
 
-export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' }) {
+export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' | 'oferta' }) {
   const { copyLocale } = useWebLocale();
   const lang = marketingLocaleFor(copyLocale);
   const html = (LEGAL_HTML_V2[lang] ?? LEGAL_HTML_V2.uz)[doc];
@@ -31,9 +33,9 @@ export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' }) {
     <div className="flex min-h-screen flex-col bg-white">
       <Seo title={TITLES[doc][lang]} description={TITLES[doc][lang]} path={`/${doc}`} noindex />
       <SiteNav />
-      <div role="note" className="bg-red-600 px-4 py-2 text-center text-sm font-bold text-white" data-testid="legal-draft-banner">
+      {QA_BUILD && (<div role="note" className="bg-red-600 px-4 py-2 text-center text-sm font-bold text-white" data-testid="legal-draft-banner">
         QA DRAFT · NOT FOR DEPLOY · pending legal review and owner approval
-      </div>
+      </div>)}
       <main
         lang={lang}
         className={`mx-auto w-full max-w-[860px] px-5 py-12 text-[15px] leading-[1.7] text-[#4a5565] ${PROSE}`}
