@@ -11,6 +11,8 @@ export type CapLang = 'en' | 'uz' | 'ru';
 /** Code fallbacks when the DB has no value (match the seed). Plus full AI lookups: null = unlimited (Sarvarbek 14:32). */
 export const DAILY_CAP_FALLBACKS: { free: { lookups: number; quizzes: number }; plus: { lookups: number | null; quizzes: number } } = { free: { lookups: 20, quizzes: 10 }, plus: { lookups: null, quizzes: 200 } };
 /** platform_settings keys (admin config). JSON null / missing = unlimited / no cap. */
+/** WLF-12: Free lookups / Free quizzes / Plus quizzes per day live in platform_settings ONLY (never subscription_plans columns). */
+export const DAILY_CAP_KEYS = { freeLookups: 'caps.free.lookups', freeQuizzes: 'caps.free.quizzes', plusQuizzes: 'caps.plus.quizzes' } as const;
 export const PLUS_AI_LOOKUP_QUOTA_KEY = 'plus.ai_lookup_quota'; // plusAiLookupQuota
 export const PLUS_LOOKUP_HARD_CAP_KEY = 'plus.lookup_hard_cap'; // plusLookupHardCap (hidden, never in UI/copy)
 export const LOOKUP_BURST_KEYS = { perMinute: 'lookup.burst_per_minute', perHour: 'lookup.burst_per_hour' } as const;

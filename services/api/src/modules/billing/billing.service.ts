@@ -9,7 +9,7 @@ import { ImportCommerceService } from './import-commerce.service';
 import { PricingService, type PricingLang } from './pricing.service';
 
 /** Subscription view of a plan row: DB values only (no prices or feature copy in code). */
-export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups, freeImportsDay?: number) {
+export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups, freeImportsDay?: number, plusQuizzes: number = DAILY_CAP_FALLBACKS.plus.quizzes) {
   const t = planCopy(lang);
   const isPremium = plan.tier === 'premium';
   if (!isPremium) {
@@ -50,10 +50,10 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
     autoRenew: false,
     popular: true,
     aiDailyQuota: plusLookups, // null = no daily lookup cap for Plus (wlive 14:40 API shape)
-    quizDailyQuota: (plan as { quizDailyQuota?: number }).quizDailyQuota ?? DAILY_CAP_FALLBACKS.plus.quizzes,
+    quizDailyQuota: plusQuizzes, // WLF-12: enforced cap (platform_settings caps.plus.quizzes), not the plan column
     // Lookups from config (plus.ai_lookup_quota, null = no daily limit); never "unlimited" in copy.
     // Marketing §4/§7 (14:20): quiz bullet added; quiz cap = plan.quizDailyQuota.
-    features: [t.plusLookups(plusLookups, freeQuota), t.plusQuizzes((plan as { quizDailyQuota?: number }).quizDailyQuota ?? DAILY_CAP_FALLBACKS.plus.quizzes, freeQuizzes), t.plusFree],
+    features: [t.plusLookups(plusLookups, freeQuota), t.plusQuizzes(plusQuizzes, freeQuizzes), t.plusFree],
   };
 }
 
@@ -83,7 +83,7 @@ export class BillingService {
       getPlanCaps(this.prisma),
     ]);
     const freeImports = await freeImportsPerDay(this.prisma);
-    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, freeImports));
+    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, freeImports, caps.plus.quizzes));
   }
 
   async getSubscription(userId: string) {
@@ -104,7 +104,7 @@ export class BillingService {
     const quota = caps[plan].lookups;
 
     return {
-      subscription: sub ? { ...sub, plan: enrichPlan(sub.plan, 'en', undefined, caps.free.lookups, caps.free.quizzes, caps.plus.lookups) } : null,
+      subscription: sub ? { ...sub, plan: enrichPlan(sub.plan, 'en', undefined, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, await freeImportsPerDay(this.prisma), caps.plus.quizzes) } : null,
       usage: {
         lookupsToday: usage?.lookupCount ?? 0,
         quizzesToday: usage?.quizCount ?? 0,

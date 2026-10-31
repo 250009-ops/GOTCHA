@@ -8,6 +8,7 @@ import { liveLearnerWhere } from '../../common/production-users';
 import { atmosMinAmountSom } from '../billing/atmos.client';
 import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
+import { getPlanCaps } from '../../common/plan-caps';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
 const LANDING_CACHE_TTL_MS = 60_000;
@@ -156,7 +157,9 @@ export class MarketingService {
     const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = freePlan?.aiDailyQuota ?? DAILY_CAP_FALLBACKS.free.lookups;
+    // WLF-12: the enforced caps (platform_settings), never the plan row's ai_daily_quota / quiz_daily_quota.
+    const caps = await getPlanCaps(this.prisma);
+    const aiDailyQuota = caps.free.lookups;
     // WLF-04: the Free card states the real import allowance (admin Import & Pricing → platform setting
     // importFreeLimits, defaults 3 a day / 50 pages a month), the same numbers import-commerce enforces.
     const importFree = await this.getImportFreeLimits().catch(() => DEFAULT_FREE_LIMITS);
@@ -180,7 +183,7 @@ export class MarketingService {
       features: [
         t.library,
         t.lookupsDay(aiDailyQuota),
-        t.quizzesDay(freePlan?.quizDailyQuota ?? DAILY_CAP_FALLBACKS.free.quizzes),
+        t.quizzesDay(caps.free.quizzes),
         t.importsDay(importLimit),
         t.importPages(pageLimit, importFree.resetCycle),
         t.review,

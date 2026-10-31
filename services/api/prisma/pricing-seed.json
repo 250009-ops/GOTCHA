@@ -67,7 +67,10 @@
         "news"
       ],
       "resetCycle": "monthly"
-    }
+    },
+    "caps.free.lookups": 20,
+    "caps.free.quizzes": 10,
+    "caps.plus.quizzes": 200
   },
   "importPageTiers": [
     {

@@ -143,7 +143,7 @@ export class PricingService {
     }
     if (body.aiDailyQuota != null) data.aiDailyQuota = clampInt(body.aiDailyQuota, 0, 1_000_000);
     if (body.quizDailyQuota != null) data.quizDailyQuota = clampInt(body.quizDailyQuota, 0, 1_000_000);
-    if (body.importLimit != null) data.importLimit = clampInt(body.importLimit, 0, 1_000_000);
+    if (body.importLimit != null) data.importLimit = clampInt(body.importLimit, 0, 1_000_000); // WLF-12: legacy column, not enforced or shown (importFreeLimits is)
     if (body.offlineEnabled != null) data.offlineEnabled = !!body.offlineEnabled;
     if (body.features != null) {
       if (!Array.isArray(body.features) || body.features.some((f) => typeof f !== 'string' || !/^[a-z0-9_]{2,40}$/.test(f))) {

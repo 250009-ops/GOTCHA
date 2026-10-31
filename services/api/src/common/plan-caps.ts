@@ -1,13 +1,15 @@
 // payments-02 daily caps, read from the DB at runtime (cached ≤ 60 s, no deploy needed).
-//   Free  lookups  = subscription_plans(free).ai_daily_quota     (20)
-//   Free  quizzes  = subscription_plans(free).quiz_daily_quota   (10)
-//   Plus  quizzes  = subscription_plans(premium).quiz_daily_quota (200)
+// WLF-12: caps come from platform_settings only; subscription_plans.ai_daily_quota / import_limit / quiz_daily_quota are NOT read
+// (prod rows hold legacy values: Free 5000 lookups / 100 imports, Premium 1000000).
+//   Free  lookups  = platform_settings 'caps.free.lookups'  (20)
+//   Free  quizzes  = platform_settings 'caps.free.quizzes'  (10)
+//   Plus  quizzes  = platform_settings 'caps.plus.quizzes'  (200)
 //   Plus  full AI lookups = platform_settings 'plus.ai_lookup_quota'  (plusAiLookupQuota)  null = UNLIMITED (Sarvarbek 14:32)
 //   Plus  hidden hard cap = platform_settings 'plus.lookup_hard_cap'  (plusLookupHardCap)  null = none
 // When a Plus AI quota is set, lookups past it go to dictionary mode (no OpenAI) up to the hidden cap. Dormant while null.
 // All counters reset at Asia/Tashkent local midnight.
 import { HttpException, HttpStatus } from '@nestjs/common';
-import { DAILY_CAP_FALLBACKS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, dailyLimitBody, nextLimitReset, type CapKind, type CapPlan } from '@gotcha/shared';
+import { DAILY_CAP_FALLBACKS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, dailyLimitBody, nextLimitReset, type CapKind, type CapPlan } from '@gotcha/shared';
 import { activeSubWhere } from './plan-active';
 
 export type PlanCaps = {
@@ -42,18 +44,15 @@ export const optionalCap = (v: unknown): number | null => {
 export async function getPlanCaps(prisma: unknown, now = Date.now()): Promise<PlanCaps> {
   if (cache && now - cache.at < PLAN_CAPS_TTL_MS) return cache.caps;
   const db = prisma as Db;
-  const [rows, settings] = await Promise.all([
-    Promise.resolve().then(() => db.subscriptionPlan?.findMany?.({ where: { tier: { in: ['free', 'premium'] } }, select: { tier: true, aiDailyQuota: true, quizDailyQuota: true } }) ?? []).catch((): PlanRow[] => []),
-    Promise.resolve().then(() => db.platformSetting?.findMany?.({ where: { key: { in: [PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY] } } }) ?? []).catch((): Array<{ key: string; value: unknown }> => []),
-  ]);
-  const free = rows.find((r) => r.tier === 'free');
-  const plus = rows.find((r) => r.tier === 'premium');
+  const settings = await Promise.resolve()
+    .then(() => db.platformSetting?.findMany?.({ where: { key: { in: [PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, DAILY_CAP_KEYS.freeLookups, DAILY_CAP_KEYS.freeQuizzes, DAILY_CAP_KEYS.plusQuizzes] } } }) ?? [])
+    .catch((): Array<{ key: string; value: unknown }> => []);
   const setting = (k: string) => settings.find((s) => s.key === k)?.value;
   const plusLookups = optionalCap(setting(PLUS_AI_LOOKUP_QUOTA_KEY));
   const hard = optionalCap(setting(PLUS_LOOKUP_HARD_CAP_KEY));
   const caps: PlanCaps = {
-    free: { lookups: int(free?.aiDailyQuota, DAILY_CAP_FALLBACKS.free.lookups), quizzes: int(free?.quizDailyQuota, DAILY_CAP_FALLBACKS.free.quizzes) },
-    plus: { lookups: plusLookups, quizzes: int(plus?.quizDailyQuota, DAILY_CAP_FALLBACKS.plus.quizzes) },
+    free: { lookups: int(setting(DAILY_CAP_KEYS.freeLookups), DAILY_CAP_FALLBACKS.free.lookups), quizzes: int(setting(DAILY_CAP_KEYS.freeQuizzes), DAILY_CAP_FALLBACKS.free.quizzes) },
+    plus: { lookups: plusLookups, quizzes: int(setting(DAILY_CAP_KEYS.plusQuizzes), DAILY_CAP_FALLBACKS.plus.quizzes) },
     plusLookupHardCap: plusLookups == null ? null : hard == null ? null : Math.max(hard, plusLookups),
   };
   cache = { at: now, caps };

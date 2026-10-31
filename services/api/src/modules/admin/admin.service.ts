@@ -60,7 +60,7 @@ import {
   isAppLanguageCode,
   assertEnabledLanguage,
 } from '../../common/language-catalog';
-import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, languageFlag, languageLabel } from '@gotcha/shared';
+import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, languageFlag, languageLabel } from '@gotcha/shared';
 
 @Injectable()
 export class AdminService {
@@ -659,6 +659,9 @@ export class AdminService {
     if (body.freeLookupsPerDay !== undefined) planWrites.push(['free', 'aiDailyQuota', int(body.freeLookupsPerDay, 'freeLookupsPerDay', 0, 100_000)]);
     if (body.freeQuizzesPerDay !== undefined) planWrites.push(['free', 'quizDailyQuota', int(body.freeQuizzesPerDay, 'freeQuizzesPerDay', 0, 10_000)]);
     for (const [tier, field, value] of planWrites) {
+      // WLF-12: the cap lives in platform_settings (read by plan-caps); the plan column is only a legacy mirror.
+      const capKey = tier === 'premium' ? DAILY_CAP_KEYS.plusQuizzes : field === 'aiDailyQuota' ? DAILY_CAP_KEYS.freeLookups : DAILY_CAP_KEYS.freeQuizzes;
+      await this.prisma.platformSetting.upsert({ where: { key: capKey }, update: { value }, create: { key: capKey, value } });
       await this.prisma.subscriptionPlan.updateMany({ where: { tier }, data: { [field]: value } });
       if (tier === 'free' && field === 'aiDailyQuota') {
         await this.prisma.platformSetting.upsert({ where: { key: AI_SETTING_KEYS.defaultUserQuota }, update: { value }, create: { key: AI_SETTING_KEYS.defaultUserQuota, value } });
@@ -2903,6 +2906,8 @@ export class AdminService {
         where: { tier: 'free' },
         data: { aiDailyQuota: nextBody[AI_SETTING_KEYS.defaultUserQuota] as number },
       });
+      const v = nextBody[AI_SETTING_KEYS.defaultUserQuota] as number; // WLF-12: the enforced Free lookup cap
+      await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.freeLookups }, update: { value: v }, create: { key: DAILY_CAP_KEYS.freeLookups, value: v } });
       resetPlanCapsCache();
     }
     return this.settings();

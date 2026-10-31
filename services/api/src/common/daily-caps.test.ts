@@ -15,6 +15,9 @@ type Settings = Record<string, unknown>;
 
 function db(plan: 'free' | 'plus', used: { lookups?: number; quizzes?: number }, plans: Plans = SEEDED, settings: Settings = {}) {
   const calls = { upserts: 0, costRows: [] as any[] };
+  // WLF-12: the admin caps live in platform_settings; `plans` here is that config (plan columns are no longer read).
+  const P: any = plans;
+  const cfgOf = (): Settings => ({ ...(P.free?.ai != null ? { 'caps.free.lookups': P.free.ai } : {}), ...(P.free?.quiz != null ? { 'caps.free.quizzes': P.free.quiz } : {}), ...(P.premium?.quiz != null ? { 'caps.plus.quizzes': P.premium.quiz } : {}), ...settings });
   return {
     calls,
     dbAvailable: true,
@@ -22,7 +25,7 @@ function db(plan: 'free' | 'plus', used: { lookups?: number; quizzes?: number },
     userSubscription: { findFirst: async () => (plan === 'plus' ? { plan: { tier: 'premium' } } : null) },
     platformSetting: {
       findUnique: async ({ where }: any) => (where.key in settings ? { key: where.key, value: settings[where.key] } : null),
-      findMany: async ({ where }: any) => (where?.key?.in ?? []).filter((k: string) => k in settings).map((key: string) => ({ key, value: settings[key] })),
+      findMany: async ({ where }: any) => (where?.key?.in ?? []).filter((k: string) => k in cfgOf()).map((key: string) => ({ key, value: cfgOf()[key] })),
     },
     aiUsageDaily: {
       findUnique: async () => ({ lookupCount: used.lookups ?? 0, quizCount: used.quizzes ?? 0 }),
@@ -116,7 +119,7 @@ test('429 body carries {statusCode 429, code, kind, limit, resetAt, messages}; U
   assert.equal(limitResetLine(b.resetAt, 'en'), 'Resets at 00:00 (Tashkent time).');
 });
 // ---- runtime config
-test('caps come from config at runtime; an admin edit is picked up after the ≤60 s cache', async () => {
+test('caps come from platform_settings at runtime; an admin edit is picked up after the ≤60 s cache', async () => {
   const plans: Plans = { free: { ai: 20, quiz: 10 }, premium: { ai: 1, quiz: 200 } };
   const settings: Settings = {};
   const d = db('free', {}, plans, settings);
