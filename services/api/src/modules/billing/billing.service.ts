@@ -16,16 +16,19 @@ import { ImportCommerceService } from './import-commerce.service';
  */
 /** LG4-07: real Plus terms only (one-off passes in soʻm, no auto-renew, no offline/unlimited/ads claims). */
 export const PLUS_PASS_PRICES_UZS = { days30: 24990, days365: 199990 } as const;
-export const PLUS_DAILY_LOOKUPS = 200;
+import { planLimits } from '../../common/plan-limits';
 const soum = (n: number) => `${n.toLocaleString('en-US').replace(/,/g, ' ')} soʻm`;
 
 export function enrichPlan(plan: SubscriptionPlan) {
   const isPremium = plan.tier === 'premium';
+  const limits = planLimits(isPremium ? 'premium' : 'free');
   const priceMonthly = isPremium ? PLUS_PASS_PRICES_UZS.days30 : 0;
   return {
     ...plan,
     name: isPremium ? 'Plus' : plan.name,
     offlineEnabled: false,
+    aiDailyQuota: limits.lookupsPerDay,
+    quizDailyQuota: limits.quizzesPerDay,
     priceMonthly,
     priceYearUzs: isPremium ? PLUS_PASS_PRICES_UZS.days365 : null,
     periodDays: isPremium ? 30 : null,
@@ -35,13 +38,15 @@ export function enrichPlan(plan: SubscriptionPlan) {
     popular: isPremium,
     features: isPremium
       ? [
-          `${PLUS_DAILY_LOOKUPS} AI lookups/day`,
+          `${limits.lookupsPerDay} AI lookups/day`,
+          `${limits.quizzesPerDay} quizzes/day`,
           '50% off paid imports',
           `30-day pass ${soum(PLUS_PASS_PRICES_UZS.days30)} or 365-day pass ${soum(PLUS_PASS_PRICES_UZS.days365)}`,
           'One-off payment, no auto-renewal',
         ]
       : [
-          `${plan.aiDailyQuota} AI lookups/day`,
+          `${limits.lookupsPerDay} AI lookups/day`,
+          `${limits.quizzesPerDay} quizzes/day`,
           `${plan.importLimit} free imports/day`,
           'Access to public library',
         ],

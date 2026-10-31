@@ -1,0 +1,13 @@
+import * as assert from 'node:assert/strict';
+import { planLimits } from './plan-limits';
+import { enrichPlan } from '../modules/billing/billing.service';
+assert.deepEqual(planLimits('free', {}), { lookupsPerDay: 20, quizzesPerDay: 10 });
+assert.deepEqual(planLimits(undefined, {}), { lookupsPerDay: 20, quizzesPerDay: 10 });
+assert.deepEqual(planLimits('premium', {}), { lookupsPerDay: 200, quizzesPerDay: 200 });
+assert.equal(planLimits('free', { FREE_DAILY_LOOKUPS: '25' }).lookupsPerDay, 25);
+const free = enrichPlan({ tier: 'free', name: 'Free', aiDailyQuota: 50, importLimit: 15 } as any);
+const plus = enrichPlan({ tier: 'premium', name: 'Premium', aiDailyQuota: 9999999, importLimit: 1 } as any);
+assert.ok(free.features.includes('20 AI lookups/day') && free.features.includes('10 quizzes/day'), free.features.join());
+assert.ok(plus.features.includes('200 AI lookups/day') && plus.features.includes('200 quizzes/day'));
+assert.equal(free.aiDailyQuota, 20);
+console.log('plan-limits: OK');

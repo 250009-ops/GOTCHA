@@ -1,11 +1,10 @@
+import { planLimits } from '../common/plan-limits';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   AI_SETTING_KEYS,
   coerceNonNegInt,
   defaultAiPlatformSettings,
-  resolveLearnerDailyAiQuota,
-  UNLIMITED_AI_QUOTA,
 } from '../modules/ai/ai-settings';
 
 function envFlagTrue(value: string | undefined): boolean {
@@ -100,8 +99,9 @@ export class LimitsService {
       row?.value,
       defaultAiPlatformSettings().defaultUserQuota,
     );
-    const quota = resolveLearnerDailyAiQuota(plan?.aiDailyQuota, platformDefault);
-    if (quota <= 0 || quota >= UNLIMITED_AI_QUOTA) return;
+    void platformDefault;
+    const quota = planLimits(plan?.tier).quizzesPerDay; // Free 10 / Plus 200 (config)
+    if (quota <= 0) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const usage = await this.prisma.aiUsageDaily.findUnique({

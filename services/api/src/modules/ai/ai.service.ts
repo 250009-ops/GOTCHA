@@ -15,6 +15,7 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
+import { planLimits } from '../../common/plan-limits';
 import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
@@ -246,7 +247,8 @@ export class AiService {
       include: { plan: true },
       orderBy: { createdAt: 'desc' },
     });
-    const quota = resolveLearnerDailyAiQuota(sub?.plan.aiDailyQuota, defaultUserQuota);
+    // 31 Oct: per-plan limits from config (Free 20 / Plus 200); admin default only applies to memory mode.
+    const quota = planLimits(sub?.plan.tier).lookupsPerDay;
 
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },

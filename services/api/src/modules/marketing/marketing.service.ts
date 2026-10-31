@@ -1,3 +1,4 @@
+import { planLimits } from '../../common/plan-limits';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
@@ -154,7 +155,7 @@ export class MarketingService {
   async plans() {
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = freePlan?.aiDailyQuota ?? 50;
+    const aiDailyQuota = planLimits('free').lookupsPerDay;
     const importLimit = freePlan?.importLimit ?? 15;
 
     const free = {
@@ -174,6 +175,7 @@ export class MarketingService {
       features: [
         'Access to public library',
         `${aiDailyQuota} AI lookups / day`,
+        `${planLimits('free').quizzesPerDay} quizzes / day`,
         `${importLimit} free imports / day`,
         'Basic SRS review',
         '7-day reading history',
@@ -200,7 +202,6 @@ export class MarketingService {
         'Need more than your free imports? Pay once per import via Atmos',
         'Price shown upfront, based on document length',
         'Full reading analytics',
-        'Offline reading',
       ],
     };
 
