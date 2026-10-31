@@ -1,24 +1,24 @@
 /**
- * S3 sign-up tick-box. Labels are VERBATIM from team/pm/legal/web/README.md ("Sign-up tick-box labels",
- * 31 Oct 14:06) and must match the API's CONSENT_LABELS (services/api/src/common/safety/consent.ts).
- * Do not edit the wording here; change the README first, then bump CONSENT_VERSION on the API.
+ * S3 sign-up tick-box, pre-oferta version (PM 31 Oct 15:24, word for word; API CONSENT_VERSION web-2026-10-31.3).
+ * Must match the API's CONSENT_LABELS (services/api/src/common/safety/consent.ts). No Public Offer link until the
+ * oferta is published; then PM supplies new copy and the API version is bumped again.
  */
 export type ConsentLocale = 'uz' | 'ru' | 'en';
 
 export const CONSENT_LABELS: Record<ConsentLocale, string> = {
-  uz: 'Foydalanish shartlari, Maxfiylik siyosati va Ommaviy oferta bilan tanishdim va ularni qabul qilaman, jumladan AI funksiyalari uchun matn (masalan, soʻz va u turgan gap yoki men tarjima qilgan chat xabarlari) AQShdagi OpenAIʼga uzatilishiga roziman.',
-  ru: 'Я прочитал(а) и принимаю Условия использования, Политику конфиденциальности и Публичную оферту, включая передачу текста для AI-функций (например, слова с его предложением или переводимых мной сообщений чата) в OpenAI (США).',
-  en: 'I have read and accept the Terms of Use, the Privacy Policy and the Public Offer, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA.',
+  uz: 'Foydalanish shartlari va Maxfiylik siyosati bilan tanishdim va ularni qabul qilaman, jumladan AI funksiyalari uchun matn (masalan, soʻz va u turgan gap yoki men tarjima qilgan chat xabarlari) AQShdagi OpenAIʼga uzatilishiga roziman.',
+  ru: 'Я прочитал(а) и принимаю Условия использования и Политику конфиденциальности, включая передачу текста для AI-функций (например, слова с его предложением или переводимых мной сообщений чата) в OpenAI в США.',
+  en: 'I have read and accept the Terms of Use and the Privacy Policy, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA.',
 };
 
-/** The substrings of each label that become links (no wording change). Version web-2026-10-31.2. */
-export const CONSENT_LINK_PHRASES: Record<ConsentLocale, { terms: string; privacy: string; oferta: string }> = {
-  uz: { terms: 'Foydalanish shartlari', privacy: 'Maxfiylik siyosati', oferta: 'Ommaviy oferta' },
-  ru: { terms: 'Условия использования', privacy: 'Политику конфиденциальности', oferta: 'Публичную оферту' },
-  en: { terms: 'Terms of Use', privacy: 'Privacy Policy', oferta: 'Public Offer' },
+/** The substrings of each label that become links (no wording change). Version web-2026-10-31.3: Terms of Use and Privacy Policy only. */
+export const CONSENT_LINK_PHRASES: Record<ConsentLocale, { terms: string; privacy: string }> = {
+  uz: { terms: 'Foydalanish shartlari', privacy: 'Maxfiylik siyosati' },
+  ru: { terms: 'Условия использования', privacy: 'Политику конфиденциальности' },
+  en: { terms: 'Terms of Use', privacy: 'Privacy Policy' },
 };
 
-export type ConsentLink = 'terms' | 'privacy' | 'oferta';
+export type ConsentLink = 'terms' | 'privacy';
 export type Part = { text: string; link?: ConsentLink };
 
 export function consentParts(locale: ConsentLocale): Part[] {

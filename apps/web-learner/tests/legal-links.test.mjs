@@ -7,13 +7,13 @@ const lib = readFileSync('src/lib/legalLinks.ts', 'utf8');
 const routes = [...lib.match(/WEB_LEGAL_ROUTES = \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
 const walk = (d) => readdirSync(d).flatMap((f) => (statSync(join(d, f)).isDirectory() ? walk(join(d, f)) : [join(d, f)]));
 
-test('QA S2: every consent legal link resolves to a known apps/web route (no retired /oferta)', () => {
+test('consent links only Terms of Use and Privacy Policy, both to real apps/web routes (no oferta)', () => {
   assert.deepEqual(routes.sort(), ['/privacy', '/terms']);
-  const paths = [...lib.match(/CONSENT_LINK_PATHS[^{]*\{([^}]*)\}/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
-  assert.equal(paths.length, 3);
-  for (const p of paths) assert.ok(routes.includes(p), p);
+  const block = lib.match(/CONSENT_LINK_PATHS[^{]*\{([^}]*)\}/)[1];
+  assert.deepEqual([...block.matchAll(/(\w+): '([^']+)'/g)].map((m) => [m[1], m[2]]), [['terms', '/terms'], ['privacy', '/privacy']]);
+  assert.ok(!/oferta/.test(block));
   const fields = readFileSync('src/components/safety/SignupSafetyFields.tsx', 'utf8');
-  assert.match(fields, /CONSENT_LINK_PATHS\.oferta/);
+  assert.ok(!/oferta/i.test(fields), 'no oferta href in SignupSafetyFields');
 });
 
 test('QA S2: no learner source links to a legal path outside WEB_LEGAL_ROUTES', () => {

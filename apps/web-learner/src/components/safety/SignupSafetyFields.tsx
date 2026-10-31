@@ -15,7 +15,6 @@ export function SignupSafetyFields(props: {
   const hrefs = {
     terms: `${MARKETING_URL}${CONSENT_LINK_PATHS.terms}`,
     privacy: `${MARKETING_URL}${CONSENT_LINK_PATHS.privacy}`,
-    oferta: `${MARKETING_URL}${CONSENT_LINK_PATHS.oferta}`,
   };
   return (
     <div className="flex flex-col gap-3">
