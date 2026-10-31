@@ -52,6 +52,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const isLogin = mode === 'login';
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
+  // WL1-04: the landing passes its page language as `ui`; new accounts start in that UI language.
+  const uiParam = searchParams.get('ui');
+  const landingUi = uiParam === 'uz' || uiParam === 'ru' || uiParam === 'en' ? uiParam : undefined;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
   const authQuery = authFlowSearch(searchParams);
   const forgotPasswordTo = authQuery ? `/forgot-password?${authQuery}` : '/forgot-password';
@@ -163,6 +166,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           displayName: name || undefined,
           nativeLanguage,
           targetLanguages,
+          uiLanguage: landingUi,
         });
         if (result.requiresEmailVerification) {
           toast.success('Check your inbox to verify your email');

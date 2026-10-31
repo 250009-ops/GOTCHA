@@ -29,6 +29,7 @@ interface AuthContextValue {
     displayName?: string;
     nativeLanguage: string;
     targetLanguages: string[];
+    uiLanguage?: 'uz' | 'ru' | 'en';
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
   /** Set when the session could not be loaded for a non-auth reason (5xx/network). */
@@ -212,6 +213,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName?: string;
       nativeLanguage: string;
       targetLanguages: string[];
+      uiLanguage?: 'uz' | 'ru' | 'en';
     }) => {
       const res = await api<{
         accessToken?: string;
