@@ -1748,7 +1748,7 @@ export const SELLER = { en: 'the Erkin Tizim team', uz: 'Erkin Tizim jamoasi', r
 /** Placeholder until Legal provides it; never invent one. */
 export const OFERTA_URL: string | null = null;
 /** The single refund rule (PAYMENTS §14, PM decision A), same wording as pay.trust.refund (en), UI/UX pay-copy.json 17:08 (round-3b). */
-export const REFUND_RULE_EN = "If a purchase is faulty, we fix it first: we re-run the import or unlock the book again. Money is returned only for a duplicate charge, a failed charge, or a purchase we can't deliver within 10 working days of your claim. Write to support@gotchaa.uz within 14 calendar days of purchase; approved refunds go back to your card within 10 working days.";
+export const REFUND_RULE_EN = "If an import or book is not delivered or does not work as described, you may choose the remedy: we fix it (we fix or re-run the import, or unlock the book again), we reduce the price, or we cancel the purchase and return your money. We always return money for a duplicate charge or a failed charge. Please contact support@gotchaa.uz within 14 calendar days of noticing a problem; this does not shorten any period set by law. Refunds go to the same card through Atmos within 10 working days of approval.";
 
 type PlusTx = Pick<Prisma.TransactionClient, 'entitlement'> & { $executeRaw?: unknown };
 /** PAY1-03: Postgres transaction-scoped advisory lock per user (released at COMMIT/ROLLBACK). */
