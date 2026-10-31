@@ -123,6 +123,18 @@ async function main() {
     check('PAY2-12 expiry batch is oldest first (limit 2 → the two oldest)', seen.join() === [older, mid].map((x) => x.providerPaymentId).join() && (await get(newer.id)).status === S.pending, seen.join()); }
 
   await prisma.$disconnect();
+  // ---- G1: Plus checkout requires the Public Offer; version + time recorded per purchase (mocked Atmos create)
+  { process.env.WEB_PLUS_PASS = 'true'; const st: St = { down: false, confirmed: false, reverses: 0 }; const m: any = atmos(st); let creates = 0;
+    m.createTransaction = async () => { creates++; return { transactionId: 7e6 + creates, raw: {} }; };
+    const svc = new ImportCommerceService(prisma as any, m); const u = await mkUser();
+    const rej = await svc.plusCheckout(u.id, 30).then(() => null, (e: any) => e);
+    check('G1 checkout without acceptance → 400 oferta_required, no Atmos call, no row', rej?.status === 400 && rej.response?.code === 'oferta_required' && creates === 0 && (await prisma.importPayment.count({ where: { userId: u.id } })) === 0);
+    const t0 = Date.now(); const r = await svc.plusCheckout(u.id, 30, true); const row = await get(r.paymentId);
+    check('G1 accepted checkout records oferta version + timestamp', row.ofertaVersion === 'oferta-2026-10-31.payments-02' && row.ofertaAcceptedAt && row.ofertaAcceptedAt.getTime() >= t0 - 1000, JSON.stringify({ v: row.ofertaVersion }));
+    await prisma.importPayment.update({ where: { id: r.paymentId }, data: { ofertaAcceptedAt: new Date(0) } });
+    const r2 = await svc.plusCheckout(u.id, 30, true); const row2 = await get(r2.paymentId);
+    check('G1 reused pending checkout re-records acceptance', r2.reused === true && row2.ofertaAcceptedAt.getTime() >= t0 - 1000);
+    delete process.env.WEB_PLUS_PASS; }
   console.log(fails ? `FAILED ${fails}` : 'payments-02-wlive.db: all passed');
   process.exit(fails ? 1 : 0);
 }

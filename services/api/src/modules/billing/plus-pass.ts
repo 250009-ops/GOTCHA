@@ -15,6 +15,8 @@
 export type PlusPassDays = 30 | 365;
 export const PLUS_PASS_DAYS: PlusPassDays[] = [30, 365];
 export const PLUS_ACCOUNT_PREFIX = 'plus_';
+/** G1: version of the Public Offer (/oferta, PM pending-payments-02 text) accepted at Plus checkout; bump when the oferta changes. */
+export const OFERTA_VERSION = 'oferta-2026-10-31.payments-02';
 export const PLUS_FORMAT_PREFIX = 'plus_pass:';
 
 /** Sarvarbek 13:57 'Make the Plus import discount 50%'. Admin-editable via plus.benefits. */

@@ -120,7 +120,11 @@ async function main() {
 
   // Checkout is off by default and never calls Atmos then.
   delete process.env.WEB_PLUS_PASS;
-  await assert.rejects(() => svc.plusCheckout('u1', 30), /not sold on the web/);
+  await assert.rejects(() => svc.plusCheckout('u1', 30, true), /not sold on the web/);
+  // G1: the API rejects a checkout without Public Offer acceptance (400 oferta_required), before any config/Atmos call.
+  for (const bad of [undefined, false, 'true', 1]) {
+    await assert.rejects(() => svc.plusCheckout('u1', 30, bad), (e: any) => e.status === 400 && e.response?.code === 'oferta_required');
+  }
 
   // 13:57 decisions: Plus import discount 50% (admin-editable via plus.benefits), combined Plus+promo capped at 70%.
   assert.equal(PLUS_DEFAULT_IMPORT_DISCOUNT_PCT, 50);

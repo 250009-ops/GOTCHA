@@ -18,7 +18,7 @@ import { MAX_BILLABLE_PAGES } from '../imports/pdf-page-count';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AtmosClient, validateCardForAtmos } from './atmos.client';
 import { isSellableTier } from './page-tiers';
-import { capTotalDiscountTiyins, PLUS_ACCOUNT_PREFIX, PLUS_SETTING_KEYS, dueReminder, plusDiscountTiyins, plusPassConfig, plusPassDaysFromFormat, plusPassExpiry, plusPassFormat, type PlusPassDays } from './plus-pass';
+import { capTotalDiscountTiyins, OFERTA_VERSION, PLUS_ACCOUNT_PREFIX, PLUS_SETTING_KEYS, dueReminder, plusDiscountTiyins, plusPassConfig, plusPassDaysFromFormat, plusPassExpiry, plusPassFormat, type PlusPassDays } from './plus-pass';
 import { projectPlus } from './entitlements.service';
 import { getPlanCaps } from '../../common/plan-caps';
 import { AI_SETTING_KEYS, coerceNonNegInt, defaultAiPlatformSettings, resolveLearnerDailyAiQuota } from '../ai/ai-settings';
@@ -1061,7 +1061,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return { plusLookups: caps.plus.lookups, freeLookups: caps.free.lookups, plusQuizzes: caps.plus.quizzes, freeQuizzes: caps.free.quizzes, importDiscountPct };
   }
 
-  async plusCheckout(userId: string, days: number) {
+  async plusCheckout(userId: string, days: number, acceptOferta?: unknown) {
+    // G1: no Plus checkout without an explicit Public Offer acceptance (recorded per purchase below).
+    if (acceptOferta !== true) throw new BadRequestException({ message: 'Please accept the Public Offer to continue.', code: 'oferta_required' });
+    const ofertaAcceptedAt = new Date();
     const cfg = await this.plusConfig();
     if (!cfg.enabled) throw new NotFoundException({ message: 'Plus is not sold on the web yet.', code: 'plus_unavailable' });
     if (!this.gatewayEnabled() || !this.atmos.configured()) throw new ServiceUnavailableException('Payment gateway is not available');
@@ -1076,6 +1079,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       orderBy: { createdAt: 'desc' },
     });
     if (reusable) {
+      await this.prisma.importPayment.update({ where: { id: reusable.id }, data: { ofertaVersion: OFERTA_VERSION, ofertaAcceptedAt } });
       return { paymentId: reusable.id, account: reusable.account, transactionId: Number(reusable.providerPaymentId), amountUzs: plan.priceUzs, days: plan.days, status: 'pending', step: 'card' as const, reused: true };
     }
     const account = `${PLUS_ACCOUNT_PREFIX}${plan.days}_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
@@ -1085,7 +1089,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         userId, account, amountTiyins, currency: 'UZS', estimatedPages: 0, contentFormat: format,
         importType: ImportType.paste, status: ImportPaymentStatus.pending, provider: 'atmos',
         providerPaymentId: String(created.transactionId), rawCreateJson: redactAtmosRaw(created.raw) as Prisma.InputJsonValue,
-        expiresAt: new Date(Date.now() + 60 * 60_000),
+        expiresAt: new Date(Date.now() + 60 * 60_000), ofertaVersion: OFERTA_VERSION, ofertaAcceptedAt,
       },
     });
     return { paymentId: payment.id, account, transactionId: created.transactionId, amountUzs: plan.priceUzs, days: plan.days, status: 'pending', step: 'card' as const, reused: false };
