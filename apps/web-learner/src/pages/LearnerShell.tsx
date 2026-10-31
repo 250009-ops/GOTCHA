@@ -129,6 +129,9 @@ export default function LearnerShell() {
       <button
         type="button"
         onClick={() => navigate(item.path)}
+        // W-20: icon-only rail items had no accessible name (1 of 7 labelled).
+        aria-label={label}
+        aria-current={active ? 'page' : undefined}
         className={cn(
           'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group relative',
           collapsed ? 'px-0 py-3 justify-center' : 'px-3 py-2.5',
@@ -248,9 +251,10 @@ export default function LearnerShell() {
         </div>
 
         <div className="flex flex-col flex-1 min-w-0 min-h-0 h-full">
-          <header className="h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex items-center justify-between gap-3 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
+          {/* W-20: below 640 px the search used to collapse to a 50-64 px pill; it now gets its own row. */}
+          <header className="min-h-14 py-2 sm:py-0 sm:h-14 bg-white/95 backdrop-blur border-b border-gray-200/80 flex flex-wrap sm:flex-nowrap items-center justify-between gap-x-3 gap-y-2 px-3 sm:px-4 lg:px-6 z-30 shrink-0 overflow-visible">
             {showGlobalSearch ? (
-              <div className="w-full max-w-[400px] min-w-0" data-global-search="library-only">
+              <div className="order-last basis-full sm:order-none sm:basis-auto w-full sm:max-w-[400px] min-w-0" data-global-search="library-only">
                 <GlobalSearch />
               </div>
             ) : (
