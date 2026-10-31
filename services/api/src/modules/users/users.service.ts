@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
 import { mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 
@@ -682,6 +682,23 @@ export class UsersService {
     await this.prisma.user.update({
       where: { id: userId },
       data: { agePromptedAt: new Date(), ...(birthYear != null ? { birthYear } : {}) },
+    });
+    return this.getProfile(userId);
+  }
+
+  async setAiPreference(userId: string, aiDisabled: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { aiDisabled: true, aiDisabledBy: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!aiDisabled && user.aiDisabled && user.aiDisabledBy === 'admin') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'AI_DISABLED_BY_SUPPORT',
+        message: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.',
+      });
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { aiDisabled, aiDisabledBy: aiDisabled ? 'user' : null },
     });
     return this.getProfile(userId);
   }

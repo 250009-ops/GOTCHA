@@ -101,3 +101,8 @@ export class DeleteAccountDto {
   @MaxLength(128)
   currentPassword!: string;
 }
+
+export class SetAiPreferenceDto {
+  @IsBoolean()
+  aiDisabled!: boolean;
+}

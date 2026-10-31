@@ -237,6 +237,8 @@ model User {
   birthYear        Int?      @map("birth_year")
   /// 0024: S7 per-account AI-off switch (support/admin; consent withdrawal).
   aiDisabled       Boolean   @default(false) @map("ai_disabled")
+  /// "user" (Settings switch) or "admin" (support). A learner cannot re-enable an admin lock.
+  aiDisabledBy     String?   @map("ai_disabled_by")
   /// 0024: S3 sign-up consent record (tick-box label version, time, IP).
   consentVersion   String?   @map("consent_version")
   consentAt        DateTime? @map("consent_at")
