@@ -5,7 +5,8 @@ import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { LANDING_COPY } from '../src/lib/landingCopy.ts';
 import { plusCta } from '../src/lib/plusCta.ts';
 
-const BANNED = [/unlimited/i, /no daily limit/i, /offline/i, /subscription/i, /13\+/, /\$/, /USD/, /безлимит/i, /cheksiz/i, /подписк/i, /obuna/i];
+// 'No daily limit on word lookups' is Marketing's FINAL Plus wording (LANDING-COPY-v2 14:33:59), so it is no longer banned.
+const BANNED = [/unlimited/i, /fair use/i, /offline/i, /subscription/i, /13\+/, /\$/, /USD/, /безлим/i, /cheksiz/i, /подписк/i, /obuna/i];
 for (const l of ['uz', 'ru', 'en'] as const) {
   const C = LANDING_COPY[l];
   // plusNote carries the PM-approved negation 'No subscription, no auto-renewal' (LP1-06), checked verbatim below.
@@ -15,14 +16,12 @@ for (const l of ['uz', 'ru', 'en'] as const) {
     const NOTE = { en: 'One-time payment. No subscription, no auto-renewal.', uz: 'Bir martalik toʻlov. Obuna yoʻq, avtomatik yangilanmaydi.', ru: 'Разовый платёж. Без подписки и автопродления.' }[l];
     assert.ok(C.plusNote.startsWith(NOTE), C.plusNote);
   });
-  test(`${l}: Plus copy: unlimited lookups (14:32) => no Plus lookup number shipped by default`, () => {
+  test(`${l}: Plus copy = LANDING-COPY-v2 FINAL (no daily lookup limit on Plus, Free 20)`, () => {
     assert.equal(C.plusT, 'Gotcha Plus');
     assert.equal(C.plusB.length, 3);
-    // Slots awaiting Marketing's new lines: empty = hidden.
-    assert.equal(C.plusLead, ''); assert.equal(C.plusB[0], '');
+    assert.match(C.plusLead, /\b20\b/); assert.match(C.plusB[0], /\b20\b/);
     assert.match(C.plusB[1], /200/); assert.match(C.plusB[1], /\b10\b/); // quiz bullet, behind VITE_PLUS_QUIZ_CAP_LIVE
-    assert.ok(C.plusB[2].length > 0); // "Everything in Free stays included"
-    assert.match(C.plusB0Dict, /200/); assert.match(C.plusLeadDict, /200/); // dictionary-fallback lines, flag-off
+    if (l === 'en') { assert.equal(C.plusB[0], 'No daily limit on word lookups (20 on Free)'); assert.equal(C.plusB[2], 'Everything in Free stays included'); }
     if (l === 'en') { assert.ok(C.plusPrice.every((p) => p.includes('soʻm'))); }
     assert.match(C.plusPrice[0], /24[ ,]990/); assert.match(C.plusPrice[1], /199[ ,]990/);
     assert.match(C.plusOpt, /50%/);
@@ -140,16 +139,12 @@ test('uz web copy: no plain/curly apostrophes inside words (ʻ/ʼ only)', () => 
   for (const v of Object.values(LANDING_COPY.uz).flat(3)) if (typeof v === 'string') assert.doesNotMatch(v, /\p{L}['’‘]\p{L}/u, v);
 });
 
-test('Plus render: flags default off; no 500 cap, no trial; lead/bullets pluggable', () => {
+test('landing copy: no unlimited / fair use / cheksiz / безлим / 200 word lookups / 500 / trial; dictionary-fallback removed', () => {
   const page = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
-  assert.match(page, /DICT_FALLBACK_LIVE = import\.meta\.env\.VITE_PLUS_DICT_FALLBACK_LIVE === 'true'/);
+  assert.doesNotMatch(page, /DICT_FALLBACK|plusLeadDict|plusB0Dict/);
   assert.match(page, /QUIZ_CAP_LIVE = import\.meta\.env\.VITE_PLUS_QUIZ_CAP_LIVE === 'true'/);
-  assert.match(page, /\.filter\(Boolean\)/);
-  for (const l of ['uz', 'ru', 'en'] as const) {
-    const c = LANDING_COPY[l];
-    const t = [c.plusT, c.plusLead, ...c.plusB, c.plusOpt, c.plusNote, c.plusLeadDict, c.plusB0Dict].join(' ');
-    assert.doesNotMatch(t, /\b500\b|trial|sinov|пробн|unlimited|cheksiz|безлимит/i, l);
-  }
+  const src = readFileSync(new URL('../src/lib/landingCopy.ts', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /unlimited|fair use|cheksiz|безлим|200 word lookups|then dictionary|\b500\b|trial|sinov|пробн/i);
 });
 
 test('popover close is an inline SVG, not a text glyph', () => {

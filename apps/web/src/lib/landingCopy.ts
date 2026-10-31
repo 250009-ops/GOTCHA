@@ -1,5 +1,5 @@
 // GENERATED from team/uiux/landing-premium/src/copy.json (rev 4) + plusCta_prelaunch/plusNote_prelaunch verbatim from
-// team/marketing/LANDING-COPY-v2.md. landing-premium-02: plusT 'Gotcha Plus' (Marketing ruling 14:32); plusLead/plusB[0] EMPTY slots (hidden) awaiting Marketing copy after Plus lookups went unlimited (Sarvarbek 14:32): fill them here and they render; plusLeadDict/plusB0Dict = PLUS-OFFER.md 14:25:08 dictionary-fallback lines behind VITE_PLUS_DICT_FALLBACK_LIVE; rest of plusB/plusOpt PLUS-OFFER.md, earlier (14:25; Free 20 / Plus 200, quizzes 10/200),
+// team/marketing/LANDING-COPY-v2.md. landing-premium-02: plusT/plusLead/plusB verbatim from LANDING-COPY-v2.md FINAL (14:33:59; Plus has no daily lookup limit), plusOpt PLUS-OFFER.md, earlier (14:25; Free 20 / Plus 200, quizzes 10/200),
 // plusNote first sentence per PM LP1-06 (14:26), en prices soʻm (QA LP1-05). Additions: `entity` (footer). Android FAQ removed (Kai, 31 Oct). mt/mb dropped (pending sign-off).
 export const LANDING_COPY = {
  "en": {
@@ -47,14 +47,12 @@ export const LANDING_COPY = {
   "lt": "Many languages",
   "lb": "The library has books in many languages, and you can bring in a text of your own when you need one. Gotcha is made for people who speak Uzbek, Russian or English.",
   "plusT": "Gotcha Plus",
-  "plusLead": "",
-  "plusLeadDict": "Free gives you 20 word lookups a day. Plus gives you 200 full AI explanations, then dictionary lookups keep going, so a long chapter won't stop you halfway.",
+  "plusLead": "Free gives you 20 word lookups a day, and they can run out mid-chapter. Plus has no daily limit on word lookups.",
   "plusB": [
-   "",
+   "No daily limit on word lookups (20 on Free)",
    "200 chapter quizzes a day (10 on Free)",
    "Everything in Free stays included"
   ],
-  "plusB0Dict": "200 full AI explanations a day, then dictionary lookups keep going",
   "plusOpt": "50% off every paid import",
   "plusPrice": [
    "30 days, 24,990 soʻm",
@@ -135,14 +133,12 @@ export const LANDING_COPY = {
   "lt": "Koʻp tillar",
   "lb": "Kutubxonada koʻp tillardagi kitoblar bor, kerakli matnni esa oʻzingiz ham yuklay olasiz. Gotcha oʻzbek, rus yoki ingliz tilida gaplashadiganlar uchun qilingan.",
   "plusT": "Gotcha Plus",
-  "plusLead": "",
-  "plusLeadDict": "Bepul tarifda kuniga 20 ta soʻz qidirish bor. Plusʼda kuniga 200 ta toʻliq AI izoh, keyin lugʻatdan qidirish davom etadi, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.",
+  "plusLead": "Bepulda kuniga 20 ta soʻz qidirish bor, ular bob oʻrtasida tugashi mumkin. Plusʼda soʻz qidirishda kunlik cheklov yoʻq.",
   "plusB": [
-   "",
+   "Soʻz qidirishda kunlik cheklov yoʻq (bepulda 20)",
    "Kuniga 200 ta bob testi (bepul tarifda 10 ta)",
-   "Bepul tarifdagi hamma narsa saqlanib qoladi"
+   "Bepul tarifdagi hamma narsa qoladi"
   ],
-  "plusB0Dict": "Kuniga 200 ta toʻliq AI izoh, keyin lugʻatdan qidirish davom etadi",
   "plusOpt": "Har bir pullik importga 50% chegirma",
   "plusPrice": [
    "30 kun, 24 990 soʻm",
@@ -223,14 +219,12 @@ export const LANDING_COPY = {
   "lt": "Много языков",
   "lb": "В библиотеке есть книги на многих языках, а нужный текст можно загрузить самому. Gotcha сделан для тех, кто говорит по-узбекски, по-русски или по-английски.",
   "plusT": "Gotcha Plus",
-  "plusLead": "",
-  "plusLeadDict": "В бесплатном плане 20 подсказок по словам в день. В Plus 200 полных AI-объяснений в день, а потом подсказки из словаря продолжают работать, и длинная глава не оборвётся на середине.",
+  "plusLead": "В бесплатном плане 20 подсказок в день, и они могут закончиться посреди главы. В Plus нет дневного лимита на подсказки по словам.",
   "plusB": [
-   "",
-   "200 тестов по главам в день (в бесплатном плане 10)",
-   "Всё из бесплатного плана остаётся с вами"
+   "Без дневного лимита на подсказки (в бесплатном 20)",
+   "200 тестов по главам в день (в бесплатном 10)",
+   "Всё из бесплатного плана остаётся"
   ],
-  "plusB0Dict": "200 полных AI-объяснений в день, потом подсказки из словаря продолжают работать",
   "plusOpt": "Скидка 50% на каждый платный импорт",
   "plusPrice": [
    "30 дней, 24 990 сум",
