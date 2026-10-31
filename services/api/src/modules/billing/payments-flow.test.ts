@@ -68,12 +68,12 @@ const atmos: any = new Proxy({ minAmountTiyins: () => 50_000, configured: () => 
 async function main() {
   const svc: any = new (ImportCommerceService as any)(prisma, atmos);
   rows.push(
-    { id: 'old', userId: 'u', status: 'pending', importType: 'pdf', estimatedPages: 50, amountTiyins: 50_000, account: 'imp_old', providerPaymentId: '7', expiresAt: new Date(now - 1), createdAt: new Date(now - 3_700_000), contentFormat: 'ebook', currency: 'UZS', paidAt: null, ofdUrl: null },
+    { id: 'old', userId: 'u', status: 'pending', importType: 'pdf', estimatedPages: 50, amountTiyins: 50_000, account: 'imp_old', providerPaymentId: null, expiresAt: new Date(now - 1), createdAt: new Date(now - 3_700_000), contentFormat: 'ebook', currency: 'UZS', paidAt: null, ofdUrl: null },
     { id: 'open', userId: 'u', status: 'pending', importType: 'pdf', estimatedPages: 50, amountTiyins: 50_000, account: 'imp_open', providerPaymentId: '8', expiresAt: new Date(now + 3_000_000), createdAt: new Date(now - 600_000), contentFormat: 'ebook', currency: 'UZS', paidAt: null, ofdUrl: null },
     { id: 'gone', userId: 'u', status: 'failed', importType: 'pdf', estimatedPages: 9, amountTiyins: 50_000, account: 'imp_gone', providerPaymentId: '9', expiresAt: new Date(now + 3_000_000), createdAt: new Date(now - 500_000), contentFormat: 'ebook', currency: 'UZS', paidAt: null, ofdUrl: null },
   );
 
-  // P2 expiry: preApply on an expired session → session_expired, row marked expired, no Atmos call
+  // P2 expiry: preApply on an expired session with no Atmos tx → session_expired, row marked expired, no Atmos call (PAY2-21 cases: pay2-21-retry-reconcile.test.ts)
   await assert.rejects(() => svc.preApply('u', 'old', '8600123412341234', '03/30'), (e: any) => e.getResponse().code === 'session_expired');
   assert.equal(rows[0].status, 'expired');
   // preApply on a cancelled (failed) payment is refused (was accepted before)

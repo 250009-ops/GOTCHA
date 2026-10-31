@@ -154,12 +154,12 @@ console.log('payments.test: ok');
   console.log('PAY2-10 soʻm: ok');
 }
 
-// G1: Plus checkout Public Offer tick-box, PM final copy word for word (brackets = the /oferta link).
+// G1: Plus checkout Public Offer tick-box, PM README 'Plus checkout tick-box' word for word (decision A, 16:30) (brackets = the /oferta link).
 {
   const full = (l: string) => { const c = plusOfertaConsent(l); return `${c.before}[${c.link}]${c.after}`; };
-  assert.equal(full('en'), 'I accept the [Public Offer]. I understand that Plus starts right after payment, does not renew automatically, and is refunded only if the purchase is faulty (for example, charged but not delivered).');
-  assert.equal(full('ru'), 'Я принимаю [Публичную оферту]. Я понимаю, что Plus начинает действовать сразу после оплаты, не продлевается автоматически, а деньги возвращаются только при сбое покупки (например, если оплата прошла, а Plus не подключён).');
-  assert.equal(full('uz'), '[Ommaviy oferta]ni qabul qilaman. Plus to\u02bblovdan so\u02bbng darhol boshlanishini, avtomatik uzaytirilmasligini va pul faqat xaridda nosozlik bo\u02bblsa (masalan, to\u02bblov o\u02bbtib, Plus ulanmagan bo\u02bblsa) qaytarilishini tushunaman.');
+  assert.equal(full('en'), "I accept the [Public Offer]. I understand that Plus starts right after payment and does not renew automatically. If a purchase is faulty, we fix it or extend Plus; money is returned only for duplicate or failed charges, or if we can't deliver.");
+  assert.equal(full('ru'), "Я принимаю [Публичную оферту]. Я понимаю, что Plus начинает действовать сразу после оплаты и не продлевается автоматически. Если с покупкой что-то не так, мы исправим проблему или продлим Plus; деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку.");
+  assert.equal(full('uz'), "[Ommaviy oferta]ni qabul qilaman. Plus toʻlovdan soʻng darhol boshlanishini va avtomatik uzaytirilmasligini tushunaman. Xaridda muammo boʻlsa, uni tuzatamiz yoki Plusni uzaytiramiz; pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni yetkaza olmasak qaytariladi.");
   assert.equal(plusOfertaConsent('en').hint, 'Please accept the Public Offer to continue.');
   assert.equal(plusOfertaConsent('ru').hint, 'Чтобы продолжить, примите Публичную оферту.');
   assert.equal(plusOfertaConsent('uz').hint, 'Davom etish uchun Ommaviy ofertani qabul qiling.');

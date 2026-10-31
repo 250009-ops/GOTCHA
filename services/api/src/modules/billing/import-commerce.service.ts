@@ -476,17 +476,33 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /**
-   * PAYMENTS P2: a pending payment past `expiresAt` (60 min) is marked expired and never sent to Atmos again.
-   * The learner sees `session_expired` → "Start again" (new checkout).
+   * PAYMENTS P2 + PAY2-21: a pending payment past `expiresAt` (60 min) is never expired blind on a learner retry.
+   * - No Atmos transaction yet → nothing can have been charged → expired (`session_expired`).
+   * - Ask Atmos: confirmed → paid via markPaid(late) (fulfils once) → `payment_completed`.
+   * - Definitive non-paid answer (store_transaction, confirmed=false) → expired (`session_expired`).
+   * - Atmos unreachable / no definitive answer → stays PENDING with needsAttention=true (manual review; the
+   *   expiry sweep keeps reconciling) → `payment_under_review`. Never sent to Atmos for a new charge.
    */
-  async assertNotExpired(payment: { id: string; status: ImportPaymentStatus; expiresAt: Date | null }, now = new Date()) {
-    if (payment.status === ImportPaymentStatus.pending && payment.expiresAt && payment.expiresAt.getTime() <= now.getTime()) {
-      await this.prisma.importPayment.updateMany({
-        where: { id: payment.id, status: ImportPaymentStatus.pending },
-        data: { status: ImportPaymentStatus.expired },
-      });
-      throw new GoneException({ message: 'This payment session has expired. Go back and start checkout again.', code: 'session_expired' });
+  async assertNotExpired(payment: { id: string; status: ImportPaymentStatus; expiresAt: Date | null; providerPaymentId?: string | null; account?: string | null }, now = new Date()) {
+    if (!(payment.status === ImportPaymentStatus.pending && payment.expiresAt && payment.expiresAt.getTime() <= now.getTime())) return;
+    const gone = () => new GoneException({ message: 'This payment session has expired. Go back and start checkout again.', code: 'session_expired' });
+    const expire = () => this.prisma.importPayment.updateMany({ where: { id: payment.id, status: ImportPaymentStatus.pending }, data: { status: ImportPaymentStatus.expired, nextCheckAt: null } });
+    const tx = Number(payment.providerPaymentId);
+    if (!(Number.isFinite(tx) && tx > 0)) { await expire(); throw gone(); }
+    let remote: Awaited<ReturnType<AtmosClient['getTransaction']>> | null = null;
+    let failed = !this.atmos.configured();
+    if (!failed) {
+      try { remote = await this.atmos.getTransaction(tx); } catch (e) { failed = true; this.logger.warn(`retry-after-expiry ${payment.id}: Atmos error ${(e as Error).message}`); }
     }
+    if (remote?.confirmed && payment.account) {
+      await this.markPaid(payment.account, { ofdUrl: remote.ofdUrl, raw: remote.raw, late: true });
+      throw new BadRequestException({ message: 'Payment is already completed', code: 'payment_completed' });
+    }
+    const definitive = !failed && remote != null && !remote.confirmed && (remote.raw as { store_transaction?: unknown } | null)?.store_transaction != null;
+    if (definitive) { await expire(); throw gone(); }
+    await this.prisma.importPayment.updateMany({ where: { id: payment.id, status: ImportPaymentStatus.pending }, data: { needsAttention: true } });
+    this.logger.warn(`payment ${payment.id}: learner retry after expiry, Atmos status unknown → flagged for manual review`);
+    throw new ConflictException({ message: 'We are checking this payment with the bank. You will not be charged twice. Please contact support if this does not resolve.', code: 'payment_under_review' });
   }
 
   /** Card/OTP steps only run on a pending, unexpired payment (preApply previously accepted failed/expired rows). */
