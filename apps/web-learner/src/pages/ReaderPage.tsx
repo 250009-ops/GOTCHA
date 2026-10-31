@@ -263,7 +263,7 @@ export default function ReaderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, preferences, updatePreferences, refreshVocab } = useAuth();
+  const { user, preferences, updatePreferences, refreshVocab, refreshProfile } = useAuth();
   const goToLibrary = useCallback(() => {
     navigate(resolveReaderLibraryReturn(location.state));
   }, [navigate, location.state]);
@@ -590,6 +590,8 @@ export default function ReaderPage() {
       setWordStatuses((p) => ({ ...p, [activeWord]: 'learning' }));
       toast.success(`"${activeWord}" ${copy.reader.savedToVocab}`);
       void refreshVocab().catch(() => undefined);
+      // W-19b: the home "Words" card reads stats from /users/me/stats; refresh it too.
+      void refreshProfile().catch(() => undefined);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : copy.errors.saveFailed);
     }
