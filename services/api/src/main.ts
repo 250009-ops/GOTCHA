@@ -11,6 +11,7 @@ import { ensureLanguageCatalog } from './common/language-catalog';
 import {
   applySecurityHeaders,
   assertProductionAuthConfig,
+  corsOriginsFromEnv,
   isProductionRuntime,
 } from './common/runtime-security';
 import { PrismaService } from './prisma/prisma.service';
@@ -88,13 +89,7 @@ async function bootstrap() {
     }),
   );
 
-  const corsOrigins = (
-    process.env.API_CORS_ORIGINS ??
-    'http://localhost:5173,http://localhost:5174,http://localhost:5175'
-  )
-    .split(',')
-    .map((o) => o.trim())
-    .filter(Boolean);
+  const corsOrigins = corsOriginsFromEnv();
 
   app.enableCors({
     origin: (origin, callback) => {

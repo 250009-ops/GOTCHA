@@ -7,6 +7,8 @@ import assert from 'node:assert/strict';
 
 const base = process.env.TEST_DATABASE_URL;
 if (!base) {
+  // final-3: in CI (CI=true) a missing TEST_DATABASE_URL is a failure, not a silent skip (see docs/CI-TESTS.md).
+  if (/^(1|true)$/i.test(process.env.CI ?? '')) { console.error('schema-drift.test: FAIL — CI=true but TEST_DATABASE_URL is unset'); process.exit(1); }
   console.log('schema-drift.test: SKIP (no TEST_DATABASE_URL)');
   process.exit(0);
 }

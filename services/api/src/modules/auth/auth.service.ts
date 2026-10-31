@@ -98,7 +98,8 @@ export class AuthService {
     return (
       this.config.get<string>('ADMIN_APP_URL')?.trim() ||
       this.config.get<string>('VITE_ADMIN_APP_URL')?.trim()?.split(',')?.[0]?.trim() ||
-      'http://localhost:5173/'
+      // WLF-09: dev-only default; production refuses to boot without ADMIN_APP_URL (assertProductionUrlConfig).
+      (process.env.NODE_ENV === 'production' ? 'https://gotchaa.uz/admin' : 'http://localhost:5173/')
     ).replace(/\/?$/, '/');
   }
 
