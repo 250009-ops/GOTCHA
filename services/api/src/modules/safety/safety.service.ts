@@ -1,3 +1,5 @@
+import { MailService } from '../../common/mail/mail.service';
+import { notifyNewReport } from '../../common/safety/report-notify';
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizeReport } from '../messaging/messaging-safety';
@@ -6,7 +8,7 @@ import { removeFriend, respondFriendRequest, sendFriendRequest } from './friend-
 @Injectable()
 export class SafetyService {
   private log = new Logger('Safety');
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private mail: MailService) {}
   private get p() {
     return this.prisma as never;
   }
@@ -49,6 +51,7 @@ export class SafetyService {
     const r = await this.prisma.contentReport.create({
       data: { reporterId: userId, contentId: dto.contentId ?? null, importId: dto.importId ?? null, reason, details },
     });
+    notifyNewReport(this.mail, { id: r.id, kind: 'content', reason });
     return { id: r.id, status: r.status };
   }
 
@@ -85,7 +88,7 @@ export class SafetyService {
   }
 
   async setAiDisabled(adminId: string, userId: string, aiDisabled: boolean) {
-    const res = await this.prisma.user.updateMany({ where: { id: userId }, data: { aiDisabled } });
+    const res = await this.prisma.user.updateMany({ where: { id: userId }, data: { aiDisabled, aiDisabledBy: aiDisabled ? 'admin' : null } });
     if (!res.count) throw new NotFoundException('User not found');
     this.log.log(`aiDisabled=${aiDisabled} for ${userId} by ${adminId}`);
     return { userId, aiDisabled };

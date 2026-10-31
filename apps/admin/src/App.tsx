@@ -10,6 +10,7 @@ import ImportPricingPage from './pages/ImportPricingPage';
 import LanguagesPage from './pages/LanguagesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ProtectedRoute from './pages/ProtectedRoute';
+import ReportsPage from './pages/ReportsPage';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
 import { useAuth } from './lib/auth';
@@ -37,6 +38,7 @@ export default function App() {
           <Route path="level-tests" element={<Navigate to="/" replace />} />
           <Route path="ai-usage" element={<AiUsagePage />} />
           <Route path="gamification" element={<GamificationPage />} />
+          <Route path="reports" element={<ReportsPage />} />
           <Route path="notifications" element={<NotificationsPage />} />
           <Route path="import-pricing" element={<ImportPricingPage />} />
           <Route path="import-pricing/:directory" element={<ImportPricingPage />} />

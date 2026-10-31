@@ -1,3 +1,4 @@
+import { notifyNewReport } from '../../common/safety/report-notify';
 import {
   BadRequestException,
   ForbiddenException,
@@ -227,8 +228,10 @@ export class MessagingService {
     return unblockUser(this.safety, userId, peerUserId);
   }
 
-  report(userId: string, dto: ReportUserDto) {
-    return reportUser(this.safety, userId, dto);
+  async report(userId: string, dto: ReportUserDto) {
+    const r = await reportUser(this.safety, userId, dto);
+    notifyNewReport(this.mail, { id: r.id, kind: 'user', reason: dto.reason });
+    return r;
   }
 
   async listConversations(userId: string, q?: string) {

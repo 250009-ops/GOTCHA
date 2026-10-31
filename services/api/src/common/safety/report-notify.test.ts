@@ -1,0 +1,11 @@
+import * as assert from 'node:assert/strict';
+import { notifyNewReport, reportEmail, reportRecipients } from './report-notify';
+assert.deepEqual(reportRecipients({}), ['support@gotchaa.uz']);
+assert.deepEqual(reportRecipients({ REPORTS_ADMIN_EMAIL: 'a@x.uz, bad, support@gotchaa.uz' }), ['support@gotchaa.uz', 'a@x.uz']);
+const e = reportEmail({ id: 'r1', kind: 'user', reason: 'harassment' }, 'https://adm.test/');
+assert.ok(e.text.includes('https://adm.test/reports?kind=user&id=r1') && e.subject.includes('24 h'));
+const sent: string[] = [];
+notifyNewReport({ isConfigured: () => true, send: async (o) => { sent.push(o.to); return true; } }, { id: 'r2', kind: 'content', reason: 'spam' });
+assert.deepEqual(sent, ['support@gotchaa.uz']);
+notifyNewReport({ isConfigured: () => false, send: async () => { throw new Error('must not send'); } }, { id: 'r3', kind: 'user', reason: 'spam' });
+console.log('report-notify: OK');

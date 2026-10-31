@@ -39,6 +39,7 @@ const nav: NavItem[] = [
   // Moderators only have API access to the moderation queue (not the full curriculum/licensing
   // catalog), so they get a dedicated link straight to that tab instead of "Content Library".
   { to: '/content/user-imports', label: 'Moderation Queue', icon: ShieldCheck, roles: ['moderator'] },
+  { to: '/reports', label: 'Reports', icon: ShieldCheck, roles: ['superadmin', 'moderator'] },
   { to: '/languages', label: 'Languages', icon: Globe2, roles: ['superadmin', 'editor', 'analyst'] },
   { to: '/ai-usage', label: 'AI Usage', icon: Cpu, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/gamification', label: 'Gamification', icon: Sparkles, roles: ['superadmin', 'editor', 'analyst'] },

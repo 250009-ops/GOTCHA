@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { slaState, formatAge } from '../src/lib/reportSla.ts';
+const now = new Date('2026-10-31T12:00:00Z');
+const at = (h) => new Date(now.getTime() - h * 3600e3).toISOString();
+assert.equal(slaState({ createdAt: at(1), status: 'open' }, now), 'ok');
+assert.equal(slaState({ createdAt: at(21), status: 'open' }, now), 'due-soon');
+assert.equal(slaState({ createdAt: at(24), status: 'open' }, now), 'overdue');
+assert.equal(slaState({ createdAt: at(30), status: 'dismissed' }, now), 'closed');
+assert.equal(formatAge(at(0.5), now), '30 min');
+assert.equal(formatAge(at(50), now), '2 d');
+console.log('report-sla: OK');
