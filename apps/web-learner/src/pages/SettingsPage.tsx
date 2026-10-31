@@ -1,4 +1,5 @@
 import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
+import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -697,6 +698,10 @@ export default function SettingsPage() {
 
       <Section title={aiSwitchText(user?.uiLanguage).title}>
         <AiSwitch lang={user?.uiLanguage} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
+      </Section>
+
+      <Section title={deleteAccountText(user?.uiLanguage).title}>
+        <DeleteAccount lang={user?.uiLanguage} onDeleted={() => { logout(); window.location.assign('/'); }} />
       </Section>
 
       <Section title={copy.settings.usageImports}>
