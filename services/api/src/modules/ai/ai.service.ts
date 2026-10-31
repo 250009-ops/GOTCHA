@@ -554,14 +554,21 @@ export class AiService {
       contextualMeaning = null;
     }
     // WL4-04: minors' output is moderated BEFORE it is cached or returned; moderation down → 503 (fail closed).
-    const payload: MemoryLookup = await this.moderateLookupForMinor(band, {
-      lemma,
-      translation,
-      contextualMeaning,
-      phrase,
-      grammarNote,
-      partOfSpeech,
-    }, uiLanguage);
+    // PAY2-13: moderation down (503) means nothing was served → give the reserved slot back before rethrowing.
+    let payload: MemoryLookup;
+    try {
+      payload = await this.moderateLookupForMinor(band, {
+        lemma,
+        translation,
+        contextualMeaning,
+        phrase,
+        grammarNote,
+        partOfSpeech,
+      }, uiLanguage);
+    } catch (err) {
+      if (reserved) await this.releaseLookupSlot(userId, today);
+      throw err;
+    }
     this.memorySet(hash, payload);
 
     if (!this.useMemory()) {
