@@ -526,7 +526,7 @@ export default function VocabularyPage() {
               className={cn(
                 'shrink-0 px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-all',
                 filter === f
-                  ? 'bg-g-blue-700 text-white border-g-blue-700'
+                  ? 'bg-g-blue-700 text-g-on-cta border-g-blue-700'
                   : 'bg-white text-gray-500 border-gray-200 hover:border-gray-300',
               )}
             >

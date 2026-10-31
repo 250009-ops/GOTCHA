@@ -184,7 +184,7 @@ export default function NotificationsPage() {
               className={cn(
                 'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all capitalize',
                 filter === key
-                  ? 'bg-g-blue-700 text-white border-g-blue-700 shadow-sm'
+                  ? 'bg-g-blue-700 text-g-on-cta border-g-blue-700 shadow-sm'
                   : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
               )}
             >

@@ -136,7 +136,7 @@ export default function LearnerShell() {
           'w-full flex items-center gap-3 rounded-[14px] text-sm font-medium transition-all duration-150 group relative',
           collapsed ? 'px-0 py-3 justify-center' : 'px-3 py-2.5',
           active
-            ? 'bg-g-blue-700 text-white shadow-[0_4px_3px_rgba(33,7,170,0.4),0_2px_2px_rgba(33,7,170,0.4)]'
+            ? 'bg-g-blue-700 text-g-on-cta shadow-[0_4px_3px_rgba(33,7,170,0.4),0_2px_2px_rgba(33,7,170,0.4)]'
             : 'text-white/50 hover:text-white/90 hover:bg-white/[0.07]',
         )}
       >

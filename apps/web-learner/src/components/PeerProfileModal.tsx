@@ -150,7 +150,7 @@ export function PeerProfileModal({
                 setStarting(true);
                 void Promise.resolve(onMessage(peer)).finally(() => setStarting(false));
               }}
-              className="w-full h-11 rounded-xl bg-g-blue-700 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#5b07c4] disabled:opacity-50"
+              className="w-full h-11 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#5b07c4] disabled:opacity-50"
             >
               <MessageSquare className="w-4 h-4" />
               {pp.message(firstName)}
@@ -200,7 +200,7 @@ export function PeerProfileModal({
                         className="w-[42px] h-[58px] rounded-lg object-cover bg-g-blue-700"
                       />
                     ) : (
-                      <div className="w-[42px] h-[58px] rounded-lg bg-g-blue-700 text-white/70 text-sm font-bold flex items-center justify-center">
+                      <div className="w-[42px] h-[58px] rounded-lg bg-g-blue-700 text-g-on-cta/70 text-sm font-bold flex items-center justify-center">
                         G
                       </div>
                     )}

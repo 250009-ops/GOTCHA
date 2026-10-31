@@ -37,7 +37,7 @@ export function DailyLimitNotice() {
           <p className="text-xs" style={{ color: 'var(--g-text-2)' }} data-testid="daily-limit-reset">{txt.reset}</p>
           {txt.upsell && plusSold && (
             <button type="button" data-testid="daily-limit-plus" onClick={() => { setInfo(null); navigate('/app/plus'); }}
-              className="mt-1 min-h-[36px] rounded-[12px] px-3 text-sm font-bold text-white" style={{ background: 'var(--g-cta)' }}>
+              className="mt-1 min-h-[36px] rounded-[12px] px-3 text-sm font-bold text-[var(--g-on-cta)]" style={{ background: 'var(--g-cta)' }}>
               {payCopyFor(locale)['plus.cta']}
             </button>
           )}

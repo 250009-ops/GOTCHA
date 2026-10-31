@@ -198,7 +198,7 @@ export function CatalogPaywall({
         <button
           type="button"
           onClick={onUnlocked}
-          className="relative z-10 w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 text-white text-base font-bold flex items-center justify-center gap-2"
+          className="relative z-10 w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 text-g-on-cta text-base font-bold flex items-center justify-center gap-2"
         >
           <BookOpen className="w-5 h-5" />
           {copy.paywall.startReading}
@@ -257,7 +257,7 @@ export function CatalogPaywall({
           type="button"
           onClick={handleProceedToCard}
           disabled={loading}
-          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
+          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-g-on-cta text-base font-bold flex items-center justify-center gap-2"
         >
           {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <BookOpen className="w-5 h-5" />}
           {loading ? copy.common.loading : copy.paywall.unlockFor(formatUzs(priceUzs))}

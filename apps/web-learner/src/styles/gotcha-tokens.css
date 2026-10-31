@@ -30,7 +30,8 @@
   --g-warn: #b45309; --g-warn-bg: #fef3c7; --g-warn-line: #fee685;
   --g-info: var(--g-info-text); --g-info-bg: var(--g-info-surface); --g-info-line: #cbd5e1;
   --g-learn: var(--g-learning-text); --g-learn-bg: var(--g-learning-bg);
-  --g-on-fill: #ffffff;
+  --g-on-fill: #ffffff; /* ok/bad fills only */
+  --g-on-cta: #ffffff; /* r3b: text + icons on the purple CTA fills (#2107aa light, #5550ec dark) */
   --g-streak-bg: #fffbeb; --g-streak-line: #fee685; --g-streak-text: #bb4d00; --g-streak-icon: #fe9a00;
   --g-topbar: rgba(255, 255, 255, 0.95);
   --g-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
@@ -48,7 +49,8 @@
   --g-warn: #fe9a00; --g-warn-bg: rgba(254, 154, 0, 0.12); --g-warn-line: rgba(254, 154, 0, 0.3);
   --g-info: #cbd5e1; --g-info-bg: rgba(203, 213, 225, 0.08); --g-info-line: rgba(203, 213, 225, 0.2);
   --g-learn: #67e8f9; --g-learn-bg: rgba(103, 232, 249, 0.1);
-  --g-on-fill: #0a0b14;
+  --g-on-fill: #0a0b14; /* ok/bad fills only */
+  --g-on-cta: #ffffff; /* r3b: white on #5550ec = 5.61:1 (dark keeps white, never --g-on-fill) */
   --g-streak-bg: rgba(254, 154, 0, 0.1); --g-streak-line: rgba(254, 154, 0, 0.28); --g-streak-text: #fe9a00; --g-streak-icon: #fe9a00;
   --g-topbar: #11121e;
   --g-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -91,7 +93,7 @@
   --color-g-bad: var(--g-bad); --color-g-bad-bg: var(--g-bad-bg); --color-g-bad-line: var(--g-bad-line);
   --color-g-warn: var(--g-warn); --color-g-warn-bg: var(--g-warn-bg); --color-g-warn-line: var(--g-warn-line);
   --color-g-info: var(--g-info); --color-g-info-bg: var(--g-info-bg); --color-g-info-line: var(--g-info-line);
-  --color-g-learn: var(--g-learn); --color-g-learn-bg: var(--g-learn-bg); --color-g-on-fill: var(--g-on-fill);
+  --color-g-learn: var(--g-learn); --color-g-learn-bg: var(--g-learn-bg); --color-g-on-fill: var(--g-on-fill); --color-g-on-cta: var(--g-on-cta);
   --color-g-streak-bg: var(--g-streak-bg); --color-g-streak-line: var(--g-streak-line); --color-g-streak-text: var(--g-streak-text); --color-g-streak-icon: var(--g-streak-icon);
   --color-g-topbar: var(--g-topbar);
   --shadow-g-card: var(--g-shadow-card);

@@ -37,7 +37,7 @@ export function AiSwitch({ lang, aiDisabled, aiDisabledBy, onChanged }: {
             await onChanged();
           } catch (e) { setErr(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
         }}
-        className={`h-8 px-3 rounded-full text-sm font-medium shrink-0 disabled:opacity-60 ${enabled ? 'bg-g-blue-700 text-white' : 'bg-gray-200 text-gray-700'}`}
+        className={`h-8 px-3 rounded-full text-sm font-medium shrink-0 disabled:opacity-60 ${enabled ? 'bg-g-blue-700 text-g-on-cta' : 'bg-gray-200 text-gray-700'}`}
       >
         {enabled ? t.on : t.off}
       </button>

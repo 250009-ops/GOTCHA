@@ -537,7 +537,7 @@ function WordMeaningPanel({
           type="button"
           disabled={!canAct}
           onClick={onSave}
-          className="h-10 rounded-xl bg-g-blue-700 text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+          className="h-10 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
         >
           {reader.save}
         </button>
@@ -1393,7 +1393,7 @@ export default function MessagesPage() {
                         <span className="truncate">{c.lastMessage?.body ?? msg.noConversations}</span>
                       </p>
                       {c.unreadCount > 0 && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-white text-[10px] font-extrabold flex items-center justify-center">
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-g-on-cta text-[10px] font-extrabold flex items-center justify-center">
                           {c.unreadCount}
                         </span>
                       )}
@@ -1534,7 +1534,7 @@ export default function MessagesPage() {
                             m.deleted
                               ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic shadow-none'
                               : mine
-                                ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-white'
+                                ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-g-on-cta'
                                 : 'rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-gray-900',
                           )}
                         >
@@ -1749,7 +1749,7 @@ export default function MessagesPage() {
                   type="button"
                   disabled={sending || !draft.trim()}
                   onClick={() => void send()}
-                  className="w-10 h-10 rounded-full bg-g-blue-700 text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
+                  className="w-10 h-10 rounded-full bg-g-blue-700 text-g-on-cta flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
                   aria-label={editing ? copy.common.saveChanges : msg.send}
                 >
                   <Send className="w-4 h-4" />

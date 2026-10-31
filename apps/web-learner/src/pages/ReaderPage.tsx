@@ -731,7 +731,7 @@ export default function ReaderPage() {
         <button
           type="button"
           onClick={() => setReloadNonce((n) => n + 1)}
-          className="rounded-full bg-g-blue-700 px-4 py-2 font-medium text-white"
+          className="rounded-full bg-g-blue-700 px-4 py-2 font-medium text-g-on-cta"
         >
           {copy.reader.tryAgain}
         </button>
@@ -795,7 +795,7 @@ export default function ReaderPage() {
             <button
               type="button"
               onClick={() => setReloadNonce((n) => n + 1)}
-              className="mt-4 rounded-full bg-g-blue-700 px-4 py-2 text-sm font-medium text-white"
+              className="mt-4 rounded-full bg-g-blue-700 px-4 py-2 text-sm font-medium text-g-on-cta"
             >
               {copy.reader.tryAgain}
             </button>

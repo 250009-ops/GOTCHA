@@ -993,9 +993,9 @@ function FeedbackSheet({
   }, []);
   const verdict = skipped ? 'skipped' : result?.verdict ?? 'wrong';
   const tone = {
-    correct: { bg: 'bg-g-ok-bg', text: 'text-g-ok', btn: 'bg-g-ok hover:opacity-90 text-g-on-fill', icon: <Check className="w-5 h-5" />, title: t.correct },
+    correct: { bg: 'bg-g-ok-bg', text: 'text-g-ok', btn: 'bg-g-ok hover:brightness-90 text-g-on-fill', icon: <Check className="w-5 h-5" />, title: t.correct },
     almost: { bg: 'bg-g-warn-bg', text: 'text-g-warn', btn: 'bg-g-cta hover:bg-g-cta-hover text-white', icon: <Sparkles className="w-5 h-5" />, title: t.almost },
-    wrong: { bg: 'bg-g-bad-bg', text: 'text-g-bad', btn: 'bg-g-bad hover:opacity-90 text-g-on-fill', icon: <X className="w-5 h-5" />, title: t.incorrect },
+    wrong: { bg: 'bg-g-bad-bg', text: 'text-g-bad', btn: 'bg-g-bad hover:brightness-90 text-g-on-fill', icon: <X className="w-5 h-5" />, title: t.incorrect },
     skipped: { bg: 'bg-g-card-2', text: 'text-g-text-2', btn: 'bg-g-cta hover:bg-g-cta-hover text-white', icon: <RotateCcw className="w-5 h-5" />, title: t.willRetry },
   }[verdict];
   const note =

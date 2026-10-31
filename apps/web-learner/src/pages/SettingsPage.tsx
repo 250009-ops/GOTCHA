@@ -210,7 +210,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
           type="button"
           onClick={() => void submit()}
           disabled={saving}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.settings.updatePassword}
@@ -319,7 +319,7 @@ function TargetLanguageModal({
           type="button"
           onClick={() => void submit()}
           disabled={saving || (mode === 'add' && available.length === 0)}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {mode === 'add' ? copy.settings.addLanguage : copy.settings.saveLanguage}
@@ -495,7 +495,7 @@ export default function SettingsPage() {
           type="button"
           onClick={() => void saveAll()}
           disabled={saving}
-          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-white text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
+          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.common.saveChanges}
@@ -744,7 +744,7 @@ export default function SettingsPage() {
                 className="rounded-[14px] p-4 sm:p-5 min-w-0"
                 style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
               >
-                <div className="rounded-[14px] text-white min-w-0">
+                <div className="rounded-[14px] text-g-on-cta min-w-0">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>

@@ -163,7 +163,7 @@ function SubmitButton({
       type="button"
       onClick={onClick}
       disabled={disabled || loading}
-      className="w-full min-w-0 max-w-full h-10 px-3 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-50 disabled:pointer-events-none text-white text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
+      className="w-full min-w-0 max-w-full h-10 px-3 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-50 disabled:pointer-events-none text-g-on-cta text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors"
     >
       {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Icon className="w-4 h-4" />}
       {children}
@@ -585,7 +585,7 @@ function PaymentConfirmModal({
               className="w-20 h-[110px] rounded-lg flex items-center justify-center"
               style={{ background: 'linear-gradient(to right, var(--g-blue-500), var(--g-blue-700))', boxShadow: '0 8px 8px rgba(33, 7, 170, 0.2)' }}
             >
-              <FileText className="w-8 h-8 text-white" />
+              <FileText className="w-8 h-8 text-g-on-cta" />
             </div>
 
             <div className="flex flex-col gap-2 items-center w-full">
@@ -656,7 +656,7 @@ function PaymentConfirmModal({
               type="button"
               onClick={handleProceedToCard}
               disabled={loading || externalLoading || (quote.requiresPayment && (!quote.tier || quote.amountUzs <= 0))}
-              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
+              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-g-on-cta text-base font-bold flex items-center justify-center gap-2 transition-colors"
               style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
             >
               {loading ? (
