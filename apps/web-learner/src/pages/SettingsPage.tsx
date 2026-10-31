@@ -1,4 +1,5 @@
 import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
+import { buildLabel } from '../lib/buildInfo';
 import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
 import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
@@ -857,6 +858,7 @@ export default function SettingsPage() {
           {copy.settings.signOut}
         </Button>
       </div>
+      <p data-testid="build-id" className="text-center text-[11px] text-[#99a1af] select-all">{buildLabel()}</p>
     </div>
   );
 }

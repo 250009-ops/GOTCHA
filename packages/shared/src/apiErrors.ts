@@ -64,7 +64,7 @@ const BY_MESSAGE: Record<string, T3> = {
 
 const BY_STATUS: Record<string, T3> = {
   network: { en: 'No connection to the server. Check your internet.', ru: 'Нет связи с сервером. Проверьте интернет.', uz: 'Server bilan aloqa yoʻq. Internetni tekshiring.' },
-  '400': { en: 'Please check the entered data.', ru: 'Проверьте введённые данные.', uz: 'Kiritilgan ma’lumotlarni tekshiring.' },
+  '400': { en: 'Please check the entered data.', ru: 'Проверьте введённые данные.', uz: 'Kiritilgan maʼlumotlarni tekshiring.' },
   '401': { en: 'Please sign in again.', ru: 'Войдите снова.', uz: 'Qaytadan kiring.' },
   '403': { en: 'You don’t have access to this.', ru: 'Нет доступа.', uz: 'Bunga ruxsatingiz yoʻq.' },
   '404': { en: 'Not found.', ru: 'Не найдено.', uz: 'Topilmadi.' },

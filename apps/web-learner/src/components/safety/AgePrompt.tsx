@@ -1,54 +1,66 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useLearnerLocale } from '../../lib/learnerLocaleContext';
+import { rememberAgePromptDismissed, shouldShowAgePrompt } from '../../lib/agePromptPolicy';
 import { AGE_COPY, birthYearOptions, toConsentLocale } from './signupConsent';
 
-/** W-12: one-time birth-year prompt for existing users (server sets needsAgePrompt). */
+const CLOSE = { uz: 'Yopish', ru: 'Закрыть', en: 'Close' } as const;
+const store = (): Storage | null => { try { return window.localStorage; } catch { return null; } };
+
+/**
+ * W-12: one-time birth-year prompt for existing users (server sets needsAgePrompt).
+ * S3b (final-6.1): a small dismissible card, NOT a modal: it never blocks Library, Import or Vocabulary,
+ * and once dismissed (✕ / Esc / prefer not to say) it is not shown again on this device.
+ */
 export function AgePrompt() {
   const { user, refreshProfile } = useAuth();
   const { locale } = useLearnerLocale();
   const [year, setYear] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
-  const needs = (user as { needsAgePrompt?: boolean } | null)?.needsAgePrompt;
-  if (!needs || done) return null;
-  const c = AGE_COPY[toConsentLocale(locale)];
+  const u = user as { id?: string; needsAgePrompt?: boolean } | null;
+  const show = !done && shouldShowAgePrompt(u, store());
+  const dismiss = () => { rememberAgePromptDismissed(u?.id, store()); setDone(true); };
+  useEffect(() => {
+    if (!show) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') dismiss(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
+  if (!show) return null;
+  const lc = toConsentLocale(locale);
+  const c = AGE_COPY[lc];
   const send = async (birthYear: number | null) => {
     setBusy(true);
     try {
       await api('/users/me/age', { method: 'POST', body: JSON.stringify({ birthYear }) });
-      setDone(true);
+      dismiss();
       await refreshProfile().catch(() => undefined);
+    } catch {
+      dismiss(); // never trap the learner behind a failed save
     } finally {
       setBusy(false);
     }
   };
-  // final-5: portal to <body> so the nav rail cannot cover the prompt at 360px.
   return createPortal(
-    <div role="dialog" aria-modal="true" aria-labelledby="age-prompt-title" className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl flex flex-col gap-3">
-        <h2 id="age-prompt-title" className="text-base font-bold text-[#101828]">{c.promptTitle}</h2>
+    <div role="dialog" aria-modal="false" aria-labelledby="age-prompt-title" data-testid="age-prompt"
+      className="fixed bottom-4 right-4 left-4 sm:left-auto z-[60] sm:w-[22rem] pointer-events-none">
+      <div className="pointer-events-auto rounded-2xl bg-white p-4 shadow-xl border border-[#e5e7eb] flex flex-col gap-3">
+        <div className="flex items-start justify-between gap-2">
+          <h2 id="age-prompt-title" className="text-base font-bold text-[#101828]">{c.promptTitle}</h2>
+          <button type="button" aria-label={CLOSE[lc]} onClick={dismiss} className="-m-1 h-8 w-8 rounded-full text-[#4a5565] hover:bg-[#f3f4f6]">✕</button>
+        </div>
         <p className="text-sm text-[#4a5565]">{c.promptBody}</p>
-        <select
-          aria-label={c.promptTitle}
-          value={year ?? ''}
-          onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)}
-          className="h-11 rounded-[14px] border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm"
-        >
+        <select aria-label={c.promptTitle} value={year ?? ''} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : null)}
+          className="h-11 rounded-[14px] border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm text-[#101828]">
           <option value="">—</option>
-          {birthYearOptions().map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
+          {birthYearOptions().map((y) => (<option key={y} value={y}>{y}</option>))}
         </select>
         <div className="flex gap-2">
-          <button type="button" disabled={busy} onClick={() => void send(null)} className="flex-1 h-11 rounded-[14px] border border-[#e5e7eb] text-sm font-medium">
-            {c.skip}
-          </button>
-          <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] text-white text-sm font-bold disabled:opacity-50">
-            {c.save}
-          </button>
+          <button type="button" disabled={busy} onClick={() => void send(null)} className="flex-1 h-11 rounded-[14px] border border-[#e5e7eb] text-sm font-medium text-[#101828]">{c.skip}</button>
+          <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] text-white text-sm font-bold disabled:opacity-50">{c.save}</button>
         </div>
       </div>
     </div>,

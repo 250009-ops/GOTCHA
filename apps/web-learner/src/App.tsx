@@ -20,6 +20,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 export default function App() {
   const { preferences } = useAuth();
@@ -51,6 +52,8 @@ export default function App() {
         <Route path="messages" element={<MessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {/* S3a: /app/<legacy> → new route; unknown → 404 page inside the shell */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
       <Route
         path="/app/read/:id"
@@ -68,7 +71,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<LocaleNavigate to="/app" />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }
