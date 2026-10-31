@@ -842,34 +842,40 @@ export const PAY_SELLER = { en: 'the Erkin Tizim team', uz: 'Erkin Tizim jamoasi
 export const PAY_OFERTA_URL: string | null = null;
 
 /**
- * G1 (PM copy, Kai decision A remedy-first, README 31 Oct 16:30): Plus checkout Public Offer tick-box, VERBATIM. Required, unticked by default.
- * `link` is the bracketed [Public Offer] part (opens /oferta in a new tab, in the user's language).
+ * G1 / LG4-20 (PM README 'Plus checkout tick-box', decision A, 31 Oct 16:35): VERBATIM, markdown links
+ * [text](/oferta|/terms|/privacy). Required, unticked by default. Each link opens in a new tab in the user's language.
  */
-export const PLUS_OFERTA_CONSENT: Record<PayLang, { before: string; link: string; after: string; hint: string }> = {
+export const PLUS_OFERTA_CONSENT: Record<PayLang, { text: string; hint: string }> = {
   en: {
-    before: 'I accept the ',
-    link: 'Public Offer',
-    after: '. I understand that Plus starts right after payment and does not renew automatically. If a purchase is faulty, we fix it or extend Plus; money is returned only for duplicate or failed charges, or if we can\'t deliver.',
-    hint: 'Please accept the Public Offer to continue.',
+    text: "I accept the [Public Offer](/oferta) and the [Terms of Use](/terms), and I have read the [Privacy Policy](/privacy). I understand Plus starts right after payment and does not renew automatically. If a purchase is faulty, we fix it or extend Plus; money is returned only for duplicate or failed charges, or if we can't deliver.",
+    hint: "Please accept the Public Offer to continue.",
   },
   ru: {
-    before: 'Я принимаю ',
-    link: 'Публичную оферту',
-    after: '. Я понимаю, что Plus начинает действовать сразу после оплаты и не продлевается автоматически. Если с покупкой что-то не так, мы исправим проблему или продлим Plus; деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку.',
-    hint: 'Чтобы продолжить, примите Публичную оферту.',
+    text: "Я принимаю [Публичную оферту](/oferta) и [Пользовательское соглашение](/terms) и ознакомился(-ась) с [Политикой конфиденциальности](/privacy). Я понимаю, что Plus начинает действовать сразу после оплаты и не продлевается автоматически. Если с покупкой что-то не так, мы исправим проблему или продлим Plus; деньги возвращаются только при двойном или неудавшемся списании, а также если мы не можем предоставить покупку.",
+    hint: "Чтобы продолжить, примите Публичную оферту.",
   },
   uz: {
-    before: '',
-    link: 'Ommaviy oferta',
-    after: 'ni qabul qilaman. Plus toʻlovdan soʻng darhol boshlanishini va avtomatik uzaytirilmasligini tushunaman. Xaridda muammo boʻlsa, uni tuzatamiz yoki Plusni uzaytiramiz; pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni yetkaza olmasak qaytariladi.',
-    hint: 'Davom etish uchun Ommaviy ofertani qabul qiling.',
+    text: "[Ommaviy oferta](/oferta) va [Foydalanish shartlari](/terms)ni qabul qilaman hamda [Maxfiylik siyosati](/privacy) bilan tanishib chiqdim. Plus toʻlovdan soʻng darhol boshlanishini va avtomatik uzaytirilmasligini tushunaman. Xaridda muammo boʻlsa, uni tuzatamiz yoki Plusni uzaytiramiz; pul faqat ikki marta yechilgan yoki muvaffaqiyatsiz toʻlovda yoxud xaridni yetkaza olmasak qaytariladi.",
+    hint: "Davom etish uchun Ommaviy ofertani qabul qiling.",
   },
 };
+export type PlusOfertaPart = { text: string; href?: '/oferta' | '/terms' | '/privacy' };
+/** Splits the verbatim label into plain text and link parts (order kept, no wording change). */
+export function plusOfertaParts(text: string): PlusOfertaPart[] {
+  const out: PlusOfertaPart[] = []; const re = /\[([^\]]+)\]\((\/oferta|\/terms|\/privacy)\)/g; let last = 0; let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) { if (m.index > last) out.push({ text: text.slice(last, m.index) }); out.push({ text: m[1], href: m[2] as PlusOfertaPart['href'] }); last = m.index + m[0].length; }
+  if (last < text.length) out.push({ text: text.slice(last) });
+  return out;
+}
 export function plusOfertaConsent(lang: string | null | undefined) {
   const l = (['en', 'ru', 'uz'] as const).find((x) => x === (lang ?? '').slice(0, 2).toLowerCase()) ?? 'en';
-  return { ...PLUS_OFERTA_CONSENT[l], lang: l };
+  const c = PLUS_OFERTA_CONSENT[l];
+  return { ...c, parts: plusOfertaParts(c.text), plain: plusOfertaParts(c.text).map((x) => x.text).join(''), lang: l };
 }
-/** /oferta on the marketing site, in the user's language. */
+/** Absolute legal link in the user's language: /oferta, /terms or /privacy on the marketing site. */
+export function plusLegalHref(marketingUrl: string, path: '/oferta' | '/terms' | '/privacy', lang: string | null | undefined): string {
+  return `${marketingUrl.replace(/\/+$/, '')}${path}?lang=${plusOfertaConsent(lang).lang}`;
+}
 export function plusOfertaHref(marketingUrl: string, lang: string | null | undefined): string {
   return `${marketingUrl.replace(/\/+$/, '')}/oferta?lang=${plusOfertaConsent(lang).lang}`;
 }

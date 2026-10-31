@@ -5,7 +5,7 @@ import { Check, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { applyPayment, preApplyPayment, retryOtp, cancelPayment } from '../lib/importBilling';
 import { CardForm, OtpForm, PayTrust, PriceTag, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
-import { cancelScreen, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusOfertaConsent, plusOfertaHref, plusPayGate, plusSmallPrint } from '@gotcha/shared';
+import { cancelScreen, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusOfertaConsent, plusLegalHref, plusPayGate, plusSmallPrint } from '@gotcha/shared';
 import { MARKETING_URL } from '../lib/links';
 
 type Offer = { enabled: boolean; plans: { days: number; priceUzs: number }[]; active: boolean; expiresAt: string | null; playActive?: boolean;
@@ -110,7 +110,9 @@ export default function PlusPage() {
           {error && <p role="alert" className="text-sm" style={{ color: 'var(--g-bad)' }}>{error}</p>}
           <label className="flex items-start gap-2 text-sm" data-testid="oferta-consent">
             <input type="checkbox" required checked={ofertaOk} onChange={(e) => setOfertaOk(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" data-testid="oferta-checkbox" aria-describedby={gate.needsOferta ? 'oferta-hint' : undefined} />
-            <span>{oc.before}<a href={plusOfertaHref(MARKETING_URL, locale)} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--g-accent)' }} data-testid="oferta-link">{oc.link}</a>{oc.after}</span>
+            <span>{oc.parts.map((p, i) => p.href
+              ? <a key={i} href={plusLegalHref(MARKETING_URL, p.href, locale)} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--g-accent)' }} data-testid={p.href === '/oferta' ? 'oferta-link' : `legal-link-${p.href.slice(1)}`}>{p.text}</a>
+              : <span key={i}>{p.text}</span>)}</span>
           </label>
           {gate.needsOferta && <p id="oferta-hint" className="text-xs" style={{ color: 'var(--g-text-2)' }} data-testid="oferta-hint">{oc.hint}</p>}
           <button type="button" disabled={gate.disabled} onClick={start} data-testid="plus-pay" className="w-full min-h-[48px] rounded-[14px] font-bold text-white disabled:opacity-50" style={{ background: 'var(--g-cta)' }}>
