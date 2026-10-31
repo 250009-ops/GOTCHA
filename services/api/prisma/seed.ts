@@ -6,6 +6,22 @@ import {
   FIGMA_ADMIN_METRICS,
 } from '../src/modules/admin/admin-figma-metrics';
 import { syntheticUserEmailWhere } from '../src/common/production-users';
+/**
+ * WL4-15: no passwords in the repo. Seed passwords come from env, or a random one is generated.
+ * On an existing user the hash is only replaced when the env var is set, so a redeploy never resets a real password.
+ * A generated password is printed once, outside production only.
+ */
+import { randomBytes } from 'crypto';
+function seedPassword(envKey: string): { value: string; fromEnv: boolean } {
+  const v = process.env[envKey];
+  return v && v.length >= 12 ? { value: v, fromEnv: true } : { value: randomBytes(18).toString('base64url'), fromEnv: false };
+}
+function logGenerated(email: string, s: { fromEnv: boolean; value: string }) {
+  if (s.fromEnv) console.log(`${email}: password from env`);
+  else if (process.env.NODE_ENV !== 'production') console.log(`${email}: generated password (dev only, not stored): ${s.value}`);
+  else console.log(`${email}: random password set on create; use password reset to sign in`);
+}
+
 
 const prisma = new PrismaClient();
 
@@ -181,7 +197,7 @@ async function main() {
   console.log('Seeding Gotcha database...');
 
   // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
-  // Premium: unlimited.
+  // Premium (Plus): 200 AI explanations/day, 500 hard cap, 200 quizzes/day — see common/plan-limits.ts.
   const UNLIMITED = 1_000_000;
   await prisma.subscriptionPlan.upsert({
     where: { tier: 'free' },
@@ -194,7 +210,7 @@ async function main() {
       tier: 'free',
       name: 'Free',
       priceMonthly: 0,
-      aiDailyQuota: 50,
+      aiDailyQuota: 20, // display/enforcement come from common/plan-limits.ts (Free 20 lookups / 10 quizzes)
       importLimit: 15,
       offlineEnabled: false,
     },
@@ -205,17 +221,17 @@ async function main() {
     update: {
       name: 'Plus',
       priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      aiDailyQuota: UNLIMITED,
+      aiDailyQuota: 200, // Plus: 200 full AI / 500 hard cap / 200 quizzes (common/plan-limits.ts)
       importLimit: UNLIMITED,
-      offlineEnabled: true,
+      offlineEnabled: false,
     },
     create: {
       tier: 'premium',
       name: 'Plus',
       priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
-      aiDailyQuota: UNLIMITED,
+      aiDailyQuota: 200, // Plus: 200 full AI / 500 hard cap / 200 quizzes (common/plan-limits.ts)
       importLimit: UNLIMITED,
-      offlineEnabled: true,
+      offlineEnabled: false,
     },
   });
 
@@ -233,11 +249,12 @@ async function main() {
     },
   });
 
-  const adminPassword = await bcrypt.hash('<REDACTED-admin-pw>', 12);
+  const adminPasswordSecret = seedPassword('SEED_ADMIN_PASSWORD');
+  const adminPassword = await bcrypt.hash(adminPasswordSecret.value, 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@gotcha.app' },
     update: {
-      passwordHash: adminPassword,
+      ...(adminPasswordSecret.fromEnv ? { passwordHash: adminPassword } : {}),
       emailVerifiedAt: new Date(),
       deletedAt: null,
     },
@@ -279,13 +296,14 @@ async function main() {
     await ensureSubscription(admin.id, freePlan.id, '00000000-0000-4000-8000-000000000010');
   }
 
-  const demoPassword = await bcrypt.hash('<REDACTED-learner-pw>', 12);
+  const demoPasswordSecret = seedPassword('SEED_DEMO_PASSWORD');
+  const demoPassword = await bcrypt.hash(demoPasswordSecret.value, 12);
   const learnerCreatedAt = new Date('2025-10-12T10:00:00.000Z');
   const demoUser = await prisma.user.upsert({
     where: { email: 'learner@gotcha.app' },
     update: {
       displayName: 'Alex Chen',
-      passwordHash: demoPassword,
+      ...(demoPasswordSecret.fromEnv ? { passwordHash: demoPassword } : {}),
       nativeLanguage: 'en',
       uiLanguage: 'en',
       streakCount: 7,
@@ -972,7 +990,7 @@ async function main() {
   });
   const existingAiUserQuota = await prisma.platformSetting.findUnique({ where: { key: 'aiDefaultUserQuota' } });
   if (!existingAiUserQuota) {
-    await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 50 } });
+    await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 20 } });
   }
 
   await prisma.notificationCampaign.deleteMany({
@@ -1120,8 +1138,8 @@ async function main() {
   }
 
   console.log('Seed complete.');
-  console.log('Admin: admin@gotcha.app / <REDACTED-admin-pw>');
-  console.log('Demo learner: learner@gotcha.app / <REDACTED-learner-pw>');
+  logGenerated('admin@gotcha.app', adminPasswordSecret);
+  logGenerated('learner@gotcha.app', demoPasswordSecret);
   console.log('Production metrics: live user/AI/revenue counts (Figma overlay removed).');
 }
 
