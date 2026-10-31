@@ -298,8 +298,7 @@ export class ImportsService {
   async importPaste(userId: string, dto: ImportPasteDto) {
     await this.limits.assertImportAllowed(userId);
     const importLanguage = await this.resolveImportLanguage(userId, dto.language);
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste, this.importCommerce.estimatePages({ importType: ImportType.paste, textLength: dto.text?.length ?? 0 }));
-
+    // final-6.1b-r2: validate the text BEFORE touching the payment, so bad input never consumes a paid payment.
     try {
       assertMaxChars(dto.text, 'Pasted text');
     } catch (err) {
@@ -313,6 +312,7 @@ export class ImportsService {
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : 'Invalid text');
     }
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste, this.importCommerce.estimatePages({ importType: ImportType.paste, textLength: dto.text?.length ?? 0 }));
 
     const title = dto.title.trim();
     // Text goes to disk, not the queue row (keeps import_queue_jobs small).
@@ -628,10 +628,10 @@ export class ImportsService {
     }
     const settle = await settleFailedImportPayment(
       this.prisma as never,
-      this.atmos,
+      this.importCommerce.importRefundReverser(),
       userImportId,
       `Import failed: ${message}`,
-      { liveReverse: liveReverseEnabled() },
+      { liveReverse: liveReverseEnabled() && this.atmos.configured() },
     );
     this.logger.warn(`Import ${userImportId} failed permanently (${message}); payment: ${JSON.stringify(settle)}`);
     return settle;

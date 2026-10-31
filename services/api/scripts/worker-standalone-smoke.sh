@@ -94,7 +94,7 @@ grep -q 'Re-queued 1 stalled' "$W/w1.log" "$W/w2.log" && say "PASS stale lock re
 [[ "$(Q "select status from import_queue_jobs where user_import_id='$P3'")$(Q "select ingestion_status from user_imports where id='$P3'")" == failedfailed ]] || fail "free fail path"
 [[ "$(Q "select status||'/'||coalesce(refund_state,'-') from import_payments where user_import_id='$P4'")" == paid/due ]] || fail "paid failure not refund-due: $(Q "select status||'/'||coalesce(refund_state,'-') from import_payments where user_import_id='$P4'")"
 [[ "$(Q "select count(*)||':'||coalesce(sum(amount_tiyins),0) from import_payments")" == "$PAYS0" ]] || fail "payments changed (new charge?)"
-say "PASS failure: paid import → failed, payment refund_state=due (released, no live reverse), no new payment/charge ($PAYS0)"
+say "PASS failure: paid import → failed, payment refund_state=due (Atmos not configured in smoke → manual-refund fallback; with Atmos configured it auto-reverses, see f61b-r2-refund.test.ts), no new payment/charge ($PAYS0)"
 curl -s -H "authorization: Bearer $TOK" "$B/imports" > "$W/list"
 python3 - "$W/list" <<'PY' || fail "free allowance counts a failed import"
 import json,sys; d=json.load(open(sys.argv[1])); fa=d.get('freeAllowance') or d.get('freeImportAllowance') or {}

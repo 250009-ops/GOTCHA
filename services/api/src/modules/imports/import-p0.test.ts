@@ -79,8 +79,10 @@ async function main() {
     assert.deepEqual(await prepareRetryPayment(fakeDb([{ ...paid(), refundState: 'processing' }]), 'u1'), { ok: false, reason: 'refund_in_progress' });
     assert.deepEqual(await prepareRetryPayment(fakeDb([paid()]), 'u1'), { ok: true, cancelledRefund: false });
   }
-  assert.equal(liveReverseEnabled({}), false);
+  // final-6.1b-r2: live reverse is the default; explicit off values are a kill switch
+  assert.equal(liveReverseEnabled({}), true);
   assert.equal(liveReverseEnabled({ IMPORT_REFUND_LIVE_REVERSE: 'true' }), true);
+  for (const off of ['0', 'false', 'no', 'off', ' OFF ']) assert.equal(liveReverseEnabled({ IMPORT_REFUND_LIVE_REVERSE: off }), false);
 
   // --- notices
   {

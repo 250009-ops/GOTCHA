@@ -1121,6 +1121,14 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return Number.isFinite(s) && s > 0 ? s : transactionId;
   }
 
+  /** final-6.1b-r2: reverser for failed-import refunds — same successTransId lookup + idempotency key as admin refund. */
+  importRefundReverser() {
+    return {
+      reverseTransaction: async (p: { transactionId: number; reason?: string; idempotencyKey?: string }) =>
+        this.atmos.reverseTransaction({ ...p, transactionId: await this.reverseIdFor(p.transactionId) }),
+    };
+  }
+
   private async reverseOrFlag(paymentId: string, transactionId: number, reason: string): Promise<boolean> {
     try {
       await this.atmos.reverseTransaction({ transactionId: await this.reverseIdFor(transactionId), reason, idempotencyKey: paymentId });
