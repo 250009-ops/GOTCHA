@@ -15,6 +15,7 @@ import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
 import { CONSENT_VERSION } from '../components/safety/signupConsent';
+import { LegalLinksLine } from '../components/safety/LegalLinksLine';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
@@ -394,7 +395,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     copy.common.continue
                   )}
               </Button>
-              {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. */}
+              {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. WLF-36: plain links. */}
+              {!isLogin && <LegalLinksLine locale={locale} />}
             </form>
           )}
 

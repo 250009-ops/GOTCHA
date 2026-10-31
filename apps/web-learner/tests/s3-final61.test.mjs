@@ -39,3 +39,18 @@ assert.equal(buildLabel({ VITE_BUILD_SHA: 'abc1234', VITE_BUILD_DATE: '2026-10-3
 assert.equal(buildLabel({}), 'build dev');
 assert.match(readFileSync(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8'), /data-testid="build-id"/);
 console.log('s3-final61: OK');
+
+// WLF-36: ?ui= wins for guests; register step 1 links Terms/Privacy/Oferta in uz/ru/en
+{
+  const ctx = readFileSync(new URL('../src/lib/learnerLocaleContext.tsx', import.meta.url), 'utf8');
+  assert.match(ctx, /searchParams\.get\('ui'\)[\s\S]{0,200}if \(!user && UI_LANGUAGES\.includes\(urlUi/);
+  const { legalLinksText } = await import('../src/components/safety/LegalLinksLine.tsx').catch(() => ({ legalLinksText: null }));
+  const ll = readFileSync(new URL('../src/components/safety/LegalLinksLine.tsx', import.meta.url), 'utf8');
+  for (const k of ['/terms', '/privacy', '/oferta']) assert.ok(ll.includes('CONSENT_LINK_PATHS') && readFileSync(new URL('../src/lib/legalLinks.ts', import.meta.url), 'utf8').includes(`'${k}'`));
+  assert.match(ll, /Ommaviy oferta/); assert.match(ll, /Публичная оферта/); assert.match(ll, /Public Offer/);
+  assert.match(readFileSync(new URL('../src/pages/AuthPage.tsx', import.meta.url), 'utf8'), /!isLogin && <LegalLinksLine/);
+  void legalLinksText;
+}
+// WLF-35: learner never calls the retired /marketing/landing
+assert.ok(!readFileSync(new URL('../src/components/AuthShell.tsx', import.meta.url), 'utf8').includes('${API_BASE}/marketing/landing'));
+console.log('s3-final61 WLF-35/36: OK');
