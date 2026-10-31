@@ -1,0 +1,46 @@
+/* PAY2-07 port: the --g-* colour roles used by the payments-02 screens (PlusPage, payments components, ImportPaymentReturnPage).
+   Variables only, copied from gotcha-pay 5351723 gotcha-tokens.css (no base styles, no Tailwind aliasing, no color-scheme),
+   so wlive's own look is unchanged. Without them the Pay button rendered white-on-white. */
+:root {
+  --g-blue-50: #eef0ff; --g-blue-100: #e0e3ff; --g-blue-200: #c5cafd; --g-blue-300: #a0a6fa; --g-blue-400: #7a7ef5;
+  --g-blue-500: #5550ec; --g-blue-600: #3b2ad6; --g-blue-700: #2107aa; --g-blue-800: #1a068a; --g-blue-900: #14056b; --g-blue-950: #0c0342;
+  --g-brand-shadow: rgba(33, 7, 170, 0.22);
+  --g-sidebar: #0b0c26; --g-canvas: #f6f7ff; --g-admin-sidebar: #181a28; --g-admin-canvas: #f8fafc;
+  --g-surface-input: #f9faff; --g-border-input: #e4e7f0; --g-text-placeholder: #6b7080;
+  --g-learning-text: #0e7490; --g-learning-bg: #ecfeff; --g-info-text: #334155; --g-info-surface: #f1f5f9; --g-reader-bg: #ffffff;
+  --g-mark-shadow: 0 10px 7.5px rgba(33, 7, 170, 0.5), 0 4px 3px rgba(33, 7, 170, 0.5);
+
+  /* semantic roles — light */
+  --g-admin-bg: var(--g-admin-canvas);
+  --g-bg: var(--g-canvas); --g-raised: #ffffff; --g-card: #ffffff; --g-card-2: #f9fafb; --g-input: var(--g-surface-input); --g-overlay: #ffffff;
+  --g-text: #101828; --g-text-2: #4a5565; --g-text-3: var(--g-text-placeholder);
+  --g-line: #e5e7eb; --g-line-input: var(--g-border-input);
+  --g-cta: var(--g-blue-700); --g-cta-hover: var(--g-blue-800); --g-accent: var(--g-blue-700); --g-accent-soft: var(--g-blue-50);
+  --g-accent-line: var(--g-blue-200); --g-progress: var(--g-blue-700); --g-track: var(--g-blue-100); --g-focus: var(--g-blue-600);
+  --g-ok: #047857; --g-ok-bg: #ecfdf5; --g-ok-line: #a7f3d0;
+  --g-bad: #dc2626; --g-bad-bg: #fff5f5; --g-bad-line: #fecaca;
+  --g-warn: #b45309; --g-warn-bg: #fef3c7; --g-warn-line: #fee685;
+  --g-info: var(--g-info-text); --g-info-bg: var(--g-info-surface); --g-info-line: #cbd5e1;
+  --g-learn: var(--g-learning-text); --g-learn-bg: var(--g-learning-bg);
+  --g-on-fill: #ffffff;
+  --g-streak-bg: #fffbeb; --g-streak-line: #fee685; --g-streak-text: #bb4d00; --g-streak-icon: #fe9a00;
+  --g-topbar: rgba(255, 255, 255, 0.95);
+  --g-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
+}
+[data-theme='dark'] {
+  --g-admin-bg: #0a0b14;
+  --g-bg: #0a0b14; --g-raised: #11121e; --g-card: #181a28; --g-card-2: #11121e; --g-input: #0a0b14; --g-overlay: #212336;
+  --g-text: #ededf0; --g-text-2: #a1a1aa; --g-text-3: #8b8b94;
+  --g-line: rgba(255, 255, 255, 0.07); --g-line-input: rgba(255, 255, 255, 0.1);
+  --g-cta: var(--g-blue-500); --g-cta-hover: #6763f0; --g-accent: var(--g-blue-300); --g-accent-soft: rgba(85, 80, 236, 0.2);
+  --g-accent-line: rgba(160, 166, 250, 0.45); --g-progress: var(--g-blue-400); --g-track: rgba(85, 80, 236, 0.22); --g-focus: var(--g-blue-300);
+  --g-ok: #34d399; --g-ok-bg: rgba(52, 211, 153, 0.12); --g-ok-line: rgba(52, 211, 153, 0.3);
+  --g-bad: #f87171; --g-bad-bg: rgba(248, 113, 113, 0.12); --g-bad-line: rgba(248, 113, 113, 0.3);
+  --g-warn: #fe9a00; --g-warn-bg: rgba(254, 154, 0, 0.12); --g-warn-line: rgba(254, 154, 0, 0.3);
+  --g-info: #cbd5e1; --g-info-bg: rgba(203, 213, 225, 0.08); --g-info-line: rgba(203, 213, 225, 0.2);
+  --g-learn: #67e8f9; --g-learn-bg: rgba(103, 232, 249, 0.1);
+  --g-on-fill: #0a0b14;
+  --g-streak-bg: rgba(254, 154, 0, 0.1); --g-streak-line: rgba(254, 154, 0, 0.28); --g-streak-text: #fe9a00; --g-streak-icon: #fe9a00;
+  --g-topbar: #11121e;
+  --g-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+}

@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { PAY_COPY, PAY_OFERTA_URL, PAY_SELLER, cancelScreen, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusPaywallVariant, plusReminderKey, plusSmallPrint, slowDownMessage, UI_LANGUAGE_PICKER } from '@gotcha/shared';
+import { PAY_COPY, PAY_OFERTA_URL, PAY_SELLER, cancelScreen, plusOfertaConsent, plusOfertaHref, plusPayGate, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusPaywallVariant, plusReminderKey, plusSmallPrint, slowDownMessage, UI_LANGUAGE_PICKER } from '@gotcha/shared';
 import { dailyLimitText, isDailyLimitError, isSlowDownError, limitTitle } from './dailyLimit';
 import { plusSuccessLine, paymentKindOf, safeOwnReceipt, formatPaymentDate, mergePages, paymentSourceKey, paymentStatusKey, paymentTitle, priceOrNull, safeReceiptUrl, statusTone } from './payments';
 
@@ -152,4 +152,22 @@ console.log('payments.test: ok');
   for (const l of ['en', 'uz'] as const) assert.match(paySom(24990, l), /^24 990 so\u02BBm$/);
   assert.match(paySom(24990, 'ru'), /^24 990 сум$/);
   console.log('PAY2-10 soʻm: ok');
+}
+
+// G1: Plus checkout Public Offer tick-box, PM final copy word for word (brackets = the /oferta link).
+{
+  const full = (l: string) => { const c = plusOfertaConsent(l); return `${c.before}[${c.link}]${c.after}`; };
+  assert.equal(full('en'), 'I accept the [Public Offer]. I understand that Plus starts right after payment, does not renew automatically, and is refunded only if the purchase is faulty (for example, charged but not delivered).');
+  assert.equal(full('ru'), 'Я принимаю [Публичную оферту]. Я понимаю, что Plus начинает действовать сразу после оплаты, не продлевается автоматически, а деньги возвращаются только при сбое покупки (например, если оплата прошла, а Plus не подключён).');
+  assert.equal(full('uz'), '[Ommaviy oferta]ni qabul qilaman. Plus to\u02bblovdan so\u02bbng darhol boshlanishini, avtomatik uzaytirilmasligini va pul faqat xaridda nosozlik bo\u02bblsa (masalan, to\u02bblov o\u02bbtib, Plus ulanmagan bo\u02bblsa) qaytarilishini tushunaman.');
+  assert.equal(plusOfertaConsent('en').hint, 'Please accept the Public Offer to continue.');
+  assert.equal(plusOfertaConsent('ru').hint, 'Чтобы продолжить, примите Публичную оферту.');
+  assert.equal(plusOfertaConsent('uz').hint, 'Davom etish uchun Ommaviy ofertani qabul qiling.');
+  assert.equal(plusOfertaHref('https://gotchaa.uz/', 'ru'), 'https://gotchaa.uz/oferta?lang=ru');
+  assert.equal(plusOfertaHref('https://gotchaa.uz', 'uz'), 'https://gotchaa.uz/oferta?lang=uz');
+  // Disabled state: unticked (the default) → Pay disabled + hint; ticked → enabled.
+  assert.deepEqual(plusPayGate({ accepted: false, hasPlan: true, loading: false }), { disabled: true, needsOferta: true });
+  assert.deepEqual(plusPayGate({ accepted: true, hasPlan: true, loading: false }), { disabled: false, needsOferta: false });
+  assert.equal(plusPayGate({ accepted: true, hasPlan: true, loading: true }).disabled, true);
+  console.log('oferta checkout copy + gate: ok');
 }

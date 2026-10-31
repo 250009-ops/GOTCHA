@@ -825,6 +825,43 @@ export function plusSmallPrint(text: string, pct: number): string {
 export const PAY_SELLER = { en: 'the Erkin Tizim team', uz: 'Erkin Tizim jamoasi', ru: 'команда Erkin Tizim' } as const;
 export const PAY_OFERTA_URL: string | null = null;
 
+/**
+ * G1 (PM final copy, 31 Oct): Plus checkout Public Offer tick-box, VERBATIM. Required, unticked by default.
+ * `link` is the bracketed [Public Offer] part (opens /oferta in a new tab, in the user's language).
+ */
+export const PLUS_OFERTA_CONSENT: Record<PayLang, { before: string; link: string; after: string; hint: string }> = {
+  en: {
+    before: 'I accept the ',
+    link: 'Public Offer',
+    after: '. I understand that Plus starts right after payment, does not renew automatically, and is refunded only if the purchase is faulty (for example, charged but not delivered).',
+    hint: 'Please accept the Public Offer to continue.',
+  },
+  ru: {
+    before: 'Я принимаю ',
+    link: 'Публичную оферту',
+    after: '. Я понимаю, что Plus начинает действовать сразу после оплаты, не продлевается автоматически, а деньги возвращаются только при сбое покупки (например, если оплата прошла, а Plus не подключён).',
+    hint: 'Чтобы продолжить, примите Публичную оферту.',
+  },
+  uz: {
+    before: '',
+    link: 'Ommaviy oferta',
+    after: 'ni qabul qilaman. Plus toʻlovdan soʻng darhol boshlanishini, avtomatik uzaytirilmasligini va pul faqat xaridda nosozlik boʻlsa (masalan, toʻlov oʻtib, Plus ulanmagan boʻlsa) qaytarilishini tushunaman.',
+    hint: 'Davom etish uchun Ommaviy ofertani qabul qiling.',
+  },
+};
+export function plusOfertaConsent(lang: string | null | undefined) {
+  const l = (['en', 'ru', 'uz'] as const).find((x) => x === (lang ?? '').slice(0, 2).toLowerCase()) ?? 'en';
+  return { ...PLUS_OFERTA_CONSENT[l], lang: l };
+}
+/** /oferta on the marketing site, in the user's language. */
+export function plusOfertaHref(marketingUrl: string, lang: string | null | undefined): string {
+  return `${marketingUrl.replace(/\/+$/, '')}/oferta?lang=${plusOfertaConsent(lang).lang}`;
+}
+/** Pay stays disabled until the Public Offer is ticked (and a plan is chosen, and nothing is in flight). */
+export function plusPayGate(o: { accepted: boolean; hasPlan: boolean; loading: boolean }): { disabled: boolean; needsOferta: boolean } {
+  return { disabled: !o.accepted || !o.hasPlan || o.loading, needsOferta: !o.accepted };
+}
+
 /** Reminder copy for an Atmos pass (decided: 3 days, 1 day, and on the day). Key plus.rem7 carries the 3-day text in the final spec. */
 export function plusReminderKey(daysLeft: number): PayKey | null {
   if (daysLeft === 3) return 'plus.rem7';

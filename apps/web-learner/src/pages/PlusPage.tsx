@@ -5,7 +5,8 @@ import { Check, Loader2 } from 'lucide-react';
 import { api } from '../lib/api';
 import { applyPayment, preApplyPayment, retryOtp, cancelPayment } from '../lib/importBilling';
 import { CardForm, OtpForm, PayTrust, PriceTag, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
-import { cancelScreen, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusSmallPrint } from '@gotcha/shared';
+import { cancelScreen, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusOfertaConsent, plusOfertaHref, plusPayGate, plusSmallPrint } from '@gotcha/shared';
+import { MARKETING_URL } from '../lib/links';
 
 type Offer = { enabled: boolean; plans: { days: number; priceUzs: number }[]; active: boolean; expiresAt: string | null; playActive?: boolean;
   /** Admin config (plan aiDailyQuota, platform Free default, plus.benefits.importDiscountPct). */
@@ -31,6 +32,7 @@ export default function PlusPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [ofertaOk, setOfertaOk] = useState(false); // G1: required, UNTICKED by default
   const [cancelOutcome, setCancelOutcome] = useState<{ status: string; code: string | null; needsAttention: boolean } | null>(null);
   const busy = useRef(false); // double-click guard
 
@@ -51,7 +53,8 @@ export default function PlusPage() {
     : plusCap == null && nums.free > 0 && k === 'plus.lead' ? plusLead(null, nums.free, locale) : plusFill(t(k), nums));
   const lookupsCopy = nums.free > 0 && (plusCap == null || nums.plus > 0);
   const start = () => guard(async () => {
-    const r = await api<{ paymentId: string }>('/billing/plus/checkout', { method: 'POST', body: JSON.stringify({ days }) });
+    if (!ofertaOk) return; // G1: never start a checkout without the Public Offer
+    const r = await api<{ paymentId: string }>('/billing/plus/checkout', { method: 'POST', body: JSON.stringify({ days, acceptOferta: ofertaOk }) });
     setPaymentId(r.paymentId); setStep('card');
   });
   const submitCard = () => guard(async () => {
@@ -67,6 +70,8 @@ export default function PlusPage() {
 
   if (!offer) return <div className="flex justify-center py-16">{error ? <p role="alert" style={{ color: 'var(--g-bad)' }}>{error}</p> : <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--g-text-3)' }} />}</div>;
 
+  const oc = plusOfertaConsent(locale);
+  const gate = plusPayGate({ accepted: ofertaOk, hasPlan: !!plan, loading });
   const box = { background: 'var(--g-card)', borderColor: 'var(--g-line)', color: 'var(--g-text)' } as const;
   return (
     <div className="mx-auto w-full max-w-md px-4 py-6 space-y-4" style={{ color: 'var(--g-text)' }}>
@@ -103,7 +108,12 @@ export default function PlusPage() {
             <p className="text-sm" style={{ color: 'var(--g-text-2)' }}>{t('plus.extNew')}: <b>{fmtDate(extendedEnd(offer.expiresAt, days))}</b>. {t('plus.extNote')}</p>
           )}
           {error && <p role="alert" className="text-sm" style={{ color: 'var(--g-bad)' }}>{error}</p>}
-          <button type="button" disabled={!plan || loading} onClick={start} className="w-full min-h-[48px] rounded-[14px] font-bold text-white disabled:opacity-50" style={{ background: 'var(--g-cta)' }}>
+          <label className="flex items-start gap-2 text-sm" data-testid="oferta-consent">
+            <input type="checkbox" required checked={ofertaOk} onChange={(e) => setOfertaOk(e.target.checked)} className="mt-1 h-4 w-4 shrink-0" data-testid="oferta-checkbox" aria-describedby={gate.needsOferta ? 'oferta-hint' : undefined} />
+            <span>{oc.before}<a href={plusOfertaHref(MARKETING_URL, locale)} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--g-accent)' }} data-testid="oferta-link">{oc.link}</a>{oc.after}</span>
+          </label>
+          {gate.needsOferta && <p id="oferta-hint" className="text-xs" style={{ color: 'var(--g-text-2)' }} data-testid="oferta-hint">{oc.hint}</p>}
+          <button type="button" disabled={gate.disabled} onClick={start} data-testid="plus-pay" className="w-full min-h-[48px] rounded-[14px] font-bold text-white disabled:opacity-50" style={{ background: 'var(--g-cta)' }}>
             {loading ? <Loader2 className="inline w-4 h-4 animate-spin" /> : null} {plan ? `${t('pay.amount')} ${som(plan.priceUzs)}` : t('plus.cta')}
           </button>
           <p className="text-[12px]" style={{ color: 'var(--g-text-3)' }}>{t('plus.noRenew')} {plusSmallPrint(t('plus.small'), nums.pct)}</p>
