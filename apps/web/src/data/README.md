@@ -10,5 +10,5 @@
 - **Languages:**
   - The `ru` and `en` QA files were byte-identical copies of the Uzbek gloss, so there is no real Russian or English capture.
   - The ru page shows no pop-up.
-  - The en page shows the Uzbek capture, as in the design.
+  - The en page shows no pop-up either (landing-premium-02, Lead 14:26) until a real English capture exists.
   - Don't add ru/en glosses by hand. Paste a real capture instead.

@@ -8,11 +8,18 @@ import { plusCta } from '../src/lib/plusCta.ts';
 const BANNED = [/unlimited/i, /no daily limit/i, /offline/i, /subscription/i, /13\+/, /\$/, /USD/, /безлимит/i, /cheksiz/i, /подписк/i, /obuna/i];
 for (const l of ['uz', 'ru', 'en'] as const) {
   const C = LANDING_COPY[l];
-  const all = JSON.stringify(C);
+  // plusNote carries the PM-approved negation 'No subscription, no auto-renewal' (LP1-06), checked verbatim below.
+  const all = JSON.stringify({ ...C, plusNote: '' });
   test(`${l}: no banned claims`, () => { for (const re of BANNED) assert.doesNotMatch(all, re); });
-  test(`${l}: Plus = 2 bullets, approved prices, 200/50`, () => {
-    assert.equal(C.plusB.length, 2);
-    assert.match(C.plusB[0], /200/); assert.match(C.plusB[0], /50/);
+  test(`${l}: LP1-06 plusNote line verbatim`, () => {
+    const NOTE = { en: 'One-time payment. No subscription, no auto-renewal.', uz: 'Bir martalik toʻlov. Obuna yoʻq, avtomatik yangilanmaydi.', ru: 'Разовый платёж. Без подписки и автопродления.' }[l];
+    assert.ok(C.plusNote.startsWith(NOTE), C.plusNote);
+  });
+  test(`${l}: Plus limits Free 20 / Plus 200, quizzes 10/200, no stale 50`, () => {
+    assert.equal(C.plusB.length, 3);
+    assert.match(C.plusLead, /\b20\b/); assert.match(C.plusLead, /\b200\b/); assert.doesNotMatch(C.plusLead + C.plusB.join(' '), /\b50\b/);
+    assert.match(C.plusB[0], /200/); assert.match(C.plusB[1], /200/); assert.match(C.plusB[1], /\b10\b/);
+    if (l === 'en') { assert.ok(C.plusPrice.every((p) => p.includes('soʻm'))); }
     assert.match(C.plusPrice[0], /24[ ,]990/); assert.match(C.plusPrice[1], /199[ ,]990/);
     assert.match(C.plusOpt, /50%/);
   });
@@ -73,7 +80,7 @@ test('lookup: real uz capture, only the agreed edits; no ru/en glosses typed in'
   assert.equal(cap.byLang.uz.lemma, raw.lemma);
   assert.equal(cap.byLang.uz.contextualMeaning, raw.contextualMeaning.replace(/\u2018/g, '\u02bb'));
   assert.equal(raw.translation, 'ikkilanmoq'); assert.equal(cap.byLang.uz.translation, 'ikkilanish');
-  assert.equal(cap.byLang.en, 'uz'); assert.equal(cap.byLang.ru, null);
+  assert.equal(cap.byLang.en, null); assert.equal(cap.byLang.ru, null);
 });
 
 test('UX fixes: localised burger labels, dialog, self-hosted Bagel, webp covers', () => {

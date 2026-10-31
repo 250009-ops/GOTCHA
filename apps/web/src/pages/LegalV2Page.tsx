@@ -31,7 +31,7 @@ export default function LegalV2Page({ doc }: { doc: 'terms' | 'privacy' | 'ofert
   const html = (LEGAL_HTML_V2[lang] ?? LEGAL_HTML_V2.uz)[doc];
   return (
     <div className="flex min-h-screen flex-col bg-white">
-      <Seo title={TITLES[doc][lang]} description={TITLES[doc][lang]} path={`/${doc}`} noindex />
+      <Seo title={TITLES[doc][lang]} description={TITLES[doc][lang]} path={`/${doc}`} noindex lang={lang} />
       <SiteNav />
       {QA_BUILD && (<div role="note" className="bg-red-600 px-4 py-2 text-center text-sm font-bold text-white" data-testid="legal-draft-banner">
         QA DRAFT · NOT FOR DEPLOY · pending legal review and owner approval

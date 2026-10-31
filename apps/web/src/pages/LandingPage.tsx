@@ -14,6 +14,8 @@ import { plusCta } from '../lib/plusCta';
 // Until Plus checkout exists (PLUS-OFFER §5), prices show but the CTA is 'Start free' + Marketing's pre-launch note.
 const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
 const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
+// LANDING-COPY-v2: the quiz bullet (plusB[1]) ships only once the separate quiz cap (Free 10 / Plus 200) exists in code.
+const QUIZ_CAP_LIVE = import.meta.env.VITE_PLUS_QUIZ_CAP_LIVE === 'true';
 // Lookup popover renders only from a real captured API response (src/data/lookup-capture.json). Never typed by hand.
 type Captured = { lemma?: string; translation?: string; contextualMeaning?: string | null; partOfSpeech?: string | null };
 const LK = lookup as unknown as { captured: boolean; word: string; sentence: string; byLang: Record<string, Captured | string | null> };
@@ -45,14 +47,22 @@ const D_ICO = ['M2 4h12M2 8h8M2 12h10', 'M4 2h8v12l-4-3-4 3z', 'M4 2h5l3 3v9H4z'
 const LN: Record<string, string> = { en: 'English', tr: 'Türkçe' };
 const FAN = [[-24, -250, 30], [-14, -160, 12], [-5, -70, 0], [5, 20, 0], [14, 110, 12], [24, 200, 30]];
 
-function Popover({ d }: { d: Captured }) {
+// QA LP1-03: localised popover labels (UI chrome, not lookup output).
+const POP: Record<LpLang, { hd: string; word: string; meaning: string; tr: string; close: string }> = {
+  en: { hd: 'Dictionary', word: 'word', meaning: 'Natural meaning', tr: 'Translation', close: 'Close' },
+  uz: { hd: 'Lugʻat', word: 'soʻz', meaning: 'Kontekstdagi maʼno', tr: 'Tarjima', close: 'Yopish' },
+  ru: { hd: 'Словарь', word: 'слово', meaning: 'Значение в контексте', tr: 'Перевод', close: 'Закрыть' },
+};
+
+function Popover({ d, lang }: { d: Captured; lang: LpLang }) {
+  const P = POP[lang];
   return (
-    <div className="pop" id="pop1">
-      <div className="hd">Dictionary<span>✕</span></div>
+    <div className="pop" id="pop1" lang={lang}>
+      <div className="hd">{P.hd}<span aria-label={P.close}>✕</span></div>
       <div className="bd">
-        <div className="word"><b>{lookup.word}</b><span className="tag">word</span></div>
-                {d.contextualMeaning && <div className="box m"><small>Natural meaning</small>{d.contextualMeaning}</div>}
-        {d.translation && <div className="box t"><small>Translation</small>{d.translation}</div>}
+        <div className="word"><b>{lookup.word}</b><span className="tag">{P.word}</span></div>
+        {d.contextualMeaning && <div className="box m"><small>{P.meaning}</small>{d.contextualMeaning}</div>}
+        {d.translation && <div className="box t"><small>{P.tr}</small>{d.translation}</div>}
       </div>
     </div>
   );
@@ -127,12 +137,12 @@ export default function LandingPage() {
 
   const CAPTURED = capturedFor(L);
   const pc = plusCta(C, CHECKOUT_LIVE, ui);
-  const plusB = IMPORT_DISCOUNT_LIVE ? [C.plusB[0], C.plusOpt, ...C.plusB.slice(1)] : [...C.plusB];
+  const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]];
   const navIds = ['#how', '#features', '#plus', '#faq'];
 
   return (
     <div className="lp" data-theme="light" ref={root} lang={L}>
-      <Seo title="GOTCHA" description={C.sub} />
+      <Seo title={`GOTCHA — ${C.h1}`} description={C.sub} lang={L} />
       <header className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap">
         <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
         <ul id="nav">{C.nav.map((n, i) => <li key={n}><a href={navIds[i]}>{n}</a></li>)}</ul>
@@ -189,7 +199,7 @@ export default function LandingPage() {
                 <p className="body">He stood still in <span className="w-sel">hesitation</span> at the door, asking himself the strange question: ‘Must he tell her who killed Lizaveta?’</p>
               </div>
             </div>
-            {CAPTURED && <Popover d={CAPTURED} />}
+            {CAPTURED && <Popover d={CAPTURED} lang={L} />}
           </div>
         </div></div></section>
 

@@ -1,5 +1,6 @@
 // GENERATED from team/uiux/landing-premium/src/copy.json (rev 4) + plusCta_prelaunch/plusNote_prelaunch verbatim from
-// team/marketing/LANDING-COPY-v2.md. Additions: `entity` (footer). Android FAQ removed (Kai, 31 Oct). mt/mb dropped (pending sign-off).
+// team/marketing/LANDING-COPY-v2.md. landing-premium-02: plusLead/plusB from LANDING-COPY-v2 (14:25; Free 20 / Plus 200, quizzes 10/200),
+// plusNote first sentence per PM LP1-06 (14:26), en prices soʻm (QA LP1-05). Additions: `entity` (footer). Android FAQ removed (Kai, 31 Oct). mt/mb dropped (pending sign-off).
 export const LANDING_COPY = {
  "en": {
   "nav": [
@@ -46,18 +47,19 @@ export const LANDING_COPY = {
   "lt": "Many languages",
   "lb": "The library has books in many languages, and you can bring in a text of your own when you need one. Gotcha is made for people who speak Uzbek, Russian or English.",
   "plusT": "Gotcha Plus",
-  "plusLead": "Free gives you 50 word lookups a day, and they can run out mid-chapter. Plus gives you 200 a day.",
+  "plusLead": "Free gives you 20 word lookups a day, and they can run out mid-chapter. Plus gives you 200 full AI explanations, then dictionary lookups keep going.",
   "plusB": [
-   "200 word lookups a day (50 on Free)",
+   "200 AI explanations a day, then dictionary lookups",
+   "200 chapter quizzes a day (10 on Free)",
    "Everything in Free stays included"
   ],
   "plusOpt": "50% off every paid import",
   "plusPrice": [
-   "30 days, 24,990 so'm",
-   "365 days, 199,990 so'm (about 33% less)"
+   "30 days, 24,990 soʻm",
+   "365 days, 199,990 soʻm (about 33% less)"
   ],
   "plusCta": "Get Plus",
-  "plusNote": "One-time payment, no auto-renew. You pay on gotchaa.uz through Atmos.",
+  "plusNote": "One-time payment. No subscription, no auto-renewal. You pay on gotchaa.uz through Atmos.",
   "faqT": "Questions",
   "faq_questions": [
    "Do I have to pay to start?",
@@ -131,9 +133,10 @@ export const LANDING_COPY = {
   "lt": "Koʻp tillar",
   "lb": "Kutubxonada koʻp tillardagi kitoblar bor, kerakli matnni esa oʻzingiz ham yuklay olasiz. Gotcha oʻzbek, rus yoki ingliz tilida gaplashadiganlar uchun qilingan.",
   "plusT": "Gotcha Plus",
-  "plusLead": "Bepul tarifda kuniga 50 ta soʻz qidirish bor, ular bob oʻrtasida tugashi mumkin. Plusʼda kuniga 200 ta.",
+  "plusLead": "Bepulda kuniga 20 ta soʻz qidirish bor, ular bob oʻrtasida tugashi mumkin. Plusʼda 200 ta toʻliq AI izoh, keyin lugʻatdan qidirish davom etadi.",
   "plusB": [
-   "Kuniga 200 ta soʻz qidirish (bepul tarifda 50 ta)",
+   "Kuniga 200 ta AI izoh, keyin lugʻatdan qidirish",
+   "Kuniga 200 ta bob testi (bepul tarifda 10 ta)",
    "Bepul tarifdagi hamma narsa qoladi"
   ],
   "plusOpt": "Har bir pullik importga 50% chegirma",
@@ -142,7 +145,7 @@ export const LANDING_COPY = {
    "365 kun, 199 990 soʻm (taxminan 33% arzon)"
   ],
   "plusCta": "Plusʼni olish",
-  "plusNote": "Bir martalik toʻlov, avtomatik yangilanmaydi. Toʻlov gotchaa.uz saytida Atmos orqali.",
+  "plusNote": "Bir martalik toʻlov. Obuna yoʻq, avtomatik yangilanmaydi. Toʻlov gotchaa.uz saytida Atmos orqali.",
   "faqT": "Savollar",
   "faq_questions": [
    "Boshlash uchun pul toʻlash kerakmi?",
@@ -216,9 +219,10 @@ export const LANDING_COPY = {
   "lt": "Много языков",
   "lb": "В библиотеке есть книги на многих языках, а нужный текст можно загрузить самому. Gotcha сделан для тех, кто говорит по-узбекски, по-русски или по-английски.",
   "plusT": "Gotcha Plus",
-  "plusLead": "В бесплатном плане 50 подсказок по словам в день, и они могут закончиться посреди главы. В Plus их 200.",
+  "plusLead": "В бесплатном плане 20 подсказок в день, и они могут закончиться посреди главы. В Plus 200 полных AI-объяснений, а дальше работает словарь.",
   "plusB": [
-   "200 подсказок по словам в день (в бесплатном 50)",
+   "200 AI-объяснений в день, потом подсказки из словаря",
+   "200 тестов по главам в день (в бесплатном 10)",
    "Всё из бесплатного плана остаётся"
   ],
   "plusOpt": "Скидка 50% на каждый платный импорт",
@@ -227,7 +231,7 @@ export const LANDING_COPY = {
    "365 дней, 199 990 сум (≈33% дешевле)"
   ],
   "plusCta": "Подключить Plus",
-  "plusNote": "Разовый платёж без автопродления. Оплата на gotchaa.uz через Atmos.",
+  "plusNote": "Разовый платёж. Без подписки и автопродления. Оплата на gotchaa.uz через Atmos.",
   "faqT": "Вопросы",
   "faq_questions": [
    "Чтобы начать, нужно платить?",
