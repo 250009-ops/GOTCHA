@@ -265,7 +265,7 @@ export default function ReaderPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { user, preferences, updatePreferences, refreshVocab, refreshProfile } = useAuth();
+  const { preferences, updatePreferences, refreshVocab, refreshProfile } = useAuth();
   const goToLibrary = useCallback(() => {
     navigate(resolveReaderLibraryReturn(location.state));
   }, [navigate, location.state]);
@@ -356,7 +356,8 @@ export default function ReaderPage() {
     const pos = pages.findIndex(({ index }) => index === segmentIndex);
     return { current: Math.max(1, pos + 1), total: Math.max(1, pages.length) };
   }, [outline, segmentIndex, currentChapter, pageCount]);
-  const targetLang = user?.nativeLanguage ?? 'en';
+  // Lookup bug (b): glosses answer in the active UI language (owner decision).
+  const targetLang = locale;
   const sourceLang = content?.language ?? 'en';
 
   const pronounceWord = useCallback(() => {

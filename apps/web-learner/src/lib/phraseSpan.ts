@@ -130,6 +130,14 @@ export function tokenInSpan(tokenI: number, span: TokenSpan | null | undefined) 
 }
 
 /** Sentence (or short window) containing the tapped span — never a full message/chapter. */
+/** Join soft-wrapped lines / hyphenated breaks into one clean context line. */
+export function joinContext(raw: string): string {
+  return raw
+    .replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function extractSentenceAround(text: string, start: number, end: number): string {
   if (!text) return '';
   const len = text.length;
@@ -139,7 +147,10 @@ export function extractSentenceAround(text: string, start: number, end: number):
   let s = a;
   while (s > 0) {
     const ch = text[s - 1];
-    if (ch === '.' || ch === '!' || ch === '?' || ch === '\n' || ch === '…') break;
+    if (ch === '.' || ch === '!' || ch === '?' || ch === '…') break;
+    // Lookup bug (a): a single line break is a soft wrap inside the sentence;
+    // only a blank line (paragraph break) ends the context.
+    if (ch === '\n' && /\n[ \t]*$/.test(text.slice(Math.max(0, s - 8), s - 1))) break;
     s--;
   }
   while (s < a && /\s/.test(text[s]!)) s++;
@@ -151,18 +162,18 @@ export function extractSentenceAround(text: string, start: number, end: number):
       e++;
       break;
     }
-    if (ch === '\n') break;
+    if (ch === '\n' && /^[ \t]*\n/.test(text.slice(e + 1, e + 9))) break;
     e++;
   }
 
-  let sentence = text.slice(s, e).trim();
+  let sentence = joinContext(text.slice(s, e));
   if (b - a > 280) {
     return text.slice(a, b).trim().slice(0, 4000);
   }
   if (sentence.length > 280) {
     const ws = Math.max(0, a - 60);
     const we = Math.min(len, b + 60);
-    sentence = text.slice(ws, we).trim();
+    sentence = joinContext(text.slice(ws, we));
   }
   return sentence.slice(0, 400);
 }

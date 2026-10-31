@@ -28,7 +28,7 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
@@ -561,6 +561,7 @@ function WordMeaningPanel({
 }
 
 export default function MessagesPage() {
+  const { locale: uiLocale } = useLearnerLocale();
   const copy = useLearnerCopy();
   const msg = copy.messages;
   const mp = copy.messagesPage;
@@ -1169,7 +1170,7 @@ export default function MessagesPage() {
             lemma: selectedWord.toLowerCase(),
             sentence: selectedSentence.slice(0, 4000) || selectedWord,
             sourceLang: apiChatLang(selectedLineLang),
-            targetLang: apiChatLang(nativeLang),
+            targetLang: uiLocale, // Lookup bug (b): answer in the UI language
           }),
         });
         if (!cancelled) {
@@ -1202,7 +1203,7 @@ export default function MessagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang, copy.errors.lookupFailed]);
+  }, [selectedWord, selectedSentence, selectedLineLang, uiLocale, copy.errors.lookupFailed]);
 
   const saveWord = async (mastered = false) => {
     if (!selectedWord || !lookup?.translation) return;
