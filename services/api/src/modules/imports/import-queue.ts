@@ -50,6 +50,9 @@ export async function enqueueImportJob(
       kind: input.kind,
       payload: input.payload,
       status: 'queued',
+      // Prisma's @default(now()) is taken from the app clock and can land ~1 ms after Postgres now(),
+      // so an immediate claim missed the job (flaky pg test). Back-date by 1 s: "runnable now".
+      runAfter: new Date(Date.now() - 1000),
       maxAttempts: input.maxAttempts ?? IMPORT_MAX_ATTEMPTS,
     },
   });
@@ -121,7 +124,7 @@ export async function reapStaleImportJobs(
     UPDATE import_queue_jobs
        SET status = CASE WHEN attempts < max_attempts THEN 'queued' ELSE 'failed' END,
            finished_at = CASE WHEN attempts < max_attempts THEN NULL ELSE (now() AT TIME ZONE 'UTC') END,
-           run_after = (now() AT TIME ZONE 'UTC'), locked_by = NULL,
+           run_after = date_trunc('milliseconds', now() AT TIME ZONE 'UTC'), locked_by = NULL,
            last_error = ${`Worker stopped responding (no heartbeat for ${Math.round(staleMs / 1000)}s)`},
            updated_at = (now() AT TIME ZONE 'UTC')
      WHERE status = 'running'
@@ -137,7 +140,7 @@ export async function reapStaleImportJobs(
 export async function requeueFailedImportJob(db: Db | Prisma.TransactionClient, userImportId: string): Promise<boolean> {
   const n = await (db as Db).$executeRaw`
     UPDATE import_queue_jobs
-       SET status = 'queued', attempts = 0, run_after = (now() AT TIME ZONE 'UTC'), locked_by = NULL, finished_at = NULL,
+       SET status = 'queued', attempts = 0, run_after = date_trunc('milliseconds', now() AT TIME ZONE 'UTC'), locked_by = NULL, finished_at = NULL,
            last_error = NULL, updated_at = (now() AT TIME ZONE 'UTC')
      WHERE user_import_id = ${userImportId}::uuid AND status = 'failed'`;
   return n === 1;
