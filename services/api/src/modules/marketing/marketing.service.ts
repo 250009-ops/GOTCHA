@@ -8,6 +8,7 @@ import { liveLearnerWhere } from '../../common/production-users';
 import { atmosMinAmountSom } from '../billing/atmos.client';
 import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
+import { paymentsUiEnabled } from '../../common/payments-ui';
 import { getPlanCaps } from '../../common/plan-caps';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;

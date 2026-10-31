@@ -6,6 +6,7 @@
  * consumable exactly once (f29902f1). No Atmos credentials are read: the Atmos client is a fake.
  */
 import assert from 'node:assert/strict';
+import { Prisma } from '@prisma/client';
 import { ImportCommerceService, assertPaymentsEnabled } from './import-commerce.service';
 
 type Pay = Record<string, any>;
@@ -28,7 +29,8 @@ function harness() {
       create: (a: any) => ({ kind: 'cp', a }),
     },
     contentItem: { update: (a: any) => ({ kind: 'ci', a }) },
-    $transaction: async (ops: any[]) => { for (const o of ops) if (o.kind === 'cp') purchases.push(o.a.data); },
+    entitlement: { createMany: (a: any) => ({ kind: 'ent', a }) },
+    $transaction: async (ops: any[]) => { for (const o of ops) if (o.kind === 'cp') { if (purchases.some((x) => x.userId === o.a.data.userId && x.contentId === o.a.data.contentId)) throw new Prisma.PrismaClientKnownRequestError('unique', { code: 'P2002', clientVersion: 'test' }); purchases.push(o.a.data); } }, // r3b: mirrors the DB unique (user, content) the payments-02 grant relies on
   };
   const atmos: any = new Proxy({}, { get: (_t, k: string) => {
     if (k === 'configured') return () => true;

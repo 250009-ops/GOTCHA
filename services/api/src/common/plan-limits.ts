@@ -69,7 +69,7 @@ export function effectivePlanLimits(env: NodeJS.ProcessEnv = process.env) {
   };
 }
 
-/** All daily counters reset at local midnight Asia/Tashkent (UTC+5, no DST). Returns the next reset instant. */
+/** All daily counters reset at local midnight Asia/Tashkent (+5 h, no DST). Returns the next reset instant. */
 export const LIMIT_TIMEZONE = 'Asia/Tashkent';
 export function nextLimitResetAt(now = new Date()): Date {
   const off = 5 * 3_600_000;

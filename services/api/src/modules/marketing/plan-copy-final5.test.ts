@@ -29,8 +29,8 @@ assert.equal(paymentsUiEnabled({ PAYMENTS_UI_ENABLED: 'true' } as any), true);
 
 (async () => {
   for (const lang of PLAN_LANGS) {
-    const f = enrichPlan(prodFree, lang, undefined, imports);
-    const p = enrichPlan(prodPlus, lang, undefined, imports);
+    const f = enrichPlan(prodFree, lang, undefined, 20, 10, null, 3, 200, { pages: 50, cycle: 'monthly' } as any);
+    const p = enrichPlan(prodPlus, lang, undefined, 20, 10, null, 3, 200, { pages: 50, cycle: 'monthly' } as any);
     assert.equal(f.name, EXPECT[lang].name, lang);
     assert.equal(f.aiDailyQuota, 20); assert.equal(f.quizDailyQuota, 10); assert.equal(f.importLimit, 3); assert.equal((f as any).monthlyFreePageLimit, 50);
     for (const b of EXPECT[lang].bits) assert.ok(f.features.some((x: string) => x.includes(b)), `${lang} billing free lacks "${b}": ${f.features.join(' | ')}`);
@@ -56,7 +56,7 @@ assert.equal(paymentsUiEnabled({ PAYMENTS_UI_ENABLED: 'true' } as any), true);
   }
   // admin-configured caps flow into every surface
   setConfiguredPlanLimitsForTest({ freeLookups: 25, freeQuizzes: 12 });
-  const f = enrichPlan(prodFree, 'en', undefined, imports);
+  const f = enrichPlan(prodFree, 'en', undefined, 25, 12, null, 3, 200, { pages: 50, cycle: 'monthly' } as any) // r3b: caps come from plan-caps (platform_settings) and are passed in;
   assert.equal(f.aiDailyQuota, 25); assert.ok(f.features.includes('25 word lookups a day') && f.features.includes('12 chapter quizzes a day'));
   setConfiguredPlanLimitsForTest({});
   console.log('plan-copy-final5.test: OK (en/ru/uz; 20/10/3/50; soʻm only; banned words absent; PAYMENTS_UI off hides pay-per-import)');

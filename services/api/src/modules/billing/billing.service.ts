@@ -15,6 +15,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
   if (!isPremium) {
     return {
       ...plan,
+      name: t.freeName, // final-5 B7: localised plan name
       offlineEnabled: false,
       priceMonthly: 0,
       priceUzs: 0,
@@ -27,6 +28,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       quizDailyQuota: freeQuizzes,
       // PAY2-18: the import allowance import-commerce enforces (platform setting importFreeLimits, default 3/day), not the seed row (15).
       importLimit: freeImportsDay ?? plan.importLimit,
+      monthlyFreePageLimit: freePages.pages, // final-5 B1 field kept for clients
       features: [t.lookupsDay(freeQuota), t.quizzesDay(freeQuizzes), t.importsDay(freeImportsDay ?? plan.importLimit), t.importPages(freePages.pages, freePages.cycle), t.library],
     };
   }

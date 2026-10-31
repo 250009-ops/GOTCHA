@@ -271,7 +271,8 @@ export class AiService {
     if (this.useMemory()) {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
       const used = this.memoryUsage.get(key) ?? 0;
-      const quota = defaultUserQuota;
+      void defaultUserQuota; // final-5: legacy aiDefaultUserQuota ignored in memory mode too; caps.free.lookups only
+      const quota = (await getPlanCaps(this.prisma)).free.lookups;
       assertUnderCap('lookups', 'free', { free: { lookups: quota, quizzes: 0 }, plus: { lookups: DAILY_CAP_FALLBACKS.plus.lookups, quizzes: 0 }, plusLookupHardCap: null }, used);
       return { quota, usage: { lookupCount: used }, today, memoryKey: key, mode: 'ai' as const };
     }

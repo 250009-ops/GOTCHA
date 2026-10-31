@@ -8,6 +8,7 @@
 //   Plus  hidden hard cap = platform_settings 'plus.lookup_hard_cap'  (plusLookupHardCap)  null = none
 // When a Plus AI quota is set, lookups past it go to dictionary mode (no OpenAI) up to the hidden cap. Dormant while null.
 // All counters reset at Asia/Tashkent local midnight.
+import { limitDayStart } from './plan-limits';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { DAILY_CAP_FALLBACKS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, dailyLimitBody, nextLimitReset, type CapKind, type CapPlan } from '@gotcha/shared';
 import { activeSubWhere } from './plan-active';
@@ -67,10 +68,11 @@ export async function userCapPlan(prisma: unknown, userId: string): Promise<CapP
   return sub?.plan?.tier === 'premium' ? 'plus' : 'free';
 }
 
-/** Usage-day key for ai_usage_daily.usage_date (a DATE): the Asia/Tashkent calendar date. */
+/** Usage-day key for ai_usage_daily.usage_date. r3b on final-5: ONE convention with final-5's limitDayStart (the instant of the
+ * last 00:00 Asia/Tashkent, = what setHours(0) gave on the Tashkent VPS), so prod's existing rows keep matching and every
+ * reader/writer (ai, limits, billing, users, admin) uses the same key. */
 export function usageDayStart(now = new Date()) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
-  return new Date(Date.UTC(+p.year, +p.month - 1, +p.day));
+  return limitDayStart(now);
 }
 /** Next Asia/Tashkent midnight (all daily counters reset then; the UI shows 00:00). */
 export function usageResetAt(now = new Date()) { return nextLimitReset(now); }

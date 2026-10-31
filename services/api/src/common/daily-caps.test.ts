@@ -106,11 +106,12 @@ test('plus quizzes: 201st quiz (200 used) is refused with 429 quiz_limit limit 2
 test('Tashkent boundary: 23:59 and 00:00 Asia/Tashkent are different usage days; resetAt = next Tashkent midnight', async () => {
   const at2359 = new Date('2026-10-31T18:59:00.000Z'); // 23:59 Tashkent (UTC+5)
   const at0000 = new Date('2026-10-31T19:00:00.000Z'); // 00:00 Tashkent, Nov 1
-  assert.equal(usageDayStart(at2359).toISOString(), '2026-10-31T00:00:00.000Z');
-  assert.equal(usageDayStart(at0000).toISOString(), '2026-11-01T00:00:00.000Z');
+  // r3b on final-5: the usage-day key is the instant of the last 00:00 Tashkent (final-5 limitDayStart; prod rows keep matching)
+  assert.equal(usageDayStart(at2359).toISOString(), '2026-10-30T19:00:00.000Z');
+  assert.equal(usageDayStart(at0000).toISOString(), '2026-10-31T19:00:00.000Z');
   assert.equal(usageResetAt(at2359).toISOString(), '2026-10-31T19:00:00.000Z');
   assert.equal(usageResetAt(at0000).toISOString(), '2026-11-01T19:00:00.000Z');
-  assert.equal(usageDayStart(new Date('2026-10-31T00:30:00.000Z')).toISOString(), '2026-10-31T00:00:00.000Z', '05:30 Tashkent');
+  assert.equal(usageDayStart(new Date('2026-10-31T00:30:00.000Z')).toISOString(), '2026-10-30T19:00:00.000Z', '05:30 Tashkent');
 });
 test('429 body carries {statusCode 429, code, kind, limit, resetAt, messages}; UI line says 00:00', async () => {
   const b = await limit429(quizCheck(db('free', { quizzes: 10 })));

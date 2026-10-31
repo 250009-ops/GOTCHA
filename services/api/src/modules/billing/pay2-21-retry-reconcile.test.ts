@@ -1,5 +1,6 @@
 // PAY2-21: a learner retry after the 60-minute window reconciles with Atmos (mocked) or flags for manual review;
 // it never expires a payment that may have been charged without asking Atmos first.
+process.env.PAYMENTS_UI_ENABLED = 'true'; // r3b on final-5: payments-02 flows run with the payments UI on (off case: payments-final5.test)
 import * as assert from 'node:assert/strict';
 import { ImportCommerceService } from './import-commerce.service';
 

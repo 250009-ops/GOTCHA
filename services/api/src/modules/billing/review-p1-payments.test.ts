@@ -1,4 +1,5 @@
 // REVIEW-p1 B2, B3, M1, M2, M3 + QA BUG-06/07 on an in-memory Prisma fake that honours conditional writes.
+process.env.PAYMENTS_UI_ENABLED = 'true'; // r3b on final-5: payments-02 flows run with the payments UI on (off case: payments-final5.test)
 import * as assert from 'node:assert/strict';
 import { ImportPaymentStatus as S, PurchaseStatus, Prisma } from '@prisma/client';
 import { ImportCommerceService } from './import-commerce.service';

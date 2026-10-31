@@ -828,7 +828,7 @@ export class AdminService {
   }
 
   async getPlanLimitsConfig() {
-    resetPlanLimitsCache();
+    resetPlanLimitsCache(); resetPlanCapsCache(); // r3b merge: both caches read caps.*
     await refreshPlanLimits(this.prisma);
     const eff = effectivePlanLimits();
     const imports = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
@@ -869,7 +869,7 @@ export class AdminService {
     await this.prisma.auditLog
       .create({ data: { actorId, action: 'plan_limits.update', entityType: 'platform_settings', metadata: body as object } })
       .catch(() => undefined);
-    resetPlanLimitsCache();
+    resetPlanLimitsCache(); resetPlanCapsCache(); // r3b merge: both caches read caps.*
     return this.getPlanLimitsConfig();
   }
 

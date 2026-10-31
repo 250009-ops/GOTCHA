@@ -124,6 +124,7 @@ export function reviewFlagOnly(p: { status: string; cancelReason: string | null;
   if (p.refundDue) return false;
   if (p.status === 'pending') return p.cancelReason == null;
   return p.status === 'expired' && (p.cancelReason ?? '').startsWith('expired_unverified');
+}
 import { paymentsUiEnabled } from '../../common/payments-ui';
 import { ForbiddenException as PaymentsForbidden } from '@nestjs/common';
 export function assertPaymentsEnabled(env: NodeJS.ProcessEnv = process.env) {
@@ -975,7 +976,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       where: { account: accountOrInvoice },
     });
     if (!existing) return null;
-    if (existing.status === ImportPaymentStatus.paid) return existing;
+    if (existing.status === ImportPaymentStatus.paid) {
+      await this.fulfillCatalogPurchase(existing); // final-5 (8a26b7f3): a later confirmation repairs a paid-but-not-granted catalog purchase (idempotent)
+      return existing;
+    }
     // B3: no resurrection of failed (learner-cancelled) / refunding / refunded rows. PAY2-01: an EXPIRED session that
     // Atmos confirms late (callback / status check) was really charged → deliver it (idempotent, conditional write).
     if (existing.status !== ImportPaymentStatus.pending && existing.status !== ImportPaymentStatus.expired) return null;
@@ -1051,6 +1055,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
    * Atmos callback). Idempotent: only a non-paid row flips to paid (conditional update, so concurrent paths cannot
    * double-settle) and the catalog grant is re-checked on every call, so a paid-but-not-granted purchase is repaired.
    * Import payments stay paid + unused (userImportId null) until consumePayment attaches exactly one import.
+   */
   async settlePaid(paymentId: string, opts?: { providerRef?: string; ofdUrl?: string; raw?: unknown }) {
     // r3b merge: delegates to the payments-02 conditional transition (pending/expired → paid, Plus + catalog fulfilment).
     const row = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });

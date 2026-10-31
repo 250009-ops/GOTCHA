@@ -406,12 +406,6 @@ export class ImportsService {
     }
 
     const importType = isPdf ? ImportType.pdf : ImportType.epub;
-    let actualPages = 1;
-    try {
-      actualPages = await countImportDocumentPages(file.buffer, isPdf ? 'pdf' : 'epub');
-    } catch (err) {
-      throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
-    }
     const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType, actualPages);
     await this.importCommerce.assertPaymentCoversPages(userId, payment, actualPages, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';

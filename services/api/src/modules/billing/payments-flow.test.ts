@@ -1,4 +1,5 @@
 // PAYMENTS P0–P2 server side: stable error codes, expiry, double-submit reuse, unified history. Mocked prisma/Atmos only.
+process.env.PAYMENTS_UI_ENABLED = 'true'; // r3b on final-5: payments-02 flows run with the payments UI on (off case: payments-final5.test)
 import * as assert from 'node:assert/strict';
 import { BadRequestException, ConflictException, ServiceUnavailableException } from '@nestjs/common';
 import { BillingErrorFilter, classifyBillingError } from './billing-errors';

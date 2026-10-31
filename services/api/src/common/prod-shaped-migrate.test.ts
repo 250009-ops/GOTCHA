@@ -85,7 +85,7 @@ sh(`npx prisma db execute --url "${base}" --stdin`, root, `CREATE DATABASE "${na
     const ok = await ai.checkQuota(user.id, 5000);
     assert.equal(ok.quota, 20, 'Free cap must be 20, not 5000');
     await db.aiUsageDaily.update({ where: { userId_usageDate: { userId: user.id, usageDate: today } }, data: { lookupCount: 20 } });
-    await assert.rejects(() => ai.checkQuota(user.id, 5000), (e: any) => e.response?.code === 'DAILY_LIMIT_REACHED' && e.response.limit === 20);
+    await assert.rejects(() => ai.checkQuota(user.id, 5000), (e: any) => ['DAILY_LIMIT_REACHED', 'lookup_limit'].includes(e.response?.code) && e.response.limit === 20); // r3b: payments-02 body (lookup_limit, 429)
     // memory mode also ignores aiDefaultUserQuota
     const mem = Object.create(AiService.prototype) as any; mem.prisma = db; mem.useMemory = () => true; mem.memoryUsage = new Map();
     assert.equal((await mem.checkQuota(user.id, 5000)).quota, 20);
