@@ -1,4 +1,5 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { LocaleNavigate } from './components/LocaleNavigate';
+import { Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { useAuth } from './lib/auth';
 import { useAppTheme } from './lib/appTheme';
@@ -23,7 +24,7 @@ export default function App() {
   useAppTheme(preferences?.appTheme);
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app" replace />} />
+      <Route path="/" element={<LocaleNavigate to="/app" />} />
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -63,7 +64,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<LocaleNavigate to="/app" />} />
     </Routes>
   );
 }
