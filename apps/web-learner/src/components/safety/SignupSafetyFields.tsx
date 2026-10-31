@@ -11,7 +11,7 @@ export function SignupSafetyFields(props: {
 }) {
   const l = toConsentLocale(props.locale);
   const age = AGE_COPY[l];
-  const hrefs = { terms: `${MARKETING_URL}/terms`, privacy: `${MARKETING_URL}/privacy` };
+  const hrefs = { terms: `${MARKETING_URL}/terms`, privacy: `${MARKETING_URL}/privacy`, oferta: `${MARKETING_URL}/oferta` };
   return (
     <div className="flex flex-col gap-3">
       <div className="flex flex-col gap-2">

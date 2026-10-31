@@ -1,38 +1,41 @@
 /**
  * S3 sign-up tick-box. Labels are VERBATIM from team/pm/legal/web/README.md ("Sign-up tick-box labels",
- * 31 Oct 13:22) and must match the API's CONSENT_LABELS (services/api/src/common/safety/consent.ts).
+ * 31 Oct 14:06) and must match the API's CONSENT_LABELS (services/api/src/common/safety/consent.ts).
  * Do not edit the wording here; change the README first, then bump CONSENT_VERSION on the API.
  */
 export type ConsentLocale = 'uz' | 'ru' | 'en';
 
 export const CONSENT_LABELS: Record<ConsentLocale, string> = {
-  uz: 'Foydalanish shartlari va Maxfiylik siyosatiga, jumladan AI funksiyalari uchun matn (masalan, soʻz va u turgan gap, men tarjima qilgan chat xabarlari) AQShdagi OpenAIʼga uzatilishiga roziman (18 yoshga toʻlmagan boʻlsam, buni ota-onam yoki vasiyim tasdiqlaydi).',
-  ru: 'Я принимаю Условия использования и Политику конфиденциальности, включая передачу текста для AI-функций (например, слова с его предложением и переводимых мной сообщений чата) в OpenAI (США) (если мне нет 18 лет, это подтверждает мой родитель или опекун).',
-  en: 'I agree to the Terms of Use and the Privacy Policy, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA (if I am under 18, my parent or guardian confirms this).',
+  uz: 'Foydalanish shartlari, Maxfiylik siyosati va Ommaviy oferta bilan tanishdim va ularni qabul qilaman, jumladan AI funksiyalari uchun matn (masalan, soʻz va u turgan gap yoki men tarjima qilgan chat xabarlari) AQShdagi OpenAIʼga uzatilishiga roziman.',
+  ru: 'Я прочитал(а) и принимаю Условия использования, Политику конфиденциальности и Публичную оферту, включая передачу текста для AI-функций (например, слова с его предложением или переводимых мной сообщений чата) в OpenAI (США).',
+  en: 'I have read and accept the Terms of Use, the Privacy Policy and the Public Offer, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA.',
 };
 
-/** The substrings of each label that become links (no wording change). */
-export const CONSENT_LINK_PHRASES: Record<ConsentLocale, { terms: string; privacy: string }> = {
-  uz: { terms: 'Foydalanish shartlari', privacy: 'Maxfiylik siyosati' },
-  ru: { terms: 'Условия использования', privacy: 'Политику конфиденциальности' },
-  en: { terms: 'Terms of Use', privacy: 'Privacy Policy' },
+/** The substrings of each label that become links (no wording change). Version web-2026-10-31.2. */
+export const CONSENT_LINK_PHRASES: Record<ConsentLocale, { terms: string; privacy: string; oferta: string }> = {
+  uz: { terms: 'Foydalanish shartlari', privacy: 'Maxfiylik siyosati', oferta: 'Ommaviy oferta' },
+  ru: { terms: 'Условия использования', privacy: 'Политику конфиденциальности', oferta: 'Публичную оферту' },
+  en: { terms: 'Terms of Use', privacy: 'Privacy Policy', oferta: 'Public Offer' },
 };
 
-export type Part = { text: string; link?: 'terms' | 'privacy' };
+export type ConsentLink = 'terms' | 'privacy' | 'oferta';
+export type Part = { text: string; link?: ConsentLink };
 
 export function consentParts(locale: ConsentLocale): Part[] {
   const label = CONSENT_LABELS[locale];
-  const { terms, privacy } = CONSENT_LINK_PHRASES[locale];
-  const ti = label.indexOf(terms);
-  const pi = label.indexOf(privacy);
-  if (ti < 0 || pi < 0 || pi < ti) return [{ text: label }];
-  return [
-    { text: label.slice(0, ti) },
-    { text: terms, link: 'terms' },
-    { text: label.slice(ti + terms.length, pi) },
-    { text: privacy, link: 'privacy' },
-    { text: label.slice(pi + privacy.length) },
-  ].filter((p) => p.text) as Part[];
+  const phrases = CONSENT_LINK_PHRASES[locale];
+  const hits = (Object.keys(phrases) as ConsentLink[])
+    .map((k) => ({ k, i: label.indexOf(phrases[k]) }))
+    .sort((a, b) => a.i - b.i);
+  if (hits.some((h) => h.i < 0)) return [{ text: label }];
+  const out: Part[] = [];
+  let pos = 0;
+  for (const h of hits) {
+    out.push({ text: label.slice(pos, h.i) }, { text: phrases[h.k], link: h.k });
+    pos = h.i + phrases[h.k].length;
+  }
+  out.push({ text: label.slice(pos) });
+  return out.filter((p) => p.text);
 }
 
 export function toConsentLocale(l: string | undefined): ConsentLocale {

@@ -9,3 +9,12 @@ for (const l of ['uz', 'ru', 'en']) {
   assert.ok(readme.includes(m[1]), `label ${l} is not verbatim from README`);
 }
 console.log('consent labels verbatim: OK');
+
+// web-2026-10-31.2: all three documents are links.
+import('../src/components/safety/signupConsent.ts').then(({ consentParts }) => {
+  for (const l of ['uz', 'ru', 'en']) {
+    const links = consentParts(l).filter((p) => p.link).map((p) => p.link).sort();
+    assert.deepEqual(links, ['oferta', 'privacy', 'terms'], l);
+  }
+  console.log('consent links terms/privacy/oferta: OK');
+});
