@@ -18,6 +18,15 @@ export function formatSom(amount: number, lang: PlanLang = 'en'): string {
   return `${grouped} ${lang === 'ru' ? 'сум' : 'soʻm'}`;
 }
 
+type Cycle = 'daily' | 'monthly' | 'yearly';
+/** Russian plural: 1 / 2–4 / 5+ (11–14 → many). */
+function ruForm(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
 const T = {
   en: {
     freeName: 'Free', freeUnit: 'to start', freeCta: 'Get started',
@@ -26,7 +35,8 @@ const T = {
     quizzesDay: (n: number) => `${n} chapter quizzes a day`,
     plusLookups: 'Full AI explanations for the words you look up',
     plusQuizzes: (q: number) => `${q} chapter quizzes a day`,
-    importsDay: (n: number) => `${n} free imports a day`,
+    importsDay: (n: number) => `${n} free ${n === 1 ? 'import' : 'imports'} a day`,
+    importPages: (n: number, c: Cycle) => `Up to ${n} free ${n === 1 ? 'page' : 'pages'} of imports a ${c === 'daily' ? 'day' : c === 'yearly' ? 'year' : 'month'}`,
     review: 'Vocabulary review',
     ppiName: 'Pay per import', ppiLabel: 'Pay as you go', ppiUnit: 'one-time payments', ppiCta: 'Start reading for free',
     everythingFree: 'Everything in Free',
@@ -43,7 +53,8 @@ const T = {
     quizzesDay: (n: number) => `${n} тестов по главам в день`,
     plusLookups: 'Полные AI-объяснения слов, которые вы ищете',
     plusQuizzes: (q: number) => `${q} тестов по главам в день`,
-    importsDay: (n: number) => `${n} бесплатных импортов в день`,
+    importsDay: (n: number) => `${n} ${ruForm(n, 'бесплатный импорт', 'бесплатных импорта', 'бесплатных импортов')} в день`,
+    importPages: (n: number, c: Cycle) => `До ${n} ${ruForm(n, 'бесплатной страницы', 'бесплатных страниц', 'бесплатных страниц')} импорта в ${c === 'daily' ? 'день' : c === 'yearly' ? 'год' : 'месяц'}`,
     review: 'Повторение слов',
     ppiName: 'Оплата за импорт', ppiLabel: 'Платите только за то, что нужно', ppiUnit: 'разовые платежи', ppiCta: 'Начать читать бесплатно',
     everythingFree: 'Всё из бесплатного плана',
@@ -61,6 +72,7 @@ const T = {
     plusLookups: 'Qidirgan soʻzlaringiz uchun toʻliq AI izoh',
     plusQuizzes: (q: number) => `Kuniga ${q} ta bob testi`,
     importsDay: (n: number) => `Kuniga ${n} ta bepul import`,
+    importPages: (n: number, c: Cycle) => `${c === 'daily' ? 'Kuniga' : c === 'yearly' ? 'Yiliga' : 'Oyiga'} ${n} sahifagacha bepul import`,
     review: "Soʻzlarni takrorlash",
     ppiName: "Har import uchun toʻlov", ppiLabel: "Kerak boʻlganda toʻlang", ppiUnit: "bir martalik toʻlovlar", ppiCta: "Bepul oʻqishni boshlash",
     everythingFree: 'Bepul tarifdagi hamma narsa',

@@ -158,7 +158,11 @@ export class MarketingService {
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
     const aiDailyQuota = freeLimits().lookupsPerDay;
-    const importLimit = freePlan?.importLimit ?? 15;
+    // WLF-04: the Free card states the real import allowance (admin Import & Pricing → platform setting
+    // importFreeLimits, defaults 3 a day / 50 pages a month), the same numbers import-commerce enforces.
+    const importFree = await this.getImportFreeLimits().catch(() => DEFAULT_FREE_LIMITS);
+    const importLimit = Math.max(0, Math.floor(Number(importFree.dailyFreeImportsPerUser) || 0));
+    const pageLimit = Math.max(0, Math.floor(Number(importFree.monthlyFreePageLimit) || 0));
 
     const free = {
       id: freePlan?.id ?? 'free',
@@ -179,6 +183,7 @@ export class MarketingService {
         t.lookupsDay(aiDailyQuota),
         t.quizzesDay(freeLimits().quizzesPerDay),
         t.importsDay(importLimit),
+        t.importPages(pageLimit, importFree.resetCycle),
         t.review,
       ],
     };

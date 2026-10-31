@@ -43,6 +43,15 @@ async function main() {
     if (lang === 'ru') assert.equal(planCopy('ru').ppiLabel, 'Платите только за то, что нужно');
   }
   assert.match((await m.plans('uz'))[1].features.join(' '), /Atmos/);
+  // WLF-04: Free card states the real import allowance (defaults 3/day + 50 pages/month), never 15.
+  const fe: string[] = (await m.plans('en'))[0].features; const fr: string[] = (await m.plans('ru'))[0].features; const fu: string[] = (await m.plans('uz'))[0].features;
+  assert.ok(fe.includes('3 free imports a day') && fe.includes('Up to 50 free pages of imports a month'), fe.join(' | '));
+  assert.ok(fr.includes('3 бесплатных импорта в день') && fr.includes('До 50 бесплатных страниц импорта в месяц'), fr.join(' | '));
+  assert.ok(fu.includes('Kuniga 3 ta bepul import') && fu.includes('Oyiga 50 sahifagacha bepul import'), fu.join(' | '));
+  for (const f of [fe, fr, fu]) assert.ok(!/\b15\b/.test(f.join(' ')), 'no 15');
+  const m2 = new MarketingService({ ...prisma, platformSetting: { findUnique: async () => ({ value: { dailyFreeImportsPerUser: 5, monthlyFreePageLimit: 21 } }) } } as never);
+  const f2: string[] = (await m2.plans('ru'))[0].features;
+  assert.ok(f2.includes('5 бесплатных импортов в день') && f2.includes('До 21 бесплатной страницы импорта в месяц'), 'reads admin config: ' + f2.join(' | '));
   assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
   // Limits text matches config (Free 20/10; Plus 200 quizzes, no lookup cap = null, 14:40).
   assert.match((await m.plans('en'))[0].features.join(' '), /20 word lookups a day.*10 chapter quizzes a day/);

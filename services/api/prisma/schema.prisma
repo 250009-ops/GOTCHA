@@ -115,6 +115,7 @@ enum PracticeType {
   cloze
   flashcard
   writing
+  mixed
 }
 
 enum AdminRole {
@@ -157,6 +158,7 @@ enum ImportPaymentStatus {
   failed
   expired
   refunded
+  refunding
 }
 
 enum IngestionSourceType {
@@ -213,80 +215,87 @@ enum AchievementCategory {
 }
 
 model User {
-  id               String    @id @default(uuid()) @db.Uuid
-  email            String    @unique @db.Citext
-  passwordHash     String?   @map("password_hash")
-  displayName      String?   @map("display_name")
-  avatarUrl        String?   @map("avatar_url")
-  nativeLanguage   AppLanguage @map("native_language")
-  uiLanguage       AppLanguage @default(uz) @map("ui_language")
-  timezone         String    @default("UTC")
-  streakCount      Int       @default(0) @map("streak_count")
-  bestStreak       Int       @default(0) @map("best_streak")
-  streakLastDate   DateTime? @map("streak_last_date") @db.Date
-  emailVerifiedAt  DateTime? @map("email_verified_at")
-  emailVerificationToken   String?   @unique @map("email_verification_token")
-  emailVerificationExpires DateTime? @map("email_verification_expires")
-  passwordResetToken       String?   @unique @map("password_reset_token")
-  passwordResetExpires     DateTime? @map("password_reset_expires")
-  lastSeenAt       DateTime? @map("last_seen_at")
-  createdAt        DateTime  @default(now()) @map("created_at")
-  updatedAt        DateTime  @updatedAt @map("updated_at")
-  deletedAt        DateTime? @map("deleted_at")
+  id                       String      @id @default(uuid()) @db.Uuid
+  email                    String      @unique @db.Citext
+  passwordHash             String?     @map("password_hash")
+  displayName              String?     @map("display_name")
+  avatarUrl                String?     @map("avatar_url")
+  nativeLanguage           AppLanguage @map("native_language")
+  uiLanguage               AppLanguage @default(uz) @map("ui_language")
+  timezone                 String      @default("UTC")
+  streakCount              Int         @default(0) @map("streak_count")
+  bestStreak               Int         @default(0) @map("best_streak")
+  streakLastDate           DateTime?   @map("streak_last_date") @db.Date
+  emailVerifiedAt          DateTime?   @map("email_verified_at")
+  emailVerificationToken   String?     @unique @map("email_verification_token")
+  emailVerificationExpires DateTime?   @map("email_verification_expires")
+  passwordResetToken       String?     @unique @map("password_reset_token")
+  passwordResetExpires     DateTime?   @map("password_reset_expires")
+  lastSeenAt               DateTime?   @map("last_seen_at")
+  createdAt                DateTime    @default(now()) @map("created_at")
+  updatedAt                DateTime    @updatedAt @map("updated_at")
+  deletedAt                DateTime?   @map("deleted_at")
   /// 0023 (staging): optional birth year; unknown = treated per AGE_UNKNOWN_BAND (default teen).
-  birthYear        Int?      @map("birth_year")
+  birthYear                Int?        @map("birth_year")
   /// 0024: S7 per-account AI-off switch (support/admin; consent withdrawal).
-  aiDisabled       Boolean   @default(false) @map("ai_disabled")
+  aiDisabled               Boolean     @default(false) @map("ai_disabled")
   /// "user" (Settings switch) or "admin" (support). A learner cannot re-enable an admin lock.
-  aiDisabledBy     String?   @map("ai_disabled_by")
+  aiDisabledBy             String?     @map("ai_disabled_by")
   /// 0024: S3 sign-up consent record (tick-box label version, time, IP).
-  consentVersion   String?   @map("consent_version")
-  consentAt        DateTime? @map("consent_at")
-  consentIp        String?   @map("consent_ip")
+  consentVersion           String?     @map("consent_version")
+  consentAt                DateTime?   @map("consent_at")
+  consentIp                String?     @map("consent_ip")
   /// 0024: W-12 one-time age prompt for existing users (set when shown/answered).
-  agePromptedAt    DateTime? @map("age_prompted_at")
+  agePromptedAt            DateTime?   @map("age_prompted_at")
 
-  targetLanguages  UserTargetLanguage[]
-  preferences      UserPreferences?
-  refreshTokens    AuthRefreshToken[]
-  subscriptions    UserSubscription[]
-  aiUsageDaily     AiUsageDaily[]
-  vocabulary       UserVocabulary[]
-  readingProgress  ReadingProgress[]
-  readingSessions  ReadingSession[]
-  practiceSessions PracticeSession[]
-  imports          UserImport[]
-  adminProfile     AdminUser?
-  auditLogs        AuditLog[]         @relation("AuditActor")
-  createdContent   ContentItem[]      @relation("ContentCreator")
-  createdLicenses  License[]          @relation("LicenseCreator")
-  ingestionJobs    IngestionJob[]
-  moderationReviews ModerationQueue[] @relation("Moderator")
-  knownWords        UserKnownWord[]
-  bookmarks         ContentBookmark[]
-  contentPurchases  ContentPurchase[]
-  importPayments    ImportPayment[]
+  targetLanguages          UserTargetLanguage[]
+  preferences              UserPreferences?
+  refreshTokens            AuthRefreshToken[]
+  subscriptions            UserSubscription[]
+  aiUsageDaily             AiUsageDaily[]
+  vocabulary               UserVocabulary[]
+  readingProgress          ReadingProgress[]
+  readingSessions          ReadingSession[]
+  practiceSessions         PracticeSession[]
+  imports                  UserImport[]
+  adminProfile             AdminUser?
+  auditLogs                AuditLog[]                @relation("AuditActor")
+  createdContent           ContentItem[]             @relation("ContentCreator")
+  createdLicenses          License[]                 @relation("LicenseCreator")
+  ingestionJobs            IngestionJob[]
+  moderationReviews        ModerationQueue[]         @relation("Moderator")
+  knownWords               UserKnownWord[]
+  bookmarks                ContentBookmark[]
+  contentPurchases         ContentPurchase[]
+  importPayments           ImportPayment[]
   conversationParticipants ConversationParticipant[]
-  sentMessages      Message[]
-  notifications     UserNotification[]
-  blocksMade        UserBlock[]        @relation("BlocksMade")
-  blocksReceived    UserBlock[]        @relation("BlocksReceived")
-  reportsMade       UserReport[]       @relation("ReportsMade")
-  reportsReceived   UserReport[]       @relation("ReportsReceived")
-  friendRequestsSent     FriendRequest[] @relation("FriendRequestsSent")
-  friendRequestsReceived FriendRequest[] @relation("FriendRequestsReceived")
-  contentReports    ContentReport[]
+  sentMessages             Message[]
+  notifications            UserNotification[]
+  blocksMade               UserBlock[]               @relation("BlocksMade")
+  blocksReceived           UserBlock[]               @relation("BlocksReceived")
+  reportsMade              UserReport[]              @relation("ReportsMade")
+  reportsReceived          UserReport[]              @relation("ReportsReceived")
+  friendRequestsSent       FriendRequest[]           @relation("FriendRequestsSent")
+  friendRequestsReceived   FriendRequest[]           @relation("FriendRequestsReceived")
+  contentReports           ContentReport[]
+
+  xpTotal       Int            @default(0) @map("xp_total")
+  xpToday       Int            @default(0) @map("xp_today")
+  xpDate        DateTime?      @map("xp_date") @db.Date
+  streakFreezes Int            @default(0) @map("streak_freezes")
+  entitlements  Entitlement[]
+  playPurchases PlayPurchase[]
 
   @@map("users")
 }
 
 model UserTargetLanguage {
-  userId          String      @map("user_id") @db.Uuid
-  targetLanguage  AppLanguage @map("target_language")
-  cefrLevel       CefrLevel   @default(a1) @map("cefr_level")
-  isPrimary       Boolean     @default(false) @map("is_primary")
-  placementScore  Float?      @map("placement_score")
-  createdAt       DateTime    @default(now()) @map("created_at")
+  userId         String      @map("user_id") @db.Uuid
+  targetLanguage AppLanguage @map("target_language")
+  cefrLevel      CefrLevel   @default(a1) @map("cefr_level")
+  isPrimary      Boolean     @default(false) @map("is_primary")
+  placementScore Float?      @map("placement_score")
+  createdAt      DateTime    @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -306,6 +315,10 @@ model UserPreferences {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  dailyGoalXp   Int    @default(60) @map("daily_goal_xp")
+  dailyNewWords Int    @default(10) @map("daily_new_words")
+  appTheme      String @default("system") @map("app_theme")
+
   @@map("user_preferences")
 }
 
@@ -324,28 +337,35 @@ model AuthRefreshToken {
 }
 
 model SubscriptionPlan {
-  id              String           @id @default(uuid()) @db.Uuid
-  tier            SubscriptionTier @unique
-  name            String
-  priceMonthly    Decimal?         @map("price_monthly") @db.Decimal(10, 2)
-  aiDailyQuota    Int              @map("ai_daily_quota")
-  importLimit     Int              @map("import_limit")
-  offlineEnabled  Boolean          @default(false) @map("offline_enabled")
+  id             String           @id @default(uuid()) @db.Uuid
+  tier           SubscriptionTier @unique
+  name           String
+  priceMonthly   Decimal?         @map("price_monthly") @db.Decimal(10, 2)
+  aiDailyQuota   Int              @map("ai_daily_quota")
+  importLimit    Int              @map("import_limit")
+  offlineEnabled Boolean          @default(false) @map("offline_enabled")
 
   subscriptions UserSubscription[]
+
+  nameI18n  Json?    @map("name_i18n")
+  period    String   @default("month")
+  features  Json?
+  active    Boolean  @default(true)
+  sortOrder Int      @default(0) @map("sort_order")
+  updatedAt DateTime @default(now()) @map("updated_at")
 
   @@map("subscription_plans")
 }
 
 model UserSubscription {
-  id                 String    @id @default(uuid()) @db.Uuid
-  userId             String    @map("user_id") @db.Uuid
-  planId             String    @map("plan_id") @db.Uuid
-  status             SubscriptionStatus @default(active)
-  currentPeriodEnd   DateTime? @map("current_period_end")
-  provider           String?
-  providerRef        String?   @map("provider_ref")
-  createdAt          DateTime  @default(now()) @map("created_at")
+  id               String             @id @default(uuid()) @db.Uuid
+  userId           String             @map("user_id") @db.Uuid
+  planId           String             @map("plan_id") @db.Uuid
+  status           SubscriptionStatus @default(active)
+  currentPeriodEnd DateTime?          @map("current_period_end")
+  provider         String?
+  providerRef      String?            @map("provider_ref")
+  createdAt        DateTime           @default(now()) @map("created_at")
 
   user User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   plan SubscriptionPlan @relation(fields: [planId], references: [id])
@@ -446,7 +466,7 @@ model ContentItem {
   bookmarks        ContentBookmark[]
   purchases        ContentPurchase[]
   conversations    Conversation[]
-  ageRating        AgeRating     @default(all_ages) @map("age_rating")
+  ageRating        AgeRating               @default(all_ages) @map("age_rating")
   glosses          ContentGloss[]
   questions        ComprehensionQuestion[]
 
@@ -456,77 +476,91 @@ model ContentItem {
 
 /// Placeholder local purchases (no Stripe). Status can stay pending until a gateway exists.
 model ContentPurchase {
-  id         String         @id @default(uuid()) @db.Uuid
-  userId     String?        @map("user_id") @db.Uuid
-  contentId  String         @map("content_id") @db.Uuid
-  amountUsd  Decimal        @map("amount_usd") @db.Decimal(10, 2)
-  status     PurchaseStatus @default(pending)
-  provider   String         @default("local_placeholder")
-  providerRef String?       @map("provider_ref")
-  createdAt  DateTime       @default(now()) @map("created_at")
+  id          String         @id @default(uuid()) @db.Uuid
+  userId      String?        @map("user_id") @db.Uuid
+  contentId   String         @map("content_id") @db.Uuid
+  amountUsd   Decimal        @map("amount_usd") @db.Decimal(10, 2)
+  status      PurchaseStatus @default(pending)
+  provider    String         @default("local_placeholder")
+  providerRef String?        @map("provider_ref")
+  createdAt   DateTime       @default(now()) @map("created_at")
 
   content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
   user    User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  importPaymentId String? @unique @map("import_payment_id") @db.Uuid
 
   @@index([contentId, status])
   @@map("content_purchases")
 }
 
 model ImportPricingRule {
-  id             String  @id @default(uuid()) @db.Uuid
-  key            String  @unique
+  id             String   @id @default(uuid()) @db.Uuid
+  key            String   @unique
   label          String
-  pricePerImport Decimal @default(0) @map("price_per_import") @db.Decimal(10, 2)
-  pricePerPage   Decimal @default(0) @map("price_per_page") @db.Decimal(10, 2)
-  isActive       Boolean @default(true) @map("is_active")
-  sortOrder      Int     @default(0) @map("sort_order")
+  pricePerImport Decimal  @default(0) @map("price_per_import") @db.Decimal(10, 2)
+  pricePerPage   Decimal  @default(0) @map("price_per_page") @db.Decimal(10, 2)
+  isActive       Boolean  @default(true) @map("is_active")
+  sortOrder      Int      @default(0) @map("sort_order")
   updatedAt      DateTime @updatedAt @map("updated_at")
 
   @@map("import_pricing_rules")
 }
 
 model ImportPageTier {
-  id        String  @id @default(uuid()) @db.Uuid
+  id        String   @id @default(uuid()) @db.Uuid
   label     String
-  minPages  Int     @map("min_pages")
-  maxPages  Int?    @map("max_pages")
+  minPages  Int      @map("min_pages")
+  maxPages  Int?     @map("max_pages")
   /// Amount in UZS (soʻm). Column kept as price_usd for backward compatibility.
-  priceUsd  Decimal @map("price_usd") @db.Decimal(12, 2)
-  sortOrder Int     @default(0) @map("sort_order")
+  priceUsd  Decimal  @map("price_usd") @db.Decimal(12, 2)
+  sortOrder Int      @default(0) @map("sort_order")
   updatedAt DateTime @updatedAt @map("updated_at")
+
+  active Boolean @default(true)
 
   @@map("import_page_tiers")
 }
 
 /// Atmos (or other) payment for a single import by page-tier price.
 model ImportPayment {
-  id                  String              @id @default(uuid()) @db.Uuid
-  userId              String              @map("user_id") @db.Uuid
-  status              ImportPaymentStatus @default(pending)
-  importType          ImportType          @map("import_type")
-  contentFormat       String              @map("content_format")
-  estimatedPages      Int                 @map("estimated_pages")
-  tierId              String?             @map("tier_id") @db.Uuid
-  amountTiyins        Int                 @map("amount_tiyins")
-  currency            String              @default("UZS")
-  provider            String              @default("atmos")
+  id                   String              @id @default(uuid()) @db.Uuid
+  userId               String              @map("user_id") @db.Uuid
+  status               ImportPaymentStatus @default(pending)
+  importType           ImportType          @map("import_type")
+  contentFormat        String              @map("content_format")
+  estimatedPages       Int                 @map("estimated_pages")
+  tierId               String?             @map("tier_id") @db.Uuid
+  amountTiyins         Int                 @map("amount_tiyins")
+  currency             String              @default("UZS")
+  provider             String              @default("atmos")
   /// Our idempotent account id sent to Atmos as `account` / matched as callback `invoice`.
-  account             String              @unique
-  providerPaymentId   String?             @map("provider_payment_id")
-  providerInvoiceToken String?            @map("provider_invoice_token")
-  paymentUrl          String?             @map("payment_url")
-  ofdUrl              String?             @map("ofd_url")
-  userImportId        String?             @map("user_import_id") @db.Uuid
-  rawCreateJson       Json?               @map("raw_create_json")
-  rawCallbackJson     Json?               @map("raw_callback_json")
-  createdAt           DateTime            @default(now()) @map("created_at")
-  paidAt              DateTime?           @map("paid_at")
-  expiresAt           DateTime?           @map("expires_at")
+  account              String              @unique
+  providerPaymentId    String?             @map("provider_payment_id")
+  providerInvoiceToken String?             @map("provider_invoice_token")
+  paymentUrl           String?             @map("payment_url")
+  ofdUrl               String?             @map("ofd_url")
+  userImportId         String?             @map("user_import_id") @db.Uuid
+  rawCreateJson        Json?               @map("raw_create_json")
+  rawCallbackJson      Json?               @map("raw_callback_json")
+  createdAt            DateTime            @default(now()) @map("created_at")
+  paidAt               DateTime?           @map("paid_at")
+  expiresAt            DateTime?           @map("expires_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  refundReason      String?   @map("refund_reason")
+  refundRequestedBy String?   @map("refund_requested_by") @db.Uuid
+  refundRequestedAt DateTime? @map("refund_requested_at")
+  cancelReason      String?   @map("cancel_reason")
+  needsAttention    Boolean   @default(false) @map("needs_attention")
+  promoCodeId       String?   @map("promo_code_id") @db.Uuid
+  listAmountTiyins  Int?      @map("list_amount_tiyins")
+  promoRedeemed     Boolean   @default(false) @map("promo_redeemed")
+
   @@index([userId, status])
   @@index([providerPaymentId])
+  @@index([status, refundRequestedAt])
   @@map("import_payments")
 }
 
@@ -556,9 +590,9 @@ model ContentSegment {
   sentenceMap     Json    @map("sentence_map")
   wordCount       Int     @map("word_count")
 
-  content          ContentItem      @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  parentSegment    ContentSegment?  @relation("SegmentHierarchy", fields: [parentSegmentId], references: [id])
-  childSegments    ContentSegment[] @relation("SegmentHierarchy")
+  content          ContentItem       @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  parentSegment    ContentSegment?   @relation("SegmentHierarchy", fields: [parentSegmentId], references: [id])
+  childSegments    ContentSegment[]  @relation("SegmentHierarchy")
   readingProgress  ReadingProgress[]
   readingSessions  ReadingSession[]
   vocabulary       UserVocabulary[]
@@ -607,45 +641,51 @@ model ReadingSession {
 }
 
 model LemmaCache {
-  id            String      @id @default(uuid()) @db.Uuid
-  lemma         String
-  sourceLang    AppLanguage @map("source_lang")
-  targetLang    AppLanguage @map("target_lang")
-  translation   String
-  phonetic      String?
-  partOfSpeech  String?     @map("part_of_speech")
-  grammarNote   String?     @map("grammar_note")
-  modelVersion  String      @map("model_version")
-  contentHash   String      @map("content_hash")
-  createdAt     DateTime    @default(now()) @map("created_at")
+  id           String      @id @default(uuid()) @db.Uuid
+  lemma        String
+  sourceLang   AppLanguage @map("source_lang")
+  targetLang   AppLanguage @map("target_lang")
+  translation  String
+  phonetic     String?
+  partOfSpeech String?     @map("part_of_speech")
+  grammarNote  String?     @map("grammar_note")
+  modelVersion String      @map("model_version")
+  contentHash  String      @map("content_hash")
+  createdAt    DateTime    @default(now()) @map("created_at")
 
   @@unique([lemma, sourceLang, targetLang, contentHash])
   @@map("lemma_cache")
 }
 
 model UserVocabulary {
-  id                String      @id @default(uuid()) @db.Uuid
-  userId            String      @map("user_id") @db.Uuid
-  lemma             String
-  sourceLang        AppLanguage @map("source_lang")
-  targetLang        AppLanguage @map("target_lang")
-  translation       String
-  contextSentence   String?     @map("context_sentence")
-  contextSegmentId  String?     @map("context_segment_id") @db.Uuid
-  contentId         String?     @map("content_id") @db.Uuid
-  notes             String?
-  easeFactor        Float       @default(2.5) @map("ease_factor")
-  intervalDays      Int         @default(0) @map("interval_days")
-  repetitions       Int         @default(0)
-  dueAt             DateTime    @default(now()) @map("due_at")
-  lastReviewedAt    DateTime?   @map("last_reviewed_at")
-  mastered          Boolean     @default(false)
-  createdAt         DateTime    @default(now()) @map("created_at")
+  id               String      @id @default(uuid()) @db.Uuid
+  userId           String      @map("user_id") @db.Uuid
+  lemma            String
+  sourceLang       AppLanguage @map("source_lang")
+  targetLang       AppLanguage @map("target_lang")
+  translation      String
+  contextSentence  String?     @map("context_sentence")
+  contextSegmentId String?     @map("context_segment_id") @db.Uuid
+  contentId        String?     @map("content_id") @db.Uuid
+  notes            String?
+  easeFactor       Float       @default(2.5) @map("ease_factor")
+  intervalDays     Int         @default(0) @map("interval_days")
+  repetitions      Int         @default(0)
+  dueAt            DateTime    @default(now()) @map("due_at")
+  lastReviewedAt   DateTime?   @map("last_reviewed_at")
+  mastered         Boolean     @default(false)
+  createdAt        DateTime    @default(now()) @map("created_at")
 
-  user    User              @relation(fields: [userId], references: [id], onDelete: Cascade)
-  segment ContentSegment?   @relation(fields: [contextSegmentId], references: [id])
-  content ContentItem?      @relation(fields: [contentId], references: [id])
+  user    User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  segment ContentSegment?    @relation(fields: [contextSegmentId], references: [id])
+  content ContentItem?       @relation(fields: [contentId], references: [id])
   reviews VocabularyReview[]
+
+  lapses        Int   @default(0)
+  stability     Float @default(0)
+  difficulty    Float @default(0)
+  fsrsState     Int   @default(0) @map("fsrs_state")
+  learningSteps Int   @default(0) @map("learning_steps")
 
   @@unique([userId, lemma, sourceLang, targetLang])
   @@index([userId, dueAt])
@@ -662,6 +702,23 @@ model VocabularyReview {
 
   vocab UserVocabulary @relation(fields: [vocabId], references: [id], onDelete: Cascade)
 
+  exerciseType   String?  @map("exercise_type")
+  correct        Boolean?
+  responseMs     Int?     @map("response_ms")
+  answerId       String?  @unique @map("answer_id")
+  sessionId      String?  @map("session_id") @db.Uuid
+  verdict        String?
+  xp             Int      @default(0)
+  stabilityAfter Float?   @map("stability_after")
+  extra          Boolean  @default(false)
+  userId         String?  @map("user_id") @db.Uuid
+  stateBefore    Int?     @map("state_before")
+  judgedByAi     Boolean  @default(false) @map("judged_by_ai")
+
+  @@index([reviewedAt])
+  @@index([sessionId])
+  @@index([userId, reviewedAt])
+  @@index([vocabId, exerciseType, reviewedAt])
   @@map("vocabulary_reviews")
 }
 
@@ -676,23 +733,25 @@ model PracticeSession {
   startedAt     DateTime     @default(now()) @map("started_at")
   completedAt   DateTime?    @map("completed_at")
 
-  user      User                @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content   ContentItem?        @relation(fields: [contentId], references: [id])
-  segment   ContentSegment?     @relation(fields: [segmentId], references: [id])
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content   ContentItem?       @relation(fields: [contentId], references: [id])
+  segment   ContentSegment?    @relation(fields: [segmentId], references: [id])
   questions PracticeQuestion[]
   answers   PracticeAnswer[]
+
+  practiceSessionItems PracticeSessionItem[]
 
   @@map("practice_sessions")
 }
 
 model PracticeQuestion {
-  id             String @id @default(uuid()) @db.Uuid
-  sessionId      String @map("session_id") @db.Uuid
-  questionIndex  Int    @map("question_index")
-  prompt         String
-  options        Json?
-  correctAnswer  String @map("correct_answer")
-  explanation    String?
+  id            String  @id @default(uuid()) @db.Uuid
+  sessionId     String  @map("session_id") @db.Uuid
+  questionIndex Int     @map("question_index")
+  prompt        String
+  options       Json?
+  correctAnswer String  @map("correct_answer")
+  explanation   String?
 
   session PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   answers PracticeAnswer[]
@@ -702,12 +761,12 @@ model PracticeQuestion {
 }
 
 model PracticeAnswer {
-  id          String   @id @default(uuid()) @db.Uuid
-  sessionId   String   @map("session_id") @db.Uuid
-  questionId  String   @map("question_id") @db.Uuid
-  userAnswer  String   @map("user_answer")
-  isCorrect   Boolean  @map("is_correct")
-  answeredAt  DateTime @default(now()) @map("answered_at")
+  id         String   @id @default(uuid()) @db.Uuid
+  sessionId  String   @map("session_id") @db.Uuid
+  questionId String   @map("question_id") @db.Uuid
+  userAnswer String   @map("user_answer")
+  isCorrect  Boolean  @map("is_correct")
+  answeredAt DateTime @default(now()) @map("answered_at")
 
   session  PracticeSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
   question PracticeQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
@@ -716,41 +775,45 @@ model PracticeAnswer {
 }
 
 model UserImport {
-  id               String          @id @default(uuid()) @db.Uuid
-  userId           String          @map("user_id") @db.Uuid
-  title            String
-  importType       ImportType      @map("import_type")
-  sourceUrl        String?         @map("source_url")
-  fileKey          String?         @map("file_key")
-  language         AppLanguage?
-  ingestionStatus  IngestionStatus @default(queued) @map("ingestion_status")
-  contentId        String?         @map("content_id") @db.Uuid
-  errorMessage     String?         @map("error_message")
-  /** Pages processed so far (PDF OCR / extract progress for UI polling). */
-  progressPagesDone  Int?          @map("progress_pages_done")
-  /** Total pages being processed (capped at MAX_PDF_PAGES). */
-  progressPagesTotal Int?          @map("progress_pages_total")
-  isPublic         Boolean         @default(false) @map("is_public")
-  createdAt        DateTime        @default(now()) @map("created_at")
+  id                 String          @id @default(uuid()) @db.Uuid
+  userId             String          @map("user_id") @db.Uuid
+  title              String
+  importType         ImportType      @map("import_type")
+  sourceUrl          String?         @map("source_url")
+  fileKey            String?         @map("file_key")
+  language           AppLanguage?
+  ingestionStatus    IngestionStatus @default(queued) @map("ingestion_status")
+  contentId          String?         @map("content_id") @db.Uuid
+  errorMessage       String?         @map("error_message")
+  /**
+   * Pages processed so far (PDF OCR / extract progress for UI polling).
+   */
+  progressPagesDone  Int?            @map("progress_pages_done")
+  /**
+   * Total pages being processed (capped at MAX_PDF_PAGES).
+   */
+  progressPagesTotal Int?            @map("progress_pages_total")
+  isPublic           Boolean         @default(false) @map("is_public")
+  createdAt          DateTime        @default(now()) @map("created_at")
 
-  user    User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  content ContentItem? @relation(fields: [contentId], references: [id])
+  user       User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  content    ContentItem?      @relation(fields: [contentId], references: [id])
   moderation ModerationQueue[]
 
   @@map("user_imports")
 }
 
 model IngestionJob {
-  id           String          @id @default(uuid()) @db.Uuid
+  id           String              @id @default(uuid()) @db.Uuid
   sourceType   IngestionSourceType @map("source_type")
   payload      Json
-  status       IngestionStatus @default(queued)
-  attempts     Int             @default(0)
-  errorMessage String?         @map("error_message")
-  contentId    String?         @map("content_id") @db.Uuid
-  createdById  String?         @map("created_by") @db.Uuid
-  createdAt    DateTime        @default(now()) @map("created_at")
-  finishedAt   DateTime?       @map("finished_at")
+  status       IngestionStatus     @default(queued)
+  attempts     Int                 @default(0)
+  errorMessage String?             @map("error_message")
+  contentId    String?             @map("content_id") @db.Uuid
+  createdById  String?             @map("created_by") @db.Uuid
+  createdAt    DateTime            @default(now()) @map("created_at")
+  finishedAt   DateTime?           @map("finished_at")
 
   content   ContentItem? @relation(fields: [contentId], references: [id])
   createdBy User?        @relation(fields: [createdById], references: [id])
@@ -759,15 +822,15 @@ model IngestionJob {
 }
 
 model ModerationQueue {
-  id          String    @id @default(uuid()) @db.Uuid
-  importId    String?   @map("import_id") @db.Uuid
-  contentId   String?   @map("content_id") @db.Uuid
-  reason      String
-  status      ModerationStatus @default(pending)
-  reviewerId  String?   @map("reviewer_id") @db.Uuid
-  reviewedAt  DateTime? @map("reviewed_at")
-  notes       String?
-  createdAt   DateTime  @default(now()) @map("created_at")
+  id         String           @id @default(uuid()) @db.Uuid
+  importId   String?          @map("import_id") @db.Uuid
+  contentId  String?          @map("content_id") @db.Uuid
+  reason     String
+  status     ModerationStatus @default(pending)
+  reviewerId String?          @map("reviewer_id") @db.Uuid
+  reviewedAt DateTime?        @map("reviewed_at")
+  notes      String?
+  createdAt  DateTime         @default(now()) @map("created_at")
 
   import   UserImport?  @relation(fields: [importId], references: [id], onDelete: Cascade)
   content  ContentItem? @relation(fields: [contentId], references: [id], onDelete: Cascade)
@@ -802,12 +865,12 @@ model AuditLog {
 
 /// LingQ-style per-lemma status for reader highlighting (separate from SRS vocab).
 model UserKnownWord {
-  userId       String      @map("user_id") @db.Uuid
-  lemma        String
-  sourceLang   AppLanguage @map("source_lang")
-  status       WordStatus  @default(learning)
-  firstSeenAt  DateTime    @default(now()) @map("first_seen_at")
-  updatedAt    DateTime    @updatedAt @map("updated_at")
+  userId      String      @map("user_id") @db.Uuid
+  lemma       String
+  sourceLang  AppLanguage @map("source_lang")
+  status      WordStatus  @default(learning)
+  firstSeenAt DateTime    @default(now()) @map("first_seen_at") @db.Timestamptz(6)
+  updatedAt   DateTime    @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -819,7 +882,7 @@ model UserKnownWord {
 model ContentBookmark {
   userId    String   @map("user_id") @db.Uuid
   contentId String   @map("content_id") @db.Uuid
-  createdAt DateTime @default(now()) @map("created_at")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
 
   user    User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
@@ -829,30 +892,30 @@ model ContentBookmark {
 }
 
 model PlacementResult {
-  id              String      @id @default(uuid()) @db.Uuid
+  id              String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   userId          String      @map("user_id") @db.Uuid
   targetLanguage  AppLanguage @map("target_language")
   suggestedLevel  CefrLevel   @map("suggested_level")
   score           Float
   sampleContentId String?     @map("sample_content_id") @db.Uuid
-  createdAt       DateTime    @default(now()) @map("created_at")
+  createdAt       DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([userId, targetLanguage])
   @@map("placement_results")
 }
 
 model SupportTicket {
-  id           String                @id @default(uuid()) @db.Uuid
-  userId       String?               @map("user_id") @db.Uuid
-  subject      String
-  body         String
-  status       SupportTicketStatus   @default(open)
-  priority     SupportTicketPriority @default(medium)
-  category     String                @default("general")
-  assigneeId   String?               @map("assignee_id") @db.Uuid
-  resolvedAt   DateTime?             @map("resolved_at")
-  createdAt    DateTime              @default(now()) @map("created_at")
-  updatedAt    DateTime              @updatedAt @map("updated_at")
+  id         String                @id @default(uuid()) @db.Uuid
+  userId     String?               @map("user_id") @db.Uuid
+  subject    String
+  body       String
+  status     SupportTicketStatus   @default(open)
+  priority   SupportTicketPriority @default(medium)
+  category   String                @default("general")
+  assigneeId String?               @map("assignee_id") @db.Uuid
+  resolvedAt DateTime?             @map("resolved_at")
+  createdAt  DateTime              @default(now()) @map("created_at")
+  updatedAt  DateTime              @updatedAt @map("updated_at")
 
   @@index([status, priority])
   @@map("support_tickets")
@@ -923,23 +986,25 @@ model PlatformSetting {
 }
 
 model LanguageCatalog {
-  code           String   @id
-  name           String
-  nativeName     String   @map("native_name")
-  flagEmoji      String   @map("flag_emoji")
-  regionLabel    String?  @map("region_label")
-  status         String   @default("Active")
-  cefrCoverage   Int      @default(0) @map("cefr_coverage")
-  isEnabled      Boolean  @default(true) @map("is_enabled")
-  learnerCount   Int      @default(0) @map("learner_count")
-  contentCount   Int      @default(0) @map("content_count")
-  sortOrder      Int      @default(0) @map("sort_order")
-  updatedAt      DateTime @updatedAt @map("updated_at")
+  code         String   @id
+  name         String
+  nativeName   String   @map("native_name")
+  flagEmoji    String   @map("flag_emoji")
+  regionLabel  String?  @map("region_label")
+  status       String   @default("Active")
+  cefrCoverage Int      @default(0) @map("cefr_coverage")
+  isEnabled    Boolean  @default(true) @map("is_enabled")
+  learnerCount Int      @default(0) @map("learner_count")
+  contentCount Int      @default(0) @map("content_count")
+  sortOrder    Int      @default(0) @map("sort_order")
+  updatedAt    DateTime @updatedAt @map("updated_at")
 
   @@map("language_catalog")
 }
 
-/** Direct (1:1) learner conversation. Pair key is sorted participant user ids. */
+/**
+ * Direct (1:1) learner conversation. Pair key is sorted participant user ids.
+ */
 model Conversation {
   id            String       @id @default(uuid()) @db.Uuid
   pairKey       String       @unique @map("pair_key")
@@ -1063,7 +1128,7 @@ model UserBlock {
 }
 
 model UserReport {
-  id              String           @id @default(uuid()) @db.Uuid
+  id              String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   /// WL4-11: null once the reporter / reported user deletes their account (report kept for safety, anonymised).
   reporterId      String?          @map("reporter_id") @db.Uuid
   reportedUserId  String?          @map("reported_user_id") @db.Uuid
@@ -1098,7 +1163,7 @@ enum ContentReportStatus {
 }
 
 model FriendRequest {
-  id          String              @id @default(uuid()) @db.Uuid
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   requesterId String              @map("requester_id") @db.Uuid
   addresseeId String              @map("addressee_id") @db.Uuid
   status      FriendRequestStatus @default(pending)
@@ -1114,7 +1179,7 @@ model FriendRequest {
 }
 
 model ContentReport {
-  id         String              @id @default(uuid()) @db.Uuid
+  id         String              @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   reporterId String?             @map("reporter_id") @db.Uuid
   contentId  String?             @map("content_id") @db.Uuid
   importId   String?             @map("import_id") @db.Uuid
@@ -1128,4 +1193,130 @@ model ContentReport {
 
   @@index([status, createdAt])
   @@map("content_reports")
+}
+
+model Entitlement {
+  id              String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId          String            @map("user_id") @db.Uuid
+  kind            EntitlementKind
+  source          PurchaseSource
+  sourceRef       String            @map("source_ref")
+  sku             String?
+  contentId       String?           @map("content_id") @db.Uuid
+  importPaymentId String?           @map("import_payment_id") @db.Uuid
+  status          EntitlementStatus @default(active)
+  startsAt        DateTime          @default(now()) @map("starts_at")
+  expiresAt       DateTime?         @map("expires_at")
+  revokedReason   String?           @map("revoked_reason")
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @default(now()) @map("updated_at")
+  users           User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([source, sourceRef, kind])
+  @@index([userId, status])
+  @@map("entitlements")
+}
+
+model PlayPurchase {
+  id            String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  tokenHash     String           @unique @map("token_hash")
+  purchaseToken String           @map("purchase_token")
+  userId        String           @map("user_id") @db.Uuid
+  sku           String
+  kind          StoreProductKind
+  orderId       String?          @map("order_id")
+  state         String
+  acknowledged  Boolean          @default(false)
+  consumed      Boolean          @default(false)
+  expiryTime    DateTime?        @map("expiry_time")
+  autoRenewing  Boolean?         @map("auto_renewing")
+  raw           Json?
+  createdAt     DateTime         @default(now()) @map("created_at")
+  updatedAt     DateTime         @default(now()) @map("updated_at")
+  users         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([userId])
+  @@map("play_purchases")
+}
+
+model PracticeSessionItem {
+  id               String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sessionId        String          @map("session_id") @db.Uuid
+  vocabId          String          @map("vocab_id") @db.Uuid
+  type             String
+  extra            Boolean         @default(false)
+  attempts         Int             @default(0)
+  requeue          Boolean         @default(false)
+  answeredAt       DateTime?       @map("answered_at")
+  practiceSessions PracticeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@unique([sessionId, vocabId, type])
+  @@map("practice_session_items")
+}
+
+model PromoCode {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  code           String    @unique
+  description    String?
+  percentOff     Int?      @map("percent_off")
+  amountOffUzs   Int?      @map("amount_off_uzs")
+  appliesTo      String    @default("all") @map("applies_to")
+  validFrom      DateTime? @map("valid_from")
+  validTo        DateTime? @map("valid_to")
+  maxRedemptions Int?      @map("max_redemptions")
+  redemptions    Int       @default(0)
+  perUserLimit   Int       @default(1) @map("per_user_limit")
+  active         Boolean   @default(true)
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @default(now()) @map("updated_at")
+
+  @@map("promo_codes")
+}
+
+model StoreProduct {
+  id           String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  platform     StorePlatform
+  sku          String
+  kind         StoreProductKind
+  planTier     SubscriptionTier? @map("plan_tier")
+  importTierId String?           @map("import_tier_id") @db.Uuid
+  contentId    String?           @map("content_id") @db.Uuid
+  priceUzs     Int               @map("price_uzs")
+  active       Boolean           @default(true)
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @default(now()) @map("updated_at")
+
+  @@unique([platform, sku])
+  @@index([kind, contentId])
+  @@map("store_products")
+}
+
+enum EntitlementKind {
+  plus
+  catalog_book
+  import_credit
+}
+
+enum EntitlementStatus {
+  active
+  expired
+  revoked
+}
+
+enum PurchaseSource {
+  atmos
+  google_play
+  admin
+}
+
+enum StorePlatform {
+  web
+  google_play
+}
+
+enum StoreProductKind {
+  subscription
+  import_tier
+  catalog_book
 }
