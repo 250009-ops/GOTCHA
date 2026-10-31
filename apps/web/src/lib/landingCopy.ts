@@ -56,7 +56,7 @@ export const LANDING_COPY = {
   "plusOpt": "50% off every paid import",
   "plusPrice": [
    "30 days, 24,990 soʻm",
-   "365 days, 199,990 soʻm (about 33% less)"
+   "365 days, 199,990 soʻm"
   ],
   "plusCta": "Get Plus",
   "plusNote": "One-time payment. No subscription, no auto-renewal. You pay on gotchaa.uz through Atmos.",
@@ -69,8 +69,8 @@ export const LANDING_COPY = {
    "Does Plus renew by itself?"
   ],
   "faq_answers": [
-   "No. Free gives you 20 word lookups and 10 quizzes a day, plus 3 pasted-text imports a day, up to 50 pages a month. Daily limits reset at 00:00 Tashkent time.",
-   "Yes. Pasted text is free within the Free limits. PDF and EPUB imports (scanned PDFs too) are paid per import, from 12,000 soʻm for 1–10 pages. Plus gets 50% off every paid import.",
+   "No. Free gives you 20 word lookups and 10 quizzes a day, plus 3 imports a day of pasted text or an article link, up to 50 pages a month. Daily limits reset at 00:00 Tashkent time.",
+   "Yes. Pasted text and article links are free within the Free limits. PDF and EPUB imports (scanned PDFs too) are paid per import, from 12,000 soʻm for 1–10 pages. Plus gets 50% off every paid import.",
    "Many. Pick a book from the library, or import a text in the language you're learning.",
    "Yes. Settings lets you download your data or delete your account.",
    "No. Plus costs 24,990 soʻm for 30 days or 199,990 soʻm for 365 days, paid once. When it ends you go back to Free, and your words and progress stay."
@@ -142,7 +142,7 @@ export const LANDING_COPY = {
   "plusOpt": "Har bir pullik importga 50% chegirma",
   "plusPrice": [
    "30 kun, 24 990 soʻm",
-   "365 kun, 199 990 soʻm (taxminan 33% arzon)"
+   "365 kun, 199 990 soʻm"
   ],
   "plusCta": "Plusʼni olish",
   "plusNote": "Bir martalik toʻlov. Obuna yoʻq, avtomatik yangilanmaydi. Toʻlov gotchaa.uz saytida Atmos orqali.",
@@ -152,11 +152,11 @@ export const LANDING_COPY = {
    "Oʻz kitobimni oʻqisam boʻladimi?",
    "Qaysi tillarni oʻrganish mumkin?",
    "Maʼlumotlarimni oʻchirib tashlasam boʻladimi?",
-   "Plus oʻzi uzaytiriladimi?"
+   "Plus avtomatik uzaytiriladimi?"
   ],
   "faq_answers": [
-   "Yoʻq. Bepul tarifda kuniga 20 ta soʻz izohi va 10 ta test bor. Yana kuniga 3 ta matn joylab import qilishingiz mumkin, oyiga 50 sahifagacha. Kunlik limitlar Toshkent vaqti bilan soat 00:00 da yangilanadi.",
-   "Ha. Joylangan matn bepul tarif limitlari doirasida bepul. PDF va EPUB importi (skanerlangan PDF ham) har biri uchun alohida toʻlanadi: 1–10 sahifa 12 000 soʻmdan. Plus bilan har bir pullik import 50% arzon.",
+   "Yoʻq. Bepul tarifda kuniga 20 ta soʻz izohi va 10 ta test bor. Yana kuniga 3 ta import (joylangan matn yoki maqola havolasi), oyiga 50 sahifagacha. Kunlik limitlar Toshkent vaqti bilan soat 00:00 da yangilanadi.",
+   "Ha. Bepul tarif limitlari doirasida joylangan matn va maqola havolalari bepul. PDF va EPUB importi (skanerlangan PDF ham) har biri uchun alohida toʻlanadi: 1–10 sahifa 12 000 soʻmdan. Plus bilan har bir pullik import 50% arzon.",
    "Koʻp. Kutubxonadan kitob tanlang yoki oʻrganayotgan tilingizdagi matnni yuklang.",
    "Ha. Sozlamalarda maʼlumotlaringizni yuklab olishingiz yoki akkauntni oʻchirishingiz mumkin.",
    "Yoʻq. Plus 30 kunga 24 990 soʻm yoki 365 kunga 199 990 soʻm, bir marta toʻlanadi. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz saqlanib qoladi."
@@ -228,7 +228,7 @@ export const LANDING_COPY = {
   "plusOpt": "Скидка 50% на каждый платный импорт",
   "plusPrice": [
    "30 дней, 24 990 сум",
-   "365 дней, 199 990 сум (≈33% дешевле)"
+   "365 дней, 199 990 сум"
   ],
   "plusCta": "Подключить Plus",
   "plusNote": "Разовый платёж. Без подписки и автопродления. Оплата на gotchaa.uz через Atmos.",
@@ -241,8 +241,8 @@ export const LANDING_COPY = {
    "Plus продлевается сам?"
   ],
   "faq_answers": [
-   "Нет. На бесплатном плане 20 подсказок по словам и 10 тестов в день, а ещё 3 импорта вставленного текста в день, до 50 страниц в месяц. Дневные лимиты обновляются в 00:00 по Ташкенту.",
-   "Да. Вставленный текст бесплатен в пределах бесплатных лимитов. Импорт PDF и EPUB (сканы тоже) оплачивается отдельно за каждый файл: от 12 000 сум за 1–10 страниц. С Plus каждый платный импорт на 50% дешевле.",
+   "Нет. На бесплатном плане 20 подсказок по словам и 10 тестов в день, а ещё 3 импорта в день (вставленный текст или ссылка на статью), до 50 страниц в месяц. Дневные лимиты обновляются в 00:00 по Ташкенту.",
+   "Да. Вставленный текст и ссылки на статьи бесплатны в пределах бесплатных лимитов. Импорт PDF и EPUB (сканы тоже) оплачивается отдельно за каждый файл: от 12 000 сум за 1–10 страниц. С Plus каждый платный импорт на 50% дешевле.",
    "Много. Выберите книгу в библиотеке или загрузите текст на языке, который учите.",
    "Да. В настройках можно скачать свои данные или удалить аккаунт.",
    "Нет. Plus стоит 24 990 сум за 30 дней или 199 990 сум за 365 дней, оплата разовая. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс останутся."
@@ -263,3 +263,21 @@ export const LANDING_COPY = {
 } as const;
 export type LandingLocale = keyof typeof LANDING_COPY;
 export const LANDING_BOOKS: { id: string; title: string; author: string; language: string }[] = [{"id": "b8b9b407-ee72-4332-adc5-37c982ebffcc", "title": "Crime and Punishment", "author": "Fyodor Dostoevsky", "language": "en"}, {"id": "0b029c59-aaa7-4d32-b059-acc883ca40b8", "title": "Şahmerdan", "author": "Sait Faik Abasıyanık", "language": "tr"}, {"id": "19d6c925-d76d-4712-8860-37b560098904", "title": "Sarnıç", "author": "Sait Faik Abasıyanık", "language": "tr"}, {"id": "9496ca44-72f0-44cb-b223-73a9e2f28178", "title": "Semaver", "author": "Sait Faik Abasıyanık", "language": "tr"}, {"id": "d12edc47-b7dd-4005-a818-88d2b500fc7d", "title": "Son Kuşlar", "author": "Sait Faik Abasıyanık", "language": "tr"}, {"id": "9d614b7d-12df-4fc0-b301-fba2637ee504", "title": "Yalnız Efe", "author": "Ömer Seyfettin", "language": "tr"}];
+
+// r3 (Marketing): Plus card, #plus nav item and FAQ Q5 are shown because payments are live in prod (final-6).
+// Single switch: set to false to hide them if Kai says so.
+export const SHOW_PLUS_ON_LANDING = true;
+
+// r3 QA pass-2: catalog cards localised (titles/authors). Turkish titles are proper titles and stay as published; authors are transliterated in ru.
+const BOOK_L10N: Record<string, Partial<Record<'uz' | 'ru', { title?: string; author: string }>>> = {
+  "b8b9b407-ee72-4332-adc5-37c982ebffcc": { uz: { title: "Jinoyat va jazo", author: "Fyodor Dostoyevskiy" }, ru: { title: "Преступление и наказание", author: "Фёдор Достоевский" } },
+  "0b029c59-aaa7-4d32-b059-acc883ca40b8": { uz: { author: "Sait Fayiq Abasiyaniq" }, ru: { author: "Саит Фаик Абасыянык" } },
+  "19d6c925-d76d-4712-8860-37b560098904": { uz: { author: "Sait Fayiq Abasiyaniq" }, ru: { author: "Саит Фаик Абасыянык" } },
+  "9496ca44-72f0-44cb-b223-73a9e2f28178": { uz: { author: "Sait Fayiq Abasiyaniq" }, ru: { author: "Саит Фаик Абасыянык" } },
+  "d12edc47-b7dd-4005-a818-88d2b500fc7d": { uz: { author: "Sait Fayiq Abasiyaniq" }, ru: { author: "Саит Фаик Абасыянык" } },
+  "9d614b7d-12df-4fc0-b301-fba2637ee504": { uz: { author: "Umar Sayfiddin" }, ru: { author: "Омер Сейфеттин" } },
+};
+export function bookFor<B extends { id: string; title: string; author: string }>(b: B, lang: string): B {
+  const t = lang === 'uz' || lang === 'ru' ? BOOK_L10N[b.id]?.[lang] : undefined;
+  return t ? { ...b, title: t.title ?? b.title, author: t.author } : b;
+}

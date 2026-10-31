@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import '../landing-premium.css';
 import { Seo } from '../components/Seo';
 import { LandingLangSwitch, LP_LANGS, type LpLang } from '../components/LandingLangSwitch';
-import { LANDING_BOOKS, LANDING_COPY } from '../lib/landingCopy';
+import { LANDING_BOOKS, LANDING_COPY, SHOW_PLUS_ON_LANDING, bookFor } from '../lib/landingCopy';
 import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
 import { useWebLocale } from '../lib/webLocaleContext';
 import { buildId, queryWithLocale } from '../lib/queryLocale';
@@ -48,7 +48,7 @@ const Svg = ({ k, s = 16 }: { k: keyof typeof ico; s?: number }) => (
   <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ico[k]}</svg>
 );
 const D_ICO = ['M2 4h12M2 8h8M2 12h10', 'M4 2h8v12l-4-3-4 3z', 'M4 2h5l3 3v9H4z', 'M3 8.5 6.5 12 13 4', 'M3 13V8M8 13V3M13 13V6'];
-const LN: Record<string, string> = { en: 'English', tr: 'Türkçe' };
+const LN: Record<LpLang, Record<string, string>> = { en: { en: 'English', tr: 'Turkish' }, uz: { en: 'Ingliz tili', tr: 'Turk tili' }, ru: { en: 'Английский', tr: 'Турецкий' } };
 const FAN = [[-24, -250, 30], [-14, -160, 12], [-5, -70, 0], [5, 20, 0], [14, 110, 12], [24, 200, 30]];
 
 // QA LP1-03: localised popover labels (UI chrome, not lookup output).
@@ -141,13 +141,16 @@ export default function LandingPage() {
   const pc = plusCta(C, CHECKOUT_LIVE, ui);
   const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]].filter(Boolean);
   const navIds = ['#how', '#features', '#plus', '#faq'];
+  // SHOW_PLUS_ON_LANDING (landingCopy.ts, default true): false hides the #plus nav item, the Plus card and the last FAQ item (Plus renewal).
+  const nav = C.nav.map((n, i) => [n, navIds[i]] as const).filter(([, id]) => SHOW_PLUS_ON_LANDING || id !== '#plus');
+  const faqN = SHOW_PLUS_ON_LANDING ? C.faq_questions.length : C.faq_questions.length - 1;
 
   return (
     <div className="lp" data-theme="light" ref={root} lang={L}>
       <Seo title={`GOTCHA — ${C.h1}`} description={C.sub} lang={L} />
       <header className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap">
         <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
-        <ul id="nav">{C.nav.map((n, i) => <li key={n}><a href={navIds[i]}>{n}</a></li>)}</ul>
+        <ul id="nav">{nav.map(([n, id]) => <li key={n}><a href={id}>{n}</a></li>)}</ul>
         <div className="right">
           <LandingLangSwitch value={L} onChange={onLang} />
           <a className="login" href={loginHref}>{C.login}</a>
@@ -160,8 +163,8 @@ export default function LandingPage() {
         {menuOpen && (
           <div className="bm" id="bm" ref={panel} role="dialog" aria-modal="true" aria-label={T.menu}>
             <nav><ul className="links">
-              {C.nav.map((n, i) => (
-                <li key={n}><a href={navIds[i]} onClick={() => setMenuOpen(false)}>{n}<svg width="18" height="18" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2" aria-hidden="true"><path d="m7 4 5 5-5 5" /></svg></a></li>
+              {nav.map(([n, id]) => (
+                <li key={n}><a href={id} onClick={() => setMenuOpen(false)}>{n}<svg width="18" height="18" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2" aria-hidden="true"><path d="m7 4 5 5-5 5" /></svg></a></li>
               ))}
             </ul></nav>
             <h3 id="bm-lh">{T.lang}</h3>
@@ -227,17 +230,17 @@ export default function LandingPage() {
         <section id="library" style={{ paddingTop: 0 }}><div className="wrap"><div className="grid">
           <div className="sec-head rv"><h2>{C.libT}</h2><p className="lead">{C.libL}</p></div>
           <div className="covers rv" id="covers">
-            {LANDING_BOOKS.map((b) => (
+            {LANDING_BOOKS.map((b0) => { const b = bookFor(b0, L); return (
               <a className="cover" href={libHref} key={b.id}>
                 <img {...coverSrc(b.id)} sizes="(min-width: 1024px) 180px, 45vw" alt={b.title} loading="lazy" width={800} height={1200} />
-                <b>{b.title}</b><span>{b.author}</span><span>{LN[b.language] ?? b.language}</span>
+                <b>{b.title}</b><span>{b.author}</span><span>{LN[L][b.language] ?? b.language}</span>
               </a>
-            ))}
+            ); })}
           </div>
           <div className="lib-foot rv"><strong style={{ color: 'var(--l-ink)' }}>{C.lt}</strong><p>{C.lb}</p></div>
         </div></div></section>
 
-        <section className="plus" id="plus"><div className="wrap"><div className="grid">
+        {SHOW_PLUS_ON_LANDING && <section className="plus" id="plus"><div className="wrap"><div className="grid">
           <div className="plus-card rv">
             <div className="plus-l"><span className="eyebrow">Plus</span><h2 style={{ marginTop: 12 }}>{C.plusT}</h2><p className="lead">{C.plusLead}</p>
               <ul id="plusB">{plusB.map((b) => <li key={b}><Svg k="check" s={18} /><span>{b}</span></li>)}</ul></div>
@@ -256,12 +259,12 @@ export default function LandingPage() {
               <a className="btn btn-brand" href={pc.href} data-cta="plus" data-plus-live={String(pc.live)}>{pc.label}</a><p className="note">{pc.note}</p>
             </div>
           </div>
-        </div></div></section>
+        </div></div></section>}
 
         <section id="faq"><div className="wrap"><div className="grid">
           <div className="faq-head rv"><h2>{C.faqT}</h2></div>
           <div className="faq-list rv" id="faqL">
-            {C.faq_questions.map((q, i) => <details key={q} open={i === 0}><summary>{q}<Svg k="plus" s={20} /></summary><p>{C.faq_answers[i]}</p></details>)}
+            {C.faq_questions.slice(0, faqN).map((q, i) => <details key={q} open={i === 0}><summary>{q}<Svg k="plus" s={20} /></summary><p>{C.faq_answers[i]}</p></details>)}
           </div>
         </div></div></section>
 

@@ -163,3 +163,29 @@ test('r2 FAQ: Free limits, paid PDF/EPUB from 12,000, Plus 50% off, 00:00 Tashke
     assert.equal(LANDING_COPY[l].faq_answers.length, 5);
   }
 });
+
+// r3 QA pass-2: uz tutuq belgisi is ʼ (U+02BC), oʻ/gʻ use ʻ (U+02BB); no U+2019 or ASCII apostrophe anywhere in uz copy.
+test('r3: uz copy has no U+2019 / ASCII apostrophe (landing + shared uz blocks)', async () => {
+  const bad = /['\u2019]/;
+  const walk = (v: unknown, p: string): void => {
+    if (typeof v === 'string') assert.ok(!bad.test(v), `${p}: ${v}`);
+    else if (Array.isArray(v)) v.forEach((x, i) => walk(x, `${p}[${i}]`));
+    else if (v && typeof v === 'object') for (const [k, x] of Object.entries(v)) walk(x, `${p}.${k}`);
+  };
+  walk(LANDING_COPY.uz, 'landing.uz');
+  const fs = await import('node:fs');
+  for (const [f, start] of [['learnerCopyExt.ts', 'const EXT_UZ'], ['learnerCopy.ts', 'const UZ:'], ['practiceCopy.ts', 'const uz:']] as const) {
+    const s = fs.readFileSync(new URL(`../../../packages/shared/src/${f}`, import.meta.url), 'utf8');
+    const i = s.indexOf(start); const blk = s.slice(i, s.indexOf('\n};', i));
+    const hits = blk.match(/[A-Za-zʻʼ]['\u2019][a-z]/g) ?? [];
+    assert.deepEqual(hits, [], f);
+  }
+  assert.ok(LANDING_COPY.uz.faq_questions.includes('Plus avtomatik uzaytiriladimi?'));
+  assert.ok(!/33%/.test(JSON.stringify(LANDING_COPY)));
+});
+test('r3: catalog cards localised in uz/ru; Plus flag default ON', async () => {
+  const m = await import('../src/lib/landingCopy.ts');
+  assert.equal(m.SHOW_PLUS_ON_LANDING, true);
+  for (const l of ['uz', 'ru']) for (const b of m.LANDING_BOOKS) assert.notEqual(m.bookFor(b, l).author, b.author, `${l} ${b.id}`);
+  assert.equal(m.bookFor(m.LANDING_BOOKS[0], 'ru').title, 'Преступление и наказание');
+});
