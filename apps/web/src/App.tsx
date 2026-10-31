@@ -1,5 +1,6 @@
 import { lazy, Suspense } from 'react';
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { withLocaleQuery } from './lib/localeRedirect';
 import LandingPage from './pages/LandingPage';
 import { PrivacyPage, TermsPage } from './pages/LegalPage';
 import NotFoundPage from './pages/NotFoundPage';
@@ -18,10 +19,15 @@ export default function App() {
         <Route path="/privacy" element={LegalV2Page ? <Suspense fallback={null}><LegalV2Page doc="privacy" /></Suspense> : <PrivacyPage />} />
         <Route path="/terms" element={LegalV2Page ? <Suspense fallback={null}><LegalV2Page doc="terms" /></Suspense> : <TermsPage />} />
         {/* web-launch-02: /roadmap removed (UI/UX P0, unverifiable promises); /pricing has no page while prices are hidden (W-13). */}
-        <Route path="/roadmap" element={<Navigate to="/" replace />} />
-        <Route path="/pricing" element={<Navigate to="/" replace />} />
+        <Route path="/roadmap" element={<HomeRedirect />} />
+        <Route path="/pricing" element={<HomeRedirect />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </WebLocaleProvider>
   );
+}
+
+function HomeRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={withLocaleQuery('/', search)} replace />;
 }
