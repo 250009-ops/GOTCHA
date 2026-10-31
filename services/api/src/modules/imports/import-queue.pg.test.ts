@@ -23,7 +23,7 @@ async function mkImport(userId: string) {
 }
 const jobOf = (userImportId: string) => prisma.importQueueJob.findUniqueOrThrow({ where: { userImportId } });
 async function age(userImportId: string, secs: number) {
-  await prisma.$executeRaw`UPDATE import_queue_jobs SET heartbeat_at = now() - make_interval(secs => ${secs}::float8) WHERE user_import_id = ${userImportId}::uuid`;
+  await prisma.$executeRaw`UPDATE import_queue_jobs SET heartbeat_at = (now() AT TIME ZONE 'UTC') - make_interval(secs => ${secs}::float8) WHERE user_import_id = ${userImportId}::uuid`;
 }
 async function drain() {
   // isolate: hide everything not created by this test run
@@ -94,7 +94,7 @@ async function main() {
     const j1 = (await claimNextImportJob(prisma, 'E'))!;
     assert.deepEqual(await failImportJobAttempt(prisma, j1.id, 'E', 'ECONNRESET', { retryable: true }), { owned: true, final: false });
     assert.equal(await claimNextImportJob(prisma, 'E'), null, 'backoff: not runnable yet');
-    await prisma.$executeRaw`UPDATE import_queue_jobs SET run_after = now() WHERE id = ${j1.id}::uuid`;
+    await prisma.$executeRaw`UPDATE import_queue_jobs SET run_after = (now() AT TIME ZONE 'UTC') WHERE id = ${j1.id}::uuid`;
     const j2 = (await claimNextImportJob(prisma, 'E'))!;
     assert.equal(j2.id, j1.id);
     assert.deepEqual(await failImportJobAttempt(prisma, j2.id, 'E', 'password-protected', { retryable: false }), { owned: true, final: true });
