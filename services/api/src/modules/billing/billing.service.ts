@@ -22,7 +22,10 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       priceLabel: t.free,
       priceUnit: '',
       popular: false,
-      features: [t.lookupsDay(plan.aiDailyQuota), t.importsDay(plan.importLimit), t.library],
+      // wlive: shown limits = enforced caps (payments-02 plan-caps), never the raw row.
+      aiDailyQuota: freeQuota,
+      quizDailyQuota: freeQuizzes,
+      features: [t.lookupsDay(freeQuota), t.quizzesDay(freeQuizzes), t.importsDay(plan.importLimit), t.library],
     };
   }
   // Premium = Plus, a 30-day pass (no auto-renew). Field names (incl. priceMonthly) are kept for old clients;
@@ -43,6 +46,8 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
     periodDays: 30,
     autoRenew: false,
     popular: true,
+    aiDailyQuota: plusLookups, // null = no daily lookup cap for Plus (wlive 14:40 API shape)
+    quizDailyQuota: (plan as { quizDailyQuota?: number }).quizDailyQuota ?? DAILY_CAP_FALLBACKS.plus.quizzes,
     // Lookups from config (plus.ai_lookup_quota, null = no daily limit); never "unlimited" in copy.
     // Marketing §4/§7 (14:20): quiz bullet added; quiz cap = plan.quizDailyQuota.
     features: [t.plusLookups(plusLookups, freeQuota), t.plusQuizzes((plan as { quizDailyQuota?: number }).quizDailyQuota ?? DAILY_CAP_FALLBACKS.plus.quizzes, freeQuizzes), t.plusFree],
@@ -58,14 +63,14 @@ export class BillingService {
   ) {}
 
   /** No prices in code: everything comes from subscription_plans (PRICING.md seed, admin-edited). */
+  /** wlive behaviour kept: localized plan cards (enrichPlan) with the enforced payments-02 caps. */
   async listPlans(lang: PricingLang = 'en') {
-    // AC1-01 safety net: a premium price < 1000 soʻm (e.g. an old USD value) is hidden, never shown as "9 soʻm".
-    // Field names (incl. priceMonthly) are kept for old clients; for Plus it is the 30-day pass price.
-    return (await this.pricing.publicPlans(lang)).map((p) => {
-      if (p.tier !== 'premium') return { ...p, priceMonthly: p.period === 'month' ? p.priceUzs : null };
-      const priceUzs = publicPlanPriceUzs(p.priceUzs);
-      return { ...p, priceUzs, priceMonthly: priceUzs, priceHidden: priceUzs === null, priceUnit: planCopy(lang as PlanLang).passUnit, periodDays: 30, autoRenew: false };
-    });
+    const [plans, year, caps] = await Promise.all([
+      this.prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } }),
+      this.prisma.platformSetting.findUnique({ where: { key: 'plus.pass.price_365_uzs' } }).catch(() => null),
+      getPlanCaps(this.prisma),
+    ]);
+    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups));
   }
 
   async getSubscription(userId: string) {
