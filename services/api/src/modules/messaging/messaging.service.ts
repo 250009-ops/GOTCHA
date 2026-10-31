@@ -1,3 +1,4 @@
+import { resolveCoverKey } from '@gotcha/shared';
 import { DELETED_USER_NAME, assertNotDeletedUser, isDeletedAccount } from '../../common/deleted-user';
 import { notifyNewReport } from '../../common/safety/report-notify';
 import {
@@ -66,6 +67,24 @@ function isLiveMessagingPeer(user: {
   if (isSyntheticUserEmail(user.email)) return false;
   if (isFigmaSampleDisplayName(user.displayName)) return false;
   return true;
+}
+
+/** covers-01: content card fields; coverImageKey is the EFFECTIVE cover (null in template mode → client draws it). */
+const CONTENT_CARD_SELECT = {
+  id: true,
+  title: true,
+  coverImageKey: true,
+  coverMode: true,
+  originalCoverKey: true,
+  genre: true,
+  language: true,
+} as const;
+function cardContent<T extends { coverImageKey: string | null; coverMode: string; originalCoverKey: string | null }>(
+  c: T | null | undefined,
+): (Omit<T, 'originalCoverKey'> & { coverImageKey: string | null }) | null {
+  if (!c) return null;
+  const { originalCoverKey: _o, ...rest } = c;
+  return { ...rest, coverImageKey: resolveCoverKey(c) };
 }
 
 @Injectable()
@@ -277,7 +296,7 @@ export class MessagingService {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
-        content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+        content: { select: CONTENT_CARD_SELECT },
       },
       orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }],
     });
@@ -304,7 +323,7 @@ export class MessagingService {
         return {
           id: c.id,
           language: c.language,
-          content: c.content,
+          content: cardContent(c.content),
           peer,
           lastMessage: last
             ? {
@@ -347,7 +366,7 @@ export class MessagingService {
         participants: {
           include: { user: { include: { targetLanguages: true } } },
         },
-        content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+        content: { select: CONTENT_CARD_SELECT },
         messages: {
           orderBy: { createdAt: 'asc' },
           take: 200,
@@ -362,7 +381,7 @@ export class MessagingService {
     return {
       id: c.id,
       language: c.language,
-      content: c.content,
+      content: cardContent(c.content),
       peer: peerPart
         ? {
             ...this.peerSummary(peerPart.user),
@@ -591,7 +610,7 @@ export class MessagingService {
             take: 1,
             orderBy: { lastReadAt: 'desc' },
             include: {
-              content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+              content: { select: CONTENT_CARD_SELECT },
             },
           },
         },
@@ -599,7 +618,7 @@ export class MessagingService {
       });
       return peers.map((p) => ({
         ...this.peerSummary(p),
-        reading: p.readingProgress[0]?.content ?? null,
+        reading: cardContent(p.readingProgress[0]?.content),
       }));
     }
 
@@ -616,7 +635,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -625,7 +644,7 @@ export class MessagingService {
 
     return peers.map((p) => ({
       ...this.peerSummary(p),
-      reading: p.readingProgress[0]?.content ?? null,
+      reading: cardContent(p.readingProgress[0]?.content),
     }));
   }
 
@@ -675,7 +694,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -685,7 +704,7 @@ export class MessagingService {
 
     return peers.map((p) => ({
       ...this.peerSummary(p),
-      reading: p.readingProgress[0]?.content ?? null,
+      reading: cardContent(p.readingProgress[0]?.content),
     }));
   }
 
@@ -701,7 +720,7 @@ export class MessagingService {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
           include: {
-            content: { select: { id: true, title: true, coverImageKey: true, language: true } },
+            content: { select: CONTENT_CARD_SELECT },
           },
         },
       },
@@ -743,7 +762,7 @@ export class MessagingService {
       stats: { booksRead, wordsLearned, chats },
       currentlyReading: peer.readingProgress[0]
         ? {
-            ...peer.readingProgress[0].content!,
+            ...cardContent(peer.readingProgress[0].content)!,
             progressPct: peer.readingProgress[0].progressPct,
           }
         : null,

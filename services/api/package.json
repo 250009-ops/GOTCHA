@@ -30,7 +30,10 @@
     "test:epub-dist": "nest build && ts-node --transpile-only src/modules/imports/epub-dist.test.ts",
     "start:worker": "node dist/worker.js",
     "test:import-p0": "ts-node --transpile-only src/modules/imports/import-p0.test.ts",
-    "test:import-queue": "ts-node --transpile-only src/modules/imports/import-queue.pg.test.ts"
+    "test:import-queue": "ts-node --transpile-only src/modules/imports/import-queue.pg.test.ts",
+    "test:covers": "ts-node --transpile-only src/modules/content/cover-template.test.ts",
+    "test:cover-mode": "ts-node --transpile-only src/modules/admin/cover-mode.pg.test.ts",
+    "test:cover-migration": "bash scripts/test-cover-migration-pg16.sh"
   },
   "dependencies": {
     "@gotcha/shared": "*",

@@ -467,6 +467,10 @@ model ContentItem {
   cefrLevel       CefrLevel     @map("cefr_level")
   genre           String?
   coverImageKey   String?       @map("cover_image_key")
+  /// covers-01: template | upload | original. New books (admin + user imports) default to the code-drawn template.
+  coverMode       String        @default("template") @map("cover_mode")
+  /// covers-01: frozen copy of the pre-covers-01 cover_image_key (never overwritten; enables per-book revert).
+  originalCoverKey String?      @map("original_cover_key")
   audioKey        String?       @map("audio_key")
   wordCount       Int           @default(0) @map("word_count")
   uniqueWordCount Int           @default(0) @map("unique_word_count")

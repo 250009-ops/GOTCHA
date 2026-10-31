@@ -407,6 +407,7 @@ async function main() {
       where: { slug },
       update: {
         coverImageKey: sampleCover,
+        originalCoverKey: sampleCover,
         publishStatus: PublishStatus.published,
       },
       create: {
@@ -419,6 +420,7 @@ async function main() {
         cefrLevel: story.level,
         genre: story.genre,
         coverImageKey: sampleCover,
+        originalCoverKey: sampleCover,
         licenseId: story.source === ContentSource.licensed ? license.id : undefined,
         wordCount,
         uniqueWordCount: uniqueWordCount(tokenMap as never),
@@ -485,6 +487,7 @@ async function main() {
       cefrLevel: 'b1',
       genre: 'fiction',
       coverImageKey: lighthouseCover,
+      originalCoverKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,
@@ -501,6 +504,7 @@ async function main() {
       cefrLevel: 'b1',
       genre: 'fiction',
       coverImageKey: lighthouseCover,
+      originalCoverKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,

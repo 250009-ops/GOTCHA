@@ -1,3 +1,4 @@
+import { resolveCoverKey, type CoverMode } from '@gotcha/shared';
 import { userImportOwnerWhere } from './user-import-privacy';
 import { ageBand, AgeBand, allowedAgeRatings } from '../../common/safety/age-policy';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
@@ -35,6 +36,8 @@ const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; fla
 function serializeContent(item: object, access?: { granted: boolean }) {
   const row = item as CatalogPricedItem & {
     coverImageKey?: string | null;
+    coverMode?: string | null;
+    originalCoverKey?: string | null;
     subtitle?: string | null;
     author?: string | null;
     isFree?: boolean;
@@ -49,9 +52,12 @@ function serializeContent(item: object, access?: { granted: boolean }) {
   };
   const locked = requiresCatalogPayment(priced);
   const priceUzs = catalogPriceUzs(priced);
+  const { originalCoverKey: _orig, ...rest } = row;
   return {
-    ...row,
-    coverImageUrl: row.coverImageKey ?? null,
+    ...rest,
+    // covers-01: template mode ⇒ null (the learner draws the cover); upload/original ⇒ that image.
+    coverImageUrl: resolveCoverKey(row),
+    coverMode: (row.coverMode as CoverMode | undefined) ?? 'template',
     authorName: row.author ?? row.subtitle ?? null,
     isFree: !locked,
     priceUzs,

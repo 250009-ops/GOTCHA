@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { BookCover } from './cover/BookCover';
 import { BookOpen, Grid3X3, List, X } from 'lucide-react';
 import { resolveMediaUrl } from '../lib/media';
 import { cn, languageFlag } from '../lib/utils';
@@ -18,14 +19,11 @@ export type LibraryPreviewItem = {
   priceUsd?: number;
   publishStatus: string;
   coverImageKey?: string | null;
+  coverImageUrl?: string | null;
+  coverMode?: string | null;
+  genre?: string | null;
 };
 
-const COVER_GRADIENTS = [
-  'linear-gradient(148deg, #8e51ff 0%, #ad46ff 50%, #4f39f6 100%)',
-  'linear-gradient(142deg, #00d492 0%, #00bba7 50%, #0092b8 100%)',
-  'linear-gradient(142deg, #fb2c6b 0%, #f6339a 50%, #e60076 100%)',
-  'linear-gradient(148deg, #2b7fff 0%, #6a5cff 50%, #4f39f6 100%)',
-];
 
 const cefrStyle: Record<string, string> = {
   a1: 'bg-emerald-100 text-emerald-700',
@@ -38,11 +36,6 @@ const cefrStyle: Record<string, string> = {
 
 const filterTabs = ['All', 'Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
 
-function gradientForId(id: string) {
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash + id.charCodeAt(i)) % COVER_GRADIENTS.length;
-  return COVER_GRADIENTS[hash];
-}
 
 function formatWordCount(count: number) {
   if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
@@ -53,30 +46,22 @@ function formatUzs(amount: number) {
   return new Intl.NumberFormat('uz-UZ').format(Math.round(amount)) + " soʻm";
 }
 
-function CoverArt({ item }: { item: LibraryPreviewItem }) {
-  const raw = item.coverImageKey?.trim() ?? '';
-  const src =
-    raw.startsWith('blob:') || raw.startsWith('data:')
-      ? raw
-      : resolveMediaUrl(item.coverImageKey);
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(src) && !failed;
+function CoverArt({ item, variant = 'card' }: { item: LibraryPreviewItem; variant?: 'card' | 'thumb' }) {
+  // covers-01: same template cover as the learner.
+  const raw = item.coverMode
+    ? item.coverMode === 'template'
+      ? null
+      : (item.coverImageUrl ?? item.coverImageKey ?? null)
+    : (item.coverImageKey ?? null);
+  const resolve = (u: string | null | undefined) =>
+    u && (u.startsWith('blob:') || u.startsWith('data:')) ? u : resolveMediaUrl(u);
   return (
-    <div
-      className="relative flex items-center justify-center overflow-hidden w-full h-full"
-      style={showImage ? undefined : { backgroundImage: gradientForId(item.id) }}
-    >
-      {showImage ? (
-        <img
-          src={src ?? ''}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
-      )}
-    </div>
+    <BookCover
+      item={{ title: item.title, genre: item.genre, language: item.language, author: item.author, coverMode: raw ? 'upload' : 'template', coverImageUrl: raw }}
+      variant={variant}
+      resolveUrl={resolve}
+      className="w-full h-full"
+    />
   );
 }
 
@@ -97,7 +82,7 @@ function LearnerCard({
     return (
       <div className="w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 text-left">
         <div className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0 overflow-hidden">
-          <CoverArt item={item} />
+          <CoverArt item={item} variant="thumb" />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
@@ -129,12 +114,11 @@ function LearnerCard({
     <div className="bg-white rounded-2xl border border-gray-100/80 overflow-hidden text-left flex flex-col w-full h-full ring-2 ring-[#7008e7] ring-offset-2">
       <div className="relative shrink-0 w-full aspect-[3/4]">
         <CoverArt item={item} />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
         <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[calc(100%-2rem)]">
           <span className={cn('inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-semibold tracking-wide', cefrStyle[item.cefrLevel] ?? 'bg-gray-100 text-gray-600')}>
             {item.cefrLevel.toUpperCase()}
           </span>
-          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/20 backdrop-blur text-white capitalize truncate max-w-[5rem]">
+          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/90 text-gray-700 shadow-sm capitalize truncate max-w-[5rem]">
             {item.contentType.replace('_', ' ')}
           </span>
         </div>
