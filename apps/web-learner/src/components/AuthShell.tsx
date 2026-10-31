@@ -1,6 +1,9 @@
 import { useEffect, useState, type ReactNode } from 'react';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1').replace(/\/$/, '');
+
+/** W-03: hide the sign-in learner count until there are at least this many learners. */
+const PUBLIC_LEARNER_MIN = 100;
 
 export const AUTH_FEATURES = [
   {
@@ -152,7 +155,8 @@ function MarketingPanel() {
 
         <div className="flex-1" />
 
-        {learnerCount > 0 && (
+        {/* W-03: never show a small learner count; the API also returns 0 below the threshold. */}
+        {learnerCount >= PUBLIC_LEARNER_MIN && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center justify-between whitespace-nowrap gap-3">
               <p className="text-white text-[13px] font-semibold">
@@ -160,7 +164,8 @@ function MarketingPanel() {
               </p>
               <p className="text-[#c4b4ff] text-xs">already reading on GOTCHA</p>
             </div>
-            {readerInitials.length > 0 && (
+            {/* web-launch: no reader initials (minors' profiles are not shown publicly) */}
+            {false && readerInitials.length > 0 && (
               <div className="flex items-center">
                 {readerInitials.map((initials, idx) => (
                   <div
