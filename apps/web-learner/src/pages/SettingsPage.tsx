@@ -755,7 +755,7 @@ export default function SettingsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
-                      <div className="text-xl sm:text-2xl font-bold mt-1">{payments ? copy.settings.payPerImport : limitCopy.freePlan}</div>
+                      <div className="text-xl sm:text-2xl font-bold mt-1">{payments ? copy.settings.payPerImport : subscription?.subscription ? (plan?.name ?? 'Plus') : limitCopy.freePlan}</div>
                     </div>
                     <Zap className="w-6 h-6 text-white shrink-0" />
                   </div>

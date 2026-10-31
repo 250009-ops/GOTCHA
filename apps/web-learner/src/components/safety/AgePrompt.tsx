@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useLearnerLocale } from '../../lib/learnerLocaleContext';
@@ -24,8 +25,9 @@ export function AgePrompt() {
       setBusy(false);
     }
   };
-  return (
-    <div role="dialog" aria-modal="true" aria-labelledby="age-prompt-title" className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-4">
+  // final-5: portal to <body> so the nav rail cannot cover the prompt at 360px.
+  return createPortal(
+    <div role="dialog" aria-modal="true" aria-labelledby="age-prompt-title" className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-2xl bg-white p-5 shadow-xl flex flex-col gap-3">
         <h2 id="age-prompt-title" className="text-base font-bold text-[#101828]">{c.promptTitle}</h2>
         <p className="text-sm text-[#4a5565]">{c.promptBody}</p>
@@ -49,6 +51,7 @@ export function AgePrompt() {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

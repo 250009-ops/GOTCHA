@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { LIMIT_COPY, limitLang, type LimitNotice } from '@gotcha/shared';
 import { LIMIT_EVENT } from '../lib/limits';
 
@@ -11,7 +12,8 @@ export function LimitDialog({ lang }: { lang: string }) {
     return () => window.removeEventListener(LIMIT_EVENT, on);
   }, []);
   if (!notice) return null;
-  return (
+  // Portal to <body>: inside <main> (z-0) the nav rail covered the dialog at 360px.
+  return createPortal(
     <div role="dialog" aria-modal="true" data-testid="limit-screen" className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4">
       <div className="w-full max-w-sm rounded-[14px] bg-white p-5 shadow-xl">
         <h2 className="text-lg font-bold text-[#101828]">{notice.title}</h2>
@@ -21,6 +23,7 @@ export function LimitDialog({ lang }: { lang: string }) {
           {LIMIT_COPY[limitLang(lang)].ok}
         </button>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
