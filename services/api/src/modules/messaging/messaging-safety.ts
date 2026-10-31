@@ -1,3 +1,4 @@
+import { assertNotDeletedUser } from '../../common/deleted-user';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import type { UserReportReason } from '@prisma/client';
 
@@ -88,6 +89,7 @@ export async function reportUser(
 ) {
   if (reporterId === input.reportedUserId) throw new BadRequestException('Cannot report yourself');
   const { reason, details } = normalizeReport(input);
+  await assertNotDeletedUser(prisma as never, input.reportedUserId);
   const target = await prisma.user.findFirst({ where: { id: input.reportedUserId }, select: { id: true } });
   if (!target) throw new NotFoundException('User not found');
 

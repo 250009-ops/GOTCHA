@@ -52,9 +52,31 @@ async function main() {
     const leak = JSON.stringify([thread, list]);
     for (const s of ['del-', '@test.local', 'avatars/x.jpg', '"del"']) assert.ok(!leak.includes(s), `no ${s} in read paths`);
     assert.equal(await prisma.userNotification.count({ where: { userId: other.id, refId: conv.id, title: { contains: 'del sent' } } }), 0, 'stale named notification dropped');
+    (prisma as unknown as { dbAvailable: boolean }).dbAvailable = true; // NotificationsService.list() returns [] without it
     const notif = new NotificationsService(prisma as never);
     const nList = JSON.stringify(await (notif as unknown as { list(u: string): Promise<unknown> }).list(other.id));
     assert.ok(!nList.includes('del sent') && !nList.includes('@test.local'), 'notifications show no name/email');
+    // follow-up: deleted flag, localised notification name, no new contact with a deleted account
+    assert.equal((m.sender as unknown as { deleted: boolean }).deleted, true);
+    assert.ok(!JSON.stringify(m.sender).includes('@'), 'sender has no email');
+    assert.equal((thread.peer as unknown as { deleted: boolean }).deleted, true);
+    await prisma.user.update({ where: { id: other.id }, data: { uiLanguage: 'uz' } as never });
+    await prisma.userNotification.deleteMany({ where: { userId: other.id } });
+    // an unread message from the (now deleted) account must be the latest one for the derived notification
+    await prisma.message.create({ data: { conversationId: conv.id, senderId: del.id, body: 'kept later msg', createdAt: new Date(Date.now() + 1000) } });
+    await prisma.conversationParticipant.update({ where: { conversationId_userId: { conversationId: conv.id, userId: other.id } }, data: { lastReadAt: null } });
+    const nUz = JSON.stringify(await (notif as unknown as { list(u: string): Promise<unknown> }).list(other.id));
+    assert.ok(nUz.includes('Oʻchirilgan foydalanuvchi'), 'uz notification names the deleted user in uz: ' + nUz.slice(0, 300));
+    const code403 = async (f: () => Promise<unknown>, what: string) => {
+      await assert.rejects(f(), (e: { getStatus?(): number; getResponse?(): { code?: string } }) => e.getStatus?.() === 403 && e.getResponse?.().code === 'USER_DELETED', what);
+    };
+    const reportsBefore = await prisma.userReport.count();
+    await code403(() => msg.sendMessage(other.id, conv.id, { body: 'still there?' } as never), 'send into conversation');
+    await code403(() => msg.startConversation(other.id, { peerUserId: del.id } as never), 'new conversation');
+    await code403(() => msg.report(other.id, { reportedUserId: del.id, reason: 'spam' } as never), 'report');
+    const { sendFriendRequest } = await import('../safety/friend-gate');
+    await code403(() => sendFriendRequest(prisma as never, other.id, del.id), 'friend request');
+    assert.equal(await prisma.userReport.count(), reportsBefore, 'no new report; existing kept');
     // reports: kept, unlinked from the deleted user, reported message still attached
     const a = await prisma.userReport.findUniqueOrThrow({ where: { id: r1.id } });
     assert.equal(a.reportedUserId, null); assert.equal(a.conversationId, null); assert.equal(a.messageId, mine.id); assert.equal(a.reporterId, other.id);

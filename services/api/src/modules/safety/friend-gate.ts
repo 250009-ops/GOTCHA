@@ -1,3 +1,4 @@
+import { assertNotDeletedUser } from '../../common/deleted-user';
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ageBand, AgeBand, canMessage } from '../../common/safety/age-policy';
 
@@ -76,6 +77,7 @@ export async function assertPeerVisible(p: GatePrisma, viewerId: string, targetI
 /** Under-13 accounts cannot send or receive friend requests (messaging is off for them). */
 export async function sendFriendRequest(p: GatePrisma, from: string, to: string) {
   if (from === to) throw new BadRequestException('Cannot add yourself');
+  await assertNotDeletedUser(p as never, to);
   const target = await p.user.findFirst({ where: { id: to, deletedAt: null }, select: { id: true, birthYear: true } });
   if (!target) throw new NotFoundException('User not found');
   const blocked = await p.userBlock.findFirst({

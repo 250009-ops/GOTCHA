@@ -1,4 +1,4 @@
-import { DELETED_USER_NAME, isDeletedAccount } from '../../common/deleted-user';
+import { DELETED_USER_NAME, assertNotDeletedUser, isDeletedAccount } from '../../common/deleted-user';
 import { notifyNewReport } from '../../common/safety/report-notify';
 import {
   BadRequestException,
@@ -33,7 +33,7 @@ const TYPING_WINDOW_MS = 4 * 1000;
 const MESSAGE_EMAIL_COOLDOWN_MS = 10 * 60 * 1000;
 
 const messageInclude = {
-  sender: { select: { id: true, displayName: true, avatarUrl: true } },
+  sender: { select: { id: true, displayName: true, avatarUrl: true, email: true } },
   replyTo: {
     select: {
       id: true,
@@ -160,7 +160,7 @@ export class MessagingService {
       editedAt?: Date | null;
       deletedAt?: Date | null;
       replyToId?: string | null;
-      sender?: { id: string; displayName: string | null; avatarUrl: string | null };
+      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string };
       replyTo?: {
         id: string;
         body: string;
@@ -181,7 +181,10 @@ export class MessagingService {
       translation: deleted ? null : m.translation,
       bodyLang: m.bodyLang,
       senderId: m.senderId,
-      sender: m.sender,
+      // email is selected only to detect a deleted account; it never leaves the API.
+      sender: m.sender
+        ? { id: m.sender.id, displayName: m.sender.displayName, avatarUrl: m.sender.avatarUrl, deleted: isDeletedAccount(m.sender) }
+        : m.sender,
       mine,
       createdAt: m.createdAt,
       editedAt: m.editedAt ?? null,
@@ -374,6 +377,7 @@ export class MessagingService {
     if (dto.peerUserId === userId) {
       throw new BadRequestException('Cannot message yourself');
     }
+    await assertNotDeletedUser(this.prisma as never, dto.peerUserId);
     const peer = await this.prisma.user.findFirst({
       where: { id: dto.peerUserId, deletedAt: null },
       include: { targetLanguages: true, adminProfile: { select: { userId: true } } },
@@ -414,6 +418,7 @@ export class MessagingService {
       where: { conversationId, userId: { not: userId } },
       select: { userId: true },
     });
+    if (other) await assertNotDeletedUser(this.prisma as never, other.userId);
     if (other) await assertNotBlocked(this.safety, userId, other.userId);
     if (other) await assertCanMessage(this.prisma as never, userId, other.userId);
     const body = dto.body.trim();
