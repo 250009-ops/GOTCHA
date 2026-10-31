@@ -34,7 +34,7 @@ const deadline = Date.now() + 60_000;
     try {
       const r = await fetch(`http://127.0.0.1:${port}/api/v1/health`);
       if (r.ok) {
-        assert.deepEqual(await r.json(), { ok: true });
+        const h = (await r.json()) as { ok?: boolean; build?: { sha?: string } }; assert.equal(h.ok, true); assert.ok(h.build && typeof h.build.sha === 'string', 'S4 build id on /health');
         assert.ok(!/can't resolve dependencies/i.test(log));
         assert.ok(!/\[MAIL\].*sent|sendMail ok/i.test(log), 'no email at boot');
         console.log('boot-smoke: OK (Nest booted, /health 200)');
