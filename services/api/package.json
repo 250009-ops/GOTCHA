@@ -24,7 +24,8 @@
     "test:langs": "ts-node --transpile-only src/common/language-catalog.test.ts",
     "test:streak": "ts-node --transpile-only src/services/streak.service.test.ts",
     "test:mail": "ts-node --transpile-only src/common/mail/mail.templates.test.ts",
-    "test:shuffle": "ts-node --transpile-only src/modules/practice/shuffle-options.test.ts"
+    "test:shuffle": "ts-node --transpile-only src/modules/practice/shuffle-options.test.ts",
+    "test:epub-dist": "nest build && ts-node --transpile-only src/modules/imports/epub-dist.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

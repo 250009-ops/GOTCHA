@@ -1,5 +1,5 @@
 import { PDFParse, PasswordException } from 'pdf-parse';
-import JSZip from 'jszip';
+import JSZip = require('jszip'); // jszip is CommonJS (no .default); tsconfig has no esModuleInterop
 import { countPdfPagesFromBytes, MAX_BILLABLE_PAGES } from './pdf-page-count';
 import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
