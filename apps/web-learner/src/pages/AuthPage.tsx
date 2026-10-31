@@ -19,34 +19,6 @@ function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
 }
 
-function LegalConsent() {
-  const copy = useLearnerCopy();
-  const termsHref = `${MARKETING_URL}/terms`;
-  const privacyHref = `${MARKETING_URL}/privacy`;
-  return (
-    <p className="text-center text-[12px] leading-[18px] text-[#9ca3af]">
-      {copy.auth.legalPrefix}{' '}
-      <a
-        href={termsHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
-      >
-        {copy.auth.termsOfUse}
-      </a>{' '}
-      {copy.auth.legalAnd}{' '}
-      <a
-        href={privacyHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-g-blue-700 hover:decoration-g-blue-700"
-      >
-        {copy.auth.privacyPolicy}
-      </a>
-      {copy.auth.legalSuffix}
-    </p>
-  );
-}
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
@@ -281,8 +253,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {showLanguageStep ? (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">{copy.auth.nativeLanguage}</label>
+                <label id="auth-native-label" className="text-xs font-semibold text-[#4a5565]">{copy.auth.nativeLanguage}</label>
                 <LanguageSearchInput
+                  labelledBy="auth-native-label"
                   options={catalogLangs}
                   value={nativeLanguage ? [nativeLanguage] : []}
                   onChange={(codes) => setNativeLanguage((codes[0] as AppLanguage) ?? null)}
@@ -291,18 +264,27 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">
+                <label id="auth-target-label" className="text-xs font-semibold text-[#4a5565]">
                   {copy.auth.targetLanguages}{' '}
                   <span className="text-[#9ca3af] font-normal">{copy.auth.targetLanguagesHint}</span>
                 </label>
                 <LanguageSearchInput
                   options={catalogLangs}
+                  labelledBy="auth-target-label"
                   value={targetLanguages}
                   onChange={(codes) => setTargetLanguages(codes as AppLanguage[])}
                   exclude={nativeLanguage ? [nativeLanguage] : []}
                   placeholder={copy.auth.targetLanguagesPlaceholder}
                 />
               </div>
+              {/* WL4-07: consent + birth year sit ABOVE Create account so they are in view at 360x640. */}
+              <SignupSafetyFields
+                locale={locale}
+                accepted={acceptTerms}
+                onAccepted={setAcceptTerms}
+                birthYear={birthYear}
+                onBirthYear={setBirthYear}
+              />
               <div className="flex gap-3">
                 <Button
                   type="button"
@@ -327,13 +309,6 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   )}
                 </Button>
               </div>
-              <SignupSafetyFields
-                locale={locale}
-                accepted={acceptTerms}
-                onAccepted={setAcceptTerms}
-                birthYear={birthYear}
-                onBirthYear={setBirthYear}
-              />
             </form>
           ) : (
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
@@ -417,7 +392,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     copy.common.continue
                   )}
               </Button>
-              {!isLogin && <LegalConsent />}
+              {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. */}
             </form>
           )}
 

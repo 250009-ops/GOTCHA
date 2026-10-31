@@ -1,7 +1,7 @@
 import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
 import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
 import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
-import { useEffect, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
@@ -57,8 +57,12 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
+/** WL4-08: Row shares its label with the control inside it (sliders/toggles/selects get an accessible name). */
+const RowLabel = createContext<string | undefined>(undefined);
+
 function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
   return (
+    <RowLabel.Provider value={label}>
     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
       <div className="min-w-0 sm:flex-1">
         <div className="text-sm font-medium text-[#364153]">{label}</div>
@@ -68,14 +72,17 @@ function Row({ label, description, children }: { label: string; description?: st
         {children}
       </div>
     </div>
+    </RowLabel.Provider>
   );
 }
 
 function RangeSlider({ value, min, max, step, onChange }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
   const pct = ((value - min) / (max - min)) * 100;
+  const label = useContext(RowLabel);
   return (
     <input
       type="range"
+      aria-label={label}
       min={min}
       max={max}
       step={step}
@@ -88,9 +95,13 @@ function RangeSlider({ value, min, max, step, onChange }: { value: number; min: 
 }
 
 function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  const label = useContext(RowLabel);
   return (
     <button
       type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
       onClick={() => onChange(!checked)}
       className={cn('relative inline-flex h-6 w-8 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}
     >
@@ -99,13 +110,13 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
   );
 }
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function ModalShell({ title, onClose, children, closeLabel }: { title: string; onClose: () => void; children: React.ReactNode; closeLabel?: string }) {
   return (
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
           <span className="text-sm font-semibold text-gray-900">{title}</span>
-          <button type="button" onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
+          <button type="button" onClick={onClose} aria-label={closeLabel} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
             <X className="w-4 h-4" />
           </button>
         </div>
@@ -156,7 +167,7 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <ModalShell title={copy.settings.changePassword} onClose={onClose}>
+    <ModalShell title={copy.settings.changePassword} onClose={onClose} closeLabel={copy.common.cancel}>
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-1.5">
           <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.currentPassword}</label>
@@ -286,8 +297,9 @@ function TargetLanguageModal({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.cefrLevel}</label>
+          <label htmlFor="settings-cefr" className="text-xs font-semibold text-[#4a5565]">{copy.settings.cefrLevel}</label>
           <select
+            id="settings-cefr"
             value={cefrLevel}
             onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
             className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
@@ -336,7 +348,8 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
-  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(user?.uiLanguage ?? 'uz');
+  // WL4-05: show the language the UI is actually in (local choice wins over a stale server value).
+  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(locale as AppLanguage);
   const [avatarBusy, setAvatarBusy] = useState(false);
 
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
@@ -359,9 +372,12 @@ export default function SettingsPage() {
     if (user) {
       setDisplayName(user.displayName ?? '');
       setNativeLanguage(user.nativeLanguage ?? 'en');
-      setUiLanguage(user.uiLanguage ?? 'uz');
     }
   }, [user]);
+
+  useEffect(() => {
+    setUiLanguage(locale as AppLanguage);
+  }, [locale]);
 
   useEffect(() => {
     api<CatalogLanguage[]>('/content/languages')
@@ -489,7 +505,7 @@ export default function SettingsPage() {
           <div className="flex items-center gap-3 min-w-0">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
             {isUnder13(user) ? (
-              <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[user?.uiLanguage === 'ru' || user?.uiLanguage === 'uz' ? user.uiLanguage : 'en']}</span>
+              <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[locale === 'ru' || locale === 'uz' ? locale : 'en']}</span>
             ) : (
             <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
               {avatarBusy ? copy.settings.uploading : copy.settings.changePhoto}
@@ -524,26 +540,28 @@ export default function SettingsPage() {
         </Row>
         <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
           <select
+            aria-label={copy.settings.nativeLanguage}
             value={nativeLanguage}
             onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
             className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
-                {l.flagEmoji} {l.name}
+                {l.flagEmoji} {(l as { nativeName?: string }).nativeName || l.name}
               </option>
             ))}
           </select>
         </Row>
         <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
           <select
+            aria-label={copy.settings.appLanguage}
             value={uiLanguage}
             onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
             className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
-                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].label}
+                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].nativeName}
               </option>
             ))}
           </select>
@@ -595,6 +613,7 @@ export default function SettingsPage() {
                     onClick={() => void handleRemoveLanguage(tl.targetLanguage)}
                     className="p-1.5 rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
                     title={copy.settings.removeLanguage}
+                    aria-label={copy.settings.removeLanguage}
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                   </button>
@@ -602,6 +621,7 @@ export default function SettingsPage() {
                 <button
                   type="button"
                   onClick={() => setLangModal({ mode: 'edit', existing: tl })}
+                  aria-label={copy.settings.editTargetLanguage}
                   className="p-1.5 rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
                 >
                   <ChevronRight className="w-4 h-4" />
@@ -701,12 +721,12 @@ export default function SettingsPage() {
         </Row>
       </Section>
 
-      <Section title={aiSwitchText(user?.uiLanguage).title}>
-        <AiSwitch lang={user?.uiLanguage} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
+      <Section title={aiSwitchText(locale).title}>
+        <AiSwitch lang={locale} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
       </Section>
 
-      <Section title={deleteAccountText(user?.uiLanguage).title}>
-        <DeleteAccount lang={user?.uiLanguage} onDeleted={() => { logout(); window.location.assign('/'); }} />
+      <Section title={deleteAccountText(locale).title}>
+        <DeleteAccount lang={locale} onDeleted={() => { logout(); window.location.assign('/'); }} />
       </Section>
 
       <Section title={copy.settings.usageImports}>

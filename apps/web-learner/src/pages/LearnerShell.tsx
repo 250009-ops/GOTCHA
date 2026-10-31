@@ -193,7 +193,7 @@ export default function LearnerShell() {
               />
             </div>
 
-            <nav className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
+            <nav aria-label={copy.nav.mainLabel} className="flex-1 py-3 px-2 space-y-1 overflow-y-auto min-h-0">
               {primaryNav.map((item) => (
                 <NavLink key={item.path} item={item} collapsed={!expanded} />
               ))}
@@ -222,6 +222,7 @@ export default function LearnerShell() {
                     <button
                       type="button"
                       onClick={() => navigate('/app/import')}
+                      aria-label={copy.shell.payAsYouGo}
                       className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-g-blue-700 to-g-blue-900 border border-white/10"
                     >
                       <Wallet className="w-3.5 h-3.5 text-amber-300" />

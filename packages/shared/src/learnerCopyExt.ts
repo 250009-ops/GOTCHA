@@ -68,6 +68,10 @@ export interface LearnerCopyExt {
     markAsLabel: string;
     tryAgain: string;
     noSegments: string;
+    stillProcessing: string;
+    chapterOf: (n: number, total: number) => string;
+    chapterN: (n: number) => string;
+    pageOf: (n: number, total: number) => string;
     backToLibrary: string;
     unknown: string;
     learning: string;
@@ -443,6 +447,10 @@ const EXT_EN: LearnerCopyExt = {
     markAsLabel: '→ Mark as:',
     tryAgain: 'Try again',
     noSegments: 'No content segments available',
+    stillProcessing: 'This item may still be processing.',
+    chapterOf: (n: number, total: number) => `Chapter ${n} of ${total}`,
+    chapterN: (n: number) => `Chapter ${n}`,
+    pageOf: (n: number, total: number) => `${n} of ${total}`,
     backToLibrary: 'Library',
     unknown: 'unknown',
     learning: 'learning',
@@ -822,6 +830,10 @@ const EXT_RU: LearnerCopyExt = {
     markAsLabel: '→ Отметить как:',
     tryAgain: 'Повторить',
     noSegments: 'Нет доступных фрагментов',
+    stillProcessing: 'Возможно, материал ещё обрабатывается.',
+    chapterOf: (n: number, total: number) => `Глава ${n} из ${total}`,
+    chapterN: (n: number) => `Глава ${n}`,
+    pageOf: (n: number, total: number) => `${n} из ${total}`,
     backToLibrary: 'Библиотека',
     unknown: 'неизвестно',
     learning: 'изучаю',
@@ -1201,6 +1213,10 @@ const EXT_UZ: LearnerCopyExt = {
     markAsLabel: '→ Belgilash:',
     tryAgain: 'Qayta urinish',
     noSegments: 'Boʻlimlar mavjud emas',
+    stillProcessing: 'Material hali qayta ishlanayotgan boʻlishi mumkin.',
+    chapterOf: (n: number, total: number) => `${n}-bob, jami ${total}`,
+    chapterN: (n: number) => `${n}-bob`,
+    pageOf: (n: number, total: number) => `${n} / ${total}`,
     backToLibrary: 'Kutubxona',
     unknown: 'noma’lum',
     learning: 'oʻrganilmoqda',

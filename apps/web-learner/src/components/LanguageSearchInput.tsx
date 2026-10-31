@@ -24,7 +24,8 @@ function matchesQuery(lang: LanguageOption, query: string) {
 function display(lang?: LanguageOption, code?: string) {
   return {
     flag: lang?.flagEmoji ?? languageFlag(code ?? lang?.code),
-    name: lang?.name ?? languageLabel(code ?? lang?.code),
+    // WL4-06: a language is shown by its own name (Oʻzbekcha, Русский…), never only the English one.
+    name: lang?.nativeName || lang?.name || languageLabel(code ?? lang?.code),
   };
 }
 
@@ -36,6 +37,7 @@ export function LanguageSearchInput({
   multiple = true,
   placeholder,
   id,
+  labelledBy,
 }: {
   options: LanguageOption[];
   value: string[];
@@ -44,6 +46,8 @@ export function LanguageSearchInput({
   multiple?: boolean;
   placeholder?: string;
   id?: string;
+  /** WL4-08: id of the visible label for this input. */
+  labelledBy?: string;
 }) {
   const copy = useLearnerCopy();
   const resolvedPlaceholder = placeholder ?? copy.languageInput.searchPlaceholder;
@@ -160,6 +164,7 @@ export function LanguageSearchInput({
           <input
             ref={inputRef}
             id={id}
+            aria-labelledby={labelledBy}
             value={query}
             autoComplete="off"
             spellCheck={false}
@@ -202,8 +207,8 @@ export function LanguageSearchInput({
                 >
                   <span className="text-base leading-none">{flag}</span>
                   <span className="font-medium">{name}</span>
-                  {lang.nativeName && lang.nativeName !== name ? (
-                    <span className="text-xs text-[#9ca3af] truncate">{lang.nativeName}</span>
+                  {lang.name && lang.name !== name ? (
+                    <span className="text-xs text-[#9ca3af] truncate">{lang.name}</span>
                   ) : null}
                 </button>
               );

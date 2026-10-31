@@ -25,7 +25,7 @@ import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { formatUzs } from '../lib/importBilling';
 import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
@@ -33,9 +33,9 @@ import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, 
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
 
-function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
+function displayChapterTitle(title: string | undefined | null, fallbackIndex: number, chapterN: (n: number) => string) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
-  if (!raw) return `Chapter ${fallbackIndex + 1}`;
+  if (!raw) return chapterN(fallbackIndex + 1); // WL4-06: localised fallback
   return raw;
 }
 
@@ -261,6 +261,7 @@ function DictionaryPanel({
 
 export default function ReaderPage() {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale(); // WL4-05: Report follows the active UI language
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const location = useLocation();
@@ -327,7 +328,7 @@ export default function ReaderPage() {
       if (!group) {
         group = {
           key,
-          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key),
+          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key, copy.reader.chapterN),
           firstIndex: i,
           pageCount: 0,
         };
@@ -776,7 +777,15 @@ export default function ReaderPage() {
           <div className="text-center text-[#99a1af]">
             <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
             <div className="text-[#4a5565] font-medium">{copy.reader.noSegments}</div>
-            <div className="text-sm mt-1">This item may still be processing.</div>
+            <div className="text-sm mt-1">{copy.reader.stillProcessing}</div>
+            {/* WL4-09: localised empty state with a retry (re-fetches the item). */}
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              className="mt-4 rounded-full bg-g-blue-700 px-4 py-2 text-sm font-medium text-white"
+            >
+              {copy.reader.tryAgain}
+            </button>
           </div>
         </div>
       </div>
@@ -784,7 +793,7 @@ export default function ReaderPage() {
   }
 
   const currentChapterLabel = currentChapter?.title
-    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex);
+    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex, copy.reader.chapterN);
   const zoomPct = Math.round(fontScale * 100);
   const readerTheme = preferences?.readerTheme ?? 'light';
   const pageTone =
@@ -812,7 +821,7 @@ export default function ReaderPage() {
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
         </div>
         {/* AI-1 / Play UGC: report a book or imported text. */}
-        <ReportButton lang={user?.uiLanguage} target={{ kind: 'content', contentId: content.id }} />
+        <ReportButton lang={locale} target={{ kind: 'content', contentId: content.id }} />
 
         <div className="hidden lg:flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">
@@ -928,7 +937,7 @@ export default function ReaderPage() {
                             {pageCount > 1 ? copy.reader.page(i + 1) : copy.reader.content}
                           </div>
                           <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-g-blue-900' : 'text-[#4a5565]')}>
-                            {displayChapterTitle(seg.chapterTitle || seg.title, i)}
+                            {displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN)}
                           </div>
                         </button>
                       );
@@ -963,7 +972,7 @@ export default function ReaderPage() {
           <div className="md:hidden flex gap-2 overflow-x-auto px-4 pt-3 pb-1 scrollbar-hide">
             {(chapterGroups ?? outline.map((seg, i) => ({
               key: i,
-              title: displayChapterTitle(seg.chapterTitle || seg.title, i),
+              title: displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN),
               firstIndex: i,
               pageCount: 1,
             }))).map((group) => (
@@ -995,8 +1004,8 @@ export default function ReaderPage() {
             <div className="mb-8">
               <div className="text-xs font-semibold text-g-blue-500 uppercase tracking-[1.2px] mb-1">
                 {chapterGroups
-                  ? `Chapter ${(chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1} of ${chapterGroups.length}`
-                  : `${segmentIndex + 1} of ${pageCount}`}
+                  ? copy.reader.chapterOf((chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1, chapterGroups.length)
+                  : copy.reader.pageOf(segmentIndex + 1, pageCount)}
               </div>
               <h1 className="text-2xl font-bold text-[#101828] font-serif leading-8">
                 {currentChapterLabel}

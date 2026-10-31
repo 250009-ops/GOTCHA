@@ -9,6 +9,8 @@ export type FullLearnerCopy = LearnerCopy & LearnerCopyExt;
 
 export interface LearnerCopy {
   nav: {
+    /** WL4-08: accessible name of the main navigation. */
+    mainLabel: string;
     library: string;
     vocabulary: string;
     practice: string;
@@ -309,6 +311,7 @@ export interface LearnerCopy {
 
 const EN: LearnerCopy = {
   nav: {
+    mainLabel: 'Main navigation',
     library: 'Library',
     vocabulary: 'Vocabulary',
     practice: 'Practice',
@@ -615,6 +618,7 @@ const EN: LearnerCopy = {
 const RU: LearnerCopy = {
   ...EN,
   nav: {
+    mainLabel: 'Основная навигация',
     library: 'Библиотека',
     vocabulary: 'Словарь',
     practice: 'Практика',
@@ -924,10 +928,11 @@ const RU: LearnerCopy = {
 const UZ: LearnerCopy = {
   ...EN,
   nav: {
+    mainLabel: 'Asosiy menyu',
     library: 'Kutubxona',
     vocabulary: 'Lugʻat',
     practice: 'Mashq',
-    import: 'Import',
+    import: 'Yuklash', // WL4-06: no English in the uz nav
     statistics: 'Statistika',
     notifications: 'Bildirishnomalar',
     messages: 'Xabarlar',
@@ -1220,7 +1225,7 @@ const UZ: LearnerCopy = {
     messages: 'Xabarlar — GOTCHA',
     vocabulary: 'Lugʻat — GOTCHA',
     practice: 'Mashq — GOTCHA',
-    import: 'Import — GOTCHA',
+    import: 'Yuklash — GOTCHA',
     statistics: 'Statistika — GOTCHA',
     notifications: 'Bildirishnomalar — GOTCHA',
     settings: 'Sozlamalar — GOTCHA',
