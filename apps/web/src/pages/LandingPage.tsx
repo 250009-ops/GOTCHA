@@ -326,7 +326,7 @@ export default function LandingPage() {
                         : 'border border-[#e2e8f0] bg-white text-[#4a5565] hover:border-[#101828]'
                     }`}
                   >
-                    {lang.name}
+                    {lang.nativeName || lang.name /* WL4-06: own-language name, not English */}
                   </button>
                 );
               })}
