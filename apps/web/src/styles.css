@@ -1,6 +1,14 @@
 @import "tailwindcss";
 @import "./gotcha-tokens.css";
 
+/* Self-hosted Manrope (SIL OFL 1.1, see public/fonts/FONTS-LICENSE.txt); no Google Fonts. */
+@font-face {
+  font-family: Manrope;
+  src: url("/fonts/manrope-subset.woff2") format("woff2");
+  font-weight: 200 800;
+  font-display: swap;
+}
+
 @theme {
   --color-brand: #2107aa;
   --color-brand-deep: #101828;
@@ -21,7 +29,7 @@
   --color-lavender: var(--g-blue-200);
   --font-family-brand: 'Manrope', sans-serif;
   --font-family-heading: 'Manrope', sans-serif;
-  --font-family-body: 'Geist', system-ui, sans-serif;
+  --font-family-body: 'Manrope', system-ui, sans-serif;
 }
 
 :root {
@@ -63,7 +71,7 @@
 
   body {
     margin: 0;
-    font-family: Geist, system-ui, sans-serif;
+    font-family: Manrope, system-ui, sans-serif;
     color: var(--text);
     background: var(--surface);
     -webkit-font-smoothing: antialiased;
@@ -147,7 +155,7 @@
 }
 
 /* WLF-07: PM legal fragments (/terms, /privacy) */
-.legal-pm .legal { font-family: 'Geist', system-ui, sans-serif; color: #4a5565; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.legal-pm .legal { font-family: Manrope, system-ui, sans-serif; color: #4a5565; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
 .legal-pm .legal h1 { font-size: 32px; line-height: 1.2; font-weight: 800; color: #111827; margin: 0 0 16px; }
 .legal-pm .legal h2 { font-size: 20px; font-weight: 700; color: #111827; margin: 32px 0 12px; scroll-margin-top: 7rem; }
 .legal-pm .legal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 20px 0 8px; }

@@ -7,7 +7,6 @@ import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
 import { isWebLocale, marketingLocaleFor, type WebLocale } from '../lib/webLocale';
 import { LEGAL_TITLES } from '../lib/legalPm.titles';
 
-
 function LanguagePicker({ className }: { className?: string }) {
   const { copyLocale, setLocale } = useWebLocale();
   const copy = useMarketingCopy();
@@ -100,7 +99,7 @@ export function SiteNav() {
         <div className="flex items-center gap-3 sm:gap-4">
           <LanguagePicker className="inline-flex shrink-0" />
           <a
-            className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
+            className="hidden font-['Manrope',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
             href={loginUrl({ ui: copyLocale })}
           >
             {copy.nav.signIn}
@@ -167,9 +166,12 @@ export function SiteNav() {
   );
 }
 
+const ENTITY = { uz: 'Erkin Tizim jamoasi', ru: 'команда Erkin Tizim', en: 'the Erkin Tizim team' } as const;
+
 export function SiteFooter() {
   const copy = useMarketingCopy();
-  const footerLocale = marketingLocaleFor(useWebLocale().copyLocale);
+  const { copyLocale } = useWebLocale();
+  const footerLocale = marketingLocaleFor(copyLocale);
 
   return (
     <footer className="w-full border-t border-[#e2e8f0] bg-white">
@@ -177,7 +179,7 @@ export function SiteFooter() {
         <div className="flex flex-col justify-between gap-10 lg:flex-row lg:items-start">
           <div className="flex max-w-[320px] flex-col gap-4">
             <Brand size="sm" />
-            <p className="font-['Geist',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">{copy.footer.tagline}</p>
+            <p className="font-['Manrope',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">{copy.footer.tagline}</p>
           </div>
 
           <div className="flex flex-wrap gap-10 lg:gap-16">
@@ -185,7 +187,7 @@ export function SiteFooter() {
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
                 {copy.footer.product}
               </h4>
-              <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
+              <div className="flex flex-col gap-3 font-['Manrope',sans-serif] text-[13px] text-[#4a5565]">
                 <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
                   {copy.nav.catalog}
                 </Link>
@@ -198,7 +200,7 @@ export function SiteFooter() {
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
                 {copy.footer.legal}
               </h4>
-              <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
+              <div className="flex flex-col gap-3 font-['Manrope',sans-serif] text-[13px] text-[#4a5565]">
                 <Link to="/privacy" className="transition-colors hover:text-[#101828]">
                   {copy.footer.privacy}
                 </Link>
@@ -213,8 +215,8 @@ export function SiteFooter() {
           </div>
         </div>
 
-        <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Geist',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
-          <p>{copy.footer.rights}</p>
+        <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Manrope',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
+          <p>{copy.footer.rights} · {ENTITY[copyLocale as 'uz' | 'ru' | 'en'] ?? ENTITY.en}</p>
           <a href="mailto:support@gotchaa.uz" className="transition-colors hover:text-[#101828]">support@gotchaa.uz</a>
         </div>
       </div>

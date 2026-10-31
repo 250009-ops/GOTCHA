@@ -22,6 +22,20 @@ function upsertMeta(selector: string, attrs: Record<string, string>) {
   }
 }
 
+const OG_LOCALE = { uz: 'uz_UZ', ru: 'ru_RU', en: 'en_US' } as const;
+export type SeoLang = keyof typeof OG_LOCALE;
+
+function upsertAlternate(hreflang: string, href: string) {
+  let el = document.head.querySelector(`link[rel="alternate"][hreflang="${hreflang}"]`) as HTMLLinkElement | null;
+  if (!el) {
+    el = document.createElement('link');
+    el.setAttribute('rel', 'alternate');
+    el.setAttribute('hreflang', hreflang);
+    document.head.appendChild(el);
+  }
+  el.setAttribute('href', href);
+}
+
 function upsertLink(rel: string, href: string) {
   let el = document.head.querySelector(`link[rel="${rel}"]`) as HTMLLinkElement | null;
   if (!el) {
@@ -37,14 +51,18 @@ export function Seo({
   description,
   path = '/',
   noindex = false,
+  lang,
 }: {
   title: string;
   description: string;
   path?: string;
   noindex?: boolean;
+  /** Page language: per-language canonical (?lang=xx), hreflang uz/ru/en/x-default and og:locale (QA LP1-02). */
+  lang?: SeoLang;
 }) {
   useEffect(() => {
-    const canonical = `${SITE_ORIGIN}${path.startsWith('/') ? path : `/${path}`}`;
+    const base = `${SITE_ORIGIN}${path.startsWith('/') ? path : `/${path}`}`;
+    const canonical = lang ? `${base}?lang=${lang}` : base;
     const fullTitle = title.includes(SITE_NAME) ? title : `${title} — ${SITE_NAME}`;
     document.title = fullTitle;
 
@@ -58,8 +76,15 @@ export function Seo({
     upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonical });
     upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: fullTitle });
     upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description });
+    upsertMeta('meta[property="og:image:alt"]', { property: 'og:image:alt', content: fullTitle });
     upsertLink('canonical', canonical);
-  }, [title, description, path, noindex]);
+    if (lang) {
+      document.documentElement.lang = lang;
+      upsertMeta('meta[property="og:locale"]', { property: 'og:locale', content: OG_LOCALE[lang] });
+      for (const l of Object.keys(OG_LOCALE)) upsertAlternate(l, `${base}?lang=${l}`);
+      upsertAlternate('x-default', base);
+    }
+  }, [title, description, path, noindex, lang]);
 
   return null;
 }

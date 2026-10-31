@@ -1,462 +1,294 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useLocation } from 'react-router-dom';
-import { Icon, landingAssets as a } from '../assets/landing';
+import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import '../landing-premium.css';
 import { Seo } from '../components/Seo';
-import { SiteFooter, SiteNav } from '../components/SiteChrome';
-import {
-  fetchMarketingLanding,
-  type LandingPayload,
-} from '../lib/api';
-import { libraryUrl, registerUrl } from '../lib/links';
-import { resolveMediaUrl } from '../lib/media';
-import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
+import { LandingLangSwitch, LP_LANGS, type LpLang } from '../components/LandingLangSwitch';
+import { LANDING_BOOKS, LANDING_COPY } from '../lib/landingCopy';
+import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
+import { useWebLocale } from '../lib/webLocaleContext';
+import lookup from '../data/lookup-capture.json';
+import { plusCta } from '../lib/plusCta';
 
-// v2: drops cached payloads that still carried learner names (hotfix web1).
-const STORAGE_KEY = 'gotcha.landing.v2';
-const STORAGE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-
-const STEP_ICONS = [a.bookOpen, a.circleX, a.chartLine] as const;
-const FEATURE_ICONS = [a.library, a.mousePointerClick, a.sparkles, a.flame, a.cloudUpload, a.creditCard] as const;
-
-type LoadState = 'loading' | 'ready' | 'degraded';
-
-function cefrLabel(code: string) {
-  return code.trim().toUpperCase();
+/** Landing premium rev 4 (team/uiux/landing-premium). No stats, learner counts or reader rankings are rendered (no marketing API call). */
+// PLUS-OFFER §4: the 50% import bullet (plusOpt) shows only once importDiscountPct = 50 is live in production.
+// Until Plus checkout exists (PLUS-OFFER §5), prices show but the CTA is 'Start free' + Marketing's pre-launch note.
+const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
+const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
+// LANDING-COPY-v2: the quiz bullet (plusB[1]) ships only once the separate quiz cap (Free 10 / Plus 200) exists in code.
+const QUIZ_CAP_LIVE = import.meta.env.VITE_PLUS_QUIZ_CAP_LIVE === 'true';
+// Lookup popover renders only from a real captured API response (src/data/lookup-capture.json). Never typed by hand.
+type Captured = { lemma?: string; translation?: string; contextualMeaning?: string | null; partOfSpeech?: string | null };
+const LK = lookup as unknown as { captured: boolean; word: string; sentence: string; byLang: Record<string, Captured | string | null> };
+/** Real captured lookup for this page language (an alias string points at another language's capture), or null. */
+function capturedFor(lang: string): Captured | null {
+  if (!LK.captured) return null;
+  let v = LK.byLang[lang] ?? null;
+  if (typeof v === 'string') v = LK.byLang[v] ?? null;
+  return typeof v === 'object' ? v : null;
 }
 
-function languageLabel(code: string, languages: LandingPayload['languages']) {
-  return languages.find((l) => l.code === code)?.name ?? code.toUpperCase();
-}
+const BASE = import.meta.env.BASE_URL;
+// Footer build stamp: preview only, never in a production build (UI/UX 14:32).
+const PREVIEW_STAMP = import.meta.env.VITE_PREVIEW_STAMP === 'true'; // QA/preview builds only; build:publish rejects VITE_PREVIEW_STAMP (PAY2-14)
+const BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || '';
+// UX review #4: localised burger labels (BURGER.md).
+const BM: Record<LpLang, { lang: string; close: string; menu: string }> = {
+  en: { lang: 'Language', close: 'Close menu', menu: 'Menu' },
+  uz: { lang: 'Til', close: 'Menyuni yopish', menu: 'Menyu' },
+  ru: { lang: 'Язык', close: 'Закрыть меню', menu: 'Меню' },
+};
+const coverSrc = (id: string) => ({
+  src: `${BASE}landing/covers/${id}.jpg`,
+  srcSet: `${BASE}landing/covers/${id}-240.webp 240w, ${BASE}landing/covers/${id}-480.webp 480w`,
+});
+const ico = { check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />, plus: <path d="M8 2v12M2 8h12" /> };
+const Svg = ({ k, s = 16 }: { k: keyof typeof ico; s?: number }) => (
+  <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ico[k]}</svg>
+);
+const D_ICO = ['M2 4h12M2 8h8M2 12h10', 'M4 2h8v12l-4-3-4 3z', 'M4 2h5l3 3v9H4z', 'M3 8.5 6.5 12 13 4', 'M3 13V8M8 13V3M13 13V6'];
+const LN: Record<string, string> = { en: 'English', tr: 'Türkçe' };
+const FAN = [[-24, -250, 30], [-14, -160, 12], [-5, -70, 0], [5, 20, 0], [14, 110, 12], [24, 200, 30]];
 
-function readCachedLanding(): LandingPayload | null {
-  try {
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as { savedAt: number; payload: LandingPayload };
-    if (!parsed?.payload || Date.now() - parsed.savedAt > STORAGE_MAX_AGE_MS) return null;
-    return parsed.payload;
-  } catch {
-    return null;
-  }
-}
+// QA LP1-03: localised popover labels (UI chrome, not lookup output).
+const POP: Record<LpLang, { hd: string; word: string; meaning: string; tr: string; close: string }> = {
+  en: { hd: 'Dictionary', word: 'word', meaning: 'Natural meaning', tr: 'Translation', close: 'Close' },
+  uz: { hd: 'Lugʻat', word: 'soʻz', meaning: 'Kontekstdagi maʼno', tr: 'Tarjima', close: 'Yopish' },
+  ru: { hd: 'Словарь', word: 'слово', meaning: 'Значение в контексте', tr: 'Перевод', close: 'Закрыть' },
+};
 
-function writeCachedLanding(payload: LandingPayload) {
-  try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ savedAt: Date.now(), payload }));
-  } catch {
-    /* ignore quota */
-  }
-}
-
-function FadeIn({ children, className = '' }: { children: ReactNode; className?: string }) {
-  return <div className={`landing-reveal ${className}`}>{children}</div>;
-}
-
-function catalogLoopItems<T>(items: T[]): T[] {
-  if (items.length === 0) return [];
-  const base = [...items];
-  while (base.length < 6) base.push(...items);
-  return base;
-}
-
-function CatalogCard({
-  item,
-  languages,
-}: {
-  item: LandingPayload['catalog']['items'][number];
-  languages: LandingPayload['languages'];
-}) {
-  const { copyLocale } = useWebLocale();
+function Popover({ d, lang }: { d: Captured; lang: LpLang }) {
+  const P = POP[lang];
   return (
-    <a href={libraryUrl({ ui: copyLocale })} className="landing-catalog-card group">
-      <div className="relative h-[320px] w-[220px] overflow-hidden rounded-lg">
-        <CatalogCover title={item.title} coverImageUrl={item.coverImageUrl} />
-        <span className="absolute right-3 top-3 rounded bg-[#101828] px-2 py-1 font-['Manrope',sans-serif] text-[11px] font-bold text-white">
-          {cefrLabel(item.cefr)}
-        </span>
-      </div>
-      <div className="mt-3 flex flex-col gap-1.5">
-        <div className="flex items-center gap-1.5 text-xs text-[#4a5565]">
-          <span className="font-semibold">{languageLabel(item.language, languages)}</span>
-          {item.author && (
-            <>
-              <span className="h-[3px] w-[3px] rounded-full bg-[#99a1af]" />
-              <span className="min-w-0 truncate font-medium">{item.author}</span>
-            </>
-          )}
-        </div>
-        <p className="truncate font-['Manrope',sans-serif] text-[15px] font-bold text-[#101828] group-hover:text-[#2107aa]">
-          {item.title}
-        </p>
-        {/* web-launch-02: no Free/price badges until the owner approves pricing */}
-      </div>
-    </a>
-  );
-}
-
-function CatalogRail({
-  items,
-  languages,
-}: {
-  items: LandingPayload['catalog']['items'];
-  languages: LandingPayload['languages'];
-}) {
-  const trackRef = useRef<HTMLDivElement>(null);
-  const setRef = useRef<HTMLDivElement>(null);
-  const loop = useMemo(() => catalogLoopItems(items), [items]);
-
-  useEffect(() => {
-    const track = trackRef.current;
-    const set = setRef.current;
-    if (!track || !set || loop.length === 0) return;
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-
-    let raf = 0;
-    let paused = false;
-    let last = performance.now();
-    const pxPerSec = 38;
-
-    const tick = (now: number) => {
-      const dt = Math.min(48, now - last);
-      last = now;
-      if (!paused) {
-        const loopAt = set.offsetWidth;
-        if (loopAt > 0) {
-          track.scrollLeft += (pxPerSec * dt) / 1000;
-          if (track.scrollLeft >= loopAt) track.scrollLeft -= loopAt;
-        }
-      }
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-
-    const pause = () => {
-      paused = true;
-    };
-    const resume = () => {
-      paused = false;
-      last = performance.now();
-    };
-    track.addEventListener('mouseenter', pause);
-    track.addEventListener('mouseleave', resume);
-    track.addEventListener('focusin', pause);
-    track.addEventListener('focusout', resume);
-    track.addEventListener('pointerdown', pause);
-    track.addEventListener('pointerup', resume);
-    track.addEventListener('touchstart', pause, { passive: true });
-    track.addEventListener('touchend', resume, { passive: true });
-
-    return () => {
-      cancelAnimationFrame(raf);
-      track.removeEventListener('mouseenter', pause);
-      track.removeEventListener('mouseleave', resume);
-      track.removeEventListener('focusin', pause);
-      track.removeEventListener('focusout', resume);
-      track.removeEventListener('pointerdown', pause);
-      track.removeEventListener('pointerup', resume);
-      track.removeEventListener('touchstart', pause);
-      track.removeEventListener('touchend', resume);
-    };
-  }, [loop]);
-
-  return (
-    <div ref={trackRef} className="landing-catalog-track" aria-label="Catalog titles">
-      <div ref={setRef} className="landing-catalog-set">
-        {loop.map((item, index) => (
-          <CatalogCard key={`${item.id}-a-${index}`} item={item} languages={languages} />
-        ))}
-      </div>
-      <div className="landing-catalog-set" aria-hidden="true">
-        {loop.map((item, index) => (
-          <CatalogCard key={`${item.id}-b-${index}`} item={item} languages={languages} />
-        ))}
+    <div className="pop" id="pop1" lang={lang}>
+      <div className="hd">{P.hd}<span role="img" aria-label={P.close}><svg width="14" height="14" viewBox="0 0 22 22" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M5 5l12 12M17 5 5 17" /></svg></span></div>
+      <div className="bd">
+        <div className="word"><b>{lookup.word}</b><span className="tag">{P.word}</span></div>
+        {d.contextualMeaning && <div className="box m"><small>{P.meaning}</small>{d.contextualMeaning}</div>}
+        {d.translation && <div className="box t"><small>{P.tr}</small>{d.translation}</div>}
       </div>
     </div>
   );
 }
 
-function CatalogCover({ title, coverImageUrl }: { title: string; coverImageUrl: string | null }) {
-  const src = resolveMediaUrl(coverImageUrl);
-  const [failed, setFailed] = useState(false);
-  const letter = title.trim().charAt(0).toUpperCase() || 'G';
-
-  if (!src || failed) {
-    return (
-      <div className="flex h-full w-full items-center justify-center bg-[#2107aa]">
-        <span className="font-['Manrope',sans-serif] text-6xl font-extrabold text-[var(--g-on-cta)]">{letter}</span>
-      </div>
-    );
-  }
-
-  return (
-    <img
-      src={src}
-      alt=""
-      className="h-full w-full object-cover"
-      onError={() => setFailed(true)}
-    />
-  );
-}
-
 export default function LandingPage() {
-  const copy = useMarketingCopy();
-  const { copyLocale } = useWebLocale();
-  const { hash } = useLocation();
-  const [payload, setPayload] = useState<LandingPayload | null>(null);
-  const [loadState, setLoadState] = useState<LoadState>('loading');
-  const [selectedLang, setSelectedLang] = useState<string | null>(null);
-  // WL1-04: only pass the learn-language when the visitor actually picked one (not the auto default).
-  const [pickedLang, setPickedLang] = useState(false);
+  const { copyLocale, setLocale } = useWebLocale();
+  const [params, setParams] = useSearchParams();
+  const L = (['uz', 'ru', 'en'].includes(copyLocale) ? copyLocale : 'uz') as LpLang;
+  const C = LANDING_COPY[L];
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [tile, setTile] = useState(1);
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
+  const root = useRef<HTMLDivElement>(null);
+  const burgerBtn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const T = BM[(['uz', 'ru', 'en'].includes(copyLocale) ? copyLocale : 'uz') as LpLang];
+
+  const ui = L;
+  const startHref = registerUrl({ plan: 'free', from: 'landing', ui });
+  const loginHref = loginUrl({ ui });
+  const libHref = libraryUrl({ ui });
+
+  const onLang = (c: LpLang) => {
+    setLocale(c);
+    const p = new URLSearchParams(params);
+    p.set('lang', c);
+    setParams(p, { replace: true });
+  };
+
+  // Burger: scroll lock, inert page, focus first link, Esc, focus trap, close on >=1024 (BURGER.md).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const el = root.current!;
+    const inertEls = [...el.querySelectorAll('main, footer, .nav .logo, .nav .ls, .nav .login, #navcta')] as HTMLElement[];
+    inertEls.forEach((e) => e.setAttribute('inert', ''));
+    document.documentElement.style.overflow = 'hidden';
+    panel.current?.querySelector<HTMLElement>('.links a')?.focus();
+    const focusables = () => [burgerBtn.current!, ...panel.current!.querySelectorAll<HTMLElement>('a[href], button')];
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); setMenuOpen(false); burgerBtn.current?.focus(); return; }
+      if (e.key !== 'Tab') return;
+      const f = focusables(); const i = f.indexOf(document.activeElement as HTMLElement);
+      e.preventDefault();
+      f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+    };
+    const onResize = () => { if (window.innerWidth >= 1024) setMenuOpen(false); };
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      inertEls.forEach((e) => e.removeAttribute('inert'));
+      document.documentElement.style.overflow = '';
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
-    let cancelled = false;
-    const cached = readCachedLanding();
-    if (cached) {
-      setPayload(cached);
-      setLoadState('ready');
-    }
-
-    fetchMarketingLanding()
-      .then((data) => {
-        if (cancelled) return;
-        setPayload(data);
-        setLoadState('ready');
-        writeCachedLanding(data);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLoadState(cached ? 'degraded' : 'degraded');
-        if (!cached) setPayload(null);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+    const r = () => setWide(window.innerWidth >= 1024);
+    window.addEventListener('resize', r);
+    return () => window.removeEventListener('resize', r);
   }, []);
 
   useEffect(() => {
-    if (!hash) return;
-    const id = hash.replace(/^#/, '');
-    let cancelled = false;
-    let attempts = 0;
-    const jump = () => {
-      if (cancelled) return;
-      const el = document.getElementById(id);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-        return;
-      }
-      if (attempts++ < 24) window.setTimeout(jump, 50);
-    };
-    const timer = window.setTimeout(jump, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [hash, payload]);
+    const el = root.current;
+    if (!el || params.has('static') || !matchMedia('(prefers-reduced-motion: no-preference)').matches) return;
+    el.classList.add('anim');
+    const io = new IntersectionObserver((es) => es.forEach((e) => { if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); } }), { rootMargin: '0px 0px -10% 0px' });
+    el.querySelectorAll('.rv').forEach((e) => io.observe(e));
+    return () => io.disconnect();
+  }, [params]);
 
-  useEffect(() => {
-    if (selectedLang || !payload?.languages.length) return;
-    setSelectedLang(payload.languages[0].code);
-  }, [payload, selectedLang]);
-
-  const languages = payload?.languages ?? [];
-  const catalogItems = payload?.catalog.items ?? [];
-  const catalogLoading = loadState === 'loading' && !payload;
-  const registerHref = registerUrl({
-    plan: 'free',
-    lang: pickedLang ? (selectedLang ?? undefined) : undefined,
-    ui: copyLocale,
-  });
+  const CAPTURED = capturedFor(L);
+  const pc = plusCta(C, CHECKOUT_LIVE, ui);
+  const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]].filter(Boolean);
+  const navIds = ['#how', '#features', '#plus', '#faq'];
 
   return (
-    <div className="relative overflow-x-clip bg-[#f3f0ff] font-['Geist',sans-serif] text-[#101828]">
-      <Seo title={copy.seo.title} description={copy.seo.description} path="/" />
-      <SiteNav />
+    <div className="lp" data-theme="light" ref={root} lang={L}>
+      <Seo title={`GOTCHA — ${C.h1}`} description={C.sub} lang={L} />
+      <header className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap">
+        <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
+        <ul id="nav">{C.nav.map((n, i) => <li key={n}><a href={navIds[i]}>{n}</a></li>)}</ul>
+        <div className="right">
+          <LandingLangSwitch value={L} onChange={onLang} />
+          <a className="login" href={loginHref}>{C.login}</a>
+          <a className="btn btn-white" href={startHref} id="navcta">{C.cta}</a>
+          <button ref={burgerBtn} className="burger" type="button" aria-label={menuOpen ? T.close : T.menu} aria-expanded={menuOpen} aria-controls="bm" onClick={() => setMenuOpen((v) => !v)}>
+            <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={menuOpen ? 'M5 5l12 12M17 5 5 17' : 'M3 7h16M3 15h16'} /></svg>
+          </button>
+        </div>
+      </div>
+        {menuOpen && (
+          <div className="bm" id="bm" ref={panel} role="dialog" aria-modal="true" aria-label={T.menu}>
+            <nav><ul className="links">
+              {C.nav.map((n, i) => (
+                <li key={n}><a href={navIds[i]} onClick={() => setMenuOpen(false)}>{n}<svg width="18" height="18" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2" aria-hidden="true"><path d="m7 4 5 5-5 5" /></svg></a></li>
+              ))}
+            </ul></nav>
+            <h3 id="bm-lh">{T.lang}</h3>
+            <div className="seg" role="group" aria-labelledby="bm-lh">
+              {LP_LANGS.map((l) => (
+                <a key={l.code} href={`?lang=${l.code}`} lang={l.code} hrefLang={l.code} aria-label={l.name} title={l.name}
+                  aria-current={l.code === L ? 'true' : undefined}
+                  onClick={(e) => { e.preventDefault(); setMenuOpen(false); onLang(l.code); }}>
+                  <span className="flag" aria-hidden="true"><img src={l.flag} alt="" width={20} height={14} style={l.pos ? { objectPosition: l.pos } : undefined} /></span>{l.short}
+                </a>
+              ))}
+            </div>
+            <div className="foot">
+              <a className="btn btn-white" href={startHref} data-cta="burger">{C.cta}</a>
+              <a className="login" href={loginHref}>{C.login}</a>
+            </div>
+          </div>
+        )}
+      </header>
 
       <main>
-        <header className="flex flex-col items-center gap-10 px-5 pb-16 pt-16 md:px-10 md:pt-20 lg:px-20 lg:pb-20 lg:pt-24">
-          <div className="flex max-w-[860px] flex-col items-center gap-6 text-center">
-            <p className="rounded-full bg-[#f3f0ff] px-3 py-1.5 font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">
-              {copy.hero.badge}
-            </p>
-            <h1 className="font-['Manrope',sans-serif] text-[36px] font-extrabold leading-[1.15] tracking-tight text-[#101828] md:text-5xl lg:text-[56px]">
-              {copy.hero.title}
-            </h1>
-            <p className="max-w-[640px] text-base leading-[1.5] text-[#4a5565] lg:text-lg">
-              {copy.hero.subtitle}
-            </p>
-          </div>
-
-          <div className="flex flex-col items-center gap-4">
-            <div className="flex flex-col items-center gap-4 sm:flex-row">
-              <a
-                className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px"
-                href={registerHref}
-              >
-                {copy.hero.ctaPrimary}
-              </a>
-              <a
-                className="inline-flex h-12 items-center justify-center rounded-lg border border-[#e2e8f0] bg-white px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[#101828] transition-transform hover:-translate-y-px"
-                href="#how"
-              >
-                {copy.hero.ctaSecondary}
-              </a>
-            </div>
-            <div className="flex flex-col items-center gap-3 sm:flex-row sm:gap-6">
+        <section className="hero" style={{ padding: 0 }}><div className="wrap"><div className="grid">
+          <div className="hero-copy">
+            <h1>{C.h1}</h1>
+            <p className="sub">{C.sub}</p>
+            <div className="ctas">
+              <a className="btn btn-white" href={startHref} data-cta="hero">{C.cta}</a>
+              <a className="btn btn-ghost" href="#how"><span>{C.cta2}</span><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M8 3v10M3 8l5 5 5-5" /></svg></a>
             </div>
           </div>
-
-          {languages.length > 0 && (
-            <div className="flex flex-wrap items-center justify-center gap-2.5">
-              <p className="text-[13px] font-semibold uppercase text-[#99a1af]">{copy.hero.wantToLearn}</p>
-              {languages.map((lang) => {
-                const active = selectedLang === lang.code;
-                return (
-                  <button
-                    key={lang.code}
-                    type="button"
-                    onClick={() => {
-                      setSelectedLang(lang.code);
-                      setPickedLang(true);
-                    }}
-                    className={`rounded-[30px] px-3 py-1.5 text-[13px] font-medium transition-colors ${
-                      active
-                        ? 'bg-[#101828] text-white'
-                        : 'border border-[#e2e8f0] bg-white text-[#4a5565] hover:border-[#101828]'
-                    }`}
-                  >
-                    {lang.nativeName || lang.name /* WL4-06: own-language name, not English */}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </header>
-
-        <section id="how" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
-          <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-10 lg:gap-14">
-            <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
-              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
-                {copy.how.title}
-              </h2>
-              <p className="text-base leading-[1.5] text-[#4a5565]">{copy.how.subtitle}</p>
-            </div>
-            <div className="grid w-full grid-cols-1 gap-8 md:grid-cols-3">
-              {copy.how.steps.map((step, index) => (
-                <article
-                  key={step.n}
-                  className="flex flex-col gap-5 rounded-2xl border border-[#e2e8f0] bg-white p-8"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-3xl bg-[#f3f0ff]">
-                      <span className="inline-flex h-[22px] w-[22px] items-center justify-center">
-                        <Icon src={STEP_ICONS[index] ?? a.bookOpen} size={22} />
-                      </span>
-                    </div>
-                    <span aria-hidden="true" className="font-['Manrope',sans-serif] text-[32px] font-extrabold text-[#c7d1de]">
-                      {step.n}
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-2">
-                    <h3 className="font-['Manrope',sans-serif] text-xl font-bold text-[#101828]">{step.title}</h3>
-                    <p className="text-sm leading-[1.5] text-[#4a5565]">{step.body}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </FadeIn>
-        </section>
-
-        <section id="features" className="scroll-mt-24 bg-[#f3f0ff] px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
-          <FadeIn className="mx-auto flex max-w-[1280px] flex-col items-center gap-10 lg:gap-14">
-            <div className="flex max-w-[540px] flex-col items-center gap-3 text-center">
-              <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-4xl">
-                {copy.features.title}
-              </h2>
-              <p className="text-base leading-[1.5] text-[#4a5565]">{copy.features.subtitle}</p>
-            </div>
-            <div className="grid w-full grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {copy.features.items.map((feature, index) => (
-                <article
-                  key={feature.title}
-                  className="flex flex-col gap-4 rounded-xl border border-[#e2e8f0] bg-white p-6 shadow-[0_1px_2px_rgba(16,24,40,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_10px_24px_rgba(16,24,40,0.08)]"
-                >
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[#f3f0ff]">
-                    <span className="inline-flex h-5 w-5 items-center justify-center">
-                      <Icon src={FEATURE_ICONS[index] ?? a.library} size={20} />
-                    </span>
-                  </div>
-                  <div className="flex flex-col gap-1.5">
-                    <h3 className="font-['Manrope',sans-serif] text-base font-bold text-[#101828]">{feature.title}</h3>
-                    <p className="text-[13px] leading-[1.5] text-[#4a5565]">{feature.body}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </FadeIn>
-        </section>
-
-        <section id="catalog" className="scroll-mt-24 bg-white px-5 py-16 md:px-10 md:py-20 lg:px-20 lg:py-24">
-          <div className="mx-auto flex max-w-[1280px] flex-col gap-12">
-            <div className="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
-              <div className="flex flex-col gap-2">
-                <p className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#2107aa]">{copy.catalog.label}</p>
-                <h2 className="font-['Manrope',sans-serif] text-[28px] font-extrabold text-[#101828] md:text-[32px]">
-                  {copy.catalog.title}
-                </h2>
+          {/* Render mirrors apps/web-learner ReaderPage.tsx. Text: Crime and Punishment (tr. Constance Garnett, public domain), live catalog id b8b9b407; sentence and lookup from QA's real capture (src/data/README.md). */}
+          <div className="hero-visual" aria-hidden="true">
+            <div className="reader">
+              <div className="bar"><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 3 5 8l5 5" /></svg><b>Crime and Punishment</b><span className="prog"><i /></span></div>
+              <div className="page">
+                <h3>Chapter IV</h3>
+                <p className="body">He stood still in <span className="w-sel">hesitation</span> at the door, asking himself the strange question: ‘Must he tell her who killed Lizaveta?’</p>
               </div>
-              <a
-                href={libraryUrl({ ui: copyLocale })}
-                className="inline-flex items-center gap-2 text-sm font-semibold text-[#2107aa] transition-colors hover:text-[#101828]"
-              >
-                {copy.catalog.browse}
-                <span className="inline-flex h-[14px] w-[14px] items-center justify-center">
-                  <Icon src={a.arrowRight} size={14} />
-                </span>
+            </div>
+            {CAPTURED && <Popover d={CAPTURED} lang={L} />}
+          </div>
+        </div></div></section>
+
+        <section className="demo" id="features"><div className="wrap"><div className="grid">
+          <div className="sec-head rv"><h2>{C.featT}</h2></div>
+          <ol className="demo-list rv" id="demo" style={{ gridColumn: '1/-1' }}>
+            {[2, 3, 1, 4, 5].map((i, j) => (
+              <li key={i} className={j === 0 ? 'on' : undefined}>
+                <span className="ic"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true"><path d={D_ICO[j]} /></svg></span>
+                <h3>{C.feat_titles[i]}</h3><p>{C.feat_lines[i]}</p>
+              </li>
+            ))}
+          </ol>
+        </div></div></section>
+
+        <section id="how"><div className="wrap"><div className="grid">
+          <div className="sec-head rv"><span className="eyebrow">Gotcha</span><h2>{C.how}</h2></div>
+          <div className="steps" id="steps">
+            {C.steps_titles.map((t, i) => <div className="step rv" key={t}><div className="n">0{i + 1}</div><h3>{t}</h3><p>{C.steps_lines[i]}</p></div>)}
+          </div>
+        </div></div></section>
+
+        <section id="library" style={{ paddingTop: 0 }}><div className="wrap"><div className="grid">
+          <div className="sec-head rv"><h2>{C.libT}</h2><p className="lead">{C.libL}</p></div>
+          <div className="covers rv" id="covers">
+            {LANDING_BOOKS.map((b) => (
+              <a className="cover" href={libHref} key={b.id}>
+                <img {...coverSrc(b.id)} sizes="(min-width: 1024px) 180px, 45vw" alt={b.title} loading="lazy" width={800} height={1200} />
+                <b>{b.title}</b><span>{b.author}</span><span>{LN[b.language] ?? b.language}</span>
               </a>
-            </div>
+            ))}
+          </div>
+          <div className="lib-foot rv"><strong style={{ color: 'var(--l-ink)' }}>{C.lt}</strong><p>{C.lb}</p></div>
+        </div></div></section>
 
-            {catalogLoading ? (
-              <div className="landing-catalog-track">
-                <div className="landing-catalog-set">
-                  {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="landing-catalog-card animate-pulse">
-                      <div className="h-[320px] w-[220px] rounded-lg bg-[#e2e8f0]" />
-                      <div className="mt-3 h-3 w-28 rounded bg-[#e2e8f0]" />
-                      <div className="mt-2 h-4 w-40 rounded bg-[#e2e8f0]" />
+        <section className="plus" id="plus"><div className="wrap"><div className="grid">
+          <div className="plus-card rv">
+            <div className="plus-l"><span className="eyebrow">Plus</span><h2 style={{ marginTop: 12 }}>{C.plusT}</h2><p className="lead">{C.plusLead}</p>
+              <ul id="plusB">{plusB.map((b) => <li key={b}><Svg k="check" s={18} /><span>{b}</span></li>)}</ul></div>
+            <div className="plus-r">
+              <div className="opt" id="tiles" role="radiogroup">
+                {C.plusPrice.map((p, i) => {
+                  const m = p.match(/^(.+?), (.+?)(?: \((.+)\))?$/)!;
+                  return (
+                    <div key={p} className={`tile ${i === tile ? 'sel' : ''}`} role="radio" aria-checked={i === tile} tabIndex={0}
+                      onClick={() => setTile(i)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setTile(i); } }}>
+                      <span className="radio" /><span><span className="dur">{m[1]}</span>{m[3] && <span className="save">{m[3]}</span>}</span><span className="price">{m[2]}</span>
                     </div>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
-            ) : catalogItems.length === 0 ? (
-              <p className="py-12 text-center text-sm text-[#4a5565]">{copy.catalog.empty}</p>
-            ) : (
-              <CatalogRail items={catalogItems} languages={languages} />
-            )}
-          </div>
-        </section>
-
-        <section className="bg-[#101828] px-5 py-20 md:px-10 lg:px-20 lg:py-[120px]" aria-label="Get started">
-          <div className="mx-auto flex max-w-[720px] flex-col items-center gap-8 text-center">
-            <div className="flex flex-col items-center gap-4">
-              <h2 className="font-['Manrope',sans-serif] text-[32px] font-extrabold leading-[1.2] text-white md:text-[44px]">
-                {copy.cta.title}
-              </h2>
-              {/* Hotfix web1 (AUDIT C6): no learner counter. */}
-              <p className="text-base font-medium text-[#99a1af]">{copy.cta.subtitle}</p>
+              <a className="btn btn-brand" href={pc.href} data-cta="plus" data-plus-live={String(pc.live)}>{pc.label}</a><p className="note">{pc.note}</p>
             </div>
-            <a
-              className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px"
-              href={registerHref}
-            >
-              {copy.cta.button}
-            </a>
           </div>
-        </section>
+        </div></div></section>
+
+        <section id="faq"><div className="wrap"><div className="grid">
+          <div className="faq-head rv"><h2>{C.faqT}</h2></div>
+          <div className="faq-list rv" id="faqL">
+            {C.faq_questions.map((q, i) => <details key={q} open={i === 0}><summary>{q}<Svg k="plus" s={20} /></summary><p>{C.faq_answers[i]}</p></details>)}
+          </div>
+        </div></div></section>
+
+        <section className="final"><div className="wrap"><div className="final-card">
+          <div className="final-copy">
+            <h2>{C.fh}</h2>
+            <p className="fn">{C.fn}</p>
+            <a className="btn btn-white btn-lg" href={startHref}><span>{C.cta_final}</span><svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 8h10M9 4l4 4-4 4" /></svg></a>
+          </div>
+          <div className="final-vis" aria-hidden="true" id="fan">
+            {LANDING_BOOKS.map((b, i) => (
+              <div key={b.id} className="fan" style={{ transform: `translateX(${FAN[i][1] * (wide ? 0.6 : 0.44) - (wide ? 150 : 62)}px) translateY(${FAN[i][2]}px) rotate(${FAN[i][0]}deg)`, zIndex: i < 3 ? i : 6 - i }}>
+                <img {...coverSrc(b.id)} sizes="(min-width: 1024px) 170px, 124px" alt="" loading="lazy" width={800} height={1200} />
+              </div>
+            ))}
+          </div>
+        </div></div></section>
       </main>
 
-      <SiteFooter />
+      <footer><div className="wrap"><div className="grid"><div>
+        <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
+          <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
+        <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a></div>
+        {PREVIEW_STAMP && BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
+          <div className="build-stamp" data-build-commit={BUILD_COMMIT}>preview build {BUILD_COMMIT}</div>
+        )}
+      </div></div></div></footer>
     </div>
   );
 }
