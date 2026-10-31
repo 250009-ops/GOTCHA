@@ -152,3 +152,14 @@ test('Manrope subset covers every non-ASCII codepoint in the shipped copy', asyn
   assert.deepEqual([...missing], []);
   assert.ok(cps.has(0x2248) && cps.has(0x2265));
 });
+
+// r2 (Kai): FAQ numbers must match the API defaults in final-6 (wt-r3b-f5 @ 6d381d1): caps.free.lookups 20, caps.free.quizzes 10,
+// importFreeLimits 3/day + 50 pages/month, page tier 1–10 = 12000, plus importDiscountPct 50, plus.pass 24990/199990, reset Asia/Tashkent 00:00.
+test('r2 FAQ: Free limits, paid PDF/EPUB from 12,000, Plus 50% off, 00:00 Tashkent, Plus 24,990/199,990 (en/ru/uz)', () => {
+  const N = (s: string) => s.replace(/[\u00a0 ,]/g, '');
+  for (const l of ['en', 'ru', 'uz'] as const) {
+    const a = N(LANDING_COPY[l].faq_answers.join(' '));
+    for (const n of ['20', '10', '3', '50', '12000', '1–10', '50%', '00:00', '24990', '199990', 'PDF', 'EPUB']) assert.ok(a.includes(n), `${l} ${n}`);
+    assert.equal(LANDING_COPY[l].faq_answers.length, 5);
+  }
+});

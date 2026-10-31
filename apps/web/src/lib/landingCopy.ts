@@ -69,11 +69,11 @@ export const LANDING_COPY = {
    "Does Plus renew by itself?"
   ],
   "faq_answers": [
-   "No. Reading, daily word lookups and some imports are free.",
-   "Yes. Paste the text, add a link, or upload a PDF (scanned ones too) or an EPUB.",
+   "No. Free gives you 20 word lookups and 10 quizzes a day, plus 3 pasted-text imports a day, up to 50 pages a month. Daily limits reset at 00:00 Tashkent time.",
+   "Yes. Pasted text is free within the Free limits. PDF and EPUB imports (scanned PDFs too) are paid per import, from 12,000 soʻm for 1–10 pages. Plus gets 50% off every paid import.",
    "Many. Pick a book from the library, or import a text in the language you're learning.",
    "Yes. Settings lets you download your data or delete your account.",
-   "No. You pay once for 30 or 365 days, and when the pass ends you go back to Free with your words and progress kept."
+   "No. Plus costs 24,990 soʻm for 30 days or 199,990 soʻm for 365 days, paid once. When it ends you go back to Free, and your words and progress stay."
   ],
   "fh": "Pick a book and read the first page.",
   "cta_final": "Start reading",
@@ -155,11 +155,11 @@ export const LANDING_COPY = {
    "Plus oʻzi uzaytiriladimi?"
   ],
   "faq_answers": [
-   "Yoʻq. Oʻqish, har kungi soʻz qidirish va ayrim importlar bepul.",
-   "Ha. Matnni joylang, havola bering yoki PDF (skanerlangani ham) yoxud EPUB yuklang.",
+   "Yoʻq. Bepul tarifda kuniga 20 ta soʻz izohi va 10 ta test bor. Yana kuniga 3 ta matn joylab import qilishingiz mumkin, oyiga 50 sahifagacha. Kunlik limitlar Toshkent vaqti bilan soat 00:00 da yangilanadi.",
+   "Ha. Joylangan matn bepul tarif limitlari doirasida bepul. PDF va EPUB importi (skanerlangan PDF ham) har biri uchun alohida toʻlanadi: 1–10 sahifa 12 000 soʻmdan. Plus bilan har bir pullik import 50% arzon.",
    "Koʻp. Kutubxonadan kitob tanlang yoki oʻrganayotgan tilingizdagi matnni yuklang.",
    "Ha. Sozlamalarda maʼlumotlaringizni yuklab olishingiz yoki akkauntni oʻchirishingiz mumkin.",
-   "Yoʻq. 30 yoki 365 kun uchun bir marta toʻlaysiz. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz joyida qoladi."
+   "Yoʻq. Plus 30 kunga 24 990 soʻm yoki 365 kunga 199 990 soʻm, bir marta toʻlanadi. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz saqlanib qoladi."
   ],
   "fh": "Kitob tanlang va birinchi sahifasini oʻqing.",
   "cta_final": "Oʻqishni boshlash",
@@ -241,11 +241,11 @@ export const LANDING_COPY = {
    "Plus продлевается сам?"
   ],
   "faq_answers": [
-   "Нет. Чтение, ежедневные подсказки по словам и часть импортов бесплатны.",
-   "Да. Вставьте текст, ссылку или загрузите PDF (сканы тоже) или EPUB.",
+   "Нет. На бесплатном плане 20 подсказок по словам и 10 тестов в день, а ещё 3 импорта вставленного текста в день, до 50 страниц в месяц. Дневные лимиты обновляются в 00:00 по Ташкенту.",
+   "Да. Вставленный текст бесплатен в пределах бесплатных лимитов. Импорт PDF и EPUB (сканы тоже) оплачивается отдельно за каждый файл: от 12 000 сум за 1–10 страниц. С Plus каждый платный импорт на 50% дешевле.",
    "Много. Выберите книгу в библиотеке или загрузите текст на языке, который учите.",
    "Да. В настройках можно скачать свои данные или удалить аккаунт.",
-   "Нет. Вы платите один раз за 30 или 365 дней. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс останутся."
+   "Нет. Plus стоит 24 990 сум за 30 дней или 199 990 сум за 365 дней, оплата разовая. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс останутся."
   ],
   "fh": "Выберите книгу и прочитайте первую страницу.",
   "cta_final": "Начать читать",
