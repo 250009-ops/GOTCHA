@@ -217,3 +217,4 @@ export * from './apiErrors';
 export * from './promoCopy';
 export * from './payCopy';
 export * from './dailyLimits';
+export * from './coverTemplate';
