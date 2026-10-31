@@ -1126,8 +1126,8 @@ export default function ImportPage() {
             )}
             <p className="text-[11px] text-[#99a1af] mb-3">
               {gatewayEnabled
-                ? 'Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first.'
-                : 'Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled.'}
+                ? 'Your free import allowance is used first.'
+                : 'Imports are free right now.'}
             </p>
             {tab === 'url' && <URLForm loading={loading || atImportLimit} onSubmit={handleUrlImport} />}
             {tab === 'paste' && <PasteForm loading={loading || atImportLimit} onSubmit={handlePasteImport} />}

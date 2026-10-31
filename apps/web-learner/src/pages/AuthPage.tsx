@@ -238,22 +238,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   : 'Sign in to continue your reading journey.'
                 : showLanguageStep
                   ? 'Search and add the language you want to learn. You can add more later in Settings.'
-                  : plan === 'pay-per-import'
-                    ? 'Create your free account — pay only if you need more than your free imports.'
-                    : 'Sign up to start your reading journey.'}
+                  : 'Sign up to start your reading journey.' /* W-13: no pricing/subscription wording until prices are approved */}
             </p>
-            {!isLogin && !showLanguageStep && plan === 'pay-per-import' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-[#ddd6fe] px-3 py-1 text-xs font-semibold text-[#7f22fe] self-start">
-                <AuthIcon src={a.sparkles} size={16} />
-                No subscription — pay per import via Atmos
-              </div>
-            )}
-            {!isLogin && !showLanguageStep && plan === 'free' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 self-start">
-                <AuthIcon src={a.check} size={16} />
-                Free forever plan
-              </div>
-            )}
           </div>
 
           {showLanguageStep ? (
