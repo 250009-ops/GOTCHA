@@ -56,6 +56,23 @@ export async function assertCanMessage(p: GatePrisma, sender: string, recipient:
   }
 }
 
+/**
+ * WL4-12 (Kai 31 Oct): teens and no-age users are hidden from adults who are not already their friends —
+ * profile by id → 404 and adult friend requests → 404 (same answer as a missing user, so nothing leaks).
+ */
+export function hiddenFromViewer(viewer: AgeBand, target: AgeBand, friends: boolean): boolean {
+  return viewer === 'adult' && target !== 'adult' && !friends;
+}
+
+export async function assertPeerVisible(p: GatePrisma, viewerId: string, targetId: string): Promise<void> {
+  if (viewerId === targetId) return;
+  const bands = await bandsOf(p, [viewerId, targetId]);
+  const v = bands.get(viewerId) ?? ageBand(null);
+  const t = bands.get(targetId) ?? ageBand(null);
+  if (v !== 'adult' || t === 'adult') return;
+  if (!(await areFriends(p, viewerId, targetId))) throw new NotFoundException('User not found');
+}
+
 /** Under-13 accounts cannot send or receive friend requests (messaging is off for them). */
 export async function sendFriendRequest(p: GatePrisma, from: string, to: string) {
   if (from === to) throw new BadRequestException('Cannot add yourself');
@@ -72,6 +89,11 @@ export async function sendFriendRequest(p: GatePrisma, from: string, to: string)
   const existing = await p.friendRequest.findFirst({
     where: { OR: [{ requesterId: from, addresseeId: to }, { requesterId: to, addresseeId: from }] },
   });
+  const fromBand = bands.get(from) ?? ageBand(null);
+  const toBand = bands.get(to) ?? ageBand(null);
+  const theyAskedMe = existing?.requesterId === to && existing.status === 'pending';
+  const alreadyFriends = existing?.status === 'accepted';
+  if (hiddenFromViewer(fromBand, toBand, alreadyFriends) && !theyAskedMe) throw new NotFoundException('User not found');
   if (existing) {
     // They already asked me → accept. Mine pending/accepted → idempotent. Declined → re-open mine.
     if (existing.requesterId === to && existing.status === 'pending') {

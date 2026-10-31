@@ -16,7 +16,7 @@ import {
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EditMessageDto, ReportUserDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
-import { assertCanMessage } from '../safety/friend-gate';
+import { assertCanMessage, assertPeerVisible, GatePrisma } from '../safety/friend-gate';
 import {
   assertNotBlocked,
   blockedPeerIds,
@@ -667,6 +667,7 @@ export class MessagingService {
   }
 
   async peerProfile(userId: string, peerUserId: string) {
+    await assertPeerVisible(this.prisma as unknown as GatePrisma, userId, peerUserId); // WL4-12
     const peer = await this.prisma.user.findFirst({
       where: { id: peerUserId, deletedAt: null },
       include: {
