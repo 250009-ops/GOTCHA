@@ -8,7 +8,6 @@
 //   Plus  hidden hard cap = platform_settings 'plus.lookup_hard_cap'  (plusLookupHardCap)  null = none
 // When a Plus AI quota is set, lookups past it go to dictionary mode (no OpenAI) up to the hidden cap. Dormant while null.
 // All counters reset at Asia/Tashkent local midnight.
-import { limitDayStart } from './plan-limits';
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { DAILY_CAP_FALLBACKS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, dailyLimitBody, nextLimitReset, type CapKind, type CapPlan } from '@gotcha/shared';
 import { activeSubWhere } from './plan-active';
@@ -68,11 +67,17 @@ export async function userCapPlan(prisma: unknown, userId: string): Promise<CapP
   return sub?.plan?.tier === 'premium' ? 'plus' : 'free';
 }
 
-/** Usage-day key for ai_usage_daily.usage_date. r3b on final-5: ONE convention with final-5's limitDayStart (the instant of the
- * last 00:00 Asia/Tashkent, = what setHours(0) gave on the Tashkent VPS), so prod's existing rows keep matching and every
- * reader/writer (ai, limits, billing, users, admin) uses the same key. */
+/** Usage-day key for ai_usage_daily / ai_lookup_costs.usage_date (DATE columns): the Asia/Tashkent calendar date (a 00:00Z Date).
+ * WLF-20: final-5 keyed rows by the 19:00Z instant (limitDayStart), which a DATE column stores as the PREVIOUS day. Every
+ * reader/writer (ai, limits, billing, admin) uses this one key; windows on timestamptz columns keep limitDayStart.
+ * Deploy note: counters keyed under the old convention are not read on deploy day (one-time early reset). */
 export function usageDayStart(now = new Date()) {
-  return limitDayStart(now);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Tashkent', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(now).map((x) => [x.type, x.value]));
+  return new Date(Date.UTC(+p.year, +p.month - 1, +p.day));
+}
+/** usageDayStart shifted by whole days (DATE keys; UTC arithmetic, no DST in Tashkent). */
+export function usageDayOffset(days: number, now = new Date()) {
+  return new Date(usageDayStart(now).getTime() + days * 86_400_000);
 }
 /** Next Asia/Tashkent midnight (all daily counters reset then; the UI shows 00:00). */
 export function usageResetAt(now = new Date()) { return nextLimitReset(now); }

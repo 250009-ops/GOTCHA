@@ -17,8 +17,8 @@ assert.equal(nextLimitReset(new Date('2026-10-31T19:00:00Z')).toISOString(), '20
 assert.equal(nextLimitReset(new Date('2026-11-01T00:00:00Z')).toISOString(), '2026-11-01T19:00:00.000Z', '05:00 Tashkent is NOT a reset');
 assert.equal(usageResetAt(new Date('2026-10-31T12:00:00Z')).toISOString(), MIDNIGHT_1NOV);
 assert.equal(limitDayStart(new Date('2026-10-31T19:30:00Z')).toISOString(), MIDNIGHT_1NOV);
-assert.equal(usageDayStart(new Date('2026-10-31T18:59:59Z')).toISOString(), '2026-10-30T19:00:00.000Z'); // 23:59:59 Tashkent 31 Oct: same day key as limitDayStart
-assert.equal(usageDayStart(new Date('2026-10-31T19:00:00Z')).toISOString(), MIDNIGHT_1NOV); // 00:00 Tashkent 1 Nov: new day
+assert.equal(usageDayStart(new Date('2026-10-31T18:59:59Z')).toISOString().slice(0, 10), '2026-10-31');
+assert.equal(usageDayStart(new Date('2026-10-31T19:00:00Z')).toISOString().slice(0, 10), '2026-11-01');
 for (const l of ['en', 'ru', 'uz']) assert.match(limitResetLine(MIDNIGHT_1NOV, l), /00:00/);
 
 // TTS daily counter (was UTC day): new day at 00:00 Tashkent, not at 00:00Z.
@@ -55,3 +55,6 @@ for (const f of dirs.flatMap(walk).filter((p) => /\.(ts|tsx|json)$/.test(p) && !
 }
 assert.deepEqual(bad, [], 'UTC / 05:00 reset left:\n' + bad.join('\n'));
 console.log('limit-reset-tashkent: OK');
+
+// WLF-20: QA saw usage_date stored as the previous day (19:00Z instant in a DATE column). The key is now the Tashkent date.
+assert.equal(usageDayStart(new Date('2026-10-31T10:00:00Z')).toISOString(), '2026-10-31T00:00:00.000Z', 'Oct 31 15:00 Tashkent → usage_date 2026-10-31');

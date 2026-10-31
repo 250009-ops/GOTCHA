@@ -80,7 +80,7 @@ sh(`npx prisma db execute --url "${base}" --stdin`, root, `CREATE DATABASE "${na
     const free = (await db.subscriptionPlan.findUnique({ where: { tier: 'free' } }))!;
     await db.userSubscription.create({ data: { userId: user.id, planId: free.id, status: 'active' } });
     const ai = Object.create(AiService.prototype) as any; ai.prisma = db; ai.useMemory = () => false;
-    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const today = (await import('./plan-caps')).usageDayStart(); // WLF-20: DATE key = Tashkent calendar date
     await db.aiUsageDaily.create({ data: { userId: user.id, usageDate: today, lookupCount: 19 } as any });
     const ok = await ai.checkQuota(user.id, 5000);
     assert.equal(ok.quota, 20, 'Free cap must be 20, not 5000');

@@ -11,6 +11,8 @@ import {
   NotFoundException,
   ServiceUnavailableException,
   GoneException,
+  HttpException,
+  HttpStatus,
 } from '@nestjs/common';
 import { ImportPaymentStatus, ImportType, Prisma, PurchaseStatus } from '@prisma/client';
 import { createHash, randomUUID } from 'crypto';
@@ -75,6 +77,9 @@ export type ImportQuoteResult = {
   discountUzs: number;
   promo: { id: string; code: string } | null;
 };
+
+export const PAY_CREATE_KEYS = { perMinute: 'payments.create_per_minute', perHour: 'payments.create_per_hour' } as const;
+export const PAY_CREATE_FALLBACKS = { perMinute: 5, perHour: 20 } as const;
 
 export type LearnerImportAllowance = {
   gatewayEnabled: boolean;
@@ -488,6 +493,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     const account = `imp_${randomUUID().replace(/-/g, '')}`;
     
     // Create Atmos transaction
+    await this.assertPayCreateRate(userId); // final-6: per-user pay/create limit
     const atmosTx = await this.atmos.createTransaction({
       account,
       amountTiyins: quote.amountTiyins,
@@ -1122,6 +1128,32 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   // ---------------------------------------------------------------- Web Plus pass (WEB_PLUS_PASS, off by default)
 
   /** Admin PlatformSetting > env > relayed defaults (24,990 / 199,990 soʻm). */
+  /**
+   * final-6: per-user rate limit on payment creation (new Atmos transactions), DB-backed so it holds across API processes.
+   * Defaults 5/min and 20/hour; admin PlatformSetting payments.create_per_minute / payments.create_per_hour override.
+   */
+  async assertPayCreateRate(userId: string, now = Date.now()) {
+    const rows = await this.prisma.platformSetting
+      .findMany({ where: { key: { in: [PAY_CREATE_KEYS.perMinute, PAY_CREATE_KEYS.perHour] } } })
+      .catch(() => [] as Array<{ key: string; value: unknown }>);
+    const v = (k: string, d: number) => { const n = Math.floor(Number(rows.find((r) => r.key === k)?.value)); return Number.isFinite(n) && n > 0 ? n : d; };
+    const perMinute = v(PAY_CREATE_KEYS.perMinute, PAY_CREATE_FALLBACKS.perMinute);
+    const perHour = v(PAY_CREATE_KEYS.perHour, PAY_CREATE_FALLBACKS.perHour);
+    const base = { userId, amountTiyins: { gt: 0 }, providerPaymentId: { not: null } };
+    const [lastMinute, lastHour] = await Promise.all([
+      this.prisma.importPayment.count({ where: { ...base, createdAt: { gte: new Date(now - 60_000) } } }),
+      this.prisma.importPayment.count({ where: { ...base, createdAt: { gte: new Date(now - 3_600_000) } } }),
+    ]);
+    const window = lastMinute >= perMinute ? 'minute' : lastHour >= perHour ? 'hour' : null;
+    if (!window) return;
+    const retryAfterSec = window === 'minute' ? 60 : 3600;
+    this.logger.warn(JSON.stringify({ event: 'payment_create_rate', userId, window, perMinute, perHour }));
+    throw new HttpException(
+      { statusCode: 429, code: 'payment_rate_limited', window, retryAfterSec, message: 'Too many payment attempts. Please wait a minute and try again.' },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
   async plusConfig() {
     const rows = await this.prisma.platformSetting.findMany({ where: { key: { in: Object.values(PLUS_SETTING_KEYS) } } }).catch(() => []);
     const settings = Object.fromEntries(rows.map((r) => [r.key, r.value as unknown]));
@@ -1185,6 +1217,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       return { paymentId: reusable.id, account: reusable.account, transactionId: Number(reusable.providerPaymentId), amountUzs: plan.priceUzs, days: plan.days, status: 'pending', step: 'card' as const, reused: true };
     }
     const account = `${PLUS_ACCOUNT_PREFIX}${plan.days}_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
+    await this.assertPayCreateRate(userId); // final-6: per-user pay/create limit
     const created = await this.atmos.createTransaction({ amountTiyins, account });
     const payment = await this.prisma.importPayment.create({
       data: {
@@ -1698,6 +1731,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     }
 
     const account = `cat_${randomUUID().replace(/-/g, '')}`;
+    await this.assertPayCreateRate(userId); // final-6: per-user pay/create limit
     const atmosTx = await this.atmos.createTransaction({
       account,
       amountTiyins,

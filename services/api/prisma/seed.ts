@@ -13,6 +13,7 @@ import { syntheticUserEmailWhere } from '../src/common/production-users';
  * A generated password is printed once, outside production only.
  */
 import { randomBytes } from 'crypto';
+import { seedRefusal } from './seed-guard';
 function seedPassword(envKey: string): { value: string; fromEnv: boolean } {
   const v = process.env[envKey];
   return v && v.length >= 12 ? { value: v, fromEnv: true } : { value: randomBytes(18).toString('base64url'), fromEnv: false };
@@ -24,7 +25,16 @@ function logGenerated(email: string, s: { fromEnv: boolean; value: string }) {
 }
 
 
-const prisma = new PrismaClient();
+// WLF-16: refuse outside local/test (NODE_ENV=production, no ALLOW_SEED=1, or a non-local DB host).
+const refusal = seedRefusal();
+if (refusal) {
+  console.error(`prisma/seed.ts refused: ${refusal}. Seed is for local/test databases only (set ALLOW_SEED=1).`);
+  process.exit(1);
+}
+// WLF-16: insert-only. Every upsert keeps existing rows (prices, plans, settings, the admin user) untouched.
+const prisma = new PrismaClient().$extends({
+  query: { $allModels: { async upsert({ args, query }) { return query({ ...args, update: {} }); } } },
+}) as unknown as PrismaClient;
 
 const DEMO_CATALOG_SLUGS = [
   'the-master-and-margarita',

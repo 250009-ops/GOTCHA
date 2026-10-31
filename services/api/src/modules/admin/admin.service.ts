@@ -8,7 +8,7 @@ import {
 import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig } from '../billing/plus-pass';
 import { PLUS_FAIR_USE_KEYS, fairUseCap } from '../../common/plan-active';
 import { UsersService } from '../users/users.service';
-import { getPlanCaps, resetPlanCapsCache } from '../../common/plan-caps';
+import { getPlanCaps, resetPlanCapsCache, usageDayOffset, usageDayStart } from '../../common/plan-caps';
 import {
   AppLanguage,
   CampaignChannel,
@@ -154,7 +154,7 @@ export class AdminService {
       this.prisma.moderationQueue.count({ where: { status: 'pending' } }),
       this.prisma.ingestionJob.count({ where: { status: 'queued' } }),
       this.prisma.aiUsageDaily.aggregate({
-        where: { usageDate: { gte: dayStart }, user: liveLearnerWhere() },
+        where: { usageDate: { gte: usageDayStart() }, user: liveLearnerWhere() }, // WLF-20: DATE key
         _sum: { lookupCount: true, quizCount: true, tokensUsed: true },
       }),
       // Real revenue only: completed/paid Atmos import payments (UZS). Never blend in
@@ -2162,30 +2162,16 @@ export class AdminService {
     };
   }
 
+  /** WLF-20: usage_date DATE keys (Tashkent calendar days), inclusive on both ends. */
   private aiDateBounds(range = 'today') {
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-    const start = new Date(end);
-    start.setHours(0, 0, 0, 0);
-    if (range === 'yesterday') {
-      start.setDate(start.getDate() - 1);
-      end.setTime(start.getTime());
-      end.setHours(23, 59, 59, 999);
-    } else if (range === '7d') {
-      start.setDate(start.getDate() - 6);
-    }
-    return { start, end };
+    if (range === 'yesterday') return { start: usageDayOffset(-1), end: usageDayOffset(-1) };
+    return { start: usageDayOffset(range === '7d' ? -6 : 0), end: usageDayStart() };
   }
 
   private aiPriorBounds(range = 'today') {
-    const { start } = this.aiDateBounds(range);
     const days = range === '7d' ? 7 : 1;
-    const priorEnd = new Date(start);
-    priorEnd.setMilliseconds(priorEnd.getMilliseconds() - 1);
-    const priorStart = new Date(priorEnd);
-    priorStart.setHours(0, 0, 0, 0);
-    priorStart.setDate(priorStart.getDate() - (days - 1));
-    return { start: priorStart, end: priorEnd };
+    const { start } = this.aiDateBounds(range);
+    return { start: new Date(start.getTime() - days * 86_400_000), end: new Date(start.getTime() - 86_400_000) };
   }
 
   /** Drop leftover Figma / admin / QA usage rows once so live KPIs are not theater. */
@@ -2216,12 +2202,9 @@ export class AdminService {
     const prior = this.aiPriorBounds(range);
     const liveUsage = { user: liveLearnerWhere() };
 
-    const chartStart = new Date();
-    chartStart.setHours(0, 0, 0, 0);
-    chartStart.setDate(chartStart.getDate() - 6);
-
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
+    const chartStart = usageDayOffset(-6); // WLF-20: DATE keys
+    const todayStart = usageDayStart();
+    const monthStart = new Date(Date.UTC(todayStart.getUTCFullYear(), todayStart.getUTCMonth(), 1));
 
     const [rows, priorAgg, monthRows, chartRows, todayRows] = await Promise.all([
       this.prisma.aiUsageDaily.findMany({
@@ -2234,7 +2217,7 @@ export class AdminService {
       }),
       this.prisma.aiUsageDaily.findMany({
         where: {
-          usageDate: { gte: new Date(new Date().getFullYear(), new Date().getMonth(), 1) },
+          usageDate: { gte: monthStart },
           ...liveUsage,
         },
         select: { userId: true, lookupCount: true },
@@ -2327,12 +2310,8 @@ export class AdminService {
       dayMap.set(key, cur);
     }
 
-    const today = new Date();
     const daily = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(today);
-      d.setHours(0, 0, 0, 0);
-      d.setDate(d.getDate() - (6 - i));
-      const key = d.toISOString().slice(0, 10);
+      const key = usageDayOffset(i - 6).toISOString().slice(0, 10); // WLF-20: Tashkent calendar dates
       const hit = dayMap.get(key);
       return {
         date: key,
