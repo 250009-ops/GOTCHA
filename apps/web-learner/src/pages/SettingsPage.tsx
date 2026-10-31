@@ -443,9 +443,11 @@ export default function SettingsPage() {
   };
 
   const plan = subscription?.subscription?.plan;
-  const quota = subscription?.usage.quota ?? plan?.aiDailyQuota ?? 50;
+  // Plus (31 Oct 14:40): quota null = no daily lookup cap. Show the count only; never a number or a limit claim.
+  const rawQuota = subscription ? subscription.usage.quota : (plan?.aiDailyQuota ?? null);
+  const quota = typeof rawQuota === 'number' && rawQuota > 0 && rawQuota < 1_000_000 ? rawQuota : null;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
-  const usagePct = quota > 0 && quota < 1_000_000 ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
+  const usagePct = quota !== null ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const importAllowance = subscription?.usage.importAllowance;
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
@@ -752,7 +754,7 @@ export default function SettingsPage() {
                   </div>
                   <div className="space-y-1.5 py-4">
                     {[
-                      copy.settings.aiLookupsLine(lookupsToday, quota === 0 || quota >= 1_000_000 ? '∞' : String(quota)),
+                      copy.settings.aiLookupsLine(lookupsToday, quota === null ? null : String(quota)),
                       importAllowance
                         ? copy.settings.freeImportsLine(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                         : plan?.importLimit && plan.importLimit < 1_000_000
@@ -791,10 +793,10 @@ export default function SettingsPage() {
                 <div>
                   <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
                     <span>{copy.settings.aiLookupsToday}</span>
-                    <span>{lookupsToday}/{quota === 0 || quota >= 1_000_000 ? '∞' : quota}</span>
+                    <span>{quota === null ? lookupsToday : `${lookupsToday}/${quota}`}</span>
                   </div>
                   <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === 0 || quota >= 1_000_000 ? 4 : usagePct}%` }} />
+                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === null ? 4 : usagePct}%` }} />
                   </div>
                 </div>
                 {importAllowance ? (

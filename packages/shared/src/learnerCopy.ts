@@ -184,7 +184,7 @@ export interface LearnerCopy {
     languageRemoved: string;
     languageRemoveFailed: string;
     removeLanguage: string;
-    aiLookupsLine: (used: number, quota: string) => string;
+    aiLookupsLine: (used: number, quota: string | null) => string;
     freeImportsLine: (remaining: number, total: number) => string;
     freePagesLine: (remaining: number, total: number, cycle: string) => string;
     publicLibraryAccess: string;
@@ -490,7 +490,7 @@ const EN: LearnerCopy = {
     languageRemoved: 'Language removed',
     languageRemoveFailed: 'Could not remove language',
     removeLanguage: 'Remove language',
-    aiLookupsLine: (used, quota) => `AI lookups: ${used}/${quota} today`,
+    aiLookupsLine: (used, quota) => (quota === null ? `AI lookups today: ${used}` : `AI lookups: ${used}/${quota} today`),
     freeImportsLine: (remaining, total) => `${remaining} of ${total} free imports left today`,
     freePagesLine: (remaining, total, cycle) => `${remaining} of ${total} free pages left ${cycle}`,
     publicLibraryAccess: 'Access to the public library',
@@ -800,7 +800,7 @@ const RU: LearnerCopy = {
     languageRemoved: 'Язык удалён',
     languageRemoveFailed: 'Не удалось удалить язык',
     removeLanguage: 'Удалить язык',
-    aiLookupsLine: (used, quota) => `ИИ-запросы: ${used}/${quota} сегодня`,
+    aiLookupsLine: (used, quota) => (quota === null ? `ИИ-запросы сегодня: ${used}` : `ИИ-запросы: ${used}/${quota} сегодня`),
     freeImportsLine: (remaining, total) => `${remaining} из ${total} бесплатных импортов сегодня`,
     freePagesLine: (remaining, total, cycle) => `${remaining} из ${total} бесплатных страниц ${cycle}`,
     publicLibraryAccess: 'Доступ к публичной библиотеке',
@@ -1110,7 +1110,7 @@ const UZ: LearnerCopy = {
     languageRemoved: 'Til olib tashlandi',
     languageRemoveFailed: 'Tilni olib boʻlmadi',
     removeLanguage: 'Tilni olib tashlash',
-    aiLookupsLine: (used, quota) => `AI soʻrovlar: ${used}/${quota} bugun`,
+    aiLookupsLine: (used, quota) => (quota === null ? `Bugungi AI soʻrovlar: ${used}` : `AI soʻrovlar: ${used}/${quota} bugun`),
     freeImportsLine: (remaining, total) => `Bugun ${total} dan ${remaining} bepul import qoldi`,
     freePagesLine: (remaining, total, cycle) => `${cycle} ${total} dan ${remaining} bepul sahifa qoldi`,
     publicLibraryAccess: 'Ommaviy kutubxonaga kirish',
