@@ -39,6 +39,7 @@ function envFlagTrue(value: string | undefined): boolean {
 
 /** ~500 words / page ≈ 3000 chars as a conservative page estimate. */
 const CHARS_PER_PAGE = 3000;
+const TASHKENT_OFFSET_MS = 5 * 60 * 60 * 1000;
 const WORDS_PER_PAGE = 500;
 
 export type ImportQuoteInput = {
@@ -202,16 +203,21 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
+  // Round-3: free-import windows reset at Asia/Tashkent midnight (business rule), not UTC midnight (= 05:00 Tashkent).
+  // Tashkent is UTC+5 all year (no DST). Method names kept for the existing callers.
   private startOfUtcDay(d = new Date()) {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
+    return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), t.getUTCDate()) - TASHKENT_OFFSET_MS);
   }
 
   private startOfUtcMonth(d = new Date()) {
-    return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1));
+    const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
+    return new Date(Date.UTC(t.getUTCFullYear(), t.getUTCMonth(), 1) - TASHKENT_OFFSET_MS);
   }
 
   private startOfUtcYear(d = new Date()) {
-    return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+    const t = new Date(d.getTime() + TASHKENT_OFFSET_MS);
+    return new Date(Date.UTC(t.getUTCFullYear(), 0, 1) - TASHKENT_OFFSET_MS);
   }
 
   private pageWindowStart(resetCycle: string) {
