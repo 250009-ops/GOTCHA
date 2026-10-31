@@ -49,6 +49,16 @@ chk 200 GET /billing/plans
 chk 200 GET /billing/gateway-status
 grep -q '"paymentGatewayEnabled":true' "$W/r" && say "PASS payments ON: gateway-status paymentGatewayEnabled=true (PAYMENT_GATEWAY_ENABLED=true only)" || fail "gateway-status not ON with PAYMENT_GATEWAY_ENABLED=true"
 chk 401 GET /users/me
+# final-6.1: practice engine routes exist (401 unauthenticated, never 404)
+chk 401 GET /practice/overview
+chk 401 GET /practice/forecast
+chk 401 GET /practice/daily
+chk 401 POST /practice/answer '{}'
+chk 401 POST /practice/audio '{}'
+chk 401 POST /practice/daily/00000000-0000-0000-0000-000000000000/complete
+chk 401 GET /practice/sessions/00000000-0000-0000-0000-000000000000
+chk 200 GET /health/version
+grep -q '"sha"' "$W/r" && say "PASS S4 build id: $(head -c 80 "$W/r")" || fail "health/version lacks sha"
 chk 401 POST /auth/login '{"email":"nobody@example.com","password":"wrong-password-123"}'
 sleep 1; kill -0 $APIPID 2>/dev/null || fail "API died after requests"
 if grep -nE "Cannot find module|MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND" "$W/app.log" "$W/npm.log" "$W/mig.log" | tee -a "$R"; then fail "module-not-found in logs"; fi
