@@ -6,3 +6,4 @@ the licence text is kept in the font's name table. Reserved Font Name: none decl
 Manrope (manrope-subset.woff2, variable 200-800; subset: Latin, Latin Ext-A/B, Cyrillic, U+02BB/02BC, general punctuation, a few symbols; licence text kept in the name table): Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope). SIL Open Font License, Version 1.1.
 
 No fonts are loaded from Google Fonts. Inter, Geist and Sora were dropped; all pages use Manrope (body/UI) and Bagel Fat One (wordmark).
+Both subsets are built by scripts/build_fonts.py, which adds cmap entries U+02BB -> U+2018 glyph and U+02BC -> U+2019 glyph (modification permitted by OFL 1.1; no Reserved Font Names).

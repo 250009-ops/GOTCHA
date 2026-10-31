@@ -1,6 +1,6 @@
 /* Landing tokens. Brand + reader values are copied from apps/web-learner/src/styles/gotcha-tokens.css
    and ReaderPage.tsx (STATUS_STYLES, dictionary panel). Landing-only roles are prefixed --l-. */
-@font-face{font-family:'Bagel Fat One';src:url(/fonts/bagel-fat-one-latin.woff2) format('woff2');font-display:swap;unicode-range:U+0020-007E,U+00A0-00FF,U+02BB,U+2018-2019}
+@font-face{font-family:'Bagel Fat One';src:url(/fonts/bagel-fat-one-latin.woff2) format('woff2');font-display:swap;unicode-range:U+0020-007E,U+00A0-00FF,U+02BB-02BC,U+2018-2019}
 .lp{
   --g-blue-50:#eef0ff;--g-blue-100:#e0e3ff;--g-blue-200:#c5cafd;--g-blue-300:#a0a6fa;--g-blue-500:#5550ec;
   --g-blue-600:#3b2ad6;--g-blue-700:#2107aa;--g-blue-800:#1a068a;--g-blue-900:#14056b;--g-blue-950:#0c0342;
