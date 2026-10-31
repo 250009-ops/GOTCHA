@@ -105,6 +105,12 @@ export class BillingController {
     return this.importCommerce.cancelPayment(user.sub, id, body.reason);
   }
 
+  /** final-5 (f29902f1): paid import credits not yet used for an import. Declared before :id. */
+  @Get('imports/payments-unused')
+  unusedPaid(@CurrentUser() user: AuthUserPayload) {
+    return this.importCommerce.unusedPaidImports(user.sub);
+  }
+
   @Get('imports/payments/:id')
   payment(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.importCommerce.getPayment(user.sub, id);

@@ -408,7 +408,7 @@ export default function ImportPricingPage() {
           value={formatNumber(data.stats.freeImportsUsed)}
           hint={
             <span className="text-slate-500">
-              {limits.dailyFreeImportsPerUser} free / learner / day · {formatNumber(limits.monthlyFreePageLimit)} free pages / {limits.resetCycle}
+              {limits.dailyFreeImportsPerUser} free / learner / day · {formatNumber(limits.monthlyFreePageLimit)} free pages {limits.resetCycle === 'monthly' ? 'a month' : `/ ${limits.resetCycle}`}
             </span>
           }
         />

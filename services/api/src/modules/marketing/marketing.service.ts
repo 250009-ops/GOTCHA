@@ -1,5 +1,6 @@
 import { formatSom, planCopy, type PlanLang } from './plan-copy';
-import { freeLimits } from '../../common/plan-limits';
+import { freeLimits, refreshPlanLimits } from '../../common/plan-limits';
+import { paymentsUiEnabled } from '../../common/payments-ui';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
@@ -157,6 +158,7 @@ export class MarketingService {
     const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
+    await refreshPlanLimits(this.prisma);
     const aiDailyQuota = freeLimits().lookupsPerDay;
     // WLF-04: the Free card states the real import allowance (admin Import & Pricing → platform setting
     // importFreeLimits, defaults 3 a day / 50 pages a month), the same numbers import-commerce enforces.
@@ -205,7 +207,8 @@ export class MarketingService {
       features: [t.everythingFree, t.payOnce, t.upfront],
     };
 
-    return [free, payPerImport];
+    // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENTS_UI_ENABLED, default off).
+    return paymentsUiEnabled() ? [free, payPerImport] : [free];
   }
 
   async landing(): Promise<LandingPayload> {

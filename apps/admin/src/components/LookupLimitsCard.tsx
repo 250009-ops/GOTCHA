@@ -5,7 +5,7 @@ import { formatNumber } from '../lib/utils';
 import { Button, Card, Input } from './ui';
 
 export function canEditAiLimits(role?: string | null) {
-  return role === 'superadmin' || role === 'editor' || role === 'analyst';
+  return role === 'superadmin' || role === 'editor'; // final-5 A16: analysts view only
 }
 
 type LookupLimitsCardProps = {
@@ -29,14 +29,22 @@ export function LookupLimitsCard({
   showImportPricingLink = true,
   onSaved,
 }: LookupLimitsCardProps) {
-  const [userQuota, setUserQuota] = useState(defaultUserQuota);
+  // final-5 A4/A5: the enforced Free/Plus caps live in platform_settings (GET/PATCH /admin/plan-limits).
+  const [freeLookups, setFreeLookups] = useState(20);
+  const [freeQuizzes, setFreeQuizzes] = useState(10);
+  const [plusQuizzes, setPlusQuizzes] = useState(200);
+  useEffect(() => {
+    api<{ freeLookupsPerDay: number; freeQuizzesPerDay: number; plusQuizzesPerDay: number }>('/admin/plan-limits')
+      .then((v) => { setFreeLookups(v.freeLookupsPerDay); setFreeQuizzes(v.freeQuizzesPerDay); setPlusQuizzes(v.plusQuizzesPerDay); })
+      .catch(() => undefined);
+  }, []);
+  void defaultUserQuota;
   const [platformLimit, setPlatformLimit] = useState(dailyLimit);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setUserQuota(defaultUserQuota);
     setPlatformLimit(dailyLimit);
   }, [defaultUserQuota, dailyLimit]);
 
@@ -47,13 +55,12 @@ export function LookupLimitsCard({
     setSaved(false);
     setError(null);
     try {
-      await api('/admin/ai-usage/limits', {
+      const n = (v: number) => Math.max(0, Math.floor(Number(v) || 0));
+      await api('/admin/plan-limits', {
         method: 'PATCH',
-        body: JSON.stringify({
-          aiDefaultUserQuota: Math.max(0, Math.floor(Number(userQuota) || 0)),
-          aiDailyLimit: Math.max(0, Math.floor(Number(platformLimit) || 0)),
-        }),
+        body: JSON.stringify({ freeLookupsPerDay: n(freeLookups), freeQuizzesPerDay: n(freeQuizzes), plusQuizzesPerDay: n(plusQuizzes) }),
       });
+      await api('/admin/ai-usage/limits', { method: 'PATCH', body: JSON.stringify({ aiDailyLimit: n(platformLimit) }) });
       setSaved(true);
       onSaved?.();
     } catch (err) {
@@ -99,20 +106,18 @@ export function LookupLimitsCard({
       </div>
       <form className="grid grid-cols-1 md:grid-cols-2 gap-4" onSubmit={(e) => void save(e)}>
         <label className="text-sm">
-          <span className="text-slate-500 block mb-1">Lookups per learner / day</span>
-          <Input
-            type="number"
-            min={0}
-            step={1}
-            disabled={!canEdit}
-            value={userQuota}
-            onChange={(e) => setUserQuota(Number(e.target.value))}
-          />
-          <span className="text-xs text-slate-400 mt-1 block">
-            {formatNumber(usersAtQuota)} learner{usersAtQuota === 1 ? '' : 's'} at cap today.
-            0 = unlimited.
-          </span>
+          <span className="text-slate-500 block mb-1">Free: word lookups per day</span>
+          <Input type="number" min={0} step={1} data-testid="free-lookups" disabled={!canEdit} value={freeLookups} onChange={(e) => setFreeLookups(Number(e.target.value))} />
         </label>
+        <label className="text-sm">
+          <span className="text-slate-500 block mb-1">Free: chapter quizzes per day</span>
+          <Input type="number" min={0} step={1} data-testid="free-quizzes" disabled={!canEdit} value={freeQuizzes} onChange={(e) => setFreeQuizzes(Number(e.target.value))} />
+        </label>
+        <label className="text-sm">
+          <span className="text-slate-500 block mb-1">Plus: chapter quizzes per day</span>
+          <Input type="number" min={0} step={1} data-testid="plus-quizzes" disabled={!canEdit} value={plusQuizzes} onChange={(e) => setPlusQuizzes(Number(e.target.value))} />
+        </label>
+        <div className="text-xs text-slate-400 md:col-span-2">{formatNumber(usersAtQuota)} learner{usersAtQuota === 1 ? '' : 's'} at the lookup cap today. Counters reset at midnight Tashkent time. Free imports (3 a day, 50 pages a month) are set under Import &amp; Pricing.</div>
         <label className="text-sm">
           <span className="text-slate-500 block mb-1">Platform daily AI limit (all learners)</span>
           <Input
@@ -126,12 +131,12 @@ export function LookupLimitsCard({
           <span className="text-xs text-slate-400 mt-1 block">
             {todayPlatformUsed != null ? `Today: ${formatNumber(todayPlatformUsed)}` : null}
             {dailyLimit ? ` / ${formatNumber(dailyLimit)}` : ''}.
-            0 = unlimited.
+            0 = no platform cap.
           </span>
         </label>
         <div className="md:col-span-2 flex items-center gap-3">
           {canEdit ? (
-            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save lookup limits'}</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save limits'}</Button>
           ) : (
             <span className="text-xs text-slate-500">You can view this cap. Ask a superadmin or editor to change it.</span>
           )}

@@ -1,4 +1,4 @@
-import { planLimits } from '../common/plan-limits';
+import { dailyLimitBody, planLimits, refreshPlanLimits } from '../common/plan-limits';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
@@ -100,7 +100,8 @@ export class LimitsService {
       defaultAiPlatformSettings().defaultUserQuota,
     );
     void platformDefault;
-    const quota = planLimits(plan?.tier).quizzesPerDay; // Free 10 / Plus 200 (config)
+    await refreshPlanLimits(this.prisma);
+    const quota = planLimits(plan?.tier).quizzesPerDay; // Free 10 / Plus 200 (platform_settings → env → default)
     if (quota <= 0) return;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -108,7 +109,7 @@ export class LimitsService {
       where: { userId_usageDate: { userId, usageDate: today } },
     });
     if ((usage?.quizCount ?? 0) >= quota) {
-      throw new ForbiddenException('Daily AI quiz quota exceeded');
+      throw new ForbiddenException(dailyLimitBody('quiz', quota));
     }
   }
 

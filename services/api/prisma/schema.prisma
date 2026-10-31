@@ -136,6 +136,7 @@ enum ModerationStatus {
   pending
   approved
   rejected
+  dismissed // final-5: closed, kept private, publish state unchanged
 }
 
 enum ImportType {
@@ -485,7 +486,7 @@ model ContentPurchase {
   providerRef String?        @map("provider_ref")
   createdAt   DateTime       @default(now()) @map("created_at")
 
-  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  content ContentItem @relation(fields: [contentId], references: [id], onDelete: Restrict) // final-5: purchases are never cascade-deleted
   user    User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   importPaymentId String? @unique @map("import_payment_id") @db.Uuid

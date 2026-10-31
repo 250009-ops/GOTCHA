@@ -23,6 +23,8 @@ import { AdminService } from './admin.service';
 import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
+const actorIdOf = (u?: AuthUserPayload): string | null => ((u as { sub?: string; id?: string } | undefined)?.sub ?? (u as { id?: string } | undefined)?.id ?? null);
+
 @ApiTags('admin')
 @Controller('admin')
 @UseGuards(RolesGuard)
@@ -101,8 +103,8 @@ export class AdminController {
 
   @Delete('users/:id')
   @Roles(AdminRole.superadmin)
-  hardDeleteUser(@Param('id') id: string) {
-    return this.admin.hardDeleteUser(id);
+  hardDeleteUser(@Param('id') id: string, @Query('confirm') confirm?: string, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.hardDeleteUser(id, { confirm, actorId: actorIdOf(user) });
   }
 
   @Get('content')
@@ -354,8 +356,28 @@ export class AdminController {
     return this.admin.aiUsage(range);
   }
 
+  /** final-5 A4/A5: Free 20 lookups / 10 quizzes, Plus 200 quizzes, Free imports 3/day + 50 pages/month (platform_settings). */
+  @Get('plan-limits')
+  @Roles(AdminRole.superadmin, AdminRole.analyst, AdminRole.editor)
+  planLimits() {
+    return this.admin.getPlanLimitsConfig();
+  }
+
+  @Patch('plan-limits')
+  @Roles(AdminRole.superadmin, AdminRole.editor)
+  updatePlanLimits(@Body() body: Record<string, unknown>, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.updatePlanLimitsConfig(body, actorIdOf(user));
+  }
+
+  /** final-5 A10: self-service deletion requests (anonymised, data purged) and their 1-year hard-purge date. */
+  @Get('users-deletion-requests')
+  @Roles(AdminRole.superadmin, AdminRole.moderator)
+  deletionRequests() {
+    return this.admin.listDeletionRequests();
+  }
+
   @Patch('ai-usage/limits')
-  @Roles(AdminRole.superadmin, AdminRole.editor, AdminRole.analyst)
+  @Roles(AdminRole.superadmin, AdminRole.editor)
   updateAiUsageLimits(@Body() body: UpdateAiLimitsDto) {
     return this.admin.updateSettings({
       aiDefaultUserQuota: body.aiDefaultUserQuota,

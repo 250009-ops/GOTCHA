@@ -15,7 +15,7 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
-import { lookupCapped, planLimits } from '../../common/plan-limits';
+import { dailyLimitBody, lookupCapped, planLimits, refreshPlanLimits } from '../../common/plan-limits';
 import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, ttsLimitError, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
@@ -267,7 +267,8 @@ export class AiService {
     if (this.useMemory()) {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
       const used = this.memoryUsage.get(key) ?? 0;
-      const quota = defaultUserQuota;
+      void defaultUserQuota; // final-5: legacy aiDefaultUserQuota ignored; caps.free.lookups only
+      const quota = planLimits('free').lookupsPerDay ?? 0;
       if (quota > 0 && quota < 1_000_000 && used >= quota) {
         throw new ForbiddenException(
           'Daily AI lookup limit reached. Try again tomorrow.',
@@ -282,6 +283,7 @@ export class AiService {
       orderBy: { createdAt: 'desc' },
     });
     // 31 Oct 14:40: per-plan limits from config (Free 20 / Plus no cap = null); admin default only applies to memory mode.
+    await refreshPlanLimits(this.prisma);
     const quota = planLimits(sub?.plan.tier).lookupsPerDay;
 
     const usage = await this.prisma.aiUsageDaily.findUnique({
@@ -290,9 +292,7 @@ export class AiService {
 
     // null (Plus) / 0 / >= 1e6 = no daily lookup cap.
     if (lookupCapped(quota) && (usage?.lookupCount ?? 0) >= quota) {
-      throw new ForbiddenException(
-        'Daily AI lookup limit reached. Try again tomorrow.',
-      );
+      throw new ForbiddenException(dailyLimitBody('lookup', quota));
     }
 
     return { quota, usage, today, memoryKey: null as string | null };
@@ -979,12 +979,8 @@ export class AiService {
     }
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    // Reuse quizCount bucket for platform metrics (no schema migration).
-    await this.prisma.aiUsageDaily.upsert({
-      where: { userId_usageDate: { userId, usageDate: today } },
-      create: { userId, usageDate: today, quizCount: 1 },
-      update: { quizCount: { increment: 1 } },
-    });
+    // final-5: import clean-up no longer writes the learner's quizCount (it used up the Free 10 quizzes/day).
+    void userId; void today;
   }
 
   private async cleanupImportChunkWithRetry(

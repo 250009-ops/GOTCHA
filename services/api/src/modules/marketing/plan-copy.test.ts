@@ -42,7 +42,10 @@ async function main() {
     if (lang === 'uz') assert.ok(!/[A-Za-z]'[A-Za-z]/.test(JSON.stringify(planCopy('uz'))), 'uz uses ʻ, not ASCII apostrophe');
     if (lang === 'ru') assert.equal(planCopy('ru').ppiLabel, 'Платите только за то, что нужно');
   }
+  assert.equal((await m.plans('uz')).length, 1, 'final-5 B4: pay-per-import card hidden while PAYMENTS_UI_ENABLED is off');
+  process.env.PAYMENTS_UI_ENABLED = 'true';
   assert.match((await m.plans('uz'))[1].features.join(' '), /Atmos/);
+  delete process.env.PAYMENTS_UI_ENABLED;
   // WLF-04: Free card states the real import allowance (defaults 3/day + 50 pages/month), never 15.
   const fe: string[] = (await m.plans('en'))[0].features; const fr: string[] = (await m.plans('ru'))[0].features; const fu: string[] = (await m.plans('uz'))[0].features;
   assert.ok(fe.includes('3 free imports a day') && fe.includes('Up to 50 free pages of imports a month'), fe.join(' | '));

@@ -79,6 +79,12 @@ export type CheckoutResult = {
   step: 'done' | 'card' | 'otp' | 'paid';
 };
 
+import { paymentsUiEnabled } from '../../common/payments-ui';
+import { ForbiddenException as PaymentsForbidden } from '@nestjs/common';
+export function assertPaymentsEnabled(env: NodeJS.ProcessEnv = process.env) {
+  if (!paymentsUiEnabled(env)) throw new PaymentsForbidden({ statusCode: 403, code: 'PAYMENTS_DISABLED', message: 'Paid imports are not available yet.' });
+}
+
 @Injectable()
 export class ImportCommerceService {
   constructor(
@@ -240,6 +246,8 @@ export class ImportCommerceService {
       if (formatOk && underDaily && underMonthlyPages) {
         isFree = true;
         freeReason = 'Within free import allowance';
+      } else if (!paymentsUiEnabled()) {
+        freeReason = 'Free import limit reached';
       } else if (!tier) {
         freeReason = 'This length is not covered by a page tier';
       }
@@ -313,6 +321,7 @@ export class ImportCommerceService {
       };
     }
 
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     if (!this.atmos.configured()) {
       throw new ServiceUnavailableException('Atmos payment gateway is not configured');
     }
@@ -376,6 +385,7 @@ export class ImportCommerceService {
     cardNumber: string,
     expiry: string,
   ): Promise<{ paymentId: string; maskedPhone?: string; step: 'otp' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -418,11 +428,13 @@ export class ImportCommerceService {
     paymentId: string,
     otp: string,
   ): Promise<{ paymentId: string; status: string; ofdUrl?: string; step: 'paid' | 'otp' | 'card' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
     if (!payment) throw new NotFoundException('Payment not found');
     if (payment.status === ImportPaymentStatus.paid) {
+      await this.fulfillCatalogPurchase(payment); // idempotent: repairs a paid-but-not-granted catalog purchase
       return { paymentId, status: 'paid', step: 'paid' };
     }
     if (!payment.providerPaymentId) {
@@ -438,16 +450,8 @@ export class ImportCommerceService {
       });
 
       if (result.confirmed) {
-        const paid = await this.prisma.importPayment.update({
-          where: { id: payment.id },
-          data: {
-            status: ImportPaymentStatus.paid,
-            paidAt: new Date(),
-            ofdUrl: result.ofdUrl,
-            rawCallbackJson: result.raw as Prisma.InputJsonValue,
-          },
-        });
-        await this.fulfillCatalogPurchase(paid);
+        // apply() success and STPIMS-ERR-092/093/065 "confirmed via get" both land here → same settlement as callback/poll.
+        await this.settlePaid(payment.id, { ofdUrl: result.ofdUrl, raw: result.raw });
 
         return {
           paymentId,
@@ -471,6 +475,7 @@ export class ImportCommerceService {
     userId: string,
     paymentId: string,
   ): Promise<{ paymentId: string; step: 'otp' }> {
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     const payment = await this.prisma.importPayment.findFirst({
       where: { id: paymentId, userId },
     });
@@ -533,16 +538,7 @@ export class ImportCommerceService {
       const remote = await this.atmos.getTransaction(transactionId);
       
       if (remote?.confirmed) {
-        const paid = await this.prisma.importPayment.update({
-          where: { id: payment.id },
-          data: {
-            status: ImportPaymentStatus.paid,
-            paidAt: new Date(),
-            ofdUrl: remote.ofdUrl,
-            rawCallbackJson: remote.raw as Prisma.InputJsonValue,
-          },
-        });
-        await this.fulfillCatalogPurchase(paid);
+        await this.settlePaid(payment.id, { ofdUrl: remote.ofdUrl, raw: remote.raw });
         return this.prisma.importPayment.findFirstOrThrow({ where: { id: paymentId, userId } });
       }
     }
@@ -558,20 +554,38 @@ export class ImportCommerceService {
       where: { account: accountOrInvoice },
     });
     if (!existing) return null;
-    if (existing.status === ImportPaymentStatus.paid) return existing;
+    return this.settlePaid(existing.id, { providerRef: opts?.providerRef, ofdUrl: opts?.ofdUrl, raw: opts?.raw });
+  }
 
-    const updated = await this.prisma.importPayment.update({
-      where: { id: existing.id },
+  /**
+   * final-5: the ONE paid transition for every confirmation path (apply, apply→"confirmed via get", getPayment poll,
+   * Atmos callback). Idempotent: only a non-paid row flips to paid (conditional update, so concurrent paths cannot
+   * double-settle) and the catalog grant is re-checked on every call, so a paid-but-not-granted purchase is repaired.
+   * Import payments stay paid + unused (userImportId null) until consumePayment attaches exactly one import.
+   */
+  async settlePaid(paymentId: string, opts?: { providerRef?: string; ofdUrl?: string; raw?: unknown }) {
+    await this.prisma.importPayment.updateMany({
+      where: { id: paymentId, status: { not: ImportPaymentStatus.paid } },
       data: {
         status: ImportPaymentStatus.paid,
         paidAt: new Date(),
-        providerPaymentId: opts?.providerRef ?? existing.providerPaymentId,
-        ofdUrl: opts?.ofdUrl ?? existing.ofdUrl,
-        rawCallbackJson: opts?.raw != null ? (opts.raw as Prisma.InputJsonValue) : undefined,
+        ...(opts?.providerRef ? { providerPaymentId: opts.providerRef } : {}),
+        ...(opts?.ofdUrl ? { ofdUrl: opts.ofdUrl } : {}),
+        ...(opts?.raw != null ? { rawCallbackJson: opts.raw as Prisma.InputJsonValue } : {}),
       },
     });
-    await this.fulfillCatalogPurchase(updated);
-    return updated;
+    const row = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (row) await this.fulfillCatalogPurchase(row);
+    return row;
+  }
+
+  /** final-5 (f29902f1): paid import payments not yet attached to an import, so the learner can finish that import. */
+  unusedPaidImports(userId: string) {
+    return this.prisma.importPayment.findMany({
+      where: { userId, status: ImportPaymentStatus.paid, userImportId: null, amountTiyins: { gt: 0 }, NOT: { contentFormat: { startsWith: 'catalog:' } } },
+      orderBy: { paidAt: 'desc' },
+      select: { id: true, importType: true, estimatedPages: true, amountTiyins: true, paidAt: true },
+    });
   }
 
   /**
@@ -687,6 +701,7 @@ export class ImportCommerceService {
       return { status: 0, message: 'Amount mismatch' };
     }
     if (payment.status === ImportPaymentStatus.paid) {
+      await this.settlePaid(payment.id); // idempotent re-check of the catalog grant
       return { status: 1, message: 'Successfully' };
     }
     if (payment.status !== ImportPaymentStatus.pending) {
@@ -757,6 +772,7 @@ export class ImportCommerceService {
       };
     }
 
+    assertPaymentsEnabled(); // final-5 B4: no paid purchase can start while PAYMENTS_UI_ENABLED is off
     if (!this.catalogPaymentsEnabled()) {
       throw new ServiceUnavailableException('Payment gateway is not available for catalog purchases');
     }
