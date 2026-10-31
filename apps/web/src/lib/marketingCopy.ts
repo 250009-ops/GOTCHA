@@ -49,7 +49,7 @@ export interface MarketingCopy {
 
 const EN: MarketingCopy = {
   seo: {
-    title: 'GOTCHA — Get fluent by actually reading',
+    title: "GOTCHA — Tap the word you don't know. Gotcha explains it in that sentence.",
     description:
       'Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek.',
   },
