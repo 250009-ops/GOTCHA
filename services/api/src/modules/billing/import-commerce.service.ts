@@ -107,6 +107,11 @@ export const EXPIRY_UNVERIFIED_CAP_MS = 24 * 3_600_000;
 const EXPIRY_BACKOFF_BASE_MS = 10 * 60_000;
 const EXPIRY_BACKOFF_MAX_MS = 2 * 3_600_000;
 
+/** PAY2-08: marker (cancelReason) for an import payment paid on the late/reconcile path with no import run. */
+export const LATE_UNATTACHED = 'paid_late_no_import';
+/** PAY2-08: unused late-paid imports become refund-due after 7 days. */
+export const LATE_UNATTACHED_REFUND_MS = 7 * 24 * 3600_000;
+
 @Injectable()
 export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportCommerceService.name);
@@ -904,7 +909,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
   async markPaid(
     accountOrInvoice: string,
-    opts?: { providerRef?: string; ofdUrl?: string; raw?: unknown },
+    opts?: { providerRef?: string; ofdUrl?: string; raw?: unknown; late?: boolean },
   ) {
     const existing = await this.prisma.importPayment.findUnique({
       where: { account: accountOrInvoice },
@@ -921,7 +926,28 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       raw: opts?.raw,
     }, [ImportPaymentStatus.pending, ImportPaymentStatus.expired]);
     if (!ok) return null;
+    // PAY2-08: a late success (expired → paid, via callback or the expiry reconcile) can't have run the
+    // import: the learner's return page gave up. Never leave it as a silent charge.
+    const sessionOver = existing.expiresAt != null && existing.expiresAt.getTime() <= Date.now();
+    if (existing.status === ImportPaymentStatus.expired || sessionOver || opts?.late) await this.flagLateUnattachedImport(existing.id);
     return this.prisma.importPayment.findUnique({ where: { id: existing.id } });
+  }
+
+  /**
+   * PAY2-08: import payment that ended paid on the late / reconcile path with no import attached →
+   * needsAttention + reason LATE_UNATTACHED. The learner sees it on the Import page as a free retry on the
+   * SAME payment (importRetryState.freeRetries, no new charge); if unused for LATE_UNATTACHED_REFUND_MS it
+   * becomes refund-due for admin review (settleFailedImports). Plus / catalog payments are not imports.
+   */
+  private async flagLateUnattachedImport(paymentId: string) {
+    const p = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!p || p.status !== ImportPaymentStatus.paid || p.userImportId) return;
+    if (plusPassDaysFromFormat(p.contentFormat) || catalogContentIdFromFormat(p.contentFormat)) return;
+    await this.prisma.importPayment.updateMany({
+      where: { id: paymentId, status: ImportPaymentStatus.paid, userImportId: null },
+      data: { needsAttention: true, cancelReason: LATE_UNATTACHED },
+    });
+    this.logger.warn(`payment ${paymentId}: paid late with no import attached → offered as free retry, flagged for review`);
   }
 
   /**
@@ -1119,7 +1145,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       if (!failed) {
         try { remote = await this.atmos.getTransaction(tx); } catch (e) { failed = true; this.logger.warn(`expiry check ${p.id}: Atmos error ${(e as Error).message}`); }
       }
-      if (remote?.confirmed) { if (await this.markPaid(p.account, { ofdUrl: remote.ofdUrl, raw: remote.raw })) paid++; this.expiryBackoff.delete(p.id); continue; }
+      if (remote?.confirmed) { if (await this.markPaid(p.account, { ofdUrl: remote.ofdUrl, raw: remote.raw, late: true })) paid++; this.expiryBackoff.delete(p.id); continue; }
       const definitive = !failed && remote != null && (remote.raw as { store_transaction?: unknown } | null)?.store_transaction != null;
       if (definitive) { expired += await expire(p.id); continue; }
       if (overCap) {
@@ -1321,14 +1347,29 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   async importRetryState(userId: string) {
     const db = this.prisma.importPayment;
     const [retry, refundDue] = await Promise.all([
-      db.findMany({ where: { userId, status: ImportPaymentStatus.paid, userImportId: null, importAttempts: { gt: 0 }, refundDue: false }, select: { id: true, importType: true } }),
+      db.findMany({
+        where: {
+          userId, status: ImportPaymentStatus.paid, userImportId: null, refundDue: false,
+          // failed paid import (payments-02) OR paid late with no import ever run (PAY2-08)
+          OR: [{ importAttempts: { gt: 0 } }, { cancelReason: LATE_UNATTACHED }],
+        },
+        select: { id: true, importType: true, cancelReason: true },
+      }),
       db.count({ where: { userId, status: ImportPaymentStatus.paid, refundDue: true } }),
     ]).catch(() => [[], 0] as const);
-    return { freeRetries: retry.map((p) => ({ paymentId: p.id, importType: p.importType })), refundDue };
+    return {
+      freeRetries: retry.map((p) => ({ paymentId: p.id, importType: p.importType, ...(p.cancelReason === LATE_UNATTACHED ? { reason: 'paid_late' as const } : {}) })),
+      refundDue,
+    };
   }
 
   /** Sweep (start-up + every few minutes, after the stale-import watchdog): settle every failed paid import. */
-  async settleFailedImports(limit = 200) {
+  async settleFailedImports(limit = 200, now = new Date()) {
+    // PAY2-08: late-paid imports the learner never used → refund-due (admin reverse path), still flagged.
+    await this.prisma.importPayment.updateMany({
+      where: { status: ImportPaymentStatus.paid, userImportId: null, refundDue: false, cancelReason: LATE_UNATTACHED, paidAt: { lte: new Date(now.getTime() - LATE_UNATTACHED_REFUND_MS) } },
+      data: { refundDue: true, needsAttention: true },
+    }).catch(() => undefined);
     const attached = await this.prisma.importPayment.findMany({
       where: { status: ImportPaymentStatus.paid, userImportId: { not: null }, refundDue: false },
       select: { userImportId: true }, take: limit, orderBy: { paidAt: 'asc' },
@@ -1350,6 +1391,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       where: { id: paymentId },
       data: { userImportId },
     });
+    // PAY2-08: the late-paid import was delivered after all → resolved, clear the review flag.
+    await this.prisma.importPayment.updateMany({
+      where: { id: paymentId, cancelReason: LATE_UNATTACHED, refundDue: false },
+      data: { needsAttention: false, cancelReason: null },
+    }).catch(() => undefined);
   }
 
   async handleAtmosCallback(body: Record<string, unknown>) {
