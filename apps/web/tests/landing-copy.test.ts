@@ -1,7 +1,7 @@
 // landing-premium-01: copy guards. Run: node --experimental-strip-types --test tests/landing-copy.test.ts
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { LANDING_COPY } from '../src/lib/landingCopy.ts';
 import { plusCta } from '../src/lib/plusCta.ts';
 
@@ -74,4 +74,16 @@ test('lookup: real uz capture, only the agreed edits; no ru/en glosses typed in'
   assert.equal(cap.byLang.uz.contextualMeaning, raw.contextualMeaning.replace(/\u2018/g, '\u02bb'));
   assert.equal(raw.translation, 'ikkilanmoq'); assert.equal(cap.byLang.uz.translation, 'ikkilanish');
   assert.equal(cap.byLang.en, 'uz'); assert.equal(cap.byLang.ru, null);
+});
+
+test('UX fixes: localised burger labels, dialog, self-hosted Bagel, webp covers', () => {
+  const src = readFileSync(new URL('../src/pages/LandingPage.tsx', import.meta.url), 'utf8');
+  for (const s of ['Close menu', 'Menyuni yopish', 'Закрыть меню', "menu: 'Menyu'", "menu: 'Меню'", 'role="dialog"', 'aria-modal="true"', "'Escape'", "inert"]) {
+    assert.ok(src.includes(s), s);
+  }
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(!html.includes('Bagel'), 'no Google Bagel');
+  assert.ok(existsSync(new URL('../public/fonts/bagel-fat-one-latin.woff2', import.meta.url)));
+  const covers = readdirSync(new URL('../public/landing/covers/', import.meta.url));
+  for (const j of covers.filter((f) => f.endsWith('.jpg'))) for (const w of [240, 480]) assert.ok(covers.includes(j.replace('.jpg', `-${w}.webp`)), j + w);
 });

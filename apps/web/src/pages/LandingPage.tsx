@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import '../landing-premium.css';
 import { Seo } from '../components/Seo';
-import { LandingLangSwitch, type LpLang } from '../components/LandingLangSwitch';
+import { LandingLangSwitch, LP_LANGS, type LpLang } from '../components/LandingLangSwitch';
 import { LANDING_BOOKS, LANDING_COPY } from '../lib/landingCopy';
 import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
 import { useWebLocale } from '../lib/webLocaleContext';
@@ -26,6 +26,17 @@ function capturedFor(lang: string): Captured | null {
 }
 
 const BASE = import.meta.env.BASE_URL;
+const BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || '';
+// UX review #4: localised burger labels (BURGER.md).
+const BM: Record<LpLang, { lang: string; close: string; menu: string }> = {
+  en: { lang: 'Language', close: 'Close menu', menu: 'Menu' },
+  uz: { lang: 'Til', close: 'Menyuni yopish', menu: 'Menyu' },
+  ru: { lang: 'Язык', close: 'Закрыть меню', menu: 'Меню' },
+};
+const coverSrc = (id: string) => ({
+  src: `${BASE}landing/covers/${id}.jpg`,
+  srcSet: `${BASE}landing/covers/${id}-240.webp 240w, ${BASE}landing/covers/${id}-480.webp 480w`,
+});
 const ico = { check: <path d="M3.5 8.5 6.5 11.5 12.5 4.5" />, plus: <path d="M8 2v12M2 8h12" /> };
 const Svg = ({ k, s = 16 }: { k: keyof typeof ico; s?: number }) => (
   <svg width={s} height={s} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">{ico[k]}</svg>
@@ -56,6 +67,9 @@ export default function LandingPage() {
   const [tile, setTile] = useState(1);
   const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
   const root = useRef<HTMLDivElement>(null);
+  const burgerBtn = useRef<HTMLButtonElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
+  const T = BM[(['uz', 'ru', 'en'].includes(copyLocale) ? copyLocale : 'uz') as LpLang];
 
   const ui = L;
   const startHref = registerUrl({ plan: 'free', from: 'landing', ui });
@@ -68,6 +82,33 @@ export default function LandingPage() {
     p.set('lang', c);
     setParams(p, { replace: true });
   };
+
+  // Burger: scroll lock, inert page, focus first link, Esc, focus trap, close on >=1024 (BURGER.md).
+  useEffect(() => {
+    if (!menuOpen) return;
+    const el = root.current!;
+    const inertEls = [...el.querySelectorAll('main, footer, .nav .logo, .nav .ls, .nav .login, #navcta')] as HTMLElement[];
+    inertEls.forEach((e) => e.setAttribute('inert', ''));
+    document.documentElement.style.overflow = 'hidden';
+    panel.current?.querySelector<HTMLElement>('.links a')?.focus();
+    const focusables = () => [burgerBtn.current!, ...panel.current!.querySelectorAll<HTMLElement>('a[href], button')];
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.preventDefault(); setMenuOpen(false); burgerBtn.current?.focus(); return; }
+      if (e.key !== 'Tab') return;
+      const f = focusables(); const i = f.indexOf(document.activeElement as HTMLElement);
+      e.preventDefault();
+      f[(i + (e.shiftKey ? -1 : 1) + f.length) % f.length].focus();
+    };
+    const onResize = () => { if (window.innerWidth >= 1024) setMenuOpen(false); };
+    document.addEventListener('keydown', onKey);
+    window.addEventListener('resize', onResize);
+    return () => {
+      inertEls.forEach((e) => e.removeAttribute('inert'));
+      document.documentElement.style.overflow = '';
+      document.removeEventListener('keydown', onKey);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [menuOpen]);
 
   useEffect(() => {
     const r = () => setWide(window.innerWidth >= 1024);
@@ -99,16 +140,33 @@ export default function LandingPage() {
           <LandingLangSwitch value={L} onChange={onLang} />
           <a className="login" href={loginHref}>{C.login}</a>
           <a className="btn btn-white" href={startHref} id="navcta">{C.cta}</a>
-          <button className="burger" type="button" aria-label="Menu" aria-expanded={menuOpen} aria-controls="mnav" onClick={() => setMenuOpen((v) => !v)}>
-            <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 7h16M3 15h16" /></svg>
+          <button ref={burgerBtn} className="burger" type="button" aria-label={menuOpen ? T.close : T.menu} aria-expanded={menuOpen} aria-controls="bm" onClick={() => setMenuOpen((v) => !v)}>
+            <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d={menuOpen ? 'M5 5l12 12M17 5 5 17' : 'M3 7h16M3 15h16'} /></svg>
           </button>
         </div>
       </div>
         {menuOpen && (
-          <nav id="mnav" className="mnav"><div className="wrap">
-            {C.nav.map((n, i) => <a key={n} href={navIds[i]} onClick={() => setMenuOpen(false)}>{n}</a>)}
-            <a href={loginHref}>{C.login}</a>
-          </div></nav>
+          <div className="bm" id="bm" ref={panel} role="dialog" aria-modal="true" aria-label={T.menu}>
+            <nav><ul className="links">
+              {C.nav.map((n, i) => (
+                <li key={n}><a href={navIds[i]} onClick={() => setMenuOpen(false)}>{n}<svg width="18" height="18" fill="none" stroke="rgba(255,255,255,.6)" strokeWidth="2" aria-hidden="true"><path d="m7 4 5 5-5 5" /></svg></a></li>
+              ))}
+            </ul></nav>
+            <h3 id="bm-lh">{T.lang}</h3>
+            <div className="seg" role="group" aria-labelledby="bm-lh">
+              {LP_LANGS.map((l) => (
+                <a key={l.code} href={`?lang=${l.code}`} lang={l.code} hrefLang={l.code} aria-label={l.name} title={l.name}
+                  aria-current={l.code === L ? 'true' : undefined}
+                  onClick={(e) => { e.preventDefault(); setMenuOpen(false); onLang(l.code); }}>
+                  <span className="flag" aria-hidden="true"><img src={l.flag} alt="" width={20} height={14} style={l.pos ? { objectPosition: l.pos } : undefined} /></span>{l.short}
+                </a>
+              ))}
+            </div>
+            <div className="foot">
+              <a className="btn btn-white" href={startHref} data-cta="burger">{C.cta}</a>
+              <a className="login" href={loginHref}>{C.login}</a>
+            </div>
+          </div>
         )}
       </header>
 
@@ -159,7 +217,7 @@ export default function LandingPage() {
           <div className="covers rv" id="covers">
             {LANDING_BOOKS.map((b) => (
               <a className="cover" href={libHref} key={b.id}>
-                <img src={`${BASE}landing/covers/${b.id}.jpg`} alt={b.title} loading="lazy" width={800} height={1200} />
+                <img {...coverSrc(b.id)} sizes="(min-width: 1024px) 180px, 45vw" alt={b.title} loading="lazy" width={800} height={1200} />
                 <b>{b.title}</b><span>{b.author}</span><span>{LN[b.language] ?? b.language}</span>
               </a>
             ))}
@@ -204,7 +262,7 @@ export default function LandingPage() {
           <div className="final-vis" aria-hidden="true" id="fan">
             {LANDING_BOOKS.map((b, i) => (
               <div key={b.id} className="fan" style={{ transform: `translateX(${FAN[i][1] * (wide ? 0.6 : 0.44) - (wide ? 150 : 62)}px) translateY(${FAN[i][2]}px) rotate(${FAN[i][0]}deg)`, zIndex: i < 3 ? i : 6 - i }}>
-                <img src={`${BASE}landing/covers/${b.id}.jpg`} alt="" loading="lazy" />
+                <img {...coverSrc(b.id)} sizes="(min-width: 1024px) 170px, 124px" alt="" loading="lazy" width={800} height={1200} />
               </div>
             ))}
           </div>
@@ -215,6 +273,9 @@ export default function LandingPage() {
         <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
           <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
         <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a></div>
+        {BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
+          <div className="build-stamp" data-build-commit={BUILD_COMMIT}>preview build {BUILD_COMMIT}</div>
+        )}
       </div></div></div></footer>
     </div>
   );

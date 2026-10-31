@@ -1,0 +1,6 @@
+Bagel Fat One (bagel-fat-one-latin.woff2): Copyright 2022 The Bagel Fat Project Authors
+(https://github.com/JAMO-TYPEFACE/BagelFat). Licensed under the SIL Open Font License, Version 1.1
+(https://openfontlicense.org / https://scripts.sil.org/OFL). Subset (Latin, Latin-1, U+02BB, U+2018/2019) for gotchaa.uz;
+the licence text is kept in the font's name table. Reserved Font Name: none declared in the name table.
+
+Manrope (manrope.ttf): Copyright 2019 The Manrope Project Authors (https://github.com/sharanda/manrope). SIL Open Font License, Version 1.1.
