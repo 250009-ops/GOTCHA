@@ -14,22 +14,31 @@ import { ImportCommerceService } from './import-commerce.service';
  * that the frontend expects but aren't columns in the DB schema.
  * See docs/E2E_AUDIT_REPORT.md item #8 for context.
  */
-function enrichPlan(plan: SubscriptionPlan) {
+/** LG4-07: real Plus terms only (one-off passes in soʻm, no auto-renew, no offline/unlimited/ads claims). */
+export const PLUS_PASS_PRICES_UZS = { days30: 24990, days365: 199990 } as const;
+export const PLUS_DAILY_LOOKUPS = 200;
+const soum = (n: number) => `${n.toLocaleString('en-US').replace(/,/g, ' ')} soʻm`;
+
+export function enrichPlan(plan: SubscriptionPlan) {
   const isPremium = plan.tier === 'premium';
-  const priceMonthly = Number(plan.priceMonthly ?? 0);
+  const priceMonthly = isPremium ? PLUS_PASS_PRICES_UZS.days30 : 0;
   return {
     ...plan,
+    name: isPremium ? 'Plus' : plan.name,
+    offlineEnabled: false,
     priceMonthly,
-    priceLabel: priceMonthly > 0 ? `$${priceMonthly}` : 'Free',
-    priceUnit: priceMonthly > 0 ? '/mo' : '',
+    priceYearUzs: isPremium ? PLUS_PASS_PRICES_UZS.days365 : null,
+    periodDays: isPremium ? 30 : null,
+    autoRenew: false,
+    priceLabel: isPremium ? soum(PLUS_PASS_PRICES_UZS.days30) : 'Free',
+    priceUnit: isPremium ? '30-day pass' : '',
     popular: isPremium,
     features: isPremium
       ? [
-          'Unlimited AI lookups',
-          'Unlimited content imports',
-          'Offline reading mode',
-          'Priority support',
-          'No ads',
+          `${PLUS_DAILY_LOOKUPS} AI lookups/day`,
+          '50% off paid imports',
+          `30-day pass ${soum(PLUS_PASS_PRICES_UZS.days30)} or 365-day pass ${soum(PLUS_PASS_PRICES_UZS.days365)}`,
+          'One-off payment, no auto-renewal',
         ]
       : [
           `${plan.aiDailyQuota} AI lookups/day`,
