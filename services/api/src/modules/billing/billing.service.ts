@@ -9,7 +9,7 @@ import { ImportCommerceService } from './import-commerce.service';
 import { PricingService, type PricingLang } from './pricing.service';
 
 /** Subscription view of a plan row: DB values only (no prices or feature copy in code). */
-export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups) {
+export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRaw?: unknown, freeQuota: number = DAILY_CAP_FALLBACKS.free.lookups, freeQuizzes: number = DAILY_CAP_FALLBACKS.free.quizzes, plusLookups: number | null = DAILY_CAP_FALLBACKS.plus.lookups, freeImportsDay?: number) {
   const t = planCopy(lang);
   const isPremium = plan.tier === 'premium';
   if (!isPremium) {
@@ -25,7 +25,9 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       // wlive: shown limits = enforced caps (payments-02 plan-caps), never the raw row.
       aiDailyQuota: freeQuota,
       quizDailyQuota: freeQuizzes,
-      features: [t.lookupsDay(freeQuota), t.quizzesDay(freeQuizzes), t.importsDay(plan.importLimit), t.library],
+      // PAY2-18: the import allowance import-commerce enforces (platform setting importFreeLimits, default 3/day), not the seed row (15).
+      importLimit: freeImportsDay ?? plan.importLimit,
+      features: [t.lookupsDay(freeQuota), t.quizzesDay(freeQuizzes), t.importsDay(freeImportsDay ?? plan.importLimit), t.library],
     };
   }
   // Premium = Plus, a 30-day pass (no auto-renew). Field names (incl. priceMonthly) are kept for old clients;
@@ -35,6 +37,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
   return {
     ...plan,
     name: t.plusName,
+    importLimit: freeImportsDay ?? plan.importLimit, // PAY2-18: same enforced free import allowance, not the seed row
     offlineEnabled: false,
     priceMonthly: priceUzs,
     priceUzs,
@@ -54,6 +57,15 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
   };
 }
 
+/** PAY2-18: Free imports a day = admin Import & Pricing → importFreeLimits.dailyFreeImportsPerUser (default 3), as /marketing/plans. */
+export const DEFAULT_FREE_IMPORTS_PER_DAY = 3;
+export async function freeImportsPerDay(prisma: { platformSetting: { findUnique(a: { where: { key: string } }): Promise<{ value: unknown } | null> } }): Promise<number> {
+  const row = await prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } }).catch(() => null);
+  const v = row?.value && typeof row.value === 'object' ? (row.value as { dailyFreeImportsPerUser?: unknown }).dailyFreeImportsPerUser : undefined;
+  const n = Math.floor(Number(v ?? DEFAULT_FREE_IMPORTS_PER_DAY));
+  return Number.isFinite(n) && n >= 0 ? n : DEFAULT_FREE_IMPORTS_PER_DAY;
+}
+
 @Injectable()
 export class BillingService {
   constructor(
@@ -70,7 +82,8 @@ export class BillingService {
       this.prisma.platformSetting.findUnique({ where: { key: 'plus.pass.price_365_uzs' } }).catch(() => null),
       getPlanCaps(this.prisma),
     ]);
-    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups));
+    const freeImports = await freeImportsPerDay(this.prisma);
+    return plans.map((p) => enrichPlan(p, lang as PlanLang, year?.value, caps.free.lookups, caps.free.quizzes, caps.plus.lookups, freeImports));
   }
 
   async getSubscription(userId: string) {
