@@ -49,3 +49,14 @@ test('pending-payments-02 source pins (r3b, 17:20)', async () => {
   const t = readFileSync(gen, 'utf8');
   assert.match(t, /you may choose the remedy/); assert.doesNotMatch(t, /rather than returning the money/);
 });
+test('PAY2-24: the plain CLI check (no --publish) runs in publish mode unless LEGAL_DRAFT_PREVIEW=1', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync } = await import('node:fs'); const { tmpdir } = await import('node:os'); const { spawnSync } = await import('node:child_process'); const { resolve } = await import('node:path');
+  const d = mkdtempSync(tmpdir() + '/legal-cli-'); mkdirSync(d + '/src/lib', { recursive: true });
+  writeFileSync(d + '/src/lib/ofertaHtml.generated.ts', 'export const X = "<p>[EFFECTIVE DATE]</p>";\n');
+  const cli = resolve('scripts/check-legal.mjs');
+  const env = { ...process.env }; delete env.LEGAL_DRAFT_PREVIEW;
+  const r = spawnSync(process.execPath, [cli], { cwd: d, env, encoding: 'utf8' });
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /\[EFFECTIVE DATE\]/);
+  assert.equal(spawnSync(process.execPath, [cli], { cwd: d, env: { ...env, LEGAL_DRAFT_PREVIEW: '1' }, encoding: 'utf8' }).status, 0);
+  assert.notEqual(spawnSync(process.execPath, [cli, '--publish'], { cwd: d, env: { ...env, LEGAL_DRAFT_PREVIEW: '1' }, encoding: 'utf8' }).status, 0);
+});

@@ -26,7 +26,8 @@ export function checkLegal({ publish, files, env = {} }) {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const publish = process.argv.includes('--publish');
+  // PAY2-24: publish mode unless an explicit local draft preview (LEGAL_DRAFT_PREVIEW=1): plain builds are guarded too.
+  const publish = process.argv.includes('--publish') || !/^(1|true|yes)$/i.test(String(process.env.LEGAL_DRAFT_PREVIEW ?? '').trim());
   const files = ['src/lib/ofertaHtml.generated.ts', ...walk('dist').filter((f) => /\.(js|html)$/.test(f))];
   const problems = checkLegal({ publish, files, env: process.env });
   if (problems.length) { console.error('check-legal FAILED:\n  ' + problems.join('\n  ')); process.exit(1); }
