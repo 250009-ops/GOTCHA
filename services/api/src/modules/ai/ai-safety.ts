@@ -27,6 +27,15 @@ export function withChildSafe(systemPrompt: string, band: AgeBand): string {
 
 /** AI-1: replacement when OpenAI moderation flags an output shown to a minor. */
 export const MODERATED_PLACEHOLDER = '[hidden for safety]';
+const MODERATED_PLACEHOLDERS: Record<string, string> = {
+  uz: '[xavfsizlik uchun yashirildi]',
+  ru: '[скрыто в целях безопасности]',
+  en: MODERATED_PLACEHOLDER,
+};
+/** Placeholder in the user's UI language (uz/ru/en); English for anything else. */
+export function moderatedPlaceholder(lang?: string | null): string {
+  return MODERATED_PLACEHOLDERS[(lang ?? '').slice(0, 2).toLowerCase()] ?? MODERATED_PLACEHOLDER;
+}
 
 /** TTS per-user daily quota (P1). In-process counter; resets at UTC midnight or on restart. */
 export class DailyCounter {
@@ -62,11 +71,16 @@ type ModerationClient = { moderations: { create(a: { model: string; input: strin
  * Minors only. Flagged → placeholder. Any moderation error → 503 AI_MODERATION_UNAVAILABLE
  * (fail closed: the unchecked AI output is never returned). The learner shows a neutral retry message.
  */
-export async function moderateOrBlock(client: ModerationClient, text: string, onError?: (msg: string) => void): Promise<string> {
+export async function moderateOrBlock(
+  client: ModerationClient,
+  text: string,
+  onError?: (msg: string) => void,
+  lang?: string | null,
+): Promise<string> {
   try {
     const res = await client.moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 4000) });
     if (!res || !Array.isArray(res.results)) throw new Error('empty moderation response');
-    return res.results.some((r) => r.flagged) ? MODERATED_PLACEHOLDER : text;
+    return res.results.some((r) => r.flagged) ? moderatedPlaceholder(lang) : text;
   } catch (err) {
     onError?.(err instanceof Error ? err.message : String(err));
     throw new HttpException(

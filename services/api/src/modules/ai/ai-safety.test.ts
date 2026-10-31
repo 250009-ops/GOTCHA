@@ -13,7 +13,7 @@ assert.equal(withChildSafe('SYS', 'adult'), 'SYS');
 assert.equal((aiDisabledError() as any).getStatus(), 403);
 console.log('ai-safety: OK');
 
-import { moderateOrBlock, MODERATED_PLACEHOLDER, AI_MODERATION_UNAVAILABLE } from './ai-safety';
+import { moderateOrBlock, MODERATED_PLACEHOLDER, AI_MODERATION_UNAVAILABLE, moderatedPlaceholder } from './ai-safety';
 (async () => {
   const ok = { moderations: { create: async () => ({ results: [{ flagged: false }] }) } };
   const bad = { moderations: { create: async () => ({ results: [{ flagged: true }] }) } };
@@ -21,6 +21,11 @@ import { moderateOrBlock, MODERATED_PLACEHOLDER, AI_MODERATION_UNAVAILABLE } fro
   const empty = { moderations: { create: async () => ({}) as any } };
   assert.equal(await moderateOrBlock(ok, 'hello'), 'hello');
   assert.equal(await moderateOrBlock(bad, 'x'), MODERATED_PLACEHOLDER);
+  assert.equal(await moderateOrBlock(bad, 'x', undefined, 'uz'), '[xavfsizlik uchun yashirildi]');
+  assert.equal(await moderateOrBlock(bad, 'x', undefined, 'ru'), '[скрыто в целях безопасности]');
+  assert.equal(await moderateOrBlock(bad, 'x', undefined, 'en'), '[hidden for safety]');
+  assert.equal(moderatedPlaceholder('de'), '[hidden for safety]');
+  assert.equal(moderatedPlaceholder(null), '[hidden for safety]');
   let logged = '';
   for (const c of [down, empty]) {
     await assert.rejects(moderateOrBlock(c, 'secret output', (m) => (logged = m)), (e: any) =>

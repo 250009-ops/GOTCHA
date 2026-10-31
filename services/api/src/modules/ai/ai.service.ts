@@ -15,7 +15,7 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
-import { aiDisabledError, DailyCounter, MODERATED_PLACEHOLDER, moderateOrBlock, ttsDailyLimit, withChildSafe } from './ai-safety';
+import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -132,23 +132,23 @@ export class AiService {
    * S7 + AI-1: per-user AI gate. Throws AI_DISABLED when support/admin turned AI off for the
    * account; returns the age band so prompts/moderation can be tightened for minors.
    */
-  async userAiGate(userId?: string): Promise<{ band: AgeBand }> {
+  async userAiGate(userId?: string): Promise<{ band: AgeBand; uiLanguage?: string }> {
     if (!userId || this.useMemory()) return { band: ageBand(null) };
     const u = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: { aiDisabled: true, aiDisabledBy: true, birthYear: true },
+      select: { aiDisabled: true, aiDisabledBy: true, birthYear: true, uiLanguage: true },
     });
     if (u?.aiDisabled) throw aiDisabledError(u.aiDisabledBy);
-    return { band: ageBand(u?.birthYear ?? null) };
+    return { band: ageBand(u?.birthYear ?? null), uiLanguage: u?.uiLanguage ?? undefined };
   }
 
   /** AI-1: OpenAI moderation on text shown to minors. Fails CLOSED (503) if moderation is unavailable. */
-  private async moderateForMinor(band: AgeBand, text: string): Promise<string> {
+  private async moderateForMinor(band: AgeBand, text: string, uiLanguage?: string): Promise<string> {
     if (!isMinorBand(band) || !text.trim()) return text;
     const client = this.getClient();
     if (!client) return text;
     // Kai 31 Oct: fail CLOSED — if moderation can't run, the output is not shown.
-    return moderateOrBlock(client, text, (m) => this.logger.warn(`moderation failed (blocked output): ${m}`));
+    return moderateOrBlock(client, text, (m) => this.logger.warn(`moderation failed (blocked output): ${m}`), uiLanguage);
   }
 
   private async assertAiAvailable(settings: AiPlatformSettings) {
@@ -290,7 +290,7 @@ export class AiService {
    * Pure cache hits never burn quota or platform daily OpenAI budget.
    */
   async lookup(userId: string, dto: LookupDto) {
-    const { band } = await this.userAiGate(userId);
+    const { band, uiLanguage } = await this.userAiGate(userId);
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
     const kind = classifyLookup(surface, context);
@@ -619,7 +619,7 @@ export class AiService {
    * Never logs raw message text.
    */
   async translate(userId: string, dto: TranslateDto) {
-    const { band } = await this.userAiGate(userId);
+    const { band, uiLanguage } = await this.userAiGate(userId);
     const text = (dto.text ?? '').trim();
     if (!text) {
       return { translation: '', sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: true };
@@ -634,7 +634,7 @@ export class AiService {
     const cached = this.memoryGet(hash);
     if (cached?.translation) {
       return {
-        translation: await this.moderateForMinor(band, cached.translation),
+        translation: await this.moderateForMinor(band, cached.translation, uiLanguage),
         sourceLang: dto.sourceLang,
         targetLang: dto.targetLang,
         cached: true,
@@ -694,7 +694,7 @@ export class AiService {
       partOfSpeech: null,
     });
     return {
-      translation: await this.moderateForMinor(band, translation),
+      translation: await this.moderateForMinor(band, translation, uiLanguage),
       sourceLang: dto.sourceLang,
       targetLang: dto.targetLang,
       cached: false,
