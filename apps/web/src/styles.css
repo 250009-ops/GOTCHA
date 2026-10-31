@@ -144,3 +144,21 @@
     animation: none;
   }
 }
+
+/* WLF-07: PM legal fragments (/terms, /privacy) */
+.legal-pm .legal { font-family: 'Geist', system-ui, sans-serif; color: #4a5565; font-size: 15px; line-height: 1.65; overflow-wrap: anywhere; }
+.legal-pm .legal h1 { font-size: 32px; line-height: 1.2; font-weight: 800; color: #111827; margin: 0 0 16px; }
+.legal-pm .legal h2 { font-size: 20px; font-weight: 700; color: #111827; margin: 32px 0 12px; scroll-margin-top: 7rem; }
+.legal-pm .legal h3 { font-size: 16px; font-weight: 700; color: #111827; margin: 20px 0 8px; }
+.legal-pm .legal p { margin: 0 0 12px; }
+.legal-pm .legal ul, .legal-pm .legal ol { margin: 0 0 12px; padding-left: 1.4em; }
+.legal-pm .legal ul { list-style: disc; }
+.legal-pm .legal ol { list-style: decimal; }
+.legal-pm .legal li { margin: 4px 0; }
+.legal-pm .legal strong { color: #111827; font-weight: 600; }
+.legal-pm .legal a { color: #2107aa; text-decoration: underline; }
+.legal-pm .legal table { display: block; overflow-x: auto; border-collapse: collapse; margin: 0 0 16px; font-size: 14px; }
+.legal-pm .legal th, .legal-pm .legal td { border: 1px solid #e5e7eb; padding: 8px 10px; text-align: left; vertical-align: top; }
+.legal-pm .legal th { background: #f9fafb; color: #111827; }
+.legal-pm .legal mark.placeholder { background: #fef3c7; color: #92400e; padding: 0 2px; }
+@media (min-width: 1024px) { .legal-pm .legal h1 { font-size: 40px; } }

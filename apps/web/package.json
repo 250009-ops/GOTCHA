@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build && node scripts/check-legal.mjs",
     "preview": "vite preview",
     "check:legal": "node scripts/check-legal.mjs",
-    "test": "node --experimental-strip-types --test tests/*.test.ts && node scripts/check-legal.mjs"
+    "test": "node --experimental-strip-types --test tests/*.test.ts && node scripts/check-legal.mjs",
+    "legal:sync": "node scripts/sync-legal-pm.mjs"
   },
   "dependencies": {
     "@gotcha/shared": "*",

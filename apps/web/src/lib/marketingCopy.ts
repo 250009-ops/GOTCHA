@@ -69,7 +69,7 @@ const EN: MarketingCopy = {
     legal: 'Legal',
     roadmap: 'Roadmap',
     privacy: 'Privacy Policy',
-    terms: 'Terms of Service',
+    terms: 'Terms of Use',
     rights: '© 2026 GOTCHA. All rights reserved.',
   },
   hero: {

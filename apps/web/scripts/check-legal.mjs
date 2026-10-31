@@ -20,7 +20,7 @@ function walk(dir) {
   });
 }
 
-const files = [...walk('legal-src'), 'src/lib/legalHtml.generated.ts', ...walk('dist')].filter((f) => /\.(js|html|md|ts)$/.test(f));
+const files = [...walk('legal-src'), ...walk('legal-pm'), 'src/lib/legalHtml.generated.ts', ...walk('dist')].filter((f) => /\.(js|html|md|ts)$/.test(f));
 const problems = [];
 if (/^(1|true|yes)$/i.test(String(process.env.VITE_LEGAL_V2 ?? '').trim())) problems.push('VITE_LEGAL_V2 is set: the legal QA path is retired and must not be set for any build (QA LP2-04)');
 for (const f of ['legal-src', 'src/lib/legalHtml.generated.ts', 'src/pages/LegalV2Page.tsx']) if (existsSync(f)) problems.push(`${f}: retired wl01 legal draft is back`);
