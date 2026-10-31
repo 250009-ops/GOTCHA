@@ -29,7 +29,7 @@ import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { persistLearnerLocale } from '../lib/learnerLocale';
 import type { UiLanguage } from '@gotcha/shared';
-import { practiceCopyFor } from '@gotcha/shared';
+import { payCopyFor, practiceCopyFor } from '@gotcha/shared';
 import { applyAppTheme } from '../lib/appTheme';
 import {
   CEFR_LEVELS,
@@ -785,6 +785,13 @@ export default function SettingsPage() {
                     className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-g-blue-700 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
                   >
                     <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/payments')}
+                    className="w-full min-w-0 h-9 px-3 rounded-[14px] text-white/90 text-sm font-medium underline hover:text-white"
+                  >
+                    {payCopyFor(locale)['history.title']}
                   </button>
                 </div>
               </div>

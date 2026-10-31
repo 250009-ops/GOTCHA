@@ -26,6 +26,8 @@ import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { PromoCodeField } from '../components/PromoCodeField';
+import { CardForm, OtpForm, PayTrust, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
+import { cancelScreen } from '@gotcha/shared';
 import { BrandMark } from '../components/GotchaLogo';
 
 type LearnerCopy = ReturnType<typeof useLearnerCopy>;
@@ -55,6 +57,8 @@ interface ImportListResponse {
   importRemaining?: number | null;
   importsUnlimited?: boolean;
   freeAllowance?: ImportFreeAllowance;
+  /** payments-02: failed paid imports → free retry on the same payment, or refund-due. */
+  paidImportRetry?: { freeRetries: { paymentId: string; importType: string }[]; refundDue: number };
 }
 
 const PAGE_SIZE = 8;
@@ -393,13 +397,16 @@ function PaymentConfirmModal({
   const copy = useLearnerCopy();
   const [step, setStep] = useState<PaymentStep>('price');
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const pay = usePay();
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [cancelOutcome, setCancelOutcome] = useState<{ status: string; code: string | null; needsAttention: boolean } | null>(null);
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [otp, setOtp] = useState('');
-  const [maskedPhone, setMaskedPhone] = useState<string | undefined>();
+  const [, setMaskedPhone] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [canResendOtp, setCanResendOtp] = useState(false);
+  const [, setCanResendOtp] = useState(false);
   const [promoQuote, setPromoQuote] = useState<import('../lib/importBilling').ImportQuote | null>(null);
 
   useEffect(() => {
@@ -441,7 +448,7 @@ function PaymentConfirmModal({
         promoCode: code,
       }));
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.failedStartPayment);
+      setError(pay.errOr(err, copy.errors.failedStartPayment));
     } finally {
       setLoading(false);
     }
@@ -453,16 +460,7 @@ function PaymentConfirmModal({
     ? 'URL'
     : 'Text';
 
-  const formatCardNumber = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 19);
-    return digits.replace(/(.{4})/g, '$1 ').trim();
-  };
 
-  const formatExpiry = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 4);
-    if (digits.length >= 3) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    return digits;
-  };
 
   const cardDigits = cardNumber.replace(/\s/g, '');
   const isCardValid =
@@ -493,7 +491,7 @@ function PaymentConfirmModal({
         setStep('card');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.failedStartPayment);
+      setError(pay.errOr(err, copy.errors.failedStartPayment));
     } finally {
       setLoading(false);
     }
@@ -514,7 +512,7 @@ function PaymentConfirmModal({
       setStep('otp');
       setOtp('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.cardVerificationFailed);
+      setError(pay.errOr(err, copy.errors.cardVerificationFailed));
     } finally {
       setLoading(false);
     }
@@ -542,7 +540,7 @@ function PaymentConfirmModal({
         setOtp('');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.otpVerificationFailed);
+      setError(pay.errOr(err, copy.errors.otpVerificationFailed));
     } finally {
       setLoading(false);
     }
@@ -559,7 +557,7 @@ function PaymentConfirmModal({
       setTimeout(() => setCanResendOtp(true), 30000);
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.couldNotResendOtp);
+      setError(pay.errOr(err, copy.errors.couldNotResendOtp));
     } finally {
       setLoading(false);
     }
@@ -576,7 +574,7 @@ function PaymentConfirmModal({
   };
 
   return (
-    <Dialog open={state.open} onOpenChange={(open) => !open && !loading && onClose()}>
+    <Dialog open={state.open} onOpenChange={(open) => { if (open || loading) return; if (paymentId && (step === 'card' || step === 'otp')) setConfirmCancel(true); else onClose(); }}>
       <div className="flex flex-col gap-5 items-center px-5 pb-6 pt-2">
         <div className="w-9 h-[5px] rounded-full bg-[#d1d5db]" />
 
@@ -611,7 +609,7 @@ function PaymentConfirmModal({
             </div>
 
             <div className="w-full border border-[#e4e7ec] rounded-xl p-4 flex flex-col gap-3 bg-white">
-              {quote.tier && (
+              {quote.tier && quote.tier.priceUzs > 0 && (
                 <div className="flex justify-between items-center text-sm">
                   <span className="text-[#6a7282]">{copy.importPage.pageTier(quote.tier.label)}</span>
                   <span className="text-[#101828] font-medium">{formatUzs(quote.tier.priceUzs)}</span>
@@ -683,142 +681,36 @@ function PaymentConfirmModal({
 
         {step === 'card' && (
           <>
-            <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterCardDetails}</h2>
-            <p className="text-[#6a7282] text-sm text-center -mt-2">UzCard, Humo, Visa, or Mastercard</p>
-
-            <div className="w-full space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Card Number</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="cc-number"
-                  value={cardNumber}
-                  onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                  placeholder="0000 0000 0000 0000"
-                  disabled={loading}
-                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-wider"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Expiry (MM/YY)</label>
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  autoComplete="cc-exp"
-                  value={expiry}
-                  onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                  placeholder="00/00"
-                  disabled={loading}
-                  className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-wider"
-                />
-              </div>
-            </div>
-
-            {error && (
-              <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-xs text-red-600">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleSubmitCard}
-              disabled={loading || !isCardValid}
-              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
-              style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {copy.common.saving}
-                </>
-              ) : (
-                <>{copy.common.continue}</>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={handleBack}
-              disabled={loading}
-              className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
-            >
+            <h2 className="text-xl font-bold text-center" style={{ color: 'var(--g-text)' }}>{copy.importPage.enterCardDetails}</h2>
+            <CardForm pan={cardNumber} exp={expiry} onPan={setCardNumber} onExp={setExpiry} onSubmit={handleSubmitCard}
+              amountUzs={quote.amountUzs} loading={loading} error={error} onCancel={() => setConfirmCancel(true)} />
+            <button type="button" onClick={handleBack} disabled={loading} className="text-sm font-medium disabled:opacity-50" style={{ color: 'var(--g-text-2)' }}>
               {copy.common.back}
             </button>
-
-            <p className="text-[#6a7282] text-[11px] text-center leading-relaxed">
-              Card details are sent directly to Atmos payment gateway and are not stored.
-            </p>
+            <PayTrust />
           </>
         )}
 
         {step === 'otp' && (
           <>
-            <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterSmsCode}</h2>
-            <p className="text-[#6a7282] text-sm text-center -mt-2">
-              Code sent to {maskedPhone || 'your phone'}
-            </p>
-
-            <div className="w-full">
-              <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">OTP Code</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                placeholder="123456"
-                disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all disabled:opacity-50 font-mono tracking-[0.3em]"
-              />
-            </div>
-
-            {error && (
-              <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
-                <p className="text-xs text-red-600">{error}</p>
-              </div>
-            )}
-
-            <button
-              type="button"
-              onClick={handleSubmitOtp}
-              disabled={loading || !isOtpValid}
-              className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 disabled:pointer-events-none text-white text-base font-bold flex items-center justify-center gap-2 transition-colors"
-              style={{ boxShadow: '0 6px 8px rgba(33, 7, 170, 0.25)' }}
-            >
-              {loading ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  {copy.common.saving}
-                </>
-              ) : (
-                <>{copy.importPage.confirmPayment}</>
-              )}
+            <h2 className="text-xl font-bold text-center" style={{ color: 'var(--g-text)' }}>{copy.importPage.enterSmsCode}</h2>
+            <OtpForm cardMask={cardNumber} otp={otp} onOtp={setOtp} onSubmit={handleSubmitOtp} onResend={handleResendOtp} loading={loading} error={error} onCancel={() => setConfirmCancel(true)} />
+            <button type="button" onClick={handleBack} disabled={loading} className="text-sm font-medium disabled:opacity-50" style={{ color: 'var(--g-text-2)' }}>
+              {copy.common.back}
             </button>
-
-            <div className="flex items-center gap-4">
-              <button
-                type="button"
-                onClick={handleBack}
-                disabled={loading}
-                className="text-[#6a7282] text-sm font-medium hover:text-[#101828] transition-colors disabled:opacity-50"
-              >
-                {copy.common.back}
-              </button>
-              {canResendOtp && (
-                <button
-                  type="button"
-                  onClick={handleResendOtp}
-                  disabled={loading}
-                  className="text-g-blue-700 text-sm font-medium hover:text-g-blue-900 transition-colors disabled:opacity-50"
-                >
-                  {copy.importPage.resendCode}
-                </button>
-              )}
-            </div>
           </>
         )}
+        <CancelConfirm open={confirmCancel} busy={loading} onKeep={() => setConfirmCancel(false)} onConfirm={async () => {
+          setConfirmCancel(false);
+          if (paymentId) {
+            const { cancelPayment } = await import('../lib/importBilling');
+            const r = await runCancel(() => cancelPayment(paymentId, 'learner_cancel')).catch(() => null);
+            // 06b (race: reversing) / 06c (already paid: support only) get their own screen; plain 06 just closes.
+            if (r && cancelScreen(r) !== '06') { setCancelOutcome(r); return; }
+          }
+          onClose();
+        }} />
+        {cancelOutcome && <CancelOutcome outcome={cancelOutcome} reference={paymentId} needsAttention={cancelOutcome.needsAttention} onDone={() => { setCancelOutcome(null); onClose(); }} />}
       </div>
     </Dialog>
   );
@@ -840,6 +732,19 @@ export default function ImportPage() {
   const [historyLoading, setHistoryLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [gatewayEnabled, setGatewayEnabled] = useState(false);
+  const [paidRetry, setPaidRetry] = useState<{ freeRetries: { paymentId: string; importType: string }[]; refundDue: number }>({ freeRetries: [], refundDue: 0 });
+  const payCopy = usePay();
+  /** A failed paid import is retried free on the SAME payment (no new charge) instead of opening checkout. */
+  const openPayOrRetry = (modal: PaymentModalState) => {
+    const free = paidRetry.freeRetries.find((r) => r.importType === modal.importType);
+    if (free && modal.onPaid) {
+      toast.message(payCopy.t('imp.retryUsing'));
+      setPaidRetry((s) => ({ ...s, freeRetries: s.freeRetries.filter((r) => r.paymentId !== free.paymentId) }));
+      void modal.onPaid(free.paymentId);
+      return;
+    }
+    setPaymentModal(modal);
+  };
   const [paymentModal, setPaymentModal] = useState<PaymentModalState>({ open: false, quote: null, importTitle: '', importType: '', onPaid: null });
 
   const atImportLimit = !importsUnlimited && importRemaining !== null && importRemaining <= 0;
@@ -853,6 +758,7 @@ export default function ImportPage() {
       setImportLimit(res.importLimit ?? null);
       setImportRemaining(res.importRemaining ?? null);
       setImportsUnlimited(!!res.importsUnlimited);
+      setPaidRetry(res.paidImportRetry ?? { freeRetries: [], refundDue: 0 });
       if (res.freeAllowance) {
         setFreeAllowance(res.freeAllowance);
         setGatewayEnabled(res.freeAllowance.gatewayEnabled);
@@ -932,7 +838,7 @@ export default function ImportPage() {
       const quote = await getQuote({ importType: 'url', contentFormat: 'article', textLength: 6000 });
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title || data.url,
@@ -989,7 +895,7 @@ export default function ImportPage() {
       const quote = await getQuote(quoteParams);
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title,
@@ -1046,7 +952,7 @@ export default function ImportPage() {
       const quote = await getQuote(quoteParams);
 
       if (quote.gatewayEnabled && quote.requiresPayment) {
-        setPaymentModal({
+        openPayOrRetry({
           open: true,
           quote,
           importTitle: data.title || data.file.name,
@@ -1148,6 +1054,16 @@ export default function ImportPage() {
                     ? copy.importPage.allowanceReachedPaid
                     : copy.importPage.allowanceReachedFree}
                 </p>
+              </div>
+            )}
+            {paidRetry.freeRetries.length > 0 && (
+              <div role="status" data-testid="imp-free-retry" className="p-3 mb-4 rounded-[14px] border text-xs leading-relaxed" style={{ background: 'var(--g-card)', borderColor: 'var(--g-ok)' }}>
+                {payCopy.t('imp.freeRetry')}
+              </div>
+            )}
+            {paidRetry.refundDue > 0 && (
+              <div role="status" data-testid="imp-refund-due" className="p-3 mb-4 rounded-[14px] border text-xs leading-relaxed" style={{ background: 'var(--g-card)', borderColor: 'var(--g-line)' }}>
+                {payCopy.t('imp.refundDue')}
               </div>
             )}
             {freeAllowance && (

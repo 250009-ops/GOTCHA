@@ -19,6 +19,7 @@ import {
   X,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError } from '../../lib/dailyLimit';
 import { DAILY_GOAL_OPTIONS, practiceCopyFor, type ExerciseType, type PracticeCopy, type SrsRatingValue } from '@gotcha/shared';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
@@ -85,7 +86,7 @@ export default function DailyPractice() {
         setOverview(o);
         setStats({ xpToday: o.xpToday, dailyGoalXp: o.dailyGoalXp, streakCount: o.streakCount, streakFreezes: o.streakFreezes });
       })
-      .catch((e: unknown) => toast.error(e instanceof Error ? e.message : String(e)));
+      .catch((e: unknown) => (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e))));
   }, []);
 
   useEffect(loadOverview, [loadOverview]);
@@ -108,7 +109,7 @@ export default function DailyPractice() {
       setStats({ xpToday: s.xpToday, dailyGoalXp: s.dailyGoalXp, streakCount: s.streakCount, streakFreezes: s.streakFreezes });
       setPhase('play');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
       setPhase('hub');
     }
   };
@@ -122,7 +123,7 @@ export default function DailyPractice() {
       setStats({ xpToday: s.xpToday, dailyGoalXp: s.dailyGoalXp, streakCount: s.streakCount, streakFreezes: s.streakFreezes });
       setPhase('summary');
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
       setPhase('hub');
     }
   };
@@ -219,7 +220,7 @@ export default function DailyPractice() {
             setStats((s) => ({ ...s, dailyGoalXp: g }));
             setOverview((o) => (o ? { ...o, dailyGoalXp: g } : o));
           } catch (e) {
-            toast.error(e instanceof Error ? e.message : String(e));
+            (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
           }
         }}
         onLibrary={() => navigate('/app')}
@@ -587,7 +588,7 @@ function ExercisePlayer({
         onNext();
       }
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
     } finally {
       setBusy(false);
     }

@@ -6,6 +6,8 @@ import { useAppTheme } from './lib/appTheme';
 import AuthPage from './pages/AuthPage';
 import ImportPage from './pages/ImportPage';
 import ImportPaymentReturnPage from './pages/ImportPaymentReturnPage';
+import PaymentsPage from './pages/PaymentsPage';
+import PlusPage from './pages/PlusPage';
 import LearnerShell from './pages/LearnerShell';
 import LibraryPage from './pages/LibraryPage';
 import PracticePage from './pages/PracticePage';
@@ -43,6 +45,8 @@ export default function App() {
         <Route path="vocabulary" element={<VocabularyPage />} />
         <Route path="import" element={<ImportPage />} />
         <Route path="import/payment-return" element={<ImportPaymentReturnPage />} />
+        <Route path="payments" element={<PaymentsPage />} />
+        <Route path="plus" element={<PlusPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />

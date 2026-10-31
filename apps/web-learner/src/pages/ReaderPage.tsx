@@ -30,6 +30,7 @@ import { pagesLabel } from '../lib/pagesLabel';
 import { formatUzs } from '../lib/importBilling';
 import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
+import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
@@ -535,7 +536,17 @@ export default function ReaderPage() {
       } catch (e) {
         const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if (isSlowDownError(e)) {
+          // Silent speed guard: neutral note (server text, localized), not an error.
+          toast.message(raw, { id: 'lookup-slow-down' });
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
@@ -546,7 +557,7 @@ export default function ReaderPage() {
         } else if (/AI lookup failed/i.test(raw)) {
           message = 'AI lookup failed. Please try again in a moment.';
         }
-        toast.error(message);
+        if (message) toast.error(message);
       } finally {
         setLookupLoading(false);
       }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Check, GraduationCap, Loader2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { isDailyLimitError } from '../lib/dailyLimit';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
@@ -103,7 +104,8 @@ export default function ChapterQuizPage() {
       setFreeText('');
       setResults(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      // Daily quiz cap: DailyLimitNotice shows the friendly text + reset time; never an error toast.
+      if (!isDailyLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setStarting(false);
     }

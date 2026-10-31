@@ -8,6 +8,7 @@ import {
   retryOtp,
 } from '../lib/importBilling';
 import { PromoCodeField } from './PromoCodeField';
+import { CardForm, OtpForm, PayTrust, usePay } from './payments';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 
 type PayStep = 'price' | 'card' | 'otp' | 'celebrate';
@@ -64,13 +65,14 @@ export function CatalogPaywall({
   const copy = useLearnerCopy();
   const [step, setStep] = useState<PayStep>('price');
   const [paymentId, setPaymentId] = useState<string | null>(null);
+  const pay = usePay();
   const [cardNumber, setCardNumber] = useState('');
   const [expiry, setExpiry] = useState('');
   const [otp, setOtp] = useState('');
-  const [maskedPhone, setMaskedPhone] = useState<string | undefined>();
+  const [, setMaskedPhone] = useState<string | undefined>();
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [canResendOtp, setCanResendOtp] = useState(false);
+  const [, setCanResendOtp] = useState(false);
   const [promoCode, setPromoCode] = useState<string | null>(null);
   const unlockedRef = useRef(onUnlocked);
   unlockedRef.current = onUnlocked;
@@ -89,16 +91,7 @@ export function CatalogPaywall({
     return () => clearTimeout(timer);
   }, [step]);
 
-  const formatCardNumber = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 19);
-    return digits.replace(/(.{4})/g, '$1 ').trim();
-  };
 
-  const formatExpiry = (value: string) => {
-    const digits = value.replace(/\D/g, '').slice(0, 4);
-    if (digits.length >= 3) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-    return digits;
-  };
 
   const cardDigits = cardNumber.replace(/\s/g, '');
   const isCardValid =
@@ -125,7 +118,7 @@ export function CatalogPaywall({
       setPaymentId(checkout.paymentId);
       setStep('card');
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.paywall.failedPayment);
+      setError(pay.errOr(err, copy.paywall.failedPayment));
     } finally {
       setLoading(false);
     }
@@ -145,7 +138,7 @@ export function CatalogPaywall({
       setStep('otp');
       setOtp('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.paywall.cardVerificationFailed);
+      setError(pay.errOr(err, copy.paywall.cardVerificationFailed));
     } finally {
       setLoading(false);
     }
@@ -170,7 +163,7 @@ export function CatalogPaywall({
         setOtp('');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.otpVerificationFailed);
+      setError(pay.errOr(err, copy.errors.otpVerificationFailed));
     } finally {
       setLoading(false);
     }
@@ -185,7 +178,7 @@ export function CatalogPaywall({
       setCanResendOtp(false);
       setTimeout(() => setCanResendOtp(true), 30000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : copy.errors.couldNotResendOtp);
+      setError(pay.errOr(err, copy.errors.couldNotResendOtp));
     } finally {
       setLoading(false);
     }
@@ -236,62 +229,20 @@ export function CatalogPaywall({
 
       {step === 'card' && (
         <>
-          <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterCardDetails}</h2>
-          <p className="text-[#6a7282] text-sm text-center -mt-3">UzCard, Humo, Visa, or Mastercard</p>
-          <div className="w-full space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Card Number</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="cc-number"
-                value={cardNumber}
-                onChange={(e) => setCardNumber(formatCardNumber(e.target.value))}
-                placeholder="0000 0000 0000 0000"
-                disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-wider disabled:opacity-50"
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">Expiry (MM/YY)</label>
-              <input
-                type="text"
-                inputMode="numeric"
-                autoComplete="cc-exp"
-                value={expiry}
-                onChange={(e) => setExpiry(formatExpiry(e.target.value))}
-                placeholder="00/00"
-                disabled={loading}
-                className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-base outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-wider disabled:opacity-50"
-              />
-            </div>
-          </div>
+          <h2 className="text-xl font-bold text-center" style={{ color: 'var(--g-text)' }}>{copy.importPage.enterCardDetails}</h2>
+          <CardForm pan={cardNumber} exp={expiry} onPan={setCardNumber} onExp={setExpiry} onSubmit={handleSubmitCard}
+            amountUzs={priceUzs} loading={loading} error={error} />
         </>
       )}
 
       {step === 'otp' && (
         <>
-          <h2 className="text-[#101828] text-xl font-bold text-center">{copy.importPage.enterSmsCode}</h2>
-          <p className="text-[#6a7282] text-sm text-center -mt-3">
-            Code sent to {maskedPhone || 'your phone'}
-          </p>
-          <div className="w-full">
-            <label className="block text-xs font-semibold text-[#4a5565] mb-1.5">OTP Code</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              value={otp}
-              onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-              placeholder="123456"
-              disabled={loading}
-              className="w-full px-3 h-12 bg-white border border-[#e5e7eb] rounded-[14px] text-xl text-center outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 font-mono tracking-[0.3em] disabled:opacity-50"
-            />
-          </div>
+          <h2 className="text-xl font-bold text-center" style={{ color: 'var(--g-text)' }}>{copy.importPage.enterSmsCode}</h2>
+          <OtpForm cardMask={cardNumber} otp={otp} onOtp={setOtp} onSubmit={handleSubmitOtp} onResend={handleResendOtp} loading={loading} error={error} />
         </>
       )}
 
-      {error && (
+      {error && step === 'price' && (
         <div className="w-full p-3 bg-red-50 border border-red-200 rounded-xl">
           <p className="text-xs text-red-600">{error}</p>
         </div>
@@ -313,29 +264,9 @@ export function CatalogPaywall({
         </button>
       )}
 
-      {step === 'card' && (
-        <button
-          type="button"
-          onClick={handleSubmitCard}
-          disabled={loading || !isCardValid}
-          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-          {loading ? copy.common.saving : copy.common.continue}
-        </button>
-      )}
 
-      {step === 'otp' && (
-        <button
-          type="button"
-          onClick={handleSubmitOtp}
-          disabled={loading || !isOtpValid}
-          className="w-full h-[52px] rounded-[14px] bg-g-blue-700 hover:bg-g-blue-900 disabled:opacity-50 text-white text-base font-bold flex items-center justify-center gap-2"
-        >
-          {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : null}
-          {loading ? copy.common.saving : copy.importPage.confirmPayment}
-        </button>
-      )}
+
+      {step === 'card' && <PayTrust />}
 
       {step !== 'price' && (
         <button
@@ -356,22 +287,7 @@ export function CatalogPaywall({
         </button>
       )}
 
-      {step === 'otp' && canResendOtp && (
-        <button
-          type="button"
-          onClick={handleResendOtp}
-          disabled={loading}
-          className="text-g-blue-700 text-sm font-medium disabled:opacity-50"
-        >
-          {copy.importPage.resendCode}
-        </button>
-      )}
 
-      {step === 'card' && (
-        <p className="text-[#6a7282] text-[11px] text-center leading-relaxed">
-          Card details are sent directly to Atmos and are not stored.
-        </p>
-      )}
     </div>
   );
 }
