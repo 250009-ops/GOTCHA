@@ -127,6 +127,12 @@ function serializeCatalogItem(row: {
   };
 }
 
+/** W-03: public learner counts are hidden (0) until there are at least this many learners. */
+export const PUBLIC_LEARNER_MIN = 100;
+export function publicLearnerCount(n: number, min = PUBLIC_LEARNER_MIN): number {
+  return n >= min ? n : 0;
+}
+
 @Injectable()
 export class MarketingService {
   private readonly logger = new Logger(MarketingService.name);
@@ -136,9 +142,10 @@ export class MarketingService {
 
   async stats() {
     const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
+    const shown = publicLearnerCount(learnerCount);
     return {
-      learnerCount,
-      displayLearnerCount: learnerCount,
+      learnerCount: shown,
+      displayLearnerCount: shown,
     };
   }
 
