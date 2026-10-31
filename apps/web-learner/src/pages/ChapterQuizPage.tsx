@@ -16,7 +16,7 @@ interface PracticeQuestion {
   questionIndex: number;
   prompt: string;
   options?: string[] | null;
-  correctAnswer: string;
+  correctAnswer?: string; // W-24: sent only with results
   explanation?: string | null;
 }
 
