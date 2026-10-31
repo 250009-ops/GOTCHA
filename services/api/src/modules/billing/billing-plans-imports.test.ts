@@ -29,3 +29,29 @@ function svc(settings: Record<string, unknown>) {
   assert.ok(free.features.includes('5 free imports a day'), free.features.join('|'));
   console.log('billing-plans-imports: OK');
 })().catch((e) => { console.error(e); process.exit(1); });
+
+// WLF-12: /billing/plans and /marketing/plans agree on Free daily imports (same importFreeLimits); seed row is 3, not 15.
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { MarketingService } from '../marketing/marketing.service';
+(async () => {
+  const seed = JSON.parse(readFileSync(join(__dirname, '../../../prisma/pricing-seed.json'), 'utf8'));
+  assert.equal(seed.subscriptionPlans.find((p: any) => p.tier === 'free').importLimit, 3, 'seed Free importLimit = 3 (FEATURES.md)');
+  assert.equal(seed.platformSettings.importFreeLimits.dailyFreeImportsPerUser, 3);
+  for (const settings of [{}, { importFreeLimits: { dailyFreeImportsPerUser: 7, monthlyFreePageLimit: 40 } }] as Record<string, unknown>[]) {
+    const prisma: any = {
+      subscriptionPlan: { findMany: async () => plans, findUnique: async ({ where }: any) => plans.find((p) => p.tier === where.tier) ?? null },
+      platformSetting: { findUnique: async ({ where }: any) => (where.key in settings ? { value: settings[where.key] } : null), findMany: async () => [] },
+    };
+    for (const lang of ['en', 'ru', 'uz'] as const) {
+      const b: any[] = await new (BillingService as any)(prisma, {}, {}).listPlans(lang);
+      const m: any = await new (MarketingService as any)(prisma).plans(lang);
+      const mFree = (m.plans ?? m).find?.((p: any) => p.tier === 'free') ?? m.free;
+      const bFree = b.find((p) => p.tier === 'free');
+      assert.equal(bFree.importLimit, mFree.importLimit, `${lang}: importLimit agrees`);
+      const line = (f: string[]) => f.find((x) => /import|импорт/i.test(x) && /\d/.test(x) && !/page|стр|sahifa/i.test(x));
+      assert.ok(line(bFree.features), `${lang}: billing imports line`); assert.equal(line(bFree.features), line(mFree.features), `${lang}: same imports-a-day line`);
+    }
+  }
+  console.log('billing-plans-imports: WLF-12 agreement OK');
+})().catch((e) => { console.error(e); process.exit(1); });

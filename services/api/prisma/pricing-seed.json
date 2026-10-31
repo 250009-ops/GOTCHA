@@ -13,7 +13,7 @@
       "period": "month",
       "aiDailyQuota": 20,
       "quizDailyQuota": 10,
-      "importLimit": 15,
+      "importLimit": 3,
       "offlineEnabled": false,
       "features": [
         "reader",
