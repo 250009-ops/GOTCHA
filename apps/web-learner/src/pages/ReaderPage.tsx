@@ -1,3 +1,4 @@
+import { ReportButton } from '../components/safety/SafetyActions';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -810,6 +811,8 @@ export default function ReaderPage() {
           <span className="font-semibold text-[#1e2939] text-sm truncate">{content.title}</span>
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
         </div>
+        {/* AI-1 / Play UGC: report a book or imported text. */}
+        <ReportButton lang={user?.uiLanguage} target={{ kind: 'content', contentId: content.id }} />
 
         <div className="hidden lg:flex items-center gap-2 shrink-0">
           <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">

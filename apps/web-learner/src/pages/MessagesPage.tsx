@@ -1,3 +1,4 @@
+import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
@@ -777,6 +778,7 @@ export default function MessagesPage() {
     return () => window.clearInterval(id);
   }, [loadInbox, search]);
 
+  const [gatedPeer, setGatedPeer] = useState<{ id: string; under13: boolean } | null>(null);
   const startWith = async (peerId: string, contentId?: string | null) => {
     try {
       const d = await api<ConversationDetail>('/messaging/conversations', {
@@ -785,9 +787,16 @@ export default function MessagesPage() {
       });
       setSelectedId(d.id);
       setDetail(d);
+      setGatedPeer(null);
       setProfilePeerId(null);
       await loadInbox(search.trim() || undefined);
     } catch (e) {
+      const code = (e as { code?: string }).code;
+      if (code === 'MESSAGING_NOT_ALLOWED') {
+        setGatedPeer({ id: peerId, under13: false });
+        setProfilePeerId(null);
+        return;
+      }
       setError(e instanceof Error ? e.message : copy.commonExt.error);
     }
   };
@@ -1394,6 +1403,7 @@ export default function MessagesPage() {
             <p className="text-base font-semibold text-[#0f1729]">{mp.selectConversation}</p>
             <p className="text-sm text-[#6b7382] max-w-sm">{msg.subtitle}</p>
             {error && <p className="text-xs text-red-500">{error}</p>}
+            {gatedPeer && <FriendGateNotice lang={uiLang} peerId={gatedPeer.id} under13={gatedPeer.under13} />}
           </div>
         ) : !detail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
@@ -1430,7 +1440,11 @@ export default function MessagesPage() {
                   </div>
                 </button>
               </div>
-              <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
+              <div className="flex items-center gap-1 shrink-0">
+                {detail.peer?.id && <ReportButton lang={uiLang} target={{ kind: 'user', userId: detail.peer.id, conversationId: detail.id }} />}
+                {detail.peer?.id && <BlockButton lang={uiLang} userId={detail.peer.id} onBlocked={() => { setSelectedId(null); void loadInbox(search.trim() || undefined); }} />}
+                <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
+              </div>
             </header>
 
             {!tipDismissed && (
