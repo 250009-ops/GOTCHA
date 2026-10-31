@@ -36,7 +36,7 @@ type LogoProps = {
   tone?: 'light' | 'ink';
   /** Mark only (collapsed sidebars). Also forced below 24 px. */
   markOnly?: boolean;
-  /** Descriptor under the wordmark ("Language Learning", "Admin Console"): Inter 10 px, 2 px below. */
+  /** Descriptor under the wordmark ("Language Learning", "Admin Console"): Manrope 10 px, 2 px below. */
   subtitle?: ReactNode;
   subtitleClassName?: string;
   elevated?: boolean;

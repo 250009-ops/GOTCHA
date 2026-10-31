@@ -87,3 +87,13 @@ test('UX fixes: localised burger labels, dialog, self-hosted Bagel, webp covers'
   const covers = readdirSync(new URL('../public/landing/covers/', import.meta.url));
   for (const j of covers.filter((f) => f.endsWith('.jpg'))) for (const w of [240, 480]) assert.ok(covers.includes(j.replace('.jpg', `-${w}.webp`)), j + w);
 });
+
+test('P2: no Google Fonts; Manrope self-hosted; header switcher hidden while burger open', () => {
+  const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  assert.ok(!/fonts\.googleapis|fonts\.gstatic/.test(html));
+  assert.ok(existsSync(new URL('../public/fonts/manrope-subset.woff2', import.meta.url)));
+  const css = readFileSync(new URL('../src/styles.css', import.meta.url), 'utf8');
+  assert.ok(css.includes('manrope-subset.woff2') && !/Geist|Sora/.test(css));
+  for (const f of ['../src/pages/LegalPage.tsx', '../src/components/SiteChrome.tsx']) assert.ok(!/Geist|Sora|Inter'/.test(readFileSync(new URL(f, import.meta.url), 'utf8')), f);
+  assert.ok(readFileSync(new URL('../src/landing-premium.css', import.meta.url), 'utf8').includes('.nav.menu-open .ls{visibility:hidden}'));
+});

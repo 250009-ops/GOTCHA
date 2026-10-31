@@ -133,7 +133,7 @@ export default function LandingPage() {
   return (
     <div className="lp" data-theme="light" ref={root} lang={L}>
       <Seo title="GOTCHA" description={C.sub} />
-      <header className="nav"><div className="wrap">
+      <header className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap">
         <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
         <ul id="nav">{C.nav.map((n, i) => <li key={n}><a href={navIds[i]}>{n}</a></li>)}</ul>
         <div className="right">

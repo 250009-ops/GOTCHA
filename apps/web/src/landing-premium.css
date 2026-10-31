@@ -1,7 +1,6 @@
 /* Landing tokens. Brand + reader values are copied from apps/web-learner/src/styles/gotcha-tokens.css
    and ReaderPage.tsx (STATUS_STYLES, dictionary panel). Landing-only roles are prefixed --l-. */
 @font-face{font-family:'Bagel Fat One';src:url(/fonts/bagel-fat-one-latin.woff2) format('woff2');font-display:swap;unicode-range:U+0020-007E,U+00A0-00FF,U+02BB,U+2018-2019}
-@font-face{font-family:Manrope;src:url(/fonts/manrope.ttf) format('truetype');font-weight:200 800;font-display:swap}
 .lp{
   --g-blue-50:#eef0ff;--g-blue-100:#e0e3ff;--g-blue-200:#c5cafd;--g-blue-300:#a0a6fa;--g-blue-500:#5550ec;
   --g-blue-600:#3b2ad6;--g-blue-700:#2107aa;--g-blue-800:#1a068a;--g-blue-900:#14056b;--g-blue-950:#0c0342;
@@ -298,3 +297,6 @@ body:has(.lp){font-family:Manrope,system-ui,sans-serif}
 .lp .burger:focus-visible{outline:2px solid var(--g-blue-300);outline-offset:2px}
 @media(min-width:1024px){.lp .bm{display:none}}
 .lp .build-stamp{margin-top:8px;font-size:11px;color:var(--l-ink-3);font-family:ui-monospace,monospace}
+
+/* P2 (b): the panel has its own switcher; hide the header language button while the burger is open. */
+.lp .nav.menu-open .ls{visibility:hidden}
