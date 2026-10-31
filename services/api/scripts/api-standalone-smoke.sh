@@ -35,6 +35,7 @@ DB="postgresql://postgres@127.0.0.1:$PGPORT/f51smoke"
 say "prisma migrate deploy: $(grep -cE '^Applying migration' "$W/mig.log") migrations applied"
 ( cd "$W/app" && iso env -i PATH="$PATH" HOME="$W/home" NODE_ENV=production API_PORT="$PORT" PORT="$PORT" DATABASE_URL="$DB" \
   JWT_SECRET=smoke-only-secret-xxxxxxxxxxxxxxxxxxxxxxxxxx JWT_REFRESH_SECRET=smoke-only-refresh-xxxxxxxxxxxxxxxxxxxx \
+  ADMIN_APP_URL=https://gotchaa.uz/admin PAYMENT_GATEWAY_ENABLED=true WEB_PLUS_PASS=true \
   UPLOADS_DIR="$W/uploads" API_CORS_ORIGINS=https://gotchaa.uz node dist/main.js ) > "$W/app.log" 2>&1 &
 APIPID=$!
 for i in $(seq 1 60); do curl -fs "http://127.0.0.1:$PORT/api/v1/health" >/dev/null 2>&1 && break; kill -0 $APIPID 2>/dev/null || fail "API exited during boot"; sleep 0.5; done
@@ -46,6 +47,7 @@ chk 200 GET /health
 chk 200 GET /content/languages
 chk 200 GET /billing/plans
 chk 200 GET /billing/gateway-status
+grep -q '"paymentGatewayEnabled":true' "$W/r" && say "PASS payments ON: gateway-status paymentGatewayEnabled=true (PAYMENT_GATEWAY_ENABLED=true only)" || fail "gateway-status not ON with PAYMENT_GATEWAY_ENABLED=true"
 chk 401 GET /users/me
 chk 401 POST /auth/login '{"email":"nobody@example.com","password":"wrong-password-123"}'
 sleep 1; kill -0 $APIPID 2>/dev/null || fail "API died after requests"
