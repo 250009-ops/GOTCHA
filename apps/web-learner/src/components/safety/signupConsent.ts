@@ -5,6 +5,13 @@
  */
 /** PAY2-17: the label version this client displays; sent with sign-up so the API records exactly this (never a newer one). */
 export const CONSENT_VERSION = 'web-2026-10-31.4';
+/** QA2-3 (6.1a): separate, required AI-processing consent (unticked by default). Stored with the same consentVersion
+ *  (the API has consentVersion/consentAt/consentIp only); registration is impossible without both ticks. */
+export const AI_CONSENT_LABELS: Record<'uz' | 'ru' | 'en', string> = {
+  uz: 'Soʻz izohlari, tarjima va mashqlar uchun matnlarim sunʼiy intellekt xizmati (OpenAI, AQSh) orqali qayta ishlanishiga roziman.',
+  ru: 'Я согласен(на) на обработку моих текстов сервисом ИИ (OpenAI, США) для пояснений слов, перевода и упражнений.',
+  en: 'I agree that my texts are processed by an AI service (OpenAI, USA) for word explanations, translation and practice.',
+};
 
 export type ConsentLocale = 'uz' | 'ru' | 'en';
 

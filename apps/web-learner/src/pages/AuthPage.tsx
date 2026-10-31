@@ -32,6 +32,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { locale } = useLearnerLocale();
   // S3 consent (unticked by default) + W-12 optional birth year.
   const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptAi, setAcceptAi] = useState(false);
   const [birthYear, setBirthYear] = useState<number | null>(null);
   const isLogin = mode === 'login';
   const plan = searchParams.get('plan');
@@ -159,8 +160,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           nativeLanguage,
           targetLanguages,
           uiLanguage: locale,
-          acceptTerms,
-          ...(acceptTerms ? { consentVersion: CONSENT_VERSION } : {}),
+          acceptTerms: acceptTerms && acceptAi,
+          ...(acceptTerms && acceptAi ? { consentVersion: CONSENT_VERSION } : {}),
           ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {
@@ -290,6 +291,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 locale={locale}
                 accepted={acceptTerms}
                 onAccepted={setAcceptTerms}
+                aiAccepted={acceptAi}
+                onAiAccepted={setAcceptAi}
                 birthYear={birthYear}
                 onBirthYear={setBirthYear}
               />
@@ -304,7 +307,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms}
+                  disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms || !acceptAi}
                   className="flex-1 h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (

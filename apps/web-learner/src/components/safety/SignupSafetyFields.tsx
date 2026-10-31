@@ -1,12 +1,14 @@
 import { MARKETING_URL } from '../../lib/links';
 import { CONSENT_LINK_PATHS } from '../../lib/legalLinks';
-import { AGE_COPY, birthYearOptions, consentParts, toConsentLocale } from './signupConsent';
+import { AGE_COPY, AI_CONSENT_LABELS, birthYearOptions, consentParts, toConsentLocale } from './signupConsent';
 
 /** S3 consent tick-box (unticked by default) + W-12 optional birth year. */
 export function SignupSafetyFields(props: {
   locale: string;
   accepted: boolean;
   onAccepted: (v: boolean) => void;
+  aiAccepted: boolean;
+  onAiAccepted: (v: boolean) => void;
   birthYear: number | null;
   onBirthYear: (v: number | null) => void;
 }) {
@@ -62,6 +64,17 @@ export function SignupSafetyFields(props: {
             ),
           )}
         </span>
+      </label>
+      <label className="flex items-start gap-2.5 text-[12px] leading-[18px] text-[#4a5565]">
+        <input
+          type="checkbox"
+          checked={props.aiAccepted}
+          onChange={(e) => props.onAiAccepted(e.target.checked)}
+          className="mt-0.5 size-4 shrink-0 accent-[#7f22fe]"
+          data-testid="signup-ai-consent"
+          required
+        />
+        <span>{AI_CONSENT_LABELS[l]}</span>
       </label>
     </div>
   );

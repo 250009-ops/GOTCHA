@@ -54,3 +54,19 @@ console.log('s3-final61: OK');
 // WLF-35: learner never calls the retired /marketing/landing
 assert.ok(!readFileSync(new URL('../src/components/AuthShell.tsx', import.meta.url), 'utf8').includes('${API_BASE}/marketing/landing'));
 console.log('s3-final61 WLF-35/36: OK');
+
+// QA2-3: consent tick-box + separate required AI consent, uz/ru/en; Delete account in Settings
+{
+  const { AI_CONSENT_LABELS, CONSENT_VERSION } = await import('../src/components/safety/signupConsent.ts');
+  for (const l of ['uz', 'ru', 'en']) assert.match(AI_CONSENT_LABELS[l], /OpenAI/);
+  assert.ok(!/[A-Za-z]['’][A-Za-z]/.test(AI_CONSENT_LABELS.uz));
+  assert.equal(CONSENT_VERSION, 'web-2026-10-31.4');
+  const f = readFileSync(new URL('../src/components/safety/SignupSafetyFields.tsx', import.meta.url), 'utf8');
+  assert.match(f, /data-testid="signup-consent"/); assert.match(f, /data-testid="signup-ai-consent"/);
+  const a = readFileSync(new URL('../src/pages/AuthPage.tsx', import.meta.url), 'utf8');
+  assert.match(a, /!acceptTerms \|\| !acceptAi\}/);
+  const st = readFileSync(new URL('../src/pages/SettingsPage.tsx', import.meta.url), 'utf8');
+  assert.match(st, /<DeleteAccount /);
+  assert.match(readFileSync(new URL('../src/components/safety/DeleteAccount.tsx', import.meta.url), 'utf8'), /DELETE/);
+  console.log('s3-final61 consents + delete: OK');
+}
