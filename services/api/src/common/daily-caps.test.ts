@@ -132,9 +132,9 @@ test('caps come from platform_settings at runtime; an admin edit is picked up af
   assert.ok(PLAN_CAPS_TTL_MS <= 60_000);
 });
 test('code defaults without the seed: Free 20/10, Plus lookups null (no daily limit) / 200 quizzes; never 50 or 1,000,000', async () => {
-  assert.deepEqual(DAILY_CAP_FALLBACKS, { free: { lookups: 20, quizzes: 10 }, plus: { lookups: null, quizzes: 200 } });
+  assert.deepEqual(DAILY_CAP_FALLBACKS, { free: { lookups: 20, quizzes: 10, mashq: 20 }, plus: { lookups: null, quizzes: 200, mashq: null } });
   assert.equal(defaultAiPlatformSettings().defaultUserQuota, 20);
-  assert.deepEqual(await getPlanCaps(db('free', {}, {}), 1), { free: { lookups: 20, quizzes: 10 }, plus: { lookups: null, quizzes: 200 }, plusLookupHardCap: null });
+  assert.deepEqual(await getPlanCaps(db('free', {}, {}), 1), { free: { lookups: 20, quizzes: 10, mashq: 20 }, plus: { lookups: null, quizzes: 200, mashq: null }, plusLookupHardCap: null });
 });
 // ---- speed guard
 test('speed guard: 30 lookups in a minute pass, the 31st gets a friendly 429 lookup_slow_down, is logged, and is not a ban', async () => {

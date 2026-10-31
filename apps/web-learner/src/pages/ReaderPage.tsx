@@ -100,7 +100,7 @@ function resolveResumeIndex(
 const STATUS_STYLES: Record<WordStatus, string> = {
   unknown: 'border-b-[1.6px] border-dashed border-[#ffb900] text-[#973c00] cursor-pointer hover:bg-amber-50/80 rounded-[6px]',
   learning: 'border-b-[1.6px] border-solid border-[#51a2ff] text-[#193cb8] cursor-pointer hover:bg-blue-50/80 rounded-[6px]',
-  known: 'cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
+  known: 'border-b-[1.6px] border-solid border-emerald-400 cursor-pointer hover:bg-emerald-50/80 rounded-[6px]',
   ignored: 'text-gray-400 cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
 };
 
@@ -117,6 +117,7 @@ function DictionaryPanel({
   onPronounce,
   loading,
   showVocabActions = true,
+  showPronounce = true,
 }: {
   result: LookupResult | null;
   status: WordStatus;
@@ -127,6 +128,7 @@ function DictionaryPanel({
   onPronounce: () => void;
   loading: boolean;
   showVocabActions?: boolean;
+  showPronounce?: boolean;
 }) {
   const copy = useLearnerCopy();
   const statusLabel =
@@ -175,15 +177,17 @@ function DictionaryPanel({
                     <div className="text-sm text-[#6b7382] mt-1">{result.lemma}</div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={onPronounce}
-                  className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-g-blue-700"
-                  aria-label={copy.reader.pronounceWord}
-                  title={copy.reader.pronounceWord}
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
+                {showPronounce ? (
+                  <button
+                    type="button"
+                    onClick={onPronounce}
+                    className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-g-blue-700"
+                    aria-label={copy.reader.pronounceWord}
+                    title={copy.reader.pronounceWord}
+                  >
+                    <Volume2 className="w-4 h-4" />
+                  </button>
+                ) : null}
               </div>
             </div>
             {result.kind !== 'sentence' && result.contextualMeaning?.trim() ? (
@@ -364,6 +368,7 @@ export default function ReaderPage() {
   const sourceLang = content?.language ?? 'en';
 
   const pronounceWord = useCallback(() => {
+    if (!preferences?.ttsEnabled) return;
     const spoken = lookupHeadline(
       activeWord ?? '',
       activeLookup?.phrase,
@@ -373,12 +378,13 @@ export default function ReaderPage() {
     void speakText(spoken, sourceLang).catch((err) => {
       toast.error(err instanceof Error ? err.message : copy.errors.pronunciationUnavailable);
     });
-  }, [activeLookup, activeWord, sourceLang, copy.errors.pronunciationUnavailable]);
+  }, [activeLookup, activeWord, sourceLang, copy.errors.pronunciationUnavailable, preferences?.ttsEnabled]);
 
   // Wall-clock time spent since the last progress save, so PATCH /content/:id/progress
   // gets a real `readSeconds` and content.service.ts's streak.recordActivity actually fires
   // (see docs/E2E_AUDIT_REPORT.md's reading-page-never-triggers-streak finding).
   const lastProgressAtRef = useRef<number>(Date.now());
+  const contextSentenceRef = useRef('');
 
   useEffect(() => {
     if (preferences?.readerFontScale != null) {
@@ -496,6 +502,7 @@ export default function ReaderPage() {
 
   const handleWordClick = useCallback(
     async (lemma: string, surface: string, sentence: string, span: TokenSpan, wordTokens: Array<{ i: number; surface: string; lemma: string | null }>) => {
+      contextSentenceRef.current = sentence.slice(0, 500);
       setLockedSpan(span);
       setLiveSpan(null);
       setActiveWord(lemma);
@@ -599,7 +606,7 @@ export default function ReaderPage() {
           sourceLang,
           targetLang,
           translation: activeLookup.translation,
-          contextSentence: segment.plainText.slice(0, 200),
+          contextSentence: contextSentenceRef.current || extractSentenceAround(segment.plainText, 0, 0),
           contextSegmentId: segment.id,
           contentId: id,
         }),
@@ -1009,7 +1016,7 @@ export default function ReaderPage() {
 
           <div
             className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6"
-            style={{ fontSize: `${fontScale}rem` }}
+            style={{ fontSize: `${fontScale}rem`, lineHeight: preferences?.readerLineSpacing ?? 1.5 }}
           >
             {isTrial ? (
               <div className="mb-6 rounded-xl border border-violet-200 bg-g-blue-50 px-4 py-3 text-sm text-g-blue-900">
@@ -1144,6 +1151,7 @@ export default function ReaderPage() {
                 }
                 const key = (token.lemma ?? token.surface).toLowerCase();
                 const status = lemmaStatus(key);
+                const showKnownWords = preferences?.showKnownWords ?? true;
                 const highlightStatus: WordStatus | null = showUnknownOnly
                   ? status === 'unknown'
                     ? 'unknown'
@@ -1152,7 +1160,9 @@ export default function ReaderPage() {
                     ? status
                     : status === 'ignored'
                       ? 'ignored'
-                      : null;
+                      : status === 'known' && showKnownWords
+                        ? 'known'
+                        : null;
                 const selected = tokenInSpan(token.i, liveSpan ?? lockedSpan);
 
                 return (
@@ -1179,7 +1189,7 @@ export default function ReaderPage() {
                       }}
                       className={cn(
                         'px-px py-0.5',
-                        highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
+                        highlightStatus ? STATUS_STYLES[highlightStatus] : 'cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
                         selected && 'ring-2 ring-g-blue-500/60 bg-g-blue-50',
                       )}
                     >
@@ -1261,6 +1271,7 @@ export default function ReaderPage() {
               onPronounce={pronounceWord}
               loading={lookupLoading}
               showVocabActions={vocabMarkable}
+              showPronounce={preferences?.ttsEnabled === true}
             />
           ) : (
             <button
@@ -1289,6 +1300,7 @@ export default function ReaderPage() {
             onPronounce={pronounceWord}
             loading={lookupLoading}
             showVocabActions={vocabMarkable}
+            showPronounce={preferences?.ttsEnabled === true}
           />
         </div>
       )}

@@ -238,6 +238,7 @@ export interface LearnerCopy {
     startQuiz: string;
     noWordsTitle: string;
     noWordsDescription: string;
+    quizUnavailable: string;
     score: (correct: number, total: number) => string;
     next: string;
     finish: string;
@@ -544,6 +545,7 @@ const EN: LearnerCopy = {
     startQuiz: 'Start quiz',
     noWordsTitle: 'Not enough words',
     noWordsDescription: 'Save more words while reading to practice.',
+    quizUnavailable: "Couldn't build a quiz for this chapter. Try again.",
     score: (correct, total) => `${correct}/${total} correct`,
     next: 'Next',
     finish: 'Finish',
@@ -854,6 +856,7 @@ const RU: LearnerCopy = {
     startQuiz: 'Начать тест',
     noWordsTitle: 'Недостаточно слов',
     noWordsDescription: 'Сохраняйте больше слов при чтении.',
+    quizUnavailable: 'Не удалось составить тест по этой главе. Попробуйте ещё раз.',
     score: (correct, total) => `${correct}/${total} верно`,
     next: 'Далее',
     finish: 'Завершить',
@@ -1164,6 +1167,7 @@ const UZ: LearnerCopy = {
     startQuiz: 'Testni boshlash',
     noWordsTitle: 'Soʻzlar yetarli emas',
     noWordsDescription: 'Oʻqishda koʻproq soʻz saqlang.',
+    quizUnavailable: 'Bu bob uchun test tuzib boʻlmadi. Qayta urinib koʻring.',
     score: (correct, total) => `${correct}/${total} toʻgʻri`,
     next: 'Keyingi',
     finish: 'Tugatish',

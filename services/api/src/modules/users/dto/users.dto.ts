@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
 import { Type } from 'class-transformer';
 import { AppLanguage, CefrLevel } from '@prisma/client';
 
@@ -50,6 +50,10 @@ export class UpdatePreferencesDto {
   @IsOptional()
   @IsBoolean()
   notificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsIn(['system', 'light', 'dark'])
+  appTheme?: 'system' | 'light' | 'dark';
 }
 
 export class ChangePasswordDto {

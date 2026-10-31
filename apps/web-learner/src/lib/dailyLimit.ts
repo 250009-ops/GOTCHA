@@ -18,8 +18,8 @@ export function dailyLimitText(info: DailyLimitInfo, lang: string, tz: string = 
   return {
     message: dailyLimitMessage(info.kind, info.plan, info.limit, info.plusLimit, lang),
     reset: limitResetLine(info.resetAt, lang, tz),
-    /** Free users only; never shown to Plus. */
-    upsell: info.plan === 'free' && info.kind === 'lookups',
+    /** Free lookups and Mashq only; never shown to Plus. */
+    upsell: info.plan === 'free' && (info.kind === 'lookups' || info.kind === 'mashq'),
   };
 }
 

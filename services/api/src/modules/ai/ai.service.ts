@@ -80,6 +80,24 @@ const IMPORT_CLEANUP_TIMEOUT_MS = 55_000;
 const IMPORT_CLEANUP_MAX_RETRIES = 1;
 
 @Injectable()
+function quizAnswerKey(value: string) {
+  return value.trim().toLowerCase().replace(/[.?!…]+$/g, '').replace(/\s+/g, ' ');
+}
+
+/** Drop multiple-choice items whose answer is missing, duplicated, or not one of the options. */
+function groundedQuizQuestions<T extends { prompt?: string; options?: string[]; correctAnswer?: string }>(questions: T[]): T[] {
+  return questions.filter((q) => {
+    const prompt = String(q.prompt ?? '').trim();
+    const answer = String(q.correctAnswer ?? '').trim();
+    if (!prompt || !answer) return false;
+    const options = (q.options ?? []).map((option) => String(option).trim()).filter(Boolean);
+    if (options.length === 0) return true;
+    const keys = options.map(quizAnswerKey);
+    if (new Set(keys).size !== keys.length) return false;
+    return keys.includes(quizAnswerKey(answer));
+  });
+}
+
 export class AiService {
   private readonly logger = new Logger(AiService.name);
   private client: OpenAI | null = null;
@@ -273,7 +291,7 @@ export class AiService {
       const used = this.memoryUsage.get(key) ?? 0;
       void defaultUserQuota; // final-5: legacy aiDefaultUserQuota ignored in memory mode too; caps.free.lookups only
       const quota = (await getPlanCaps(this.prisma)).free.lookups;
-      assertUnderCap('lookups', 'free', { free: { lookups: quota, quizzes: 0 }, plus: { lookups: DAILY_CAP_FALLBACKS.plus.lookups, quizzes: 0 }, plusLookupHardCap: null }, used);
+      assertUnderCap('lookups', 'free', { free: { lookups: quota, quizzes: 0, mashq: 0 }, plus: { lookups: DAILY_CAP_FALLBACKS.plus.lookups, quizzes: 0, mashq: null }, plusLookupHardCap: null }, used);
       return { quota, usage: { lookupCount: used }, today, memoryKey: key, mode: 'ai' as const };
     }
 
@@ -1056,7 +1074,7 @@ export class AiService {
         // AI-1: drop the quiz for a minor if moderation flags any of it.
         const all = questions.map((q) => [q.prompt, ...(q.options ?? []), q.correctAnswer, q.explanation ?? ''].join('\n')).join('\n');
         if ((await this.moderateForMinor(band, all)) !== all) return [];
-        return questions;
+        return groundedQuizQuestions(questions);
       } catch {
         return [];
       }

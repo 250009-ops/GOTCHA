@@ -132,7 +132,7 @@ export default function LearnerShell() {
   const highlightPractice = onboardingStep === 'practice';
 
   useEffect(() => {
-    if (highlightPractice) setExpanded(true);
+    if (highlightPractice && window.matchMedia('(min-width: 640px)').matches) setExpanded(true);
   }, [highlightPractice]);
 
   const NavLink = ({ item, collapsed }: { item: NavItem; collapsed: boolean }) => {

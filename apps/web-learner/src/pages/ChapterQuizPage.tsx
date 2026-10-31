@@ -96,7 +96,7 @@ export default function ChapterQuizPage() {
         body: JSON.stringify({ contentId: contentId ?? undefined, segmentId, practiceType }),
       });
       if (!started.questions?.length) {
-        toast.error(p.noWordsDescription);
+        toast.error(p.quizUnavailable);
         return;
       }
       setSession(started);
@@ -105,7 +105,12 @@ export default function ChapterQuizPage() {
       setFreeText('');
       setResults(null);
     } catch (e) {
-      if (!isDailyLimitError(e) && !handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      const raw = e instanceof Error ? e.message : '';
+      if (/could not build a quiz/i.test(raw)) {
+        toast.error(p.quizUnavailable);
+      } else if (!isDailyLimitError(e) && !handleLimitError(e)) {
+        toast.error(raw || copy.commonExt.error);
+      }
     } finally {
       setStarting(false);
     }

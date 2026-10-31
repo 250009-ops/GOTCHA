@@ -22,6 +22,12 @@ const FIRST_BOOKS: Record<string, { id: string; title: string; author: string }>
 
 const SENTENCE = ['He', 'stood', 'still', 'in', 'hesitation', 'at', 'the', 'door.'];
 
+function chipClass(on: boolean) {
+  return on
+    ? 'bg-[#2107AA] text-white shadow-[0_8px_18px_rgba(33,7,170,0.28)]'
+    : 'bg-[#F7F4EE] text-[#14112B] hover:bg-[#EFEAE2]';
+}
+
 export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done') => void }) {
   const navigate = useNavigate();
   const { user, refreshProfile } = useAuth();
@@ -88,149 +94,198 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
     navigate(`/app/read/${book.id}`);
   };
 
+  const practice = step === 'practice';
+
   return (
-    <div className="fixed inset-0 z-40 bg-[#101828]/45" data-testid="onboarding" data-onboarding-step={step}>
+    <div className="fixed inset-0 z-40" data-testid="onboarding" data-onboarding-step={step}>
+      <div className="absolute inset-0 bg-[#14112B]/55" />
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
-        className={`absolute bg-white rounded-2xl shadow-xl border border-[#e5e7eb] p-5 w-[min(28rem,calc(100%-2rem))] ${
-          step === 'practice' ? 'left-[16.5rem] top-28' : 'left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2'
+        className={`absolute bg-[#FFFcf8] border border-[#E7E2D8] shadow-[0_28px_80px_rgba(20,17,43,0.32)] ${
+          practice
+            ? 'left-3 right-3 bottom-[max(0.75rem,env(safe-area-inset-bottom))] rounded-[28px] sm:left-[16rem] sm:right-auto sm:bottom-auto sm:top-36 sm:w-[22.5rem]'
+            : 'left-1/2 top-1/2 w-[min(27rem,calc(100%-1.5rem))] -translate-x-1/2 -translate-y-1/2 rounded-[28px]'
         }`}
       >
-        <div className="flex items-center justify-between gap-3 mb-3">
-          <p className="text-xs font-semibold text-[#6a7282]">{copy.step(index + 1, ONBOARDING_STEPS.length)}</p>
-          <button type="button" className="text-sm font-medium text-[#4a5565] hover:text-[#101828]" onClick={() => go('done')}>
-            {copy.skip}
-          </button>
-        </div>
-
-        {step === 'level' && (
-          <>
-            <h2 id="onboarding-title" className="text-xl font-bold text-[#101828]">{copy.levelTitle}</h2>
-            <p className="mt-1 text-sm text-[#4a5565]">{copy.levelBody}</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {CEFR_LEVELS.map((code) => (
-                <button
-                  key={code}
-                  type="button"
-                  aria-pressed={level === code}
-                  onClick={() => setLevel(code)}
-                  className={`h-10 min-w-12 px-3 rounded-xl text-sm font-bold ${
-                    level === code ? 'bg-[#2107aa] text-white' : 'bg-[#f3f4f6] text-[#101828]'
-                  }`}
-                >
-                  {code.toUpperCase()}
-                </button>
-              ))}
-            </div>
-            <p className="mt-4 text-xs font-semibold text-[#4a5565]">{copy.languageLabel}</p>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {langs.map((lang) => (
-                <button
-                  key={lang.code}
-                  type="button"
-                  aria-pressed={language === lang.code}
-                  onClick={() => setLanguage(lang.code)}
-                  className={`h-10 px-3 rounded-xl text-sm font-semibold ${
-                    language === lang.code ? 'bg-[#2107aa] text-white' : 'bg-[#f3f4f6] text-[#101828]'
-                  }`}
-                >
-                  {lang.nativeName}
-                </button>
+        {practice ? (
+          <span
+            className="hidden sm:block absolute -left-[7px] top-8 size-3.5 rotate-45 bg-[#FFFcf8] border-l border-b border-[#E7E2D8]"
+            aria-hidden
+          />
+        ) : null}
+        <div className="px-5 pt-5 pb-5 sm:px-6 sm:pt-6">
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex items-center gap-1.5" aria-hidden>
+              {ONBOARDING_STEPS.map((name, i) => (
+                <span
+                  key={name}
+                  className={`h-1 rounded-full transition-all ${i <= index ? 'w-7 bg-[#2107AA]' : 'w-3 bg-[#E7E2D8]'}`}
+                />
               ))}
             </div>
             <button
               type="button"
-              disabled={busy}
-              onClick={() => void saveLevel()}
-              className="mt-5 h-11 w-full rounded-xl bg-[#2107aa] text-white text-sm font-bold disabled:opacity-50"
+              className="text-[13px] font-medium text-[#6B6560] hover:text-[#14112B]"
+              onClick={() => go('done')}
             >
-              {copy.next}
+              {copy.skip}
             </button>
-          </>
-        )}
+          </div>
+          <p className="mt-4 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A847C]">
+            {copy.step(index + 1, ONBOARDING_STEPS.length)}
+          </p>
 
-        {step === 'demo' && (
-          <>
-            <h2 id="onboarding-title" className="text-xl font-bold text-[#101828]">{copy.demoTitle}</h2>
-            <p className="mt-1 text-sm text-[#4a5565]">{copy.demoBody}</p>
-            <p className="mt-4 text-lg leading-relaxed text-[#101828]">
-              {SENTENCE.map((word, i) => (
-                <span key={`${word}-${i}`}>
-                  {i > 0 ? ' ' : null}
-                  {word === 'hesitation' ? (
-                    <button
-                      type="button"
-                      className="rounded-md bg-[#ede9fe] px-1 font-semibold text-[#2107aa] underline decoration-2 underline-offset-4"
-                      onClick={() => setTapped(true)}
-                    >
-                      {word}
-                    </button>
-                  ) : (
-                    word
-                  )}
-                </span>
-              ))}
-            </p>
-            {tapped && (
-              <div className="mt-4 rounded-2xl border border-[#e5e7eb] p-3" data-testid="onboarding-lookup">
-                <div className="text-base font-bold text-[#101828]">{copy.demoWord}</div>
-                <p className="mt-2 text-xs font-semibold text-[#6a7282]">{copy.demoMeaningLabel}</p>
-                <p className="text-sm text-[#101828]">{copy.demoMeaning}</p>
-                <p className="mt-2 text-xs font-semibold text-[#6a7282]">{copy.demoTranslationLabel}</p>
-                <p className="text-sm text-[#101828]">{copy.demoTranslation}</p>
+          {step === 'level' && (
+            <>
+              <h2 id="onboarding-title" className="mt-1 font-serif text-[1.65rem] leading-tight text-[#14112B]">
+                {copy.levelTitle}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.levelBody}</p>
+              <div className="mt-5 grid grid-cols-6 gap-1.5" role="group" aria-label={copy.levelTitle}>
+                {CEFR_LEVELS.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    aria-pressed={level === code}
+                    onClick={() => setLevel(code)}
+                    className={`h-11 rounded-2xl text-sm font-semibold ${chipClass(level === code)}`}
+                  >
+                    {code.toUpperCase()}
+                  </button>
+                ))}
               </div>
-            )}
-            <div className="mt-5 flex gap-2">
-              <button type="button" onClick={() => go('level')} className="h-11 flex-1 rounded-xl border border-[#e5e7eb] text-sm font-semibold">
-                {copy.back}
-              </button>
+              <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A847C]">{copy.languageLabel}</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {langs.map((lang) => (
+                  <button
+                    key={lang.code}
+                    type="button"
+                    aria-pressed={language === lang.code}
+                    onClick={() => setLanguage(lang.code)}
+                    className={`h-10 px-3.5 rounded-full text-sm font-semibold ${chipClass(language === lang.code)}`}
+                  >
+                    {lang.nativeName}
+                  </button>
+                ))}
+              </div>
               <button
                 type="button"
-                disabled={!tapped}
-                onClick={() => go('book')}
-                className="h-11 flex-1 rounded-xl bg-[#2107aa] text-white text-sm font-bold disabled:opacity-50"
+                disabled={busy}
+                onClick={() => void saveLevel()}
+                className="mt-6 h-12 w-full rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)] disabled:opacity-50"
               >
                 {copy.next}
               </button>
-            </div>
-          </>
-        )}
+            </>
+          )}
 
-        {step === 'book' && (
-          <>
-            <h2 id="onboarding-title" className="text-xl font-bold text-[#101828]">{copy.bookTitle}</h2>
-            <p className="mt-1 text-sm text-[#4a5565]">{copy.bookBody}</p>
-            <div className="mt-4 flex gap-3 items-center">
-              <img
-                src={`${import.meta.env.BASE_URL}covers/${book.id}.jpg`}
-                alt=""
-                className="w-20 aspect-[2/3] rounded-lg object-cover bg-[#F4ECDF]"
-              />
-              <div>
-                <div className="font-bold text-[#101828]">{book.title}</div>
-                <div className="text-sm text-[#4a5565]">{book.author}</div>
+          {step === 'demo' && (
+            <>
+              <h2 id="onboarding-title" className="mt-1 font-serif text-[1.65rem] leading-tight text-[#14112B]">
+                {copy.demoTitle}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.demoBody}</p>
+              <p className="mt-5 rounded-2xl bg-[#F4ECDF] px-4 py-5 font-serif text-[1.125rem] leading-8 text-[#14112B]">
+                {SENTENCE.map((word, i) => (
+                  <span key={`${word}-${i}`}>
+                    {i > 0 ? ' ' : null}
+                    {word === 'hesitation' ? (
+                      <button
+                        type="button"
+                        className={`rounded-md px-1 font-semibold underline decoration-2 underline-offset-[5px] ${
+                          tapped ? 'bg-[#2107AA] text-white decoration-white/40' : 'text-[#2107AA] decoration-[#2107AA]'
+                        }`}
+                        onClick={() => setTapped(true)}
+                      >
+                        {word}
+                      </button>
+                    ) : (
+                      word
+                    )}
+                  </span>
+                ))}
+              </p>
+              {tapped && (
+                <div className="mt-3 rounded-2xl border border-[#E7E2D8] bg-white px-4 py-3.5" data-testid="onboarding-lookup">
+                  <div className="font-serif text-xl text-[#14112B]">{copy.demoWord}</div>
+                  <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A847C]">{copy.demoMeaningLabel}</p>
+                  <p className="mt-0.5 text-sm leading-6 text-[#14112B]">{copy.demoMeaning}</p>
+                  <p className="mt-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#8A847C]">{copy.demoTranslationLabel}</p>
+                  <p className="mt-0.5 text-sm leading-6 text-[#14112B]">{copy.demoTranslation}</p>
+                </div>
+              )}
+              <div className="mt-6 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => go('level')}
+                  className="h-12 flex-1 rounded-2xl border border-[#E7E2D8] bg-white text-sm font-semibold text-[#14112B]"
+                >
+                  {copy.back}
+                </button>
+                <button
+                  type="button"
+                  disabled={!tapped}
+                  onClick={() => go('book')}
+                  className="h-12 flex-1 rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)] disabled:opacity-40"
+                >
+                  {copy.next}
+                </button>
               </div>
-            </div>
-            <button type="button" onClick={openBook} className="mt-5 h-11 w-full rounded-xl bg-[#2107aa] text-white text-sm font-bold">
-              {copy.openBook}
-            </button>
-            <button type="button" onClick={() => go('practice')} className="mt-2 h-11 w-full rounded-xl text-sm font-semibold text-[#4a5565]">
-              {copy.later}
-            </button>
-          </>
-        )}
+            </>
+          )}
 
-        {step === 'practice' && (
-          <>
-            <h2 id="onboarding-title" className="text-xl font-bold text-[#101828]">{copy.practiceTitle}</h2>
-            <p className="mt-1 text-sm text-[#4a5565]">{copy.practiceBody}</p>
-            <button type="button" onClick={() => go('done')} className="mt-5 h-11 w-full rounded-xl bg-[#2107aa] text-white text-sm font-bold">
-              {copy.done}
-            </button>
-          </>
-        )}
+          {step === 'book' && (
+            <>
+              <h2 id="onboarding-title" className="mt-1 font-serif text-[1.65rem] leading-tight text-[#14112B]">
+                {copy.bookTitle}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.bookBody}</p>
+              <div className="mt-5 flex items-center gap-4 rounded-2xl border border-[#E7E2D8] bg-white p-3">
+                <img
+                  src={`${import.meta.env.BASE_URL}covers/${book.id}.jpg`}
+                  alt=""
+                  className="w-[5.25rem] aspect-[2/3] rounded-lg object-cover bg-[#F4ECDF] shadow-[0_8px_18px_rgba(20,17,43,0.16)]"
+                />
+                <div className="min-w-0">
+                  <div className="font-serif text-xl leading-tight text-[#14112B]">{book.title}</div>
+                  <div className="mt-1 text-sm text-[#5C564F]">{book.author}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={openBook}
+                className="mt-6 h-12 w-full rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)]"
+              >
+                {copy.openBook}
+              </button>
+              <button
+                type="button"
+                onClick={() => go('practice')}
+                className="mt-1 h-11 w-full rounded-2xl text-sm font-semibold text-[#5C564F] hover:text-[#14112B]"
+              >
+                {copy.later}
+              </button>
+            </>
+          )}
+
+          {step === 'practice' && (
+            <>
+              <h2 id="onboarding-title" className="mt-1 font-serif text-[1.65rem] leading-tight text-[#14112B]">
+                {copy.practiceTitle}
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.practiceBody}</p>
+              <button
+                type="button"
+                onClick={() => go('done')}
+                className="mt-6 h-12 w-full rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)]"
+              >
+                {copy.done}
+              </button>
+            </>
+          )}
+        </div>
       </div>
     </div>
   );

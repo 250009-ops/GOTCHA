@@ -4,15 +4,27 @@
 
 import { PAY_COPY } from './payCopy';
 
-export type CapKind = 'lookups' | 'quizzes';
+export type CapKind = 'lookups' | 'quizzes' | 'mashq';
 export type CapPlan = 'free' | 'plus';
 export type CapLang = 'en' | 'uz' | 'ru';
 
 /** Code fallbacks when the DB has no value (match the seed). Plus full AI lookups: null = unlimited (Sarvarbek 14:32). */
-export const DAILY_CAP_FALLBACKS: { free: { lookups: number; quizzes: number }; plus: { lookups: number | null; quizzes: number } } = { free: { lookups: 20, quizzes: 10 }, plus: { lookups: null, quizzes: 200 } };
+export const DAILY_CAP_FALLBACKS: { free: { lookups: number; quizzes: number; mashq: number }; plus: { lookups: number | null; quizzes: number; mashq: number | null } } = {
+  free: { lookups: 20, quizzes: 10, mashq: 20 },
+  plus: { lookups: null, quizzes: 200, mashq: null },
+};
 /** platform_settings keys (admin config). JSON null / missing = unlimited / no cap. */
 /** WLF-12: Free lookups / Free quizzes / Plus quizzes per day live in platform_settings ONLY (never subscription_plans columns). */
-export const DAILY_CAP_KEYS = { freeLookups: 'caps.free.lookups', freeQuizzes: 'caps.free.quizzes', plusQuizzes: 'caps.plus.quizzes' } as const;
+/** Mashq (approved 31 Oct, still coming): questions/day, separate from the on-click quiz cap. Plus null = no daily cap. */
+export const DAILY_CAP_KEYS = {
+  freeLookups: 'caps.free.lookups',
+  freeQuizzes: 'caps.free.quizzes',
+  plusQuizzes: 'caps.plus.quizzes',
+  freeMashq: 'caps.free.mashq',
+  plusMashq: 'caps.plus.mashq',
+} as const;
+export const MASHQ_BURST_KEYS = { perMinute: 'mashq.burst_per_minute', perHour: 'mashq.burst_per_hour', maxOpenSessions: 'mashq.max_open_sessions' } as const;
+export const MASHQ_BURST_FALLBACKS = { perMinute: 60, perHour: 600, maxOpenSessions: 3 } as const;
 export const PLUS_AI_LOOKUP_QUOTA_KEY = 'plus.ai_lookup_quota'; // plusAiLookupQuota
 export const PLUS_LOOKUP_HARD_CAP_KEY = 'plus.lookup_hard_cap'; // plusLookupHardCap (hidden, never in UI/copy)
 export const LOOKUP_BURST_KEYS = { perMinute: 'lookup.burst_per_minute', perHour: 'lookup.burst_per_hour' } as const;
@@ -28,6 +40,13 @@ export function dailyLimitMessage(kind: CapKind, plan: CapPlan, limit: number, _
   const l = lang3(lang);
   const t = PAY_COPY[l];
   if (kind === 'quizzes') return t['lim.quiz'];
+  if (kind === 'mashq') {
+    return {
+      en: `You've used today's ${limit} free Practice questions`,
+      uz: `Bugungi ${limit} ta bepul Mashq savoli tugadi`,
+      ru: `${limit} бесплатных вопросов Практики на сегодня закончились`,
+    }[l];
+  }
   if (plan === 'plus') return SLOW_DOWN_COPY[l];
   return t['lim.free'].replace('{free}', String(limit));
 }
@@ -55,12 +74,13 @@ export function limitResetLine(resetAt: string | Date, lang: string | null | und
 }
 
 /** 429 body the API sends at a cap. The UI renders it as a friendly notice, never an error toast. */
-export type DailyLimitBody = { statusCode: 429; code: 'lookup_limit' | 'quiz_limit'; kind: CapKind; plan: CapPlan; limit: number; plusLimit: number | null; resetAt: string; message: string; messages: Record<CapLang, string> };
+export type DailyLimitBody = { statusCode: 429; code: 'lookup_limit' | 'quiz_limit' | 'mashq_limit'; kind: CapKind; plan: CapPlan; limit: number; plusLimit: number | null; resetAt: string; message: string; messages: Record<CapLang, string> };
 
 /** resetAt = when the counter actually resets (the API's usage-day boundary). */
 export function dailyLimitBody(kind: CapKind, plan: CapPlan, limit: number, plusLimit: number | null, resetAt: Date = nextLimitReset()): DailyLimitBody {
   const messages = { en: dailyLimitMessage(kind, plan, limit, plusLimit, 'en'), uz: dailyLimitMessage(kind, plan, limit, plusLimit, 'uz'), ru: dailyLimitMessage(kind, plan, limit, plusLimit, 'ru') };
-  return { statusCode: 429, code: kind === 'lookups' ? 'lookup_limit' : 'quiz_limit', kind, plan, limit, plusLimit, resetAt: resetAt.toISOString(), message: messages.en, messages };
+  const code = kind === 'lookups' ? 'lookup_limit' : kind === 'quizzes' ? 'quiz_limit' : 'mashq_limit';
+  return { statusCode: 429, code, kind, plan, limit, plusLimit, resetAt: resetAt.toISOString(), message: messages.en, messages };
 }
 
 /** Paywall headline from config (PLUS-OFFER.md §4, 14:33). Never "unlimited" / "fair use" in UI copy. */

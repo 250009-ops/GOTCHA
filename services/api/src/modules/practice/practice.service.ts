@@ -1,6 +1,7 @@
 import { canReadUserImport } from '../content/user-import-privacy';
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ServiceUnavailableException } from '@nestjs/common';
 import { PracticeType } from '@prisma/client';
+import { gradeAnswer } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
@@ -72,6 +73,9 @@ export class PracticeService {
             passageLang,
             userId,
           }));
+    if (dto.practiceType !== PracticeType.flashcard && questions.length === 0) {
+      throw new ServiceUnavailableException('Could not build a quiz for this chapter. Try again.');
+    }
 
     const session = await this.prisma.practiceSession.create({
       data: {
@@ -111,7 +115,9 @@ export class PracticeService {
       if (!question) continue;
 
       const isCorrect =
-        answer.userAnswer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
+        session.practiceType === PracticeType.cloze
+          ? gradeAnswer(answer.userAnswer, question.correctAnswer).correct
+          : answer.userAnswer.trim().toLowerCase() === question.correctAnswer.trim().toLowerCase();
       if (isCorrect) correctCount++;
 
       const saved = await this.prisma.practiceAnswer.create({
@@ -131,7 +137,11 @@ export class PracticeService {
       data: { correctCount, completedAt: new Date() },
     });
 
-    return { session: updated, results, score: correctCount / session.questionCount };
+    return {
+      session: updated,
+      results,
+      score: session.questionCount > 0 ? correctCount / session.questionCount : 0,
+    };
   }
 
   async getSession(userId: string, sessionId: string) {

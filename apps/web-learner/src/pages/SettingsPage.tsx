@@ -360,6 +360,7 @@ export default function SettingsPage() {
   const [showKnownWords, setShowKnownWords] = useState(preferences?.showKnownWords ?? false);
   const [ttsEnabled, setTtsEnabled] = useState(preferences?.ttsEnabled ?? false);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences?.notificationsEnabled ?? true);
+  const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
   const [saving, setSaving] = useState(false);
 
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
@@ -395,6 +396,7 @@ export default function SettingsPage() {
       setShowKnownWords(preferences.showKnownWords);
       setTtsEnabled(preferences.ttsEnabled);
       setNotificationsEnabled(preferences.notificationsEnabled);
+      setDailyGoal(preferences.dailyGoalMinutes ?? 15);
     }
   }, [preferences]);
 
@@ -433,6 +435,7 @@ export default function SettingsPage() {
           showKnownWords,
           ttsEnabled,
           notificationsEnabled,
+          dailyGoalMinutes: dailyGoal,
         }),
       ]);
       await refreshProfile();
@@ -676,7 +679,7 @@ export default function SettingsPage() {
         </Row>
         <Row label={practiceCopy.appTheme}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={practiceCopy.appTheme}>
-            {(['system', 'light', 'dark'] as const).map((t) => (
+            {(['system', 'light'] as const).map((t) => (
               <button
                 key={t}
                 type="button"
@@ -684,14 +687,14 @@ export default function SettingsPage() {
                 aria-checked={(preferences?.appTheme ?? 'system') === t}
                 onClick={() => {
                   applyAppTheme(t);
-                  void updatePreferences({ appTheme: t }).catch(() => undefined);
+                  void updatePreferences({ appTheme: t }).catch(() => toast.error(copy.settings.saveFailed));
                 }}
                 className={cn(
                   'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
                   (preferences?.appTheme ?? 'system') === t ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
                 )}
               >
-                {t === 'system' ? practiceCopy.themeSystem : t === 'light' ? practiceCopy.themeLight : practiceCopy.themeDark}
+                {t === 'system' ? practiceCopy.themeSystem : practiceCopy.themeLight}
               </button>
             ))}
           </div>
@@ -723,6 +726,25 @@ export default function SettingsPage() {
       </Section>
 
       <Section title={copy.settings.learningGoals}>
+        <Row label={copy.stats.dailyGoal} description={`${dailyGoal} ${copy.stats.minutes}`}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.stats.dailyGoal}>
+            {[5, 10, 15, 20, 30].map((minutes) => (
+              <button
+                key={minutes}
+                type="button"
+                role="radio"
+                aria-checked={dailyGoal === minutes}
+                onClick={() => setDailyGoal(minutes)}
+                className={cn(
+                  'h-9 min-w-12 px-2.5 rounded-[10px] border text-xs font-semibold',
+                  dailyGoal === minutes ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+                )}
+              >
+                {minutes}
+              </button>
+            ))}
+          </div>
+        </Row>
         <Row
           label={copy.settings.emailNotifications}
           description={copy.settings.emailNotificationsHint}

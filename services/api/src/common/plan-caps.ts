@@ -13,9 +13,9 @@ import { DAILY_CAP_FALLBACKS, DAILY_CAP_KEYS, PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOO
 import { activeSubWhere } from './plan-active';
 
 export type PlanCaps = {
-  free: { lookups: number; quizzes: number };
-  /** lookups: null = unlimited full AI lookups. */
-  plus: { lookups: number | null; quizzes: number };
+  free: { lookups: number; quizzes: number; mashq: number };
+  /** lookups: null = unlimited full AI lookups. mashq: null = unlimited page-practice questions. */
+  plus: { lookups: number | null; quizzes: number; mashq: number | null };
   /** Hidden cap on dictionary-mode lookups (only used when plus.lookups is set). null = none. */
   plusLookupHardCap: number | null;
 };
@@ -45,14 +45,22 @@ export async function getPlanCaps(prisma: unknown, now = Date.now()): Promise<Pl
   if (cache && now - cache.at < PLAN_CAPS_TTL_MS) return cache.caps;
   const db = prisma as Db;
   const settings = await Promise.resolve()
-    .then(() => db.platformSetting?.findMany?.({ where: { key: { in: [PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, DAILY_CAP_KEYS.freeLookups, DAILY_CAP_KEYS.freeQuizzes, DAILY_CAP_KEYS.plusQuizzes] } } }) ?? [])
+    .then(() => db.platformSetting?.findMany?.({ where: { key: { in: [PLUS_AI_LOOKUP_QUOTA_KEY, PLUS_LOOKUP_HARD_CAP_KEY, DAILY_CAP_KEYS.freeLookups, DAILY_CAP_KEYS.freeQuizzes, DAILY_CAP_KEYS.plusQuizzes, DAILY_CAP_KEYS.freeMashq, DAILY_CAP_KEYS.plusMashq] } } }) ?? [])
     .catch((): Array<{ key: string; value: unknown }> => []);
   const setting = (k: string) => settings.find((s) => s.key === k)?.value;
   const plusLookups = optionalCap(setting(PLUS_AI_LOOKUP_QUOTA_KEY));
   const hard = optionalCap(setting(PLUS_LOOKUP_HARD_CAP_KEY));
   const caps: PlanCaps = {
-    free: { lookups: int(setting(DAILY_CAP_KEYS.freeLookups), DAILY_CAP_FALLBACKS.free.lookups), quizzes: int(setting(DAILY_CAP_KEYS.freeQuizzes), DAILY_CAP_FALLBACKS.free.quizzes) },
-    plus: { lookups: plusLookups, quizzes: int(setting(DAILY_CAP_KEYS.plusQuizzes), DAILY_CAP_FALLBACKS.plus.quizzes) },
+    free: {
+      lookups: int(setting(DAILY_CAP_KEYS.freeLookups), DAILY_CAP_FALLBACKS.free.lookups),
+      quizzes: int(setting(DAILY_CAP_KEYS.freeQuizzes), DAILY_CAP_FALLBACKS.free.quizzes),
+      mashq: int(setting(DAILY_CAP_KEYS.freeMashq), DAILY_CAP_FALLBACKS.free.mashq),
+    },
+    plus: {
+      lookups: plusLookups,
+      quizzes: int(setting(DAILY_CAP_KEYS.plusQuizzes), DAILY_CAP_FALLBACKS.plus.quizzes),
+      mashq: optionalCap(setting(DAILY_CAP_KEYS.plusMashq)),
+    },
     plusLookupHardCap: plusLookups == null ? null : hard == null ? null : Math.max(hard, plusLookups),
   };
   cache = { at: now, caps };
