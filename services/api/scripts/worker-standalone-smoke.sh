@@ -46,8 +46,11 @@ TOK=$(curl -s -X POST "$B/auth/login" -H 'content-type: application/json' -d "{\
 [[ -n "$TOK" ]] || fail "login"
 UID_=$(Q "select id from users where email='$EM'")
 TXT=$(python3 -c 'print(" ".join(["The quick brown fox jumps over the lazy dog near the river bank today."]*12))')
-paste(){ curl -s -X POST "$B/imports/paste" -H "authorization: Bearer $TOK" -H 'content-type: application/json' \
-  -d "{\"title\":\"$1\",\"text\":\"$TXT\",\"language\":\"en\"}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("id") or d)'; }
+paste(){ local pid; pid=$(curl -s -X POST "$B/billing/imports/checkout" -H "authorization: Bearer $TOK" -H 'content-type: application/json' \
+  -d "{\"importType\":\"paste\",\"contentFormat\":\"article\",\"textLength\":${#TXT},\"platform\":\"web\"}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("paymentId") if d.get("isFree") else json.dumps(d)[:300])')
+  [[ "$pid" =~ ^[0-9a-f-]{36}$ ]] || { echo "free checkout: $pid"; return; }
+  curl -s -X POST "$B/imports/paste" -H "authorization: Bearer $TOK" -H 'content-type: application/json' \
+  -d "{\"title\":\"$1\",\"text\":\"$TXT\",\"language\":\"en\",\"paymentId\":\"$pid\"}" | python3 -c 'import sys,json;d=json.load(sys.stdin);print(d.get("id") or json.dumps(d)[:300])'; }
 P1=$(paste "Stuck one"); P2=$(paste "Stuck two"); P3=$(paste "Will fail free")
 for p in $P1 $P2 $P3; do [[ "$p" =~ ^[0-9a-f-]{36}$ ]] || fail "paste returned $p"; done
 say "E2E paste ×3 via API (no worker running): $(Q "select string_agg(status||'/'||attempts||'/'||coalesce(locked_by,'null'),' ') from import_queue_jobs")"
@@ -58,12 +61,12 @@ say "free credits recorded by the API for the 3 pastes: $FREE0"
 K3=$(Q "select payload->>'textKey' from import_queue_jobs where user_import_id='$P3'"); rm -f "$W/uploads/$K3"
 Q "update import_queue_jobs set max_attempts=1 where user_import_id='$P3'" >/dev/null
 # failure (paid): import with a paid 5 000 so'm payment, source missing, single attempt
-P4=$(Q "insert into user_imports(id,user_id,title,import_type,language,ingestion_status,file_key,updated_at) values (gen_random_uuid(),'$UID_','Paid will fail','paste','en','queued','imports/missing.txt',now()) returning id" | head -1)
+P4=$(Q "insert into user_imports(id,user_id,title,import_type,language,ingestion_status,file_key) values (gen_random_uuid(),'$UID_','Paid will fail','paste','en','queued','imports/missing.txt') returning id" | head -1)
 Q "insert into import_payments(id,user_id,status,import_type,content_format,estimated_pages,amount_tiyins,account,user_import_id,paid_at,provider_payment_id) values (gen_random_uuid(),'$UID_','paid','paste','article',1,500000,'wsmoke-$$','$P4',now(),'0')" >/dev/null
 Q "insert into import_queue_jobs(id,user_import_id,kind,payload,max_attempts,run_after,updated_at) values (gen_random_uuid(),'$P4','paste','{\"textKey\":\"imports/missing.txt\",\"title\":\"x\",\"language\":\"en\"}',1,(now() at time zone 'UTC') - interval '1 second',now())" >/dev/null
 # stale lock: running row owned by a dead worker, heartbeat 10 min old
 K1=$(Q "select payload->>'textKey' from import_queue_jobs where user_import_id='$P1'"); cp "$W/uploads/$K1" "$W/uploads/$K1.stale"
-P5=$(Q "insert into user_imports(id,user_id,title,import_type,language,ingestion_status,file_key,updated_at) values (gen_random_uuid(),'$UID_','Stale lock','paste','en','processing','$K1.stale',now()) returning id" | head -1)
+P5=$(Q "insert into user_imports(id,user_id,title,import_type,language,ingestion_status,file_key) values (gen_random_uuid(),'$UID_','Stale lock','paste','en','processing','$K1.stale') returning id" | head -1)
 Q "insert into import_queue_jobs(id,user_import_id,kind,status,attempts,locked_by,locked_at,heartbeat_at,payload,updated_at) values (gen_random_uuid(),'$P5','paste','running',1,'dead-worker:1',(now() at time zone 'UTC') - interval '10 minutes',(now() at time zone 'UTC') - interval '10 minutes','{\"textKey\":\"$K1.stale\",\"title\":\"Stale lock\",\"language\":\"en\"}',now())" >/dev/null
 PAYS0=$(Q "select count(*)||':'||coalesce(sum(amount_tiyins),0) from import_payments")
 # 2 workers at once
@@ -85,7 +88,7 @@ say "PASS e2e + stuck rows + stale lock: 3 imports ready, GET /content/:id/segme
 [[ "$(Q "select attempts from import_queue_jobs where user_import_id='$P1'")$(Q "select attempts from import_queue_jobs where user_import_id='$P2'")" == 11 ]] || fail "stuck rows took >1 attempt"
 N=$(cat "$W/w1.log" "$W/w2.log" | grep -c ' ready in ' || true)
 [[ "$N" == 3 ]] || fail "expected 3 'ready in' lines across both workers, got $N (duplicate processing?)"
-[[ "$(Q "select count(*) from contents c join user_imports u on u.content_id=c.id where u.user_id='$UID_'")" == 3 ]] || fail "content count"
+[[ "$(Q "select count(*) from content_items c join user_imports u on u.content_id=c.id where u.user_id='$UID_'")" == 3 ]] || fail "content count"
 say "PASS 2 workers: 3 successes processed exactly once (w1 $(grep -c ' ready in ' "$W/w1.log" || true), w2 $(grep -c ' ready in ' "$W/w2.log" || true)), 1 content row each"
 grep -q 'Re-queued 1 stalled' "$W/w1.log" "$W/w2.log" && say "PASS stale lock reclaimed by reaper" || fail "no reaper requeue log"
 [[ "$(Q "select status from import_queue_jobs where user_import_id='$P3'")$(Q "select ingestion_status from user_imports where id='$P3'")" == failedfailed ]] || fail "free fail path"
