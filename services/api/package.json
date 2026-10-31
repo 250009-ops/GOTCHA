@@ -23,7 +23,8 @@
     "test:paginate": "ts-node --transpile-only src/utils/tokenizer.test.ts",
     "test:langs": "ts-node --transpile-only src/common/language-catalog.test.ts",
     "test:streak": "ts-node --transpile-only src/services/streak.service.test.ts",
-    "test:mail": "ts-node --transpile-only src/common/mail/mail.templates.test.ts"
+    "test:mail": "ts-node --transpile-only src/common/mail/mail.templates.test.ts",
+    "test:shuffle": "ts-node --transpile-only src/modules/practice/shuffle-options.test.ts"
   },
   "dependencies": {
     "@gotcha/shared": "*",

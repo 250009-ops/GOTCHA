@@ -5,6 +5,7 @@ import { LimitsService } from '../../services/limits.service';
 import { AiService } from '../ai/ai.service';
 import { StartPracticeDto, SubmitPracticeDto } from './dto/practice.dto';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
+import { shuffleQuestionOptions } from './shuffle-options';
 
 @Injectable()
 export class PracticeService {
@@ -53,10 +54,10 @@ export class PracticeService {
     const questions =
       dto.practiceType === PracticeType.flashcard
         ? []
-        : await this.ai.generateQuiz(segmentText, dto.practiceType, {
+        : shuffleQuestionOptions(await this.ai.generateQuiz(segmentText, dto.practiceType, {
             questionLang,
             passageLang,
-          });
+          }));
 
     const session = await this.prisma.practiceSession.create({
       data: {
