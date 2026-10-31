@@ -681,7 +681,7 @@ export default function VocabularyPage() {
       </div>
 
       <div className="text-center text-xs text-gray-400 pb-2">
-        Showing {filtered.length} of {mapped.length}
+        {copy.vocabPage.showingCount(filtered.length, mapped.length)}
         {vocabLoading ? ' · refreshing…' : ''}
       </div>
     </div>

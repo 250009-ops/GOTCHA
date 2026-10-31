@@ -65,6 +65,7 @@ export interface LearnerCopyExt {
     ignore: string;
     contentNotFound: string;
     contentLoadFailed: string;
+    markAsLabel: string;
     tryAgain: string;
     noSegments: string;
     backToLibrary: string;
@@ -316,6 +317,7 @@ export interface LearnerCopyExt {
     noMatchSearch: string;
     reviewDue: (count: number) => string;
     wordCountSummary: (total: number, learning: number, mastered: number) => string;
+    showingCount: (shown: number, total: number) => string;
     ratedAs: (lemma: string, rating: string) => string;
     filterAll: string;
     filterDue: (count: number) => string;
@@ -438,6 +440,7 @@ const EXT_EN: LearnerCopyExt = {
     ignore: 'Ignore',
     contentNotFound: 'Content not found',
     contentLoadFailed: 'Could not load this book. Check your connection and try again.',
+    markAsLabel: '→ Mark as:',
     tryAgain: 'Try again',
     noSegments: 'No content segments available',
     backToLibrary: 'Library',
@@ -690,6 +693,7 @@ const EXT_EN: LearnerCopyExt = {
     noMatchSearch: 'No words match your search',
     reviewDue: (count) => `Review ${count} due`,
     wordCountSummary: (total, learning, mastered) => `${total} word${total !== 1 ? 's' : ''} · ${learning} learning · ${mastered} mastered`,
+    showingCount: (shown, total) => `Showing ${shown} of ${total}`,
     ratedAs: (lemma, rating) => `"${lemma}" rated as ${rating}`,
     filterAll: 'all',
     filterDue: (count) => `Due (${count})`,
@@ -815,6 +819,7 @@ const EXT_RU: LearnerCopyExt = {
     ignore: 'Игнор',
     contentNotFound: 'Контент не найден',
     contentLoadFailed: 'Не удалось загрузить книгу. Проверьте подключение и попробуйте снова.',
+    markAsLabel: '→ Отметить как:',
     tryAgain: 'Повторить',
     noSegments: 'Нет доступных фрагментов',
     backToLibrary: 'Библиотека',
@@ -1067,6 +1072,7 @@ const EXT_RU: LearnerCopyExt = {
     noMatchSearch: 'Нет слов по запросу',
     reviewDue: (count) => `Повторить ${count}`,
     wordCountSummary: (total, learning, mastered) => `${total} ${pluralRu(total, 'слово', 'слова', 'слов')} · ${learning} изучаю · ${mastered} освоено`,
+    showingCount: (shown, total) => `Показано ${shown} из ${total}`,
     ratedAs: (lemma, rating) => `«${lemma}» — ${rating}`,
     filterAll: 'все',
     filterDue: (count) => `К повтору (${count})`,
@@ -1192,6 +1198,7 @@ const EXT_UZ: LearnerCopyExt = {
     ignore: 'E’tiborsiz',
     contentNotFound: 'Kontent topilmadi',
     contentLoadFailed: 'Kitobni yuklab boʻlmadi. Internetni tekshirib, qayta urinib koʻring.',
+    markAsLabel: '→ Belgilash:',
     tryAgain: 'Qayta urinish',
     noSegments: 'Boʻlimlar mavjud emas',
     backToLibrary: 'Kutubxona',
@@ -1444,6 +1451,7 @@ const EXT_UZ: LearnerCopyExt = {
     noMatchSearch: 'Qidiruvga mos soʻz yoʻq',
     reviewDue: (count) => `${count} ta takror`,
     wordCountSummary: (total, learning, mastered) => `${total} soʻz · ${learning} oʻrganilmoqda · ${mastered} oʻzlashtirilgan`,
+    showingCount: (shown, total) => `${total} tadan ${shown} tasi koʻrsatilmoqda`,
     ratedAs: (lemma, rating) => `«${lemma}» — ${rating}`,
     filterAll: 'hammasi',
     filterDue: (count) => `Muddat (${count})`,

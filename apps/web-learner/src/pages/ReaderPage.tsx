@@ -203,7 +203,7 @@ function DictionaryPanel({
               })}>
                 {statusLabel}
               </div>
-              <span className="text-[#99a1af]">→ Mark as:</span>
+              <span className="text-[#99a1af]">{copy.reader.markAsLabel}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <button
