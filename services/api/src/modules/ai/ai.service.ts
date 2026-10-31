@@ -144,6 +144,15 @@ export class AiService {
   }
 
   /** AI-1: OpenAI moderation on text shown to minors. Fails CLOSED (503) if moderation is unavailable. */
+  /** WL4-04: moderate every text field of a lookup shown to a minor; flagged → localized placeholder. */
+  private async moderateLookupForMinor(band: AgeBand, l: MemoryLookup, uiLanguage?: string): Promise<MemoryLookup> {
+    if (!isMinorBand(band)) return l;
+    const all = [l.translation, l.contextualMeaning, l.phrase].filter(Boolean).join('\n');
+    const checked = await this.moderateForMinor(band, all, uiLanguage);
+    if (checked === all) return l;
+    return { ...l, translation: checked, contextualMeaning: null, phrase: null, grammarNote: null };
+  }
+
   private async moderateForMinor(band: AgeBand, text: string, uiLanguage?: string): Promise<string> {
     if (!isMinorBand(band) || !text.trim()) return text;
     const client = this.getClient();
@@ -193,7 +202,7 @@ export class AiService {
    * Stable shared cache key: normalized lemma + language pair + sentence hash.
    * Does not store raw user text in the key beyond a hash; safe to share across users.
    */
-  private buildLookupCacheKey(dto: LookupDto, surface: string, context: string) {
+  private buildLookupCacheKey(dto: LookupDto, surface: string, context: string, band?: AgeBand) {
     const lemma = normalizeLemmaKey(dto.lemma?.trim() || surface) || normalizeLemmaKey(surface);
     const hash = this.contentHash(
       [
@@ -202,6 +211,8 @@ export class AiService {
         dto.sourceLang,
         dto.targetLang,
         this.sentenceHash(context),
+        // WL4-04: minors never share cache entries with adults (child-safe prompt + moderated output).
+        ...(band && isMinorBand(band) ? ['minor'] : []),
       ].join('|'),
     );
     return { lemma, hash };
@@ -296,11 +307,11 @@ export class AiService {
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
     const kind = classifyLookup(surface, context);
-    const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context);
+    const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context, band);
 
     const fromMemory = this.memoryGet(hash);
     if (fromMemory) {
-      return this.presentLookup(fromMemory, surface, context, true);
+      return this.presentLookup(await this.moderateLookupForMinor(band, fromMemory, uiLanguage), surface, context, true);
     }
 
     if (!this.useMemory()) {
@@ -327,7 +338,7 @@ export class AiService {
           partOfSpeech: cached.partOfSpeech ?? null,
         };
         this.memorySet(hash, payload);
-        return this.presentLookup(payload, surface, context, true);
+        return this.presentLookup(await this.moderateLookupForMinor(band, payload, uiLanguage), surface, context, true);
       }
     }
 
@@ -402,7 +413,7 @@ export class AiService {
 
         try {
           if (kind === 'word' && looksLikeDefinitionGloss(translation)) {
-            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang);
+            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang, band);
             if (strict) translation = sanitizeGloss(strict, translation, limits, kind);
           }
           if (
@@ -420,6 +431,7 @@ export class AiService {
               sourceLang: dto.sourceLang,
               targetLang: dto.targetLang,
               kind,
+              band,
             });
             if (repaired) {
               phrase = sanitizePhrase(repaired.phraseIfAny, context, surface, kind)
@@ -461,14 +473,15 @@ export class AiService {
       phrase = null;
       contextualMeaning = null;
     }
-    const payload: MemoryLookup = {
+    // WL4-04: minors' output is moderated BEFORE it is cached or returned; moderation down → 503 (fail closed).
+    const payload: MemoryLookup = await this.moderateLookupForMinor(band, {
       lemma,
       translation,
       contextualMeaning,
       phrase,
       grammarNote,
       partOfSpeech,
-    };
+    }, uiLanguage);
     this.memorySet(hash, payload);
 
     if (!this.useMemory()) {
@@ -518,6 +531,7 @@ export class AiService {
     model: string,
     word: string,
     glossLang: string,
+    band?: AgeBand,
   ): Promise<string | null> {
     try {
       const response = await client.chat.completions.create({
@@ -528,8 +542,10 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
+            content: withChildSafe(
               'You are a bilingual dictionary. Return ONLY JSON: {"translation":""}. translation is the short base/dictionary gloss of ONE word in the requested language. No context phrases, no alternatives, no punctuation.',
+              band ?? ageBand(null),
+            ),
           },
           {
             role: 'user',
@@ -555,6 +571,7 @@ export class AiService {
       sourceLang: string;
       targetLang: string;
       kind: 'word' | 'phrase' | 'sentence';
+      band?: AgeBand;
     },
   ): Promise<{
     lemma?: string;
@@ -569,7 +586,7 @@ export class AiService {
         max_tokens: 250,
         response_format: { type: 'json_object' },
         messages: [
-          { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
+          { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, opts.band ?? ageBand(null)) },
           {
             role: 'user',
             content: [
