@@ -33,7 +33,7 @@ function NavLinks({
   const copy = useMarketingCopy();
   const navLinks = useMemo(
     () => [
-      { to: '/#catalog', label: copy.nav.catalog },
+      { to: '/#library', label: copy.nav.catalog },
       { to: '/#features', label: copy.nav.features },
       { to: '/#how', label: copy.nav.how },
     ],
@@ -188,7 +188,7 @@ export function SiteFooter() {
                 {copy.footer.product}
               </h4>
               <div className="flex flex-col gap-3 font-['Manrope',sans-serif] text-[13px] text-[#4a5565]">
-                <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
+                <Link to="/#library" className="transition-colors hover:text-[#101828]">
                   {copy.nav.catalog}
                 </Link>
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
