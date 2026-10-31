@@ -920,6 +920,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     // Atmos confirms late (callback / status check) was really charged → deliver it (idempotent, conditional write).
     if (existing.status !== ImportPaymentStatus.pending && existing.status !== ImportPaymentStatus.expired) return null;
 
+    // PAY2-12: the 24 h "expired unverified" manual-review flag is resolved by the late grant itself.
+    // Cleared BEFORE the transition so a Plus-grant failure inside it can still re-flag the row.
+    if (existing.status === ImportPaymentStatus.expired && existing.needsAttention && (existing.cancelReason ?? '').startsWith('expired_unverified')) {
+      await this.prisma.importPayment.updateMany({ where: { id: existing.id, status: ImportPaymentStatus.expired }, data: { needsAttention: false, cancelReason: null, nextCheckAt: null } });
+    }
     const ok = await this.transitionToPaid(existing.id, {
       providerRef: opts?.providerRef,
       ofdUrl: opts?.ofdUrl,
@@ -1114,7 +1119,6 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   }
 
   /** PAY2-01: per-payment Atmos status-check backoff (in-process; the 24 h cap below is derived from expiresAt, so a restart only re-checks sooner). */
-  private readonly expiryBackoff = new Map<string, { attempts: number; nextAt: number }>();
 
   /**
    * PAY1-08 / PAY2-01 (every 10 min): pending payments past their 60-min session.
@@ -1127,25 +1131,28 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
    * Never touches non-pending rows.
    */
   async expireStalePending(now = new Date(), limit = 200) {
-    const stale = await this.prisma.importPayment.findMany({ where: { status: ImportPaymentStatus.pending, expiresAt: { lte: now } }, take: limit });
+    // PAY2-12: oldest first (a backlog can't starve the oldest charges); backoff persisted in next_check_at so it
+    // survives restarts and is shared by every API process. Rows still backing off are skipped in SQL.
+    const stale = await this.prisma.importPayment.findMany({
+      where: { status: ImportPaymentStatus.pending, expiresAt: { lte: now }, OR: [{ nextCheckAt: null }, { nextCheckAt: { lte: now } }, { expiresAt: { lte: new Date(now.getTime() - EXPIRY_UNVERIFIED_CAP_MS) } }] },
+      orderBy: [{ expiresAt: 'asc' }, { createdAt: 'asc' }],
+      take: limit,
+    });
     let paid = 0, expired = 0, deferred = 0, flagged = 0;
     const expire = async (id: string, data: Prisma.ImportPaymentUpdateManyMutationInput = {}) => {
-      const r = await this.prisma.importPayment.updateMany({ where: { id, status: ImportPaymentStatus.pending }, data: { status: ImportPaymentStatus.expired, ...data } });
-      this.expiryBackoff.delete(id);
+      const r = await this.prisma.importPayment.updateMany({ where: { id, status: ImportPaymentStatus.pending }, data: { status: ImportPaymentStatus.expired, nextCheckAt: null, ...data } });
       return r.count;
     };
     for (const p of stale) {
       const tx = Number(p.providerPaymentId);
       if (!(Number.isFinite(tx) && tx > 0)) { expired += await expire(p.id); continue; }
       const overCap = p.expiresAt != null && now.getTime() - p.expiresAt.getTime() >= EXPIRY_UNVERIFIED_CAP_MS;
-      const b = this.expiryBackoff.get(p.id);
-      if (b && b.nextAt > now.getTime() && !overCap) { deferred++; continue; }
       let remote: Awaited<ReturnType<AtmosClient['getTransaction']>> | null = null;
       let failed = !this.atmos.configured();
       if (!failed) {
         try { remote = await this.atmos.getTransaction(tx); } catch (e) { failed = true; this.logger.warn(`expiry check ${p.id}: Atmos error ${(e as Error).message}`); }
       }
-      if (remote?.confirmed) { if (await this.markPaid(p.account, { ofdUrl: remote.ofdUrl, raw: remote.raw, late: true })) paid++; this.expiryBackoff.delete(p.id); continue; }
+      if (remote?.confirmed) { if (await this.markPaid(p.account, { ofdUrl: remote.ofdUrl, raw: remote.raw, late: true })) paid++; continue; }
       const definitive = !failed && remote != null && (remote.raw as { store_transaction?: unknown } | null)?.store_transaction != null;
       if (definitive) { expired += await expire(p.id); continue; }
       if (overCap) {
@@ -1154,8 +1161,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         this.logger.warn(`payment ${p.id}: expired unverified after 24 h, flagged for manual review`);
         continue;
       }
-      const attempts = (b?.attempts ?? 0) + 1;
-      this.expiryBackoff.set(p.id, { attempts, nextAt: now.getTime() + Math.min(EXPIRY_BACKOFF_MAX_MS, EXPIRY_BACKOFF_BASE_MS * 2 ** (attempts - 1)) });
+      const attempts = (p.expiryCheckAttempts ?? 0) + 1;
+      await this.prisma.importPayment.updateMany({
+        where: { id: p.id, status: ImportPaymentStatus.pending },
+        data: { expiryCheckAttempts: attempts, nextCheckAt: new Date(now.getTime() + Math.min(EXPIRY_BACKOFF_MAX_MS, EXPIRY_BACKOFF_BASE_MS * 2 ** (attempts - 1))) },
+      });
       deferred++;
     }
     return { checked: stale.length, paid, expired, deferred, flagged };

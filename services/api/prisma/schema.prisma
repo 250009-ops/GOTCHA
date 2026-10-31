@@ -595,9 +595,13 @@ model ImportPayment {
   importAttempts    Int       @default(0) @map("import_attempts")
   /// Retries used up: admin must refund via the reverse path.
   refundDue         Boolean   @default(false) @map("refund_due")
+  /// PAY2-12: expiry sweeper backoff (Atmos unreachable): not re-checked before this time; attempts so far.
+  nextCheckAt       DateTime? @map("next_check_at")
+  expiryCheckAttempts Int     @default(0) @map("expiry_check_attempts")
 
   @@index([userId, status])
   @@index([providerPaymentId])
+  @@index([status, expiresAt])
   @@index([status, refundRequestedAt])
   @@map("import_payments")
 }

@@ -97,6 +97,31 @@ async function main() {
     for (let i = 0; i < 305; i++) await (i % 2 ? a : b).burstGuard(h, t0 + i * 10_000).then(() => okH++, () => undefined);
     check('PAY2-09 300/h ceiling across instances', okH === 300, `ok=${okH}`); }
 
+  // ---- PAY2-12: backoff persisted in next_check_at (survives a new process), oldest first, flag cleared on late grant
+  { const st: St = { down: true, confirmed: true, reverses: 0 }; const u = await mkUser();
+    const p = await mkPay(u.id, 'plus_pass:30');
+    const r1 = await new ImportCommerceService(prisma as any, atmos(st)).expireStalePending();
+    const a = await get(p.id);
+    check('PAY2-12 Atmos down → next_check_at persisted, attempts 1', a.status === S.pending && !!a.nextCheckAt && a.nextCheckAt > new Date() && a.expiryCheckAttempts === 1, JSON.stringify(r1));
+    const fresh = new ImportCommerceService(prisma as any, atmos(st)); // "restarted" process: no in-memory state
+    let calls = 0; const at: any = (fresh as any).atmos; const orig = at.getTransaction; at.getTransaction = async (id: number) => { calls++; return orig(id); };
+    await fresh.expireStalePending();
+    check('PAY2-12 new process honours the persisted backoff (no Atmos call)', calls === 0 && (await get(p.id)).expiryCheckAttempts === 1, `calls=${calls}`);
+    await fresh.expireStalePending(new Date(Date.now() + 11 * 60_000));
+    const b = await get(p.id);
+    check('PAY2-12 after next_check_at → re-checked, attempts 2, backoff doubled', b.expiryCheckAttempts === 2 && b.nextCheckAt!.getTime() - (Date.now() + 11 * 60_000) > 15 * 60_000, `next=${b.nextCheckAt?.toISOString()}`);
+    await fresh.expireStalePending(new Date(Date.now() + 25 * 3_600_000)); const c = await get(p.id);
+    check('PAY2-12 24 h cap → expired + manual review', c.status === S.expired && c.needsAttention && (c.cancelReason ?? '').startsWith('expired_unverified'));
+    await fresh.handleAtmosCallback(cb(p)); const d = await get(p.id);
+    const ents = await prisma.entitlement.count({ where: { importPaymentId: p.id, kind: 'plus', status: 'active' } });
+    check('PAY2-12 late grant clears the manual-review flag (Plus granted once)', d.status === S.paid && !d.needsAttention && d.cancelReason == null && ents === 1, JSON.stringify({ n: d.needsAttention, r: d.cancelReason, ents })); }
+  { const st: St = { down: false, confirmed: false, reverses: 0 }; const u = await mkUser();
+    await prisma.importPayment.updateMany({ where: { status: S.pending }, data: { status: S.failed } });
+    const newer = await mkPay(u.id, 'article', 61); const older = await mkPay(u.id, 'article', 600); const mid = await mkPay(u.id, 'article', 120);
+    const seen: string[] = []; const m: any = atmos(st); const g = m.getTransaction; m.getTransaction = async (id: number) => { seen.push(String(id)); return g(id); };
+    await new ImportCommerceService(prisma as any, m).expireStalePending(new Date(), 2);
+    check('PAY2-12 expiry batch is oldest first (limit 2 → the two oldest)', seen.join() === [older, mid].map((x) => x.providerPaymentId).join() && (await get(newer.id)).status === S.pending, seen.join()); }
+
   await prisma.$disconnect();
   console.log(fails ? `FAILED ${fails}` : 'payments-02-wlive.db: all passed');
   process.exit(fails ? 1 : 0);
