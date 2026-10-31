@@ -56,3 +56,26 @@ test('WLF-07: built bundle serves the PM text for all 6 documents (run after vit
   }
   for (const re of OLD) assert.ok(!re.test(js), `dist has legacy text ${re}`);
 });
+
+// PM final legal set for final-3 (Kai/PM 31 Oct 15:56): sha256 prefixes of the exact files /terms and /privacy must serve.
+const PINNED: Record<string, string> = {
+  'terms-en': '3b71791b94d1', 'terms-ru': '4e034c8facfc', 'terms-uz': 'e97df950395a',
+  'privacy-en': '6b9ee013ac3c', 'privacy-ru': 'a00adb3fca19', 'privacy-uz': 'cef024962382',
+};
+test('final-3: served legal text hashes match the pinned PM files; no "(Public Offer)" in any title', async () => {
+  const { createHash } = await import('node:crypto');
+  const sha = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
+  for (const [k, want] of Object.entries(PINNED)) {
+    const served = readFileSync(`legal-pm/${k}.html`, 'utf8');
+    assert.ok(sha(served).startsWith(want), `${k}: ${sha(served).slice(0, 12)} != ${want}`);
+    const h1 = served.match(/<h1>([^<]*)<\/h1>/)![1];
+    assert.ok(!/public offer|публичная оферта|ommaviy oferta|\(/i.test(h1), `${k} h1: ${h1}`);
+  }
+  const { LEGAL_TITLES } = await import('../src/lib/legalPm.titles.ts');
+  for (const t of Object.values(LEGAL_TITLES.terms)) assert.ok(!/offer|оферт|oferta|\(/i.test(t as string), t as string);
+  // the built bundle carries exactly these strings (hash of the decoded literal)
+  if (existsSync('dist/assets')) {
+    const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(join('dist/assets', f), 'utf8')).join('\n');
+    for (const k of Object.keys(PINNED)) assert.ok(js.includes(JSON.stringify(readFileSync(`legal-pm/${k}.html`, 'utf8')).slice(1, -1)) || js.includes(readFileSync(`legal-pm/${k}.html`, 'utf8')), `${k} not in dist`);
+  }
+});
