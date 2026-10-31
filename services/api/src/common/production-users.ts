@@ -78,11 +78,19 @@ export function liveMessagingPeerWhere(): Prisma.UserWhereInput {
         ...FIGMA_SAMPLE_DISPLAY_NAMES.map((name) => ({
           displayName: { equals: name, mode: 'insensitive' as const },
         })),
-        // W-12/S6: under-13 learners are never listed in the learner directory.
-        ...under13UserWhere(),
+        // Privacy §7/§12: minors (known under-18) are never listed in the learner directory or suggestions.
+        ...minorUserWhere(),
       ],
     },
   };
+}
+
+/** Known minors (under 18). Unknown age is listed unless AGE_UNKNOWN_BAND=under13 (then hidden too). */
+export function minorUserWhere(): Prisma.UserWhereInput[] {
+  const y = new Date().getUTCFullYear();
+  const terms: Prisma.UserWhereInput[] = [{ birthYear: { gte: y - 18 } }];
+  if ((process.env.AGE_UNKNOWN_BAND ?? 'teen') === 'under13') terms.push({ birthYear: null });
+  return terms;
 }
 
 /** Prisma OR-terms matching under-13 accounts (age uses the younger bound of birth_year). */
