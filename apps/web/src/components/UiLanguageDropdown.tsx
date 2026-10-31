@@ -1,6 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { UI_LANGUAGE_PICKER, UI_LANGUAGES, type UiLanguage } from '@gotcha/shared';
+import { type UiLanguage } from '@gotcha/shared';
+
+// Rev 4 (FLAGS.md): order UZ / ENG / RU with short codes; full native name in aria-label/title.
+const ORDER: UiLanguage[] = ['uz', 'en', 'ru'];
+const CODE: Record<UiLanguage, string> = { uz: 'UZ', en: 'ENG', ru: 'RU' };
+const NAME: Record<UiLanguage, string> = { uz: 'Oʻzbekcha', en: 'English', ru: 'Русский' };
 import { UiLanguageFlag } from './UiLanguageFlag';
 
 type PickerLanguage = UiLanguage;
@@ -95,10 +100,8 @@ export function UiLanguageDropdown({
 }: UiLanguageDropdownProps) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const current = UI_LANGUAGE_PICKER[value];
-
-  const menuItems = UI_LANGUAGES.map((code) => {
-    const item = UI_LANGUAGE_PICKER[code];
+  
+  const menuItems = ORDER.map((code) => {
     const selected = code === value;
     return (
       <li key={code} role="presentation">
@@ -106,18 +109,18 @@ export function UiLanguageDropdown({
           type="button"
           role="option"
           aria-selected={selected}
-          aria-label={item.nativeName}
+          aria-label={NAME[code]}
+          title={NAME[code]}
           onClick={() => {
             onChange(code);
             setOpen(false);
           }}
-          className={`flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
+          className={`flex min-h-[44px] w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors ${
             selected ? 'bg-[#155dfc] text-white' : 'text-[#101828] hover:bg-g-learning-bg'
           }`}
         >
           <UiLanguageFlag lang={code} />
-          <span className="truncate font-medium lg:hidden">{item.shortName}</span>
-          <span className="hidden truncate font-medium lg:inline">{item.nativeName}</span>
+          <span className="truncate font-medium">{CODE[code]}</span>
         </button>
       </li>
     );
@@ -128,15 +131,15 @@ export function UiLanguageDropdown({
       <button
         ref={triggerRef}
         type="button"
-        aria-label={`${ariaLabel}: ${current.nativeName}`}
+        aria-label={`${ariaLabel}: ${NAME[value]}`}
+        title={NAME[value]}
         aria-expanded={open}
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
         className="inline-flex h-8 items-center gap-1.5 rounded-full border border-[#c7d2fe] bg-white px-2 text-xs font-semibold text-[#364153] transition-colors hover:border-[#a5b4fc] hover:bg-[#fafaff] touch-manipulation lg:h-9 lg:gap-2 lg:px-3 lg:text-sm"
       >
         <UiLanguageFlag lang={value} />
-        <span className="truncate lg:hidden">{current.shortName}</span>
-        <span className="hidden max-w-[5.75rem] truncate lg:inline">{current.nativeName}</span>
+        <span className="truncate">{CODE[value]}</span>
         <svg
           className={`h-3.5 w-3.5 shrink-0 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`}
           viewBox="0 0 20 20"

@@ -1,0 +1,6 @@
+{
+  "_source": "PENDING. POST /api/v1/ai/lookup requires a signed-in user (401 without a token, checked 31 Oct 2026 14:05 UTC+5) and the miss path calls OpenAI, so no real response could be captured read-only from the box. Paste one real response (signed-in reader, word 'hesitation' in Crime and Punishment ch. I) here and set captured=true. Never type a definition by hand.",
+  "captured": false,
+  "word": "hesitation",
+  "response": null
+}
