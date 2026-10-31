@@ -16,6 +16,7 @@ import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
 import { CONSENT_VERSION } from '../components/safety/signupConsent';
 import { LegalLinksLine } from '../components/safety/LegalLinksLine';
+import { safeLearnerReturnPath } from '../lib/learnerReturn';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
@@ -37,6 +38,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  // final-6.1a: learners go back to the /app/* page they came from (returnUrl or the ProtectedRoute state), never off-site.
+  const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const learnerReturn = adminReturnUrl ? null
+    : safeLearnerReturnPath(searchParams.get('returnUrl')) ?? (fromState?.pathname ? safeLearnerReturnPath(`${fromState.pathname}${fromState.search ?? ''}`) : null);
   const authQuery = authFlowSearch(searchParams);
   const forgotPasswordTo = authQuery ? `/forgot-password?${authQuery}` : '/forgot-password';
   const seededEmail = (location.state as { email?: string } | null)?.email?.trim() || '';
@@ -136,12 +141,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           window.location.assign(handoff.toString());
           return;
         }
-        if (searchParams.get('returnUrl')) {
+        if (searchParams.get('returnUrl') && !learnerReturn) {
           toast.message(copy.authToasts.signedInLearner);
         } else {
           toast.success(copy.authToasts.welcomeBack);
         }
-        navigate('/app', { replace: true });
+        navigate(learnerReturn ?? '/app', { replace: true });
       } else {
         if (!nativeLanguage) {
           toast.error(copy.authToasts.pickNativeLanguage);
@@ -169,7 +174,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           /* non-blocking */
         }
         toast.success(copy.authToasts.accountCreated);
-        navigate('/app', { replace: true });
+        navigate(learnerReturn ?? '/app', { replace: true });
       }
     } catch (err) {
       const e = err as Error & { code?: string; email?: string; status?: number };

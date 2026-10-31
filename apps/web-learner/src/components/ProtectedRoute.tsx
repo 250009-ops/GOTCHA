@@ -28,7 +28,10 @@ export function ProtectedRoute({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) {
-    return <Navigate to={withLocaleParams('/login', location.search)} replace state={{ from: location }} />;
+    // final-6.1a: remember where the learner was going (e.g. /app/plus?from=landing-plus) for after sign-in.
+    const back = encodeURIComponent(location.pathname + location.search);
+    const to = location.pathname === '/app' && !location.search ? '/login' : `/login?returnUrl=${back}`;
+    return <Navigate to={withLocaleParams(to, location.search)} replace state={{ from: location }} />;
   }
 
   return <>{children}</>;
