@@ -3,9 +3,9 @@ import { api } from '../../lib/api';
 
 /** Privacy §11: Settings → Delete account, confirmed with the password (DELETE /users/me). */
 const T = {
-  en: { title: 'Delete account', hint: 'Permanently deletes your account, progress, words and imports. Messages you sent stay in other people’s chats as “Deleted user”. This can’t be undone.', open: 'Delete account', pw: 'Enter your password to confirm', confirm: 'Delete my account', cancel: 'Cancel' },
-  ru: { title: 'Удалить аккаунт', hint: 'Аккаунт, прогресс, слова и импорты будут удалены навсегда. Отправленные вами сообщения останутся в чатах собеседников от имени «Удалённый пользователь». Отменить это нельзя.', open: 'Удалить аккаунт', pw: 'Введите пароль для подтверждения', confirm: 'Удалить мой аккаунт', cancel: 'Отмена' },
-  uz: { title: 'Hisobni oʻchirish', hint: 'Hisobingiz, natijalaringiz, soʻzlaringiz va importlaringiz butunlay oʻchiriladi. Siz yuborgan xabarlar suhbatdoshlaringiz chatida «Oʻchirilgan foydalanuvchi» nomidan qoladi. Buni ortga qaytarib boʻlmaydi.', open: 'Hisobni oʻchirish', pw: 'Tasdiqlash uchun parolingizni kiriting', confirm: 'Hisobimni oʻchirish', cancel: 'Bekor qilish' },
+  en: { title: 'Delete account', hint: 'Permanently deletes your account, progress, words, imports and the messages you sent. Safety reports are kept without your name. This can’t be undone.', wrongPw: 'Wrong password. Try again.', open: 'Delete account', pw: 'Enter your password to confirm', confirm: 'Delete my account', cancel: 'Cancel' },
+  ru: { title: 'Удалить аккаунт', hint: 'Аккаунт, прогресс, слова, импорты и отправленные вами сообщения будут удалены навсегда. Жалобы для безопасности сохраняются без вашего имени. Отменить это нельзя.', wrongPw: 'Неверный пароль. Попробуйте ещё раз.', open: 'Удалить аккаунт', pw: 'Введите пароль для подтверждения', confirm: 'Удалить мой аккаунт', cancel: 'Отмена' },
+  uz: { title: 'Hisobni oʻchirish', hint: 'Hisobingiz, natijalaringiz, soʻzlaringiz, importlaringiz va siz yuborgan xabarlar butunlay oʻchiriladi. Xavfsizlik shikoyatlari ismingizsiz saqlanadi. Buni ortga qaytarib boʻlmaydi.', wrongPw: 'Parol notoʻgʻri. Qayta urinib koʻring.', open: 'Hisobni oʻchirish', pw: 'Tasdiqlash uchun parolingizni kiriting', confirm: 'Hisobimni oʻchirish', cancel: 'Bekor qilish' },
 };
 export const deleteAccountText = (lang?: string | null) => T[lang === 'ru' || lang === 'uz' ? lang : 'en'];
 
@@ -27,7 +27,11 @@ export function DeleteAccount({ lang, onDeleted }: { lang?: string | null; onDel
           try {
             await api('/users/me', { method: 'DELETE', body: JSON.stringify({ currentPassword: pw }) });
             onDeleted();
-          } catch (e2) { setErr(e2 instanceof Error ? e2.message : 'Error'); } finally { setBusy(false); }
+          } catch (e2) {
+            // WL4-06: wrong password is shown in the active UI language, never raw server English.
+            const st = (e2 as { status?: number }).status;
+            setErr(st === 401 || st === 403 ? t.wrongPw : e2 instanceof Error ? e2.message : t.wrongPw);
+          } finally { setBusy(false); }
         }}>
           <input type="password" autoComplete="current-password" required aria-label={t.pw} placeholder={t.pw} value={pw} onChange={(e) => setPw(e.target.value)}
             className="h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm flex-1 min-w-0" />
