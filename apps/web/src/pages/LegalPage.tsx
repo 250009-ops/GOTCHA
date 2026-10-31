@@ -29,3 +29,7 @@ export function TermsPage() {
 export function PrivacyPage() {
   return <PmLegalPage doc="privacy" path="/privacy" />;
 }
+
+export function OfertaPage() {
+  return <PmLegalPage doc="oferta" path="/oferta" />;
+}

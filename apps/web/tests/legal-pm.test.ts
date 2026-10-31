@@ -25,7 +25,8 @@ test('WLF-07: pages render legal-pm via legalPm.ts; legacy legalCopy is gone', (
   assert.match(page, /legalHtml\(doc, locale\)/);
   assert.ok(!existsSync('src/lib/legalCopy.ts') && !existsSync('src/lib/legalCopy.en.ts'));
   const lib = readFileSync('src/lib/legalPm.ts', 'utf8');
-  for (const d of DOCS) for (const l of LOCALES) assert.ok(lib.includes(`../../legal-pm/${d}-${l}.html?raw`), `${d}-${l} import`);
+  // payments-02 line: /terms (and /oferta) come from legal-pm-payments/; /privacy stays legal-pm/ (see legal-payments.test.ts).
+  for (const d of DOCS) for (const l of LOCALES) assert.ok(lib.includes(`../../${d === 'terms' ? 'legal-pm-payments' : 'legal-pm'}/${d}-${l}.html?raw`), `${d}-${l} import`);
 });
 
 test('WLF-07: titles — EN "Terms of Use" (= tick-box label), uz with U+02BB only, no ASCII apostrophe', async () => {
@@ -48,7 +49,7 @@ test('WLF-07: built bundle serves the PM text for all 6 documents (run after vit
   if (!existsSync('dist/assets')) { assert.fail('dist/ missing: run npm run build before npm test'); }
   const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(join('dist/assets', f), 'utf8')).join('\n');
   for (const d of DOCS) for (const l of LOCALES) {
-    const html = readFileSync(join(PM, `${d}-${l}.html`), 'utf8');
+    const html = readFileSync(d === 'terms' ? join(PM, 'pending-payments-02', `${d}-${l}.html`) : join(PM, `${d}-${l}.html`), 'utf8'); // payments-02 line serves pending terms
     // Vite inlines ?raw as a JS string literal; check it via JSON-escaped form or the decoded literal.
     const lit = JSON.stringify(html).slice(1, -1);
     const ok = js.includes(lit) || [...js.matchAll(/"((?:[^"\\]|\\.)*<article class=\\?"legal[^"]*?(?:[^"\\]|\\.)*)"/g)].some((m) => { try { return JSON.parse(`"${m[1]}"`) === html; } catch { return false; } }) || js.includes(html);
@@ -76,6 +77,6 @@ test('final-3: served legal text hashes match the pinned PM files; no "(Public O
   // the built bundle carries exactly these strings (hash of the decoded literal)
   if (existsSync('dist/assets')) {
     const js = readdirSync('dist/assets').filter((f) => f.endsWith('.js')).map((f) => readFileSync(join('dist/assets', f), 'utf8')).join('\n');
-    for (const k of Object.keys(PINNED)) assert.ok(js.includes(JSON.stringify(readFileSync(`legal-pm/${k}.html`, 'utf8')).slice(1, -1)) || js.includes(readFileSync(`legal-pm/${k}.html`, 'utf8')), `${k} not in dist`);
+    for (const k of Object.keys(PINNED).filter((x) => !x.startsWith('terms-'))) assert.ok(js.includes(JSON.stringify(readFileSync(`legal-pm/${k}.html`, 'utf8')).slice(1, -1)) || js.includes(readFileSync(`legal-pm/${k}.html`, 'utf8')), `${k} not in dist`);
   }
 });

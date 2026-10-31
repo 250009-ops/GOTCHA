@@ -4,7 +4,8 @@ import { Brand } from './Brand';
 import { UiLanguageDropdown } from './UiLanguageDropdown';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
-import { isWebLocale, type WebLocale } from '../lib/webLocale';
+import { isWebLocale, marketingLocaleFor, type WebLocale } from '../lib/webLocale';
+import { LEGAL_TITLES } from '../lib/legalPm.titles';
 
 
 function LanguagePicker({ className }: { className?: string }) {
@@ -168,6 +169,7 @@ export function SiteNav() {
 
 export function SiteFooter() {
   const copy = useMarketingCopy();
+  const footerLocale = marketingLocaleFor(useWebLocale().copyLocale);
 
   return (
     <footer className="w-full border-t border-[#e2e8f0] bg-white">
@@ -202,6 +204,9 @@ export function SiteFooter() {
                 </Link>
                 <Link to="/terms" className="transition-colors hover:text-[#101828]">
                   {copy.footer.terms}
+                </Link>
+                <Link to="/oferta" className="transition-colors hover:text-[#101828]">
+                  {LEGAL_TITLES.oferta[footerLocale]}
                 </Link>
               </div>
             </div>

@@ -29,7 +29,8 @@ load_vite_build_env() {
 build_and_publish_frontends() {
   load_vite_build_env
 
-  VITE_BASE=/ npm run build --workspace=apps/web
+  # PAY2-14: the deploy path runs the guarded legal publish build (rejects any [PLACEHOLDER], PM draft lines, VITE_PREVIEW_STAMP).
+  VITE_BASE=/ npm run build:publish --workspace=apps/web
   VITE_BASE=/learn/ npm run build --workspace=apps/web-learner
   VITE_BASE=/admin/ npm run build --workspace=apps/admin
 
