@@ -203,16 +203,16 @@ async function main() {
   await prisma.subscriptionPlan.upsert({
     where: { tier: 'premium' },
     update: {
-      name: 'Premium',
-      priceMonthly: 9,
+      name: 'Plus',
+      priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
       aiDailyQuota: UNLIMITED,
       importLimit: UNLIMITED,
       offlineEnabled: true,
     },
     create: {
       tier: 'premium',
-      name: 'Premium',
-      priceMonthly: 9,
+      name: 'Plus',
+      priceMonthly: 24990, // soʻm, 30-day pass (option C). Was 9 (USD) — never a soʻm price.
       aiDailyQuota: UNLIMITED,
       importLimit: UNLIMITED,
       offlineEnabled: true,
@@ -867,6 +867,12 @@ async function main() {
       },
       create: tier,
     });
+  }
+
+  // Plus pass prices in soʻm (option C). Create only if missing — never overwrite admin edits.
+  for (const [key, value] of [['plus.pass.price_30_uzs', 24990], ['plus.pass.price_365_uzs', 199990]] as const) {
+    const existing = await prisma.platformSetting.findUnique({ where: { key } });
+    if (!existing) await prisma.platformSetting.create({ data: { key, value } });
   }
 
   // IDEMPOTENT: Only create importFreeLimits if missing — do not overwrite admin edits

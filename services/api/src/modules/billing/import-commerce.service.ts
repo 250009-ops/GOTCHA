@@ -231,7 +231,7 @@ export class ImportCommerceService {
 
     const gatewayEnabled = allowance.gatewayEnabled;
     let isFree = !gatewayEnabled;
-    let freeReason: string | null = gatewayEnabled ? null : 'Payment gateway disabled (unlimited imports)';
+    let freeReason: string | null = gatewayEnabled ? null : 'Imports are free right now';
 
     if (gatewayEnabled) {
       const formatOk = formatIsAllowed(allowance.allowedFormats, contentFormat);

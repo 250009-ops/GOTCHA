@@ -1,7 +1,9 @@
 import { strict as assert } from 'assert';
 import { MarketingService } from './marketing.service';
 import { enrichPlan } from '../billing/billing.service';
-import { BANNED_PLAN_CLAIMS, PLAN_LANGS, formatSom, planLang } from './plan-copy';
+import { readFileSync } from 'fs';
+import { join } from 'path';
+import { BANNED_PLAN_CLAIMS, MIN_PUBLIC_PLAN_PRICE_UZS, PLAN_LANGS, PLUS_PRICE_30_UZS, PLUS_PRICE_365_UZS, formatSom, planCopy, planLang, publicPlanPriceUzs } from './plan-copy';
 
 function assertClean(label: string, value: unknown) {
   const cards = (Array.isArray(value) ? value : [value]) as Array<Record<string, unknown>>;
@@ -22,12 +24,43 @@ async function main() {
     assertClean(`billing free ${lang}`, freeRow);
     assert.equal(premium.offlineEnabled, false);
     assert.equal(premium.currency, 'UZS');
-    assert.match(premium.priceLabel, lang === 'ru' ? /^24 990 сум$/ : /^24 990 soʻm$/);
+    assert.match(premium.priceLabel!, lang === 'ru' ? /^24 990 сум$/ : /^24 990 soʻm$/);
+    // AC1-02: named Plus, labelled as a 30-day pass; field names kept (priceMonthly).
+    assert.equal(premium.name, 'Plus');
+    assert.equal(premium.priceUnit, planCopy(lang).passUnit);
+    assert.equal(premium.periodDays, 30); assert.equal(premium.autoRenew, false);
+    assert.equal(premium.priceMonthly, 24990);
+    // AC1-01: the REAL live value 9 (old USD), plus 0, null and 999 → price hidden, never "9 soʻm".
+    for (const raw of [9, '9.00', 0, null, undefined, 999]) {
+      const p = enrichPlan({ id: 'p', tier: 'premium', name: 'Premium', priceMonthly: raw, aiDailyQuota: 1_000_000, importLimit: 1_000_000, offlineEnabled: true, features: null } as never, lang);
+      assert.equal(p.priceUzs, null, `raw ${raw}`); assert.equal(p.priceMonthly, null); assert.equal(p.priceLabel, null); assert.equal(p.priceHidden, true);
+      assert.ok(!/\b9 (soʻm|сум)/.test(JSON.stringify(p)), 'never 9 soʻm');
+    }
+    const yr = enrichPlan({ id: 'p', tier: 'premium', name: 'Premium', priceMonthly: 24990, aiDailyQuota: 1, importLimit: 1, offlineEnabled: false, features: null } as never, lang, 199990);
+    assert.equal(yr.priceYearUzs, 199990);
+    // AC1-04 / AC1-05
+    if (lang === 'uz') assert.ok(!/[A-Za-z]'[A-Za-z]/.test(JSON.stringify(planCopy('uz'))), 'uz uses ʻ, not ASCII apostrophe');
+    if (lang === 'ru') assert.equal(planCopy('ru').ppiLabel, 'Платите только за то, что нужно');
   }
   assert.match((await m.plans('uz'))[1].features.join(' '), /Atmos/);
   assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
   assert.equal(planLang('ru-RU'), 'ru'); assert.equal(planLang('xx'), 'en'); assert.equal(planLang(undefined), 'en');
   assert.equal(formatSom(199990), '199 990 soʻm');
+  // Guard: no plan price under 1000 soʻm anywhere it is defined (seed, data fix, constants).
+  assert.equal(publicPlanPriceUzs(MIN_PUBLIC_PLAN_PRICE_UZS - 1), null); assert.equal(publicPlanPriceUzs(1000), 1000);
+  assert.ok(PLUS_PRICE_30_UZS >= 1000 && PLUS_PRICE_365_UZS >= 1000);
+  const root = join(__dirname, '..', '..', '..');
+  const seed = readFileSync(join(root, 'prisma', 'seed.ts'), 'utf8');
+  const seedPrices = [...seed.matchAll(/priceMonthly:\s*([\d.]+)/g)].map((m) => Number(m[1])).filter((n) => n > 0);
+  assert.ok(seedPrices.length >= 2, 'seed has premium prices');
+  for (const n of seedPrices) assert.ok(n >= 1000, `seed price ${n} < 1000 soʻm`);
+  assert.ok(/'plus\.pass\.price_365_uzs', 199990/.test(seed));
+  const sql = readFileSync(join(root, 'prisma', 'data-fixes', '2026-10-31-plus-price-uzs.sql'), 'utf8');
+  assert.match(sql, /SET price_monthly = 24990/); assert.match(sql, /'199990'::jsonb/);
+  for (const m of sql.matchAll(/price_monthly = (\d+)/g)) assert.ok(Number(m[1]) >= 1000);
+  // AC1-03: no user-facing "unlimited imports" in import quotes
+  const ic = readFileSync(join(root, 'src', 'modules', 'billing', 'import-commerce.service.ts'), 'utf8');
+  assert.ok(!/freeReason[^\n]*unlimited/i.test(ic), 'freeReason must not claim unlimited imports');
   console.log('plan-copy.test: ok');
 }
 main().catch((e) => { console.error(e); process.exit(1); });

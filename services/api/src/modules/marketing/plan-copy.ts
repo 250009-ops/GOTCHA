@@ -32,6 +32,7 @@ const T = {
     plusLookups: 'No daily limit on word lookups and chapter quizzes (fair use)',
     plusFree: 'Everything in Free stays included',
     free: 'Free',
+    plusName: 'Plus', passUnit: '30-day pass',
   },
   ru: {
     freeName: 'Бесплатно', freeUnit: 'для начала', freeCta: 'Начать',
@@ -39,27 +40,29 @@ const T = {
     lookupsDay: (n: number) => `${n} подсказок по словам в день`,
     importsDay: (n: number) => `${n} бесплатных импортов в день`,
     review: 'Повторение слов',
-    ppiName: 'Оплата за импорт', ppiLabel: 'Платите по мере надобности', ppiUnit: 'разовые платежи', ppiCta: 'Начать читать бесплатно',
+    ppiName: 'Оплата за импорт', ppiLabel: 'Платите только за то, что нужно', ppiUnit: 'разовые платежи', ppiCta: 'Начать читать бесплатно',
     everythingFree: 'Всё из бесплатного плана',
     payOnce: 'Нужно больше бесплатных импортов? Разовая оплата за импорт через Atmos',
     upfront: 'Цена видна заранее и зависит от объёма документа',
     plusLookups: 'Без дневного лимита на подсказки и тесты по главам (в разумных пределах)',
     plusFree: 'Всё из бесплатного плана остаётся с вами',
     free: 'Бесплатно',
+    plusName: 'Plus', passUnit: 'доступ на 30 дней',
   },
   uz: {
     freeName: 'Bepul', freeUnit: 'boshlash uchun', freeCta: 'Boshlash',
     library: 'Ochiq kutubxonadan foydalanish',
-    lookupsDay: (n: number) => `Kuniga ${n} ta so'z qidiruvi`,
+    lookupsDay: (n: number) => `Kuniga ${n} ta soʻz qidiruvi`,
     importsDay: (n: number) => `Kuniga ${n} ta bepul import`,
-    review: "So'zlarni takrorlash",
-    ppiName: "Har import uchun to'lov", ppiLabel: "Kerak bo'lganda to'lang", ppiUnit: "bir martalik to'lovlar", ppiCta: "Bepul o'qishni boshlash",
+    review: "Soʻzlarni takrorlash",
+    ppiName: "Har import uchun toʻlov", ppiLabel: "Kerak boʻlganda toʻlang", ppiUnit: "bir martalik toʻlovlar", ppiCta: "Bepul oʻqishni boshlash",
     everythingFree: 'Bepul tarifdagi hamma narsa',
-    payOnce: "Bepul importlar yetmayaptimi? Har bir import uchun Atmos orqali bir marta to'lang",
-    upfront: "Narx oldindan ko'rsatiladi va hujjat hajmiga bog'liq",
-    plusLookups: "So'z qidiruvi va bob testlariga kunlik cheklov yo'q (oqilona foydalanish)",
+    payOnce: "Bepul importlar yetmayaptimi? Har bir import uchun Atmos orqali bir marta toʻlang",
+    upfront: "Narx oldindan koʻrsatiladi va hujjat hajmiga bogʻliq",
+    plusLookups: "Soʻz qidiruvi va bob testlariga kunlik cheklov yoʻq (oqilona foydalanish)",
     plusFree: 'Bepul tarifdagi hamma narsa sizda qoladi',
     free: 'Bepul',
+    plusName: 'Plus', passUnit: '30 kunlik muddat',
   },
 } as const;
 
@@ -70,3 +73,17 @@ export const BANNED_PLAN_CLAIMS = [
   /no monthly fee/i, /unlimited (content )?imports/i, /priority support/i, /no ads/i,
   /\$/,
 ];
+
+/**
+ * AC1-01 safety net: a public plan price below 1000 soʻm is never shown (the live row still holds the old USD "9").
+ * Returns the price in soʻm, or null when it must be hidden (unset, 0, NaN, or < 1000).
+ */
+export const MIN_PUBLIC_PLAN_PRICE_UZS = 1000;
+export function publicPlanPriceUzs(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) && n >= MIN_PUBLIC_PLAN_PRICE_UZS ? n : null;
+}
+/** Approved Plus prices (option C, Sarvarbek 31 Oct 13:34 via Kai); seed + data fix use these. */
+export const PLUS_PRICE_30_UZS = 24990;
+export const PLUS_PRICE_365_UZS = 199990;
