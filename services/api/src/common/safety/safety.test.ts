@@ -24,14 +24,20 @@ assert.equal(canMessage('adult', 'under13', true), false);
 assert.equal(canMessage('teen', 'adult', false), false);
 assert.equal(canMessage('teen', 'teen', true), true);
 assert.equal(canMessage('adult', 'adult', false), true);
-// 31 Oct 15:24: pre-oferta consent copy, word for word; no Public Offer; version bumped from web-2026-10-31.2.
-assert.equal(CONSENT_VERSION, 'web-2026-10-31.3');
-assert.deepEqual(CONSENT_LABELS, {
-  en: 'I have read and accept the Terms of Use and the Privacy Policy, including the transfer of text for AI features (such as a word with its sentence, or chat messages I translate) to OpenAI in the USA.',
-  ru: 'Я прочитал(а) и принимаю Условия использования и Политику конфиденциальности, включая передачу текста для AI-функций (например, слова с его предложением или переводимых мной сообщений чата) в OpenAI в США.',
-  uz: 'Foydalanish shartlari va Maxfiylik siyosati bilan tanishdim va ularni qabul qilaman, jumladan AI funksiyalari uchun matn (masalan, soʻz va u turgan gap yoki men tarjima qilgan chat xabarlari) AQShdagi OpenAIʼga uzatilishiga roziman.',
-});
-for (const label of Object.values(CONSENT_LABELS)) assert.ok(!/offer|oferta|оферт/i.test(label), 'no Public Offer in consent');
+// Expected labels come from the PM README 'Sign-up tick-box labels' section matching the shipped version:
+// .3 = CURRENT (pre-oferta), .4 = PENDING (payments-02 under G1: Terms + Privacy + Public Offer).
+const legalDir = process.env.LEGAL_DRAFTS_DIR ?? '/workspace/gotcha-handoff/team/pm/legal/web';
+const readme = readFileSync(join(legalDir, 'README.md'), 'utf8').replace(/\r/g, '');
+const section = readme.split('## Sign-up tick-box labels')[1].split('\n## ')[0];
+const shipped = CONSENT_VERSION === 'web-2026-10-31.3' ? 'CURRENT' : 'PENDING';
+const part = section.split('**' + shipped)[1].split(shipped === 'CURRENT' ? '**PENDING' : '\u0000')[0];
+const expected: Record<string, string> = {};
+for (const m of part.matchAll(/^- (?:\(pending\) )?\*\*(uz|ru|en):\*\* (.+)$/gm)) expected[m[1]] = m[2].trim();
+assert.deepEqual(Object.keys(expected).sort(), ['en', 'ru', 'uz']);
+assert.equal(CONSENT_VERSION, 'web-2026-10-31.4');
+assert.equal(shipped, 'PENDING');
+assert.deepEqual({ ...CONSENT_LABELS }, expected);
+for (const label of Object.values(CONSENT_LABELS)) assert.ok(/Public Offer|Публичную оферту|Ommaviy oferta/.test(label), '3-document label names the Public Offer');
 assert.ok(CONSENT_LABELS.uz.includes('so\u02bbz') && CONSENT_LABELS.uz.includes('OpenAI\u02bcga'), 'uz uses U+02BB / U+02BC');
 assert.equal(consentRequired('web'), true);
 assert.equal(consentRequired(undefined), true);
