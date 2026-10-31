@@ -16,7 +16,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
 import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
 import { planLimits } from '../../common/plan-limits';
-import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, withChildSafe } from './ai-safety';
+import { aiDisabledError, DailyCounter, moderateOrBlock, ttsDailyLimit, ttsLimitError, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -128,6 +128,28 @@ export class AiService {
   }
 
   private readonly ttsCounter = new DailyCounter(ttsDailyLimit);
+
+  /**
+   * WL4-10: TTS daily counter in the DB (ai_usage_daily.tts_count), so it survives restarts and is shared by
+   * every instance. One atomic statement: increments only while under the limit; no row back = limit hit.
+   */
+  async hitTts(userId: string, now = new Date()): Promise<number> {
+    if (this.useMemory()) {
+      this.ttsCounter.hit(userId, now);
+      return 0;
+    }
+    const limit = ttsDailyLimit();
+    const day = now.toISOString().slice(0, 10);
+    const cap = limit > 0 ? limit : 2_147_483_647;
+    const rows = await this.prisma.$queryRaw<Array<{ tts_count: number }>>`
+      INSERT INTO "ai_usage_daily" ("user_id", "usage_date", "tts_count")
+      VALUES (${userId}::uuid, ${day}::date, 1)
+      ON CONFLICT ("user_id", "usage_date") DO UPDATE SET "tts_count" = "ai_usage_daily"."tts_count" + 1
+      WHERE "ai_usage_daily"."tts_count" < ${cap}
+      RETURNING "tts_count"`;
+    if (!rows.length) throw ttsLimitError();
+    return Number(rows[0].tts_count);
+  }
 
   /**
    * S7 + AI-1: per-user AI gate. Throws AI_DISABLED when support/admin turned AI off for the
@@ -1030,7 +1052,7 @@ export class AiService {
     const input = text.replace(/\s+/g, ' ').trim().slice(0, 400);
     if (!input) throw new BadRequestException('Nothing to pronounce');
     // P1 TTS per-user daily quota (cache hits count too: it caps scripted abuse of the endpoint).
-    if (userId) this.ttsCounter.hit(userId);
+    if (userId) await this.hitTts(userId);
     const locale = ttsLocale(lang);
     const cacheKey = createHash('sha256').update(`${locale}|${input}`).digest('hex').slice(0, 40);
     const dir = join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'tts');

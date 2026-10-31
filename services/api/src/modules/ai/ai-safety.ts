@@ -37,7 +37,7 @@ export function moderatedPlaceholder(lang?: string | null): string {
   return MODERATED_PLACEHOLDERS[(lang ?? '').slice(0, 2).toLowerCase()] ?? MODERATED_PLACEHOLDER;
 }
 
-/** TTS per-user daily quota (P1). In-process counter; resets at UTC midnight or on restart. */
+/** TTS per-user daily quota (P1). In-process fallback (memory/dev mode only); with a DB, AiService.hitTts uses ai_usage_daily.tts_count. */
 export class DailyCounter {
   private day = '';
   private counts = new Map<string, number>();
@@ -58,6 +58,12 @@ export class DailyCounter {
     }
     this.counts.set(key, n);
   }
+}
+export function ttsLimitError() {
+  return new HttpException(
+    { statusCode: 429, code: 'TTS_DAILY_LIMIT', message: 'Daily pronunciation limit reached. Try again tomorrow.' },
+    HttpStatus.TOO_MANY_REQUESTS,
+  );
 }
 export const ttsDailyLimit = () => {
   const n = Number(process.env.TTS_DAILY_LIMIT_PER_USER ?? 300);

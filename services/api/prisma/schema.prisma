@@ -358,6 +358,7 @@ model AiUsageDaily {
   usageDate   DateTime @map("usage_date") @db.Date
   lookupCount Int      @default(0) @map("lookup_count")
   quizCount   Int      @default(0) @map("quiz_count")
+  ttsCount    Int      @default(0) @map("tts_count")
   tokensUsed  BigInt   @default(0) @map("tokens_used")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
