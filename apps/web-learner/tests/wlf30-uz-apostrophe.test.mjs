@@ -24,3 +24,14 @@ assert.deepEqual(bad, [], 'ASCII apostrophe in uz copy:\n' + bad.join('\n'));
 // the checker itself catches the bug shape
 assert.ok(BAD.test("So'z") && BAD.test("ma'no") && !BAD.test('Soʻz') && !BAD.test('maʼno'));
 console.log('wlf30-uz-apostrophe: OK');
+
+// UI/UX 6.1a: the Practice copy is explicitly covered (uz block of packages/shared/src/practiceCopy.ts).
+{
+  const pc = readFileSync(new URL('../../../packages/shared/src/practiceCopy.ts', import.meta.url), 'utf8');
+  const m = /^(?:export )?const uz\w*[^=\n]*=\s*\{[\s\S]*?^\};/m.exec(pc) || /^( +)uz: \{\n([\s\S]*?)^\1\},?$/m.exec(pc);
+  if (!m) throw new Error('practiceCopy uz block not found');
+  const bad = m[0].split('\n').filter((l) => /[A-Za-z]['’][A-Za-z]/.test(l.replace(/^[^'"`]*/, '')));
+  if (bad.length) throw new Error('practiceCopy uz has ASCII/’ apostrophes:\n' + bad.join('\n'));
+  if (!/[oOgG]ʻ/.test(m[0])) throw new Error('practiceCopy uz block should contain oʻ/gʻ (U+02BB)');
+  console.log('wlf30 practiceCopy uz: OK');
+}
