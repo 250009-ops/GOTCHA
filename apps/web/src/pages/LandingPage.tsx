@@ -183,7 +183,7 @@ function CatalogCover({ title, coverImageUrl }: { title: string; coverImageUrl: 
   if (!src || failed) {
     return (
       <div className="flex h-full w-full items-center justify-center bg-[#2107aa]">
-        <span className="font-['Manrope',sans-serif] text-6xl font-extrabold text-white">{letter}</span>
+        <span className="font-['Manrope',sans-serif] text-6xl font-extrabold text-[var(--g-on-cta)]">{letter}</span>
       </div>
     );
   }
@@ -291,7 +291,7 @@ export default function LandingPage() {
           <div className="flex flex-col items-center gap-4">
             <div className="flex flex-col items-center gap-4 sm:flex-row">
               <a
-                className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px"
+                className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px"
                 href={registerHref}
               >
                 {copy.hero.ctaPrimary}
@@ -447,7 +447,7 @@ export default function LandingPage() {
               <p className="text-base font-medium text-[#99a1af]">{copy.cta.subtitle}</p>
             </div>
             <a
-              className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px"
+              className="inline-flex h-12 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px"
               href={registerHref}
             >
               {copy.cta.button}

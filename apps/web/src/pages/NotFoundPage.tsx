@@ -18,7 +18,7 @@ export default function NotFoundPage() {
         <p className="font-['Manrope',sans-serif] text-[56px] font-extrabold text-[#2107aa]">404</p>
         <h1 className="font-['Manrope',sans-serif] text-2xl font-bold text-[#101828]">{copy.notFound.title}</h1>
         <p className="text-base text-[#4a5565]">{copy.notFound.body}</p>
-        <Link to="/" className="mt-2 rounded-lg bg-[#2107aa] px-5 py-3 text-sm font-semibold text-white">
+        <Link to="/" className="mt-2 rounded-lg bg-[#2107aa] px-5 py-3 text-sm font-semibold text-[var(--g-on-cta)]">
           {copy.notFound.home}
         </Link>
       </main>
