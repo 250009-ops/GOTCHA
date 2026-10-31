@@ -204,6 +204,7 @@ export default function SettingsPage() {
               <span className="text-slate-500 block mb-1">Support email</span>
               <Input
                 type="email"
+                placeholder="support@gotchaa.uz"
                 value={String(settings.supportEmail ?? '')}
                 onChange={(e) => setSettings({ ...settings, supportEmail: e.target.value })}
               />

@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import {
   BadRequestException,
   ConflictException,
@@ -59,6 +60,7 @@ import {
 } from '../../common/language-catalog';
 import { APP_LANGUAGES, CEFR_LEVELS, LANGUAGE_META, LIVE_LANGUAGES, languageFlag, languageLabel } from '@gotcha/shared';
 
+import { catalogBaseSom } from '../../common/catalog-pricing';
 import { assertValidPageTiers, type TierRow } from '../../common/page-tiers';
 import { PLAN_LIMIT_KEYS, effectivePlanLimits, planLimits, refreshPlanLimits, resetPlanLimitsCache } from '../../common/plan-limits';
 
@@ -385,8 +387,7 @@ export class AdminService {
     const statusKey = (status ?? '').trim().toLowerCase();
     const tierKey = (tier ?? '').trim().toLowerCase();
     const includeSuspended = statusKey === 'suspended';
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = limitDayStart();
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -487,8 +488,7 @@ export class AdminService {
     });
     if (!u) throw new NotFoundException('User not found');
 
-    const dayStart = new Date();
-    dayStart.setHours(0, 0, 0, 0);
+    const dayStart = limitDayStart();
     const weekAgo = new Date(dayStart);
     weekAgo.setDate(weekAgo.getDate() - 7);
 
@@ -708,7 +708,11 @@ export class AdminService {
     if (purgeAfter && purgeAfter.getTime() > (opts.now ?? new Date()).getTime()) {
       throw new BadRequestException(`Deletion request is in the 1-year retention window; permanent purge from ${purgeAfter.toISOString().slice(0, 10)}.`);
     }
-    await this.prisma.user.delete({ where: { id } });
+    // final-5 WL4-11 option B: keep the user's sent messages for the other participants, anonymised as 'Deleted user'.
+    await this.prisma.$transaction([
+      this.prisma.message.updateMany({ where: { senderId: id }, data: { senderId: null } }),
+      this.prisma.user.delete({ where: { id } }),
+    ]);
     await this.prisma.auditLog
       .create({ data: { actorId: opts.actorId ?? null, action: 'user.hard_delete', entityType: 'user', entityId: id, metadata: { selfDeleted: isSelfDeleted(user) } } })
       .catch(() => undefined);
@@ -1284,8 +1288,8 @@ export class AdminService {
       buy5PctOff: 20,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
-    const { basePriceUsd: _b, perPageSurchargeUsd: _p, ...rest } = row.value as Record<string, unknown>;
-    return { ...defaults, ...rest, currency: 'UZS' } as typeof defaults;
+    const { basePriceUsd, perPageSurchargeUsd: _p, ...rest } = row.value as Record<string, unknown>;
+    return { ...defaults, ...rest, basePriceSom: catalogBaseSom(row.value), perPageSurchargeSom: 0, currency: 'UZS' } as typeof defaults;
   }
 
   async updateCatalogPricingRules(body: Record<string, unknown>) {
@@ -1309,12 +1313,14 @@ export class AdminService {
       buy3PctOff: body.buy3PctOff !== undefined ? Number(body.buy3PctOff) : current.buy3PctOff,
       buy5PctOff: body.buy5PctOff !== undefined ? Number(body.buy5PctOff) : current.buy5PctOff,
     };
+    // basePriceUsd is the legacy (misnamed, soʻm) key; mirrored so a final-4 rollback still reads the right price.
+    const stored = { ...next, perPageSurchargeSom: 0, basePriceUsd: next.basePriceSom };
     await this.prisma.platformSetting.upsert({
       where: { key: 'catalogPricingRules' },
-      update: { value: next as never },
-      create: { key: 'catalogPricingRules', value: next as never },
+      update: { value: stored as never },
+      create: { key: 'catalogPricingRules', value: stored as never },
     });
-    return next;
+    return { ...next, perPageSurchargeSom: 0 };
   }
 
   publishContent(id: string) {
@@ -2884,11 +2890,13 @@ export class AdminService {
       if (row.key === ADMIN_METRICS_KEY) continue;
       map[row.key] = row.value;
     }
+    // final-5: the old seed force-wrote a support address on the retired gotcha(dot)app domain; that legacy value reads as the live address.
+    if (typeof map.supportEmail !== 'string' || !map.supportEmail.trim() || /@gotcha\.app$/i.test(map.supportEmail)) map.supportEmail = 'support@gotchaa.uz';
 
     const aiDefaults = defaultAiPlatformSettings();
     return {
       platformName: 'GOTCHA',
-      supportEmail: 'support@gotcha.app',
+      supportEmail: 'support@gotchaa.uz',
       maintenanceMode: false,
       allowRegistrations: true,
       defaultCefr: 'a2',

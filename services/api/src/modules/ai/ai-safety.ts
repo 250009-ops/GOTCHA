@@ -43,7 +43,7 @@ export class DailyCounter {
   private counts = new Map<string, number>();
   constructor(private limit: () => number) {}
   hit(key: string, now = new Date()): void {
-    const d = now.toISOString().slice(0, 10);
+    const d = new Date(now.getTime() + 5 * 3_600_000).toISOString().slice(0, 10); // final-5: calendar day in Asia/Tashkent (reset 00:00 Tashkent)
     if (d !== this.day) {
       this.day = d;
       this.counts.clear();

@@ -1,3 +1,4 @@
+import { limitDayStart } from '../common/plan-limits';
 import { dailyLimitBody, planLimits, refreshPlanLimits } from '../common/plan-limits';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
@@ -103,8 +104,7 @@ export class LimitsService {
     await refreshPlanLimits(this.prisma);
     const quota = planLimits(plan?.tier).quizzesPerDay; // Free 10 / Plus 200 (platform_settings → env → default)
     if (quota <= 0) return;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     const usage = await this.prisma.aiUsageDaily.findUnique({
       where: { userId_usageDate: { userId, usageDate: today } },
     });
@@ -114,8 +114,7 @@ export class LimitsService {
   }
 
   async incrementQuizUsage(userId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     await this.prisma.aiUsageDaily.upsert({
       where: { userId_usageDate: { userId, usageDate: today } },
       create: { userId, usageDate: today, quizCount: 1 },

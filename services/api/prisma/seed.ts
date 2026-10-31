@@ -1,3 +1,4 @@
+import { copyCatalogBaseSom } from '../src/common/catalog-pricing';
 import { PrismaClient, AppLanguage, CefrLevel, ContentType, ContentSource, PublishStatus, LicenseStatus, AdminRole, WordStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { tokenizeText, slugify, uniqueWordCount } from '../src/utils/tokenizer';
@@ -873,17 +874,11 @@ async function main() {
     { id: '00000000-0000-4000-8000-000000000041', label: '1 - 10 pages', minPages: 1, maxPages: 10, priceUsd: 12000, sortOrder: 1 },
     { id: '00000000-0000-4000-8000-000000000042', label: '11 - 50 pages', minPages: 11, maxPages: 50, priceUsd: 29000, sortOrder: 2 },
     { id: '00000000-0000-4000-8000-000000000043', label: '51 - 100 pages', minPages: 51, maxPages: 100, priceUsd: 49000, sortOrder: 3 },
-    { id: '00000000-0000-4000-8000-000000000044', label: '100+ pages', minPages: 101, maxPages: null, priceUsd: 79000, sortOrder: 4 },
+    { id: '00000000-0000-4000-8000-000000000044', label: '101+ pages', minPages: 101, maxPages: null, priceUsd: 79000, sortOrder: 4 },
   ];
-  for (const tier of pageTiers) {
-    await prisma.importPageTier.upsert({
-      where: { id: tier.id },
-      // IDEMPOTENT: Preserve admin-edited prices AND page ranges (gaps are closed in admin).
-      update: {
-        sortOrder: tier.sortOrder,
-      },
-      create: tier,
-    });
+  // final-5: insert-only when the table is empty (same as 0020). Never overwrite or add to live tiers (prod has DevOps rows).
+  if ((await prisma.importPageTier.count()) === 0) {
+    await prisma.importPageTier.createMany({ data: pageTiers });
   }
 
   // Plus pass prices in soʻm (option C). Create only if missing — never overwrite admin edits.
@@ -928,6 +923,9 @@ async function main() {
     });
   }
 
+  // final-5: copy the live soʻm price from the legacy basePriceUsd key to basePriceSom (add-only, idempotent).
+  await copyCatalogBaseSom(prisma);
+
   const achievements = [
     { code: 'streak_7', title: 'Week Warrior', description: 'Maintain a 7-day streak', category: 'streak' as const, points: 50, threshold: 7, sortOrder: 1, iconKey: 'flame' },
     { code: 'vocab_100', title: 'Word Collector', description: 'Save 100 vocabulary items', category: 'vocabulary' as const, points: 100, threshold: 100, sortOrder: 2, iconKey: 'book' },
@@ -949,8 +947,8 @@ async function main() {
   });
   await prisma.platformSetting.upsert({
     where: { key: 'supportEmail' },
-    update: { value: 'support@gotcha.app' },
-    create: { key: 'supportEmail', value: 'support@gotcha.app' },
+    update: {}, // final-5: never overwrite the live value (prod: support@gotchaa.uz)
+    create: { key: 'supportEmail', value: 'support@gotchaa.uz' },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiEnabled' },

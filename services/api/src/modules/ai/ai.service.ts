@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import {
   Injectable,
   BadRequestException,
@@ -140,7 +141,7 @@ export class AiService {
       return 0;
     }
     const limit = ttsDailyLimit();
-    const day = now.toISOString().slice(0, 10);
+    const day = new Date(now.getTime() + 5 * 3_600_000).toISOString().slice(0, 10); // final-5: calendar day in Asia/Tashkent (reset 00:00 Tashkent)
     const cap = limit > 0 ? limit : 2_147_483_647;
     const rows = await this.prisma.$queryRaw<Array<{ tts_count: number }>>`
       INSERT INTO "ai_usage_daily" ("user_id", "usage_date", "tts_count")
@@ -198,8 +199,7 @@ export class AiService {
       return;
     }
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -261,8 +261,7 @@ export class AiService {
   }
 
   private async checkQuota(userId: string, defaultUserQuota: number) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
 
     if (this.useMemory()) {
       const key = `${userId}:${today.toISOString().slice(0, 10)}`;
@@ -962,8 +961,7 @@ export class AiService {
     if (this.useMemory()) {
       return this.memoryPlatformLookups < settings.dailyLimit;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     const agg = await this.prisma.aiUsageDaily.aggregate({
       where: { usageDate: today },
       _sum: { lookupCount: true, quizCount: true },
@@ -977,8 +975,7 @@ export class AiService {
       this.memoryPlatformLookups += 1;
       return;
     }
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     // final-5: import clean-up no longer writes the learner's quizCount (it used up the Free 10 quizzes/day).
     void userId; void today;
   }

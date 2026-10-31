@@ -1040,7 +1040,7 @@ model ConversationParticipant {
 model Message {
   id             String       @id @default(uuid()) @db.Uuid
   conversationId String       @map("conversation_id") @db.Uuid
-  senderId       String       @map("sender_id") @db.Uuid
+  senderId       String?      @map("sender_id") @db.Uuid
   body           String
   translation    String?
   bodyLang       AppLanguage? @map("body_lang")
@@ -1050,7 +1050,7 @@ model Message {
   createdAt      DateTime     @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
-  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  sender       User?        @relation(fields: [senderId], references: [id], onDelete: SetNull) // final-5 WL4-11 B: hard delete keeps messages as "Deleted user"
   replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      Message[]    @relation("MessageReply")
 

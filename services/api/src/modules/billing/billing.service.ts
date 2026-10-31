@@ -1,3 +1,4 @@
+import { limitDayStart } from '../../common/plan-limits';
 import { Injectable } from '@nestjs/common';
 import { SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -93,8 +94,7 @@ export class BillingService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = limitDayStart();
     const [usage, quotaRow, importAllowance] = await Promise.all([
       this.prisma.aiUsageDaily.findUnique({
         where: { userId_usageDate: { userId, usageDate: today } },

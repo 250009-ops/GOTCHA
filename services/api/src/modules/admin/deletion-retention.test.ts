@@ -22,6 +22,8 @@ const prisma = {
     findMany: async ({ where }: any) => Object.values(users).filter((u: any) => u.email.startsWith(where.email.startsWith) && u.deletedAt),
     delete: async ({ where }: any) => { deleted.push(where.id); },
   },
+  message: { updateMany: async () => ({ count: 0 }) },
+  $transaction: async (ops: any[]) => Promise.all(ops),
   auditLog: { create: async (a: any) => { audit.push(a.data); } },
 };
 const svc = Object.create(AdminService.prototype) as AdminService;

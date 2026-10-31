@@ -76,6 +76,22 @@ export function nextLimitResetAt(now = new Date()): Date {
   const local = new Date(now.getTime() + off);
   return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) - off);
 }
+/** final-5 (Kai): ALL limit resets are 00:00 Asia/Tashkent: daily lookups/quizzes at midnight, monthly import pages at midnight
+ * on the 1st. Independent of the server TZ. Returns the instant of the most recent Tashkent midnight (same value setHours(0)
+ * gave on the Tashkent VPS, so existing aiUsageDaily keys keep matching). */
+const TASHKENT_OFFSET_MS = 5 * 3_600_000;
+export function limitDayStart(now = new Date()): Date {
+  const local = new Date(now.getTime() + TASHKENT_OFFSET_MS);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate()) - TASHKENT_OFFSET_MS);
+}
+export function limitMonthStart(now = new Date()): Date {
+  const local = new Date(now.getTime() + TASHKENT_OFFSET_MS);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), 1) - TASHKENT_OFFSET_MS);
+}
+export function nextMonthlyResetAt(now = new Date()): Date {
+  const local = new Date(now.getTime() + TASHKENT_OFFSET_MS);
+  return new Date(Date.UTC(local.getUTCFullYear(), local.getUTCMonth() + 1, 1) - TASHKENT_OFFSET_MS);
+}
 /** 403 body for a reached daily cap; message kept for older clients that match on it. */
 export function dailyLimitBody(kind: 'lookup' | 'quiz', limit: number, now = new Date()) {
   return {

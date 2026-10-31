@@ -110,8 +110,9 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     userId: string,
     paymentId: string | undefined,
     importType: ImportType,
+    pages?: number,
   ) {
-    const payment = await this.importCommerce.consumePayment(userId, paymentId, importType);
+    const payment = await this.importCommerce.consumePayment(userId, paymentId, importType, pages);
     return payment;
   }
 
@@ -242,7 +243,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
   async importPaste(userId: string, dto: ImportPasteDto) {
     await this.limits.assertImportAllowed(userId);
     const importLanguage = await this.resolveImportLanguage(userId, dto.language);
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste);
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, ImportType.paste, this.importCommerce.estimatePages({ importType: ImportType.paste, textLength: dto.text?.length ?? 0 }));
 
     try {
       assertMaxChars(dto.text, 'Pasted text');
@@ -422,7 +423,7 @@ export class ImportsService implements OnModuleInit, OnModuleDestroy {
     } catch (err) {
       throw new BadRequestException(err instanceof Error ? err.message : 'Could not read this file');
     }
-    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType);
+    const payment = await this.requirePaymentIfNeeded(userId, dto.paymentId, importType, actualPages);
     await this.importCommerce.assertPaymentCoversPages(userId, payment, actualPages, importType);
     const sourceType = isPdf ? 'pdf' : 'epub';
     const title =

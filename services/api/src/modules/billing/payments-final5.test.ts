@@ -57,7 +57,7 @@ function harness() {
     await assert.rejects(() => h.svc.catalogCheckout('u', 'c1'), /not available/);
     assert.deepEqual(h.atmosCalls, [], 'no Atmos call of any kind while the flag is off');
     // free allowance still works with the flag off
-    (h.svc as any).quote = async () => ({ requiresPayment: false, amountTiyins: 0, importType: 'pdf', contentFormat: 'book', estimatedPages: 3, tier: null });
+    (h.svc as any).quote = async () => ({ requiresPayment: false, amountTiyins: 0, importType: 'pdf', contentFormat: 'book', estimatedPages: 3, tier: null, isFree: true });
     const free = await h.svc.checkout('u', { importType: 'pdf' } as any);
     assert.equal(free.isFree, true); assert.equal(free.step, 'done');
     // already-granted catalog access is still returned (no payment)

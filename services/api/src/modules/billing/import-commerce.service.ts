@@ -1,3 +1,4 @@
+import { limitDayStart, limitMonthStart, nextLimitResetAt, nextMonthlyResetAt } from '../../common/plan-limits';
 import {
   BadRequestException,
   ForbiddenException,
@@ -59,6 +60,10 @@ export type ImportQuoteResult = {
 export type LearnerImportAllowance = {
   gatewayEnabled: boolean;
   resetCycle: string;
+  /** final-5: 00:00 Asia/Tashkent; daily imports reset at dailyResetAt, monthly pages at monthlyResetAt (1st of the month). */
+  dailyResetAt: string;
+  monthlyResetAt: string;
+  timezone: string;
   allowedFormats: string[];
   dailyFreeImportsPerUser: number;
   dailyFreeUsed: number;
@@ -158,13 +163,13 @@ export class ImportCommerceService {
   }
 
   private pageWindowStart(resetCycle: string) {
-    if (resetCycle === 'daily') return this.startOfUtcDay();
+    if (resetCycle === 'daily') return limitDayStart();
     if (resetCycle === 'yearly') return this.startOfUtcYear();
-    return this.startOfUtcMonth();
+    return limitMonthStart();
   }
 
   async freeUsage(userId: string, resetCycle = 'monthly', excludePaymentId?: string) {
-    const dayStart = this.startOfUtcDay();
+    const dayStart = limitDayStart();
     const pageStart = this.pageWindowStart(resetCycle);
     const exclude = excludePaymentId ? { id: { not: excludePaymentId } } : {};
 
@@ -210,6 +215,9 @@ export class ImportCommerceService {
       monthlyFreePageLimit: pageCap,
       monthlyPagesUsed: usage.monthlyPagesUsed,
       monthlyPagesRemaining: Math.max(0, pageCap - usage.monthlyPagesUsed),
+      dailyResetAt: nextLimitResetAt().toISOString(),
+      monthlyResetAt: nextMonthlyResetAt().toISOString(),
+      timezone: 'Asia/Tashkent',
     };
   }
 
@@ -236,8 +244,16 @@ export class ImportCommerceService {
     const amountTiyins = Math.max(0, Math.round(priceUzs * 100));
 
     const gatewayEnabled = allowance.gatewayEnabled;
-    let isFree = !gatewayEnabled;
-    let freeReason: string | null = gatewayEnabled ? null : 'Imports are free right now';
+    let isFree = false;
+    let freeReason: string | null = null;
+    if (!gatewayEnabled) {
+      // final-5 (b): no gateway → free, but only within the Free allowance (any format).
+      const within =
+        allowance.dailyFreeUsed < allowance.dailyFreeImportsPerUser &&
+        allowance.monthlyPagesUsed + estimatedPages <= allowance.monthlyFreePageLimit;
+      isFree = within;
+      freeReason = within ? 'Within free import allowance' : 'Free import limit reached';
+    }
 
     if (gatewayEnabled) {
       const formatOk = formatIsAllowed(allowance.allowedFormats, contentFormat);
@@ -296,6 +312,9 @@ export class ImportCommerceService {
     const quote = await this.quote(userId, input);
 
     if (!quote.requiresPayment) {
+      if (!quote.isFree) {
+        throw new ForbiddenException({ statusCode: 403, code: 'IMPORT_LIMIT_REACHED', message: quote.freeReason ?? 'Free import limit reached' });
+      }
       const account = `free_${randomUUID().replace(/-/g, '')}`;
       const payment = await this.prisma.importPayment.create({
         data: {
@@ -591,8 +610,17 @@ export class ImportCommerceService {
   /**
    * Consume a paid (or free-credited) payment for an import. One payment → one import.
    */
-  async consumePayment(userId: string, paymentId: string | undefined, importType: ImportType) {
-    if (!this.gatewayEnabled()) return null;
+  async consumePayment(userId: string, paymentId: string | undefined, importType: ImportType, pages?: number) {
+    // final-5 (b): with the gateway off, imports are free but the Free allowance (3 a day / 50 pages a month) is still enforced.
+    if (!this.gatewayEnabled()) {
+      if (paymentId) {
+        const pre = await this.prisma.importPayment.findFirst({
+          where: { id: paymentId, userId, status: ImportPaymentStatus.paid, userImportId: null, importType },
+        });
+        if (pre && !catalogContentIdFromFormat(pre.contentFormat)) return pre; // credit already taken at checkout
+      }
+      return this.grantFreeImportCredit(userId, importType, pages ?? 1);
+    }
 
     if (!paymentId) {
       throw new ForbiddenException('Payment required for this import. Get a quote and checkout first.');
@@ -615,6 +643,42 @@ export class ImportCommerceService {
       throw new BadRequestException('Payment import type does not match');
     }
     return payment;
+  }
+
+  /** final-5 (b): gateway-off free import credit. Same counters as the gateway free path (amount 0 paid rows). */
+  async grantFreeImportCredit(userId: string, importType: ImportType, pages: number) {
+    const estimatedPages = Math.max(1, Math.min(MAX_BILLABLE_PAGES, Math.floor(pages) || 1));
+    const allowance = await this.learnerAllowance(userId);
+    const devUnlimited = envFlagTrue(process.env.DEV_UNLIMITED_IMPORTS) && process.env.NODE_ENV !== 'production';
+    const overDaily = !devUnlimited && allowance.dailyFreeUsed >= allowance.dailyFreeImportsPerUser;
+    const overPages = !devUnlimited && allowance.monthlyPagesUsed + estimatedPages > allowance.monthlyFreePageLimit;
+    if (overDaily || overPages) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'IMPORT_LIMIT_REACHED',
+        message: overDaily
+          ? `Free import limit reached: ${allowance.dailyFreeImportsPerUser} imports a day.`
+          : `Free import limit reached: ${allowance.monthlyFreePageLimit} pages a month (${allowance.monthlyPagesRemaining} left).`,
+        limit: overDaily ? 'daily_imports' : 'monthly_pages',
+        dailyFreeImportsPerUser: allowance.dailyFreeImportsPerUser,
+        monthlyFreePageLimit: allowance.monthlyFreePageLimit,
+        monthlyPagesRemaining: allowance.monthlyPagesRemaining,
+        resetAt: overDaily ? allowance.dailyResetAt : allowance.monthlyResetAt,
+        timezone: 'Asia/Tashkent',
+      });
+    }
+    return this.prisma.importPayment.create({
+      data: {
+        userId,
+        status: ImportPaymentStatus.paid,
+        importType,
+        contentFormat: this.mapImportTypeToFormat(importType),
+        estimatedPages,
+        amountTiyins: 0,
+        account: `free_${randomUUID().replace(/-/g, '')}`,
+        paidAt: new Date(),
+      },
+    });
   }
 
   /**
@@ -717,8 +781,8 @@ export class ImportCommerceService {
 
   /** Admin overview helpers */
   async revenueStats() {
-    const monthStart = this.startOfUtcMonth();
-    const dayStart = this.startOfUtcDay();
+    const monthStart = limitMonthStart();
+    const dayStart = limitDayStart();
     const [paidMonth, paidToday, freeToday] = await Promise.all([
       this.prisma.importPayment.aggregate({
         where: { status: ImportPaymentStatus.paid, amountTiyins: { gt: 0 }, paidAt: { gte: monthStart } },
