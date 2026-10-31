@@ -113,6 +113,14 @@ export const LATE_UNATTACHED = 'paid_late_no_import';
 /** PAY2-08: unused late-paid imports become refund-due after 7 days. */
 export const LATE_UNATTACHED_REFUND_MS = 7 * 24 * 3600_000;
 
+/** PAY2-23: needsAttention is only the manual-review flag (payment_under_review / 24 h expired_unverified), not a refund-due
+ * or failed-reverse flag, so a definitive Atmos answer may clear it. */
+export function reviewFlagOnly(p: { status: string; cancelReason: string | null; refundDue?: boolean | null }): boolean {
+  if (p.refundDue) return false;
+  if (p.status === 'pending') return p.cancelReason == null;
+  return p.status === 'expired' && (p.cancelReason ?? '').startsWith('expired_unverified');
+}
+
 @Injectable()
 export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(ImportCommerceService.name);
@@ -944,8 +952,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
     // PAY2-12: the 24 h "expired unverified" manual-review flag is resolved by the late grant itself.
     // Cleared BEFORE the transition so a Plus-grant failure inside it can still re-flag the row.
-    if (existing.status === ImportPaymentStatus.expired && existing.needsAttention && (existing.cancelReason ?? '').startsWith('expired_unverified')) {
-      await this.prisma.importPayment.updateMany({ where: { id: existing.id, status: ImportPaymentStatus.expired }, data: { needsAttention: false, cancelReason: null, nextCheckAt: null } });
+    // PAY2-23: the same holds for the payment_under_review flag (Atmos unreachable on a retry: pending, needsAttention, no
+    // cancelReason); the confirmed grant resolves it. Other flags (refund due, failed reverse) carry their own state and stay.
+    if (existing.needsAttention && reviewFlagOnly(existing)) {
+      await this.prisma.importPayment.updateMany({ where: { id: existing.id, status: existing.status }, data: { needsAttention: false, cancelReason: null, nextCheckAt: null } });
     }
     const ok = await this.transitionToPaid(existing.id, {
       providerRef: opts?.providerRef,
@@ -1180,7 +1190,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       }
       if (remote?.confirmed) { if (await this.markPaid(p.account, { ofdUrl: remote.ofdUrl, raw: remote.raw, late: true })) paid++; continue; }
       const definitive = !failed && remote != null && (remote.raw as { store_transaction?: unknown } | null)?.store_transaction != null;
-      if (definitive) { expired += await expire(p.id); continue; }
+      // PAY2-23: a definitive no resolves the payment_under_review flag too (nothing was charged).
+      if (definitive) { expired += await expire(p.id, p.needsAttention && reviewFlagOnly(p) ? { needsAttention: false } : {}); continue; }
       if (overCap) {
         const n = await expire(p.id, { needsAttention: true, cancelReason: 'expired_unverified: Atmos status unknown after 24 h' });
         expired += n; flagged += n;
