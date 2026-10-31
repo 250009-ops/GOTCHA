@@ -275,7 +275,7 @@ export class AiService {
       return { quota, usage: { lookupCount: used }, today, memoryKey: key, mode: 'ai' as const };
     }
 
-    // Lookups/day from the plan's ai_daily_quota (Free 20, Plus 200), runtime DB config cached ≤ 60 s.
+    // Lookups/day from platform_settings caps.free.lookups (WLF-12; Free 20, Plus no daily cap), runtime DB config cached ≤ 60 s.
     const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
     const quota = caps[plan].lookups;
     const usage = await this.prisma.aiUsageDaily.findUnique({

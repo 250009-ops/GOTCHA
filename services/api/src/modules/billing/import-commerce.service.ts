@@ -1056,7 +1056,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
 
   /** Enforced daily caps (lookups + quizzes, Free and Plus) and the live import discount. */
   async plusLimits(importDiscountPct: number) {
-    // Same runtime source (≤ 60 s cache) the enforcement uses: subscription_plans free/premium rows.
+    // Same runtime source (≤ 60 s cache) the enforcement uses: platform_settings caps.* (WLF-12), never plan columns.
     const caps = await getPlanCaps(this.prisma);
     return { plusLookups: caps.plus.lookups, freeLookups: caps.free.lookups, plusQuizzes: caps.plus.quizzes, freeQuizzes: caps.free.quizzes, importDiscountPct };
   }
