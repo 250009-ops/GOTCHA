@@ -362,7 +362,6 @@ export function RoadmapPage() {
       </ul>
       <h2 className="mt-8 mb-3 text-xl font-bold tracking-[-0.3px] text-[#101828]">Next</h2>
       <ul className="list-disc pl-5 space-y-1 text-base leading-[1.7] text-[#4a5565]">
-        <li>Offline reading</li>
         <li>Richer CEFR progress analytics</li>
         <li>More curated library titles with licensed partners</li>
       </ul>
