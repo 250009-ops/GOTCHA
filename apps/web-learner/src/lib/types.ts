@@ -220,6 +220,11 @@ export interface SubscriptionInfo {
     quizzesToday: number;
     /** null = no daily lookup cap (Plus). */
     quota: number | null;
+    /** final-5: daily quiz cap (null = no cap). */
+    quizQuota?: number | null;
+    /** final-5: next 00:00 Asia/Tashkent. */
+    resetAt?: string;
+    timezone?: string;
     importAllowance?: {
       gatewayEnabled: boolean;
       resetCycle: string;

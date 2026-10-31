@@ -29,7 +29,8 @@ import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { persistLearnerLocale } from '../lib/learnerLocale';
 import type { UiLanguage } from '@gotcha/shared';
-import { practiceCopyFor } from '@gotcha/shared';
+import { practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
+import { paymentsEnabled } from '../lib/limits';
 import { applyAppTheme } from '../lib/appTheme';
 import {
   CEFR_LEVELS,
@@ -449,6 +450,12 @@ export default function SettingsPage() {
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
   const usagePct = quota !== null ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const importAllowance = subscription?.usage.importAllowance;
+  // final-5 B5: real limits and counters; every reset is 00:00 Asia/Tashkent (pages: the 1st).
+  const limitCopy = LIMIT_COPY[limitLang(locale)];
+  const rawQuizQuota = subscription?.usage.quizQuota;
+  const quizQuota = typeof rawQuizQuota === 'number' && rawQuizQuota > 0 && rawQuizQuota < 1_000_000 ? rawQuizQuota : null;
+  const quizzesToday = subscription?.usage.quizzesToday ?? 0;
+  const payments = paymentsEnabled();
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
     () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),
@@ -748,29 +755,26 @@ export default function SettingsPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
-                      <div className="text-xl sm:text-2xl font-bold mt-1">{copy.settings.payPerImport}</div>
+                      <div className="text-xl sm:text-2xl font-bold mt-1">{payments ? copy.settings.payPerImport : limitCopy.freePlan}</div>
                     </div>
                     <Zap className="w-6 h-6 text-white shrink-0" />
                   </div>
                   <div className="space-y-1.5 py-4">
                     {[
-                      copy.settings.aiLookupsLine(lookupsToday, quota === null ? null : String(quota)),
+                      quota !== null
+                        ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
+                        : copy.settings.aiLookupsLine(lookupsToday, null),
+                      quizQuota !== null ? limitCopy.quizzesLeft(Math.max(0, quizQuota - quizzesToday), quizQuota) : null,
                       importAllowance
-                        ? copy.settings.freeImportsLine(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
+                        ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                         : plan?.importLimit && plan.importLimit < 1_000_000
                           ? copy.settings.importLimitLine(plan.importLimit)
                           : null,
                       importAllowance
-                        ? copy.settings.freePagesLine(
-                            importAllowance.monthlyPagesRemaining,
-                            importAllowance.monthlyFreePageLimit,
-                            importAllowance.resetCycle === 'daily'
-                              ? copy.billing.today
-                              : importAllowance.resetCycle === 'yearly'
-                                ? copy.billing.thisYear
-                                : copy.billing.thisMonth,
-                          )
+                        ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                         : null,
+                      limitCopy.dailyReset,
+                      importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
                       copy.settings.publicLibraryAccess,
                     ].filter(Boolean).map((f) => (
                       <div key={f as string} className="flex items-start gap-2 text-sm">
@@ -779,6 +783,7 @@ export default function SettingsPage() {
                       </div>
                     ))}
                   </div>
+                  {payments && (
                   <button
                     type="button"
                     onClick={() => navigate('/app/import')}
@@ -786,6 +791,7 @@ export default function SettingsPage() {
                   >
                     <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
                   </button>
+                  )}
                 </div>
               </div>
 

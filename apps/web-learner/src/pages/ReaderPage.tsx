@@ -1,4 +1,5 @@
 import { ReportButton } from '../components/safety/SafetyActions';
+import { handleLimitError } from '../lib/limits';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
@@ -533,6 +534,7 @@ export default function ReaderPage() {
         setVocabMarkable(isVocabMarkableSelection(surface, tokenCount, res.kind ?? (sentenceLike ? 'sentence' : undefined)));
         if (head) setActiveWord(head);
       } catch (e) {
+        if (handleLimitError(e)) return;
         const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {

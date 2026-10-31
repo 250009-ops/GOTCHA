@@ -1,4 +1,6 @@
 import { AgePrompt } from '../components/safety/AgePrompt';
+import { LimitDialog } from '../components/LimitDialog';
+import { paymentsEnabled } from '../lib/limits';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import {
@@ -23,7 +25,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../com
 import { cn } from '../components/ui/utils';
 import { useAuth } from '../lib/auth';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguagePicker } from '../components/LanguagePicker';
 import { GotchaLogo } from '../components/GotchaLogo';
@@ -68,6 +70,7 @@ export default function LearnerShell() {
   const location = useLocation();
   const { user, stats, logout } = useAuth();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   useCatalogLanguages();
   const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -204,7 +207,8 @@ export default function LearnerShell() {
             </nav>
 
             <div className="px-2 pb-3 pt-2 border-t border-white/[0.06] space-y-1 shrink-0">
-              {expanded ? (
+              {/* final-5 B4: pay-as-you-go upsell only when payments are on (default off). */}
+              {!paymentsEnabled() ? null : expanded ? (
                 <button
                   type="button"
                   onClick={() => navigate('/app/import')}
@@ -332,6 +336,7 @@ export default function LearnerShell() {
           >
             <Outlet />
             <AgePrompt />
+            <LimitDialog lang={locale} />
           </main>
         </div>
       </div>

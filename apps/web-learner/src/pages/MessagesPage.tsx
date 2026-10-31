@@ -1,4 +1,5 @@
 import { deletedAccountLine, isUserDeletedError, shownName } from '../lib/deletedUser';
+import { handleLimitError } from '../lib/limits';
 import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
@@ -1190,6 +1191,7 @@ export default function MessagesPage() {
           });
         }
       } catch (e) {
+        if (handleLimitError(e)) return;
         const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
         if (/disabled by an administrator/i.test(raw)) {

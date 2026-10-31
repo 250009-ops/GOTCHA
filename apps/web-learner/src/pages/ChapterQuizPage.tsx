@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { handleLimitError } from '../lib/limits';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BookOpen, Check, GraduationCap, Loader2, RotateCcw, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -103,7 +104,7 @@ export default function ChapterQuizPage() {
       setFreeText('');
       setResults(null);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      if (!handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setStarting(false);
     }
@@ -154,7 +155,7 @@ export default function ChapterQuizPage() {
       );
       setResults(res);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      if (!handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
     } finally {
       setSubmitting(false);
     }
