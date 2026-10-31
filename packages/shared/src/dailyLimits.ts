@@ -64,15 +64,15 @@ export function dailyLimitBody(kind: CapKind, plan: CapPlan, limit: number, plus
 /** Paywall headline from config (PLUS-OFFER.md §4, 14:33). Never "unlimited" / "fair use" in UI copy. */
 export function plusHeadline(plusLookups: number | null, lang: string | null | undefined): string {
   const l = lang3(lang);
-  if (plusLookups == null) return { en: 'No daily limit on word lookups with Plus.', uz: 'Plus bilan soʻz qidirishda kunlik cheklov yoʻq.', ru: 'С Plus нет дневного лимита на подсказки по словам.' }[l];
-  return { en: `Look up ${plusLookups} words a day with Plus.`, uz: `Plus bilan kuniga ${plusLookups} ta soʻz qidiring.`, ru: `С Plus: ${plusLookups} подсказок по словам в день.` }[l];
+  if (plusLookups == null) return { en: 'No daily limit on word lookups with Plus.', uz: 'Plus bilan soʻz izohlarida kunlik cheklov yoʻq.', ru: 'С Plus нет дневного лимита на пояснения слов.' }[l];
+  return { en: `Look up ${plusLookups} words a day with Plus.`, uz: `Plus bilan kuniga ${plusLookups} ta soʻz izohini oling.`, ru: `С Plus: ${plusLookups} пояснений слов в день.` }[l];
 }
 
 /** Paywall lookups bullet from config (PLUS-OFFER.md §4). */
 export function plusLookupsBullet(plusLookups: number | null, freeLookups: number, lang: string | null | undefined): string {
   const l = lang3(lang);
-  if (plusLookups == null) return { en: `No daily limit on word lookups (${freeLookups} a day on Free)`, uz: `Soʻz qidirishda kunlik cheklov yoʻq (bepul tarifda kuniga ${freeLookups} ta)`, ru: `Без дневного лимита на подсказки по словам (в бесплатном плане ${freeLookups} в день)` }[l];
-  return { en: `${plusLookups} word lookups a day (${freeLookups} on Free)`, uz: `Kuniga ${plusLookups} ta soʻz qidirish (bepul tarifda ${freeLookups} ta)`, ru: `${plusLookups} подсказок по словам в день (в бесплатном плане ${freeLookups})` }[l];
+  if (plusLookups == null) return { en: `No daily limit on word lookups (${freeLookups} a day on Free)`, uz: `Soʻz izohlarida kunlik cheklov yoʻq (bepul tarifda kuniga ${freeLookups} ta)`, ru: `Без дневного лимита на пояснения слов (в бесплатном плане ${freeLookups} в день)` }[l];
+  return { en: `${plusLookups} word lookups a day (${freeLookups} on Free)`, uz: `Kuniga ${plusLookups} ta soʻz izohi (bepul tarifda ${freeLookups} ta)`, ru: `${plusLookups} пояснений слов в день (в бесплатном плане ${freeLookups})` }[l];
 }
 
 /** Paywall sub-line from config (PLUS-OFFER.md §4). */
@@ -80,13 +80,13 @@ export function plusLead(plusLookups: number | null, freeLookups: number, lang: 
   const l = lang3(lang);
   if (plusLookups == null) return {
     en: `Free gives you ${freeLookups} word lookups a day. Plus has no daily limit on word lookups, so a long chapter won't stop you halfway.`,
-    uz: `Bepul tarifda kuniga ${freeLookups} ta soʻz qidirish bor. Plusʼda soʻz qidirishda kunlik cheklov yoʻq, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.`,
-    ru: `В бесплатном плане ${freeLookups} подсказок по словам в день. В Plus нет дневного лимита на подсказки по словам, и длинная глава не оборвётся на середине.`,
+    uz: `Bepul tarifda kuniga ${freeLookups} ta soʻz izohi bor. Plusʼda soʻz izohlarida kunlik cheklov yoʻq, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.`,
+    ru: `В бесплатном плане ${freeLookups} пояснений слов в день. В Plus нет дневного лимита на пояснения слов, и длинная глава не оборвётся на середине.`,
   }[l];
   return {
     en: `Free gives you ${freeLookups} word lookups a day. Plus gives you ${plusLookups}, so a long chapter won't stop you halfway.`,
-    uz: `Bepul tarifda kuniga ${freeLookups} ta soʻz qidirish bor. Plusʼda ${plusLookups} ta, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.`,
-    ru: `В бесплатном плане ${freeLookups} подсказок по словам в день. В Plus их ${plusLookups}, и длинная глава не оборвётся на середине.`,
+    uz: `Bepul tarifda kuniga ${freeLookups} ta soʻz izohi bor. Plusʼda ${plusLookups} ta, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.`,
+    ru: `В бесплатном плане ${freeLookups} пояснений слов в день. В Plus их ${plusLookups}, и длинная глава не оборвётся на середине.`,
   }[l];
 }
 

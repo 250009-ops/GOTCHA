@@ -52,7 +52,7 @@ async function main() {
   const m2 = new MarketingService({ ...prisma, platformSetting: { findUnique: async () => ({ value: { dailyFreeImportsPerUser: 5, monthlyFreePageLimit: 21 } }) } } as never);
   const f2: string[] = (await m2.plans('ru'))[0].features;
   assert.ok(f2.includes('5 бесплатных импортов в день') && f2.includes('До 21 бесплатной страницы импорта в месяц'), 'reads admin config: ' + f2.join(' | '));
-  assert.match((await m.plans('ru'))[0].features.join(' '), /подсказок/);
+  assert.match((await m.plans('ru'))[0].features.join(' '), /пояснений слов/);
   assert.equal(planLang('ru-RU'), 'ru'); assert.equal(planLang('xx'), 'en'); assert.equal(planLang(undefined), 'en');
   assert.equal(formatSom(199990), '199 990 soʻm');
   // Guard: no plan price under 1000 soʻm anywhere it is defined (seed, data fix, constants).

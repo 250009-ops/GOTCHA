@@ -180,6 +180,9 @@ export type PayKey =
   | 'imp.freeRetry'
   | 'imp.retryUsing'
   | 'imp.refundDue'
+  | 'imp.paidNoResult.title'
+  | 'imp.paidNoResult.body'
+  | 'imp.paidNoResult.refund'
   | 'status.active'
   | 'status.revoked'
   | 'status.canceled'
@@ -265,6 +268,9 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "An import you paid for didn't finish. Try it again: it's free, you won't be charged twice.",
     "imp.retryUsing": "Using your earlier payment: no new charge.",
     "imp.refundDue": "An import you paid for kept failing. We'll refund it: no need to do anything. Questions: support@gotchaa.uz.",
+    "imp.paidNoResult.title": "Payment received, import not finished",
+    "imp.paidNoResult.body": "We'll try the import again. If it still fails, we'll refund you within 10 working days.",
+    "imp.paidNoResult.refund": "Ask for a refund",
     "history.title": "Payments",
     "oferta": "Public offer (oferta)",
     "otp.code": "SMS code",
@@ -410,7 +416,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "err.cardFormat": "Введите номер карты из 16–19 цифр и срок в формате ММ/ГГ.",
     "err.cardInvalid": "Данные карты неверны. Проверьте номер и срок.",
     "err.expired": "Сессия оплаты истекла. Вернитесь и начните оплату заново.",
-    "lim.free": "Вы использовали {free} подсказок за сегодня. С Plus нет дневного лимита на подсказки по словам. Или возвращайтесь завтра.",
+    "lim.free": "Вы использовали {free} пояснений слов за сегодня. С Plus нет дневного лимита на пояснения слов. Или возвращайтесь завтра.",
     "lim.quiz": "Тесты по главам на сегодня закончились. Завтра они обновятся.",
     "lim.title": "Дневные лимиты",
     "err.funds": "Недостаточно средств на карте. Пополните её или используйте другую.",
@@ -452,6 +458,9 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "Оплаченный импорт не завершился. Попробуйте ещё раз — это бесплатно, повторно деньги не спишутся.",
     "imp.retryUsing": "Используем прошлую оплату — новых списаний нет.",
     "imp.refundDue": "Оплаченный импорт так и не получился. Мы вернём деньги, ничего делать не нужно. Вопросы: support@gotchaa.uz.",
+    "imp.paidNoResult.title": "Оплата получена, импорт не завершён",
+    "imp.paidNoResult.body": "Мы попробуем импортировать снова. Если не получится, вернём деньги в течение 10 рабочих дней.",
+    "imp.paidNoResult.refund": "Запросить возврат",
     "history.title": "Платежи",
     "oferta": "Публичная оферта",
     "otp.code": "SMS-код",
@@ -475,7 +484,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "pending.sub": "Atmos принял код. Ждём подтверждения от банка, обычно это занимает несколько секунд.",
     "pending.title": "Подтверждаем оплату",
     "plus.active": "Plus активен до {date}",
-    "plus.b1": "Без дневного лимита на подсказки по словам (в бесплатном плане {free} в день)",
+    "plus.b1": "Без дневного лимита на пояснения слов (в бесплатном плане {free} в день)",
     "plus.b2": "Скидка 50% на каждый платный импорт",
     "plus.b3": "Всё из бесплатного плана остаётся с вами",
     "plus.bImp": "Скидка {pct}% на каждый платный импорт",
@@ -483,7 +492,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.cta": "Подключить Plus",
     "plus.ctaShort": "Продолжить",
     "plus.expCta": "Снова подключить Plus",
-    "plus.expSub": "Вы снова на бесплатном плане: {free} подсказок по словам в день. Слова, книги и прогресс сохранены.",
+    "plus.expSub": "Вы снова на бесплатном плане: {free} пояснений слов в день. Слова, книги и прогресс сохранены.",
     "plus.expTitle": "Plus закончился",
     "plus.extAdd": "Добавляете",
     "plus.extLeft": "Осталось сейчас",
@@ -493,7 +502,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.item30": "Gotcha Plus · 30 дней",
     "plus.item365": "Gotcha Plus · 365 дней",
     "plus.later": "Позже",
-    "plus.lead": "В бесплатном плане {free} подсказок по словам в день. В Plus нет дневного лимита на подсказки по словам, и длинная глава не оборвётся на середине.",
+    "plus.lead": "В бесплатном плане {free} пояснений слов в день. В Plus нет дневного лимита на пояснения слов, и длинная глава не оборвётся на середине.",
     "plus.noRenew": "Разовый платёж. Без автопродления: когда срок закончится, вы вернётесь на бесплатный план.",
     "plus.o30": "30 дней",
     "plus.o365": "365 дней",
@@ -513,8 +522,8 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.stTitle": "Ваш план",
     "plus.sub": "Разовый платёж, без автопродления. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс сохранятся.",
     "plus.success": "Plus активен",
-    "plus.successSub": "Plus активен до {date}. Без дневного лимита на подсказки по словам.",
-    "plus.title": "С Plus нет дневного лимита на подсказки по словам.",
+    "plus.successSub": "Plus активен до {date}. Без дневного лимита на пояснения слов.",
+    "plus.title": "С Plus нет дневного лимита на пояснения слов.",
     "plus.until": "Plus до",
     "rc.back": "К платежам",
     "rc.date": "Дата",
@@ -597,7 +606,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "err.cardFormat": "16–19 raqamli karta raqami va muddatni OO/YY koʻrinishida kiriting.",
     "err.cardInvalid": "Karta maʼlumotlari notoʻgʻri. Raqam va muddatni tekshiring.",
     "err.expired": "Toʻlov sessiyasi tugadi. Orqaga qaytib, toʻlovni qaytadan boshlang.",
-    "lim.free": "Bugungi {free} ta soʻz qidirish tugadi. Soʻz qidirishda kunlik cheklov boʻlmasligi uchun Plusʼni oling yoki ertaga qayting.",
+    "lim.free": "Bugungi {free} ta soʻz izohi tugadi. Soʻz izohlarida kunlik cheklov boʻlmasligi uchun Plusʼni oling yoki ertaga qayting.",
     "lim.quiz": "Bugungi bob testlari tugadi. Ertaga yangilanadi.",
     "lim.title": "Kunlik limitlar",
     "err.funds": "Kartada mablagʻ yetarli emas. Toʻldiring yoki boshqa kartadan foydalaning.",
@@ -639,6 +648,9 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "imp.freeRetry": "Toʻlangan import yakunlanmadi. Qayta urinib koʻring — bu bepul, pul ikkinchi marta yechilmaydi.",
     "imp.retryUsing": "Avvalgi toʻlovingizdan foydalanamiz — yangi toʻlov yoʻq.",
     "imp.refundDue": "Toʻlangan import baribir chiqmadi. Pulni qaytaramiz, hech narsa qilish shart emas. Savollar: support@gotchaa.uz.",
+    "imp.paidNoResult.title": "Toʻlov qabul qilindi, import yakunlanmadi",
+    "imp.paidNoResult.body": "Importni qayta urinib koʻramiz. Agar yana bajarilmasa, pulingizni 10 ish kuni ichida qaytaramiz.",
+    "imp.paidNoResult.refund": "Pulni qaytarishni soʻrash",
     "history.title": "Toʻlovlar",
     "oferta": "Ommaviy oferta",
     "otp.code": "SMS kod",
@@ -662,7 +674,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "pending.sub": "Atmos kodni qabul qildi. Bank tasdigʻini kutyapmiz, odatda bir necha soniya.",
     "pending.title": "Toʻlov tasdiqlanmoqda",
     "plus.active": "Plus {date} gacha faol",
-    "plus.b1": "Soʻz qidirishda kunlik cheklov yoʻq (bepul tarifda kuniga {free} ta)",
+    "plus.b1": "Soʻz izohlarida kunlik cheklov yoʻq (bepul tarifda kuniga {free} ta)",
     "plus.b2": "Har bir pullik importga 50% chegirma",
     "plus.b3": "Bepul tarifdagi hamma narsa saqlanib qoladi",
     "plus.bImp": "Har bir pullik importga {pct}% chegirma",
@@ -670,7 +682,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.cta": "Plusʼni olish",
     "plus.ctaShort": "Davom etish",
     "plus.expCta": "Plusni qayta olish",
-    "plus.expSub": "Yana bepul tarifdasiz: kuniga {free} ta soʻz qidirish. Soʻzlar, kitoblar va natijalar saqlangan.",
+    "plus.expSub": "Yana bepul tarifdasiz: kuniga {free} ta soʻz izohi. Soʻzlar, kitoblar va natijalar saqlangan.",
     "plus.expTitle": "Plus muddati tugadi",
     "plus.extAdd": "Qoʻshiladi",
     "plus.extLeft": "Hozir qolgan",
@@ -680,7 +692,7 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.item30": "Gotcha Plus · 30 kun",
     "plus.item365": "Gotcha Plus · 365 kun",
     "plus.later": "Keyinroq",
-    "plus.lead": "Bepul tarifda kuniga {free} ta soʻz qidirish bor. Plusʼda soʻz qidirishda kunlik cheklov yoʻq, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.",
+    "plus.lead": "Bepul tarifda kuniga {free} ta soʻz izohi bor. Plusʼda soʻz izohlarida kunlik cheklov yoʻq, shuning uchun uzun bob yarmida toʻxtab qolmaysiz.",
     "plus.noRenew": "Bir martalik toʻlov. Avtomatik yangilanmaydi: muddat tugagach, bepul tarifga qaytasiz.",
     "plus.o30": "30 kun",
     "plus.o365": "365 kun",
@@ -700,8 +712,8 @@ export const PAY_COPY: Record<PayLang, Record<PayKey, string>> = {
     "plus.stTitle": "Rejangiz",
     "plus.sub": "Bir martalik toʻlov, avtomatik yangilanmaydi. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz saqlanib qoladi.",
     "plus.success": "Plus faollashdi",
-    "plus.successSub": "Plus {date} gacha faol. Soʻz qidirishda kunlik cheklov yoʻq.",
-    "plus.title": "Plus bilan soʻz qidirishda kunlik cheklov yoʻq.",
+    "plus.successSub": "Plus {date} gacha faol. Soʻz izohlarida kunlik cheklov yoʻq.",
+    "plus.title": "Plus bilan soʻz izohlarida kunlik cheklov yoʻq.",
     "plus.until": "Plus muddati",
     "rc.back": "Toʻlovlarga qaytish",
     "rc.date": "Sana",
@@ -875,4 +887,11 @@ export function cancelScreen(r: { status?: string | null; code?: string | null }
   if (r.code === 'refund_requires_support') return '06c';
   if (r.status === 'reversing') return '06b';
   return '06';
+}
+
+/** PAY2-08 imp.paidNoResult secondary action: the existing refund-request flow (help.refundA / trust.refund):
+ *  write to support@gotchaa.uz, the only channel, with the payment reference. */
+export const PAY_SUPPORT_EMAIL = 'support@gotchaa.uz';
+export function refundRequestHref(paymentId: string): string {
+  return `mailto:${PAY_SUPPORT_EMAIL}?subject=${encodeURIComponent(`Refund request ${paymentId}`)}&body=${encodeURIComponent(`Payment reference: ${paymentId}`)}`;
 }
