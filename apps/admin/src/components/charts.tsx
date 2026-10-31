@@ -36,7 +36,7 @@ function formatTipValue(value: number, format: ValueFormat = 'number') {
     }).format(value);
   }
   if (format === 'uzs') {
-    return `${new Intl.NumberFormat('uz-UZ', { maximumFractionDigits: 0 }).format(value)} so'm`;
+    return `${new Intl.NumberFormat('uz-UZ', { maximumFractionDigits: 0 }).format(value)} soʻm`;
   }
   if (format === 'percent') return `${value}%`;
   return new Intl.NumberFormat('en-US').format(Math.round(value));
