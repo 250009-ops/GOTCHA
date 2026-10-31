@@ -5,7 +5,8 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const SHIPPED_VERSION = 'web-2026-10-31.4';
 const readme = readFileSync(`${process.env.LEGAL_DRAFTS_DIR ?? '/workspace/gotcha-handoff/team/pm/legal/web'}/README.md`, 'utf8');
-const sec = readme.slice(readme.indexOf('## Sign-up tick-box labels'), readme.indexOf('## Must ship'));
+const secStart = readme.indexOf('## Sign-up tick-box labels');
+const sec = readme.slice(secStart, readme.indexOf('\n## ', secStart + 3)); // ends at the next section (PM added 'Plus checkout tick-box' after it)
 const part = SHIPPED_VERSION.endsWith('.3') ? sec.slice(sec.indexOf('**CURRENT'), sec.indexOf('**PENDING')) : sec.slice(sec.indexOf('**PENDING'));
 const WANT = Object.fromEntries([...part.matchAll(/^- (?:\(pending\) )?\*\*(uz|ru|en):\*\* (.+)$/gm)].map((m) => [m[1], m[2].trim()]));
 assert.deepEqual(Object.keys(WANT).sort(), ['en', 'ru', 'uz'], 'README section parsed');
