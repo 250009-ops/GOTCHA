@@ -48,32 +48,14 @@ function useAuthMarketing(): AuthMarketing {
         if (!res.ok) throw new Error(`stats ${res.status}`);
         return res.json() as Promise<{ learnerCount?: number }>;
       });
-      const landingP = fetch(`${API_BASE}/marketing/landing`).then((res) => {
-        if (!res.ok) throw new Error(`landing ${res.status}`);
-        return res.json() as Promise<{
-          stats?: { learnerCount?: number };
-          languages?: Array<{ name?: string }>;
-          topReaders?: Array<{ initials?: string }>;
-        }>;
-      });
-
-      void Promise.allSettled([statsP, landingP]).then(([statsRes, landingRes]) => {
-        if (cancelled) return;
-        const stats = statsRes.status === 'fulfilled' ? statsRes.value : null;
-        const landing = landingRes.status === 'fulfilled' ? landingRes.value : null;
-        const initials = (landing?.topReaders ?? [])
-          .map((r) => r.initials?.trim())
-          .filter((v): v is string => Boolean(v))
-          .slice(0, 4);
-        setData((prev) => ({
-          learnerCount:
-            Number(stats?.learnerCount ?? landing?.stats?.learnerCount) || prev.learnerCount,
-          languageNames: landing
-            ? (landing.languages ?? []).map((l) => l.name ?? '').filter(Boolean)
-            : prev.languageNames,
-          readerInitials: landing ? initials : prev.readerInitials,
-        }));
-      });
+      // WLF-35 (final-6.1a): /marketing/landing is retired (410); the login panel reads /marketing/stats only.
+      void statsP.then(
+        (stats) => {
+          if (cancelled) return;
+          setData((prev) => ({ ...prev, learnerCount: Number(stats?.learnerCount) || prev.learnerCount }));
+        },
+        () => undefined,
+      );
     };
 
     load();
