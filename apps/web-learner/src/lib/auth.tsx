@@ -13,6 +13,7 @@ import { isPublicAuthPath } from './authRoutes';
 import { detectLearnerLocale } from './learnerLocale';
 import { learnerCopyFor } from '@gotcha/shared/learner-copy';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
+import { shouldLogoutOnBootstrapError } from './bootstrapPolicy';
 
 function learnerErrors() {
   return learnerCopyFor(detectLearnerLocale()).errors;
@@ -23,6 +24,8 @@ interface AuthContextValue {
   stats: UserStats | null;
   preferences: UserPreferences | null;
   loading: boolean;
+  bootstrapError: boolean;
+  retryBootstrap: () => void;
   login: (email: string, password: string) => Promise<{
     accessToken: string;
     refreshToken: string;
@@ -113,6 +116,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const [bootstrapError, setBootstrapError] = useState(false);
+
   const bootstrap = useCallback(async () => {
     const token = localStorage.getItem('gotcha_learner_access');
     if (!token) {
@@ -127,17 +132,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* profile ok; vocab error surfaced via vocabError */
       }
-    } catch {
-      clearTokens();
-      setUser(null);
-      setStats(null);
-      setPreferences(null);
-      setVocabItems([]);
+    } catch (e) {
+      // WL4-02: a 5xx/network error must NOT log out — keep tokens and offer a retry.
+      if (shouldLogoutOnBootstrapError(e)) {
+        clearTokens();
+        setUser(null);
+        setStats(null);
+        setPreferences(null);
+        setVocabItems([]);
+      } else {
+        setBootstrapError(true);
+      }
     } finally {
       setLoading(false);
       setBootstrapped(true);
     }
   }, [refreshProfile, refreshVocab]);
+
+  const retryBootstrap = useCallback(() => {
+    setBootstrapError(false);
+    setLoading(true);
+    void bootstrap();
+  }, [bootstrap]);
 
   useEffect(() => {
     // Public auth pages: drop *stale* sessions only. Never wipe a session that
@@ -317,6 +333,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stats,
       preferences: preferences ?? defaultPreferences,
       loading,
+      bootstrapError,
+      retryBootstrap,
       login,
       register,
       logout,
@@ -337,6 +355,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stats,
       preferences,
       loading,
+      bootstrapError,
+      retryBootstrap,
       login,
       register,
       logout,

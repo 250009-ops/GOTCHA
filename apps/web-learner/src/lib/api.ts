@@ -1,7 +1,8 @@
 import { localizeApiError } from '@gotcha/shared';
 import { readStoredLearnerLocale, detectLearnerLocale } from './learnerLocale';
 
-function currentUiLang(): string {
+import { refreshRejected } from './bootstrapPolicy';
+export function currentUiLang(): string {
   if (typeof document !== 'undefined' && document.documentElement.lang) return document.documentElement.lang.slice(0, 2);
   return readStoredLearnerLocale() ?? detectLearnerLocale();
 }
@@ -66,15 +67,15 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          clearTokens();
+          // WL4-02: only a rejected refresh token ends the session; 5xx keeps tokens for a retry.
+          if (refreshRejected(res.status)) clearTokens();
           return null;
         }
         const data = (await res.json()) as AuthTokens;
         setTokens(data);
         return data.accessToken;
       } catch {
-        clearTokens();
-        return null;
+        return null; // network error: keep the session
       } finally {
         refreshPromise = null;
       }
