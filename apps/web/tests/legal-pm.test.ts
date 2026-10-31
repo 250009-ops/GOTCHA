@@ -57,9 +57,9 @@ test('WLF-07: built bundle serves the PM text for all 6 documents (run after vit
   for (const re of OLD) assert.ok(!re.test(js), `dist has legacy text ${re}`);
 });
 
-// PM final legal set (final-4: WLF-11, Terms §7 has no Plus numbers, PM 31 Oct 16:15; privacy unchanged since final-3): sha256 prefixes of the exact files /terms and /privacy must serve.
+// PM final legal set (final-5: PM-confirmed main terms edit of 31 Oct 16:16-16:18; privacy unchanged since final-3): sha256 prefixes of the exact files /terms and /privacy must serve.
 const PINNED: Record<string, string> = {
-  'terms-en': '7fbebb1c0c45', 'terms-ru': '218c55be148e', 'terms-uz': '5ef128039511',
+  'terms-en': '13dacf9ac044', 'terms-ru': '0b5f6fe87755', 'terms-uz': 'e31ddfb455c0',
   'privacy-en': '6b9ee013ac3c', 'privacy-ru': 'a00adb3fca19', 'privacy-uz': 'cef024962382',
 };
 test('final-3: served legal text hashes match the pinned PM files; no "(Public Offer)" in any title', async () => {
