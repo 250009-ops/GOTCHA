@@ -6,6 +6,7 @@ import { LandingLangSwitch, LP_LANGS, type LpLang } from '../components/LandingL
 import { LANDING_BOOKS, LANDING_COPY } from '../lib/landingCopy';
 import { libraryUrl, loginUrl, registerUrl } from '../lib/links';
 import { useWebLocale } from '../lib/webLocaleContext';
+import { buildId, queryWithLocale } from '../lib/queryLocale';
 import lookup from '../data/lookup-capture.json';
 import { plusCta } from '../lib/plusCta';
 
@@ -31,6 +32,7 @@ const BASE = import.meta.env.BASE_URL;
 // Footer build stamp: preview only, never in a production build (UI/UX 14:32).
 const PREVIEW_STAMP = import.meta.env.VITE_PREVIEW_STAMP === 'true'; // QA/preview builds only; build:publish rejects VITE_PREVIEW_STAMP (PAY2-14)
 const BUILD_COMMIT = import.meta.env.VITE_BUILD_COMMIT || '';
+const BUILD_ID = buildId(BUILD_COMMIT, import.meta.env.VITE_BUILD_DATE || ''); // S4: footer build id (sha · date)
 // UX review #4: localised burger labels (BURGER.md).
 const BM: Record<LpLang, { lang: string; close: string; menu: string }> = {
   en: { lang: 'Language', close: 'Close menu', menu: 'Menu' },
@@ -90,9 +92,7 @@ export default function LandingPage() {
 
   const onLang = (c: LpLang) => {
     setLocale(c);
-    const p = new URLSearchParams(params);
-    p.set('lang', c);
-    setParams(p, { replace: true });
+    setParams(queryWithLocale(params, c), { replace: true });
   };
 
   // Burger: scroll lock, inert page, focus first link, Esc, focus trap, close on >=1024 (BURGER.md).
@@ -285,6 +285,7 @@ export default function LandingPage() {
         <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
           <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
         <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a></div>
+        {BUILD_ID && <div className="build-id" data-build-id={BUILD_ID}>build {BUILD_ID}</div>}
         {PREVIEW_STAMP && BUILD_COMMIT && typeof window !== 'undefined' && !/(^|\.)gotchaa\.uz$/.test(window.location.hostname) && (
           <div className="build-stamp" data-build-commit={BUILD_COMMIT}>preview build {BUILD_COMMIT}</div>
         )}

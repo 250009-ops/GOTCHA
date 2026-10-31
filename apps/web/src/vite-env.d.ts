@@ -6,6 +6,7 @@ interface ImportMetaEnv {
   readonly VITE_PLUS_IMPORT_DISCOUNT_LIVE?: string;
   readonly VITE_PLUS_CHECKOUT_LIVE?: string;
   readonly VITE_BUILD_COMMIT?: string;
+  readonly VITE_BUILD_DATE?: string;
   readonly VITE_PREVIEW_STAMP?: string;
   readonly VITE_PLUS_QUIZ_CAP_LIVE?: string;
 }

@@ -296,6 +296,7 @@ body:has(.lp){font-family:Manrope,system-ui,sans-serif}
 .lp .burger[aria-expanded=true]{background:rgba(255,255,255,.1)}
 .lp .burger:focus-visible{outline:2px solid var(--g-blue-300);outline-offset:2px}
 @media(min-width:1024px){.lp .bm{display:none}}
+.lp .build-id{margin-top:8px;font-size:11px;color:var(--l-ink-3)}
 .lp .build-stamp{margin-top:8px;font-size:11px;color:var(--l-ink-3);font-family:ui-monospace,monospace}
 
 /* P2 (b): the panel has its own switcher; hide the header language button while the burger is open. */
