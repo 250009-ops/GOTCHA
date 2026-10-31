@@ -1272,27 +1272,36 @@ export class AdminService {
   }
 
   async getCatalogPricingRules() {
+    // final-5: catalog pricing is stored in soʻm (UZS). Legacy USD keys are ignored. Plus discount is applied at checkout, not here.
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'catalogPricingRules' } });
     const defaults = {
       contentType: 'book',
-      basePriceUsd: 4.99,
-      perPageSurchargeUsd: 0.02,
+      currency: 'UZS',
+      basePriceSom: 49000,
+      perPageSurchargeSom: 0,
       volumeDiscountsEnabled: true,
       buy3PctOff: 10,
       buy5PctOff: 20,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
-    return { ...defaults, ...(row.value as object) };
+    const { basePriceUsd: _b, perPageSurchargeUsd: _p, ...rest } = row.value as Record<string, unknown>;
+    return { ...defaults, ...rest, currency: 'UZS' } as typeof defaults;
   }
 
   async updateCatalogPricingRules(body: Record<string, unknown>) {
     const current = await this.getCatalogPricingRules();
+    const som = (v: unknown, cur: number, min: number) => {
+      if (v === undefined) return cur;
+      const n = Number(v);
+      if (!Number.isInteger(n) || n < min) throw new BadRequestException({ code: 'INVALID_CATALOG_PRICE', message: 'Prices are whole soʻm amounts' });
+      return n;
+    };
     const next = {
       ...current,
       contentType: body.contentType !== undefined ? String(body.contentType) : current.contentType,
-      basePriceUsd: body.basePriceUsd !== undefined ? Number(body.basePriceUsd) : current.basePriceUsd,
-      perPageSurchargeUsd:
-        body.perPageSurchargeUsd !== undefined ? Number(body.perPageSurchargeUsd) : current.perPageSurchargeUsd,
+      currency: 'UZS',
+      basePriceSom: som(body.basePriceSom, current.basePriceSom, 1),
+      perPageSurchargeSom: som(body.perPageSurchargeSom, current.perPageSurchargeSom, 0),
       volumeDiscountsEnabled:
         body.volumeDiscountsEnabled !== undefined
           ? Boolean(body.volumeDiscountsEnabled)

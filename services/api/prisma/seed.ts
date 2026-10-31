@@ -917,8 +917,9 @@ async function main() {
         key: 'catalogPricingRules',
         value: {
           contentType: 'book',
-          basePriceUsd: 4.99,
-          perPageSurchargeUsd: 0.02,
+          currency: 'UZS',
+          basePriceSom: 49000,
+          perPageSurchargeSom: 0,
           volumeDiscountsEnabled: true,
           buy3PctOff: 10,
           buy5PctOff: 20,
