@@ -1,0 +1,102 @@
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ageBand, AgeBand, canMessage } from '../../common/safety/age-policy';
+
+/**
+ * Owner decision (W-12 / S6, 31 Oct): under-13 → messaging off; 13-17 → only with accepted friends;
+ * adults → open. Unknown age = AGE_UNKNOWN_BAND (default teen). Kept DI-free for unit tests.
+ */
+export const MESSAGING_NOT_ALLOWED = 'MESSAGING_NOT_ALLOWED';
+
+type Row = { id: string; birthYear: number | null; deletedAt?: Date | null };
+export type GatePrisma = {
+  user: { findMany(args: unknown): Promise<Row[]>; findFirst(args: unknown): Promise<Row | null> };
+  friendRequest: {
+    findFirst(args: unknown): Promise<{ id: string; requesterId: string; addresseeId: string; status: string } | null>;
+    findMany(args: unknown): Promise<Array<{ id: string; requesterId: string; addresseeId: string; status: string; createdAt: Date }>>;
+    create(args: unknown): Promise<{ id: string; status: string }>;
+    update(args: unknown): Promise<{ id: string; status: string }>;
+    deleteMany(args: unknown): Promise<{ count: number }>;
+  };
+  userBlock: { findFirst(args: unknown): Promise<unknown | null> };
+};
+
+export async function areFriends(p: GatePrisma, a: string, b: string): Promise<boolean> {
+  const row = await p.friendRequest.findFirst({
+    where: {
+      status: 'accepted',
+      OR: [
+        { requesterId: a, addresseeId: b },
+        { requesterId: b, addresseeId: a },
+      ],
+    },
+  });
+  return !!row;
+}
+
+export async function bandsOf(p: GatePrisma, ids: string[]): Promise<Map<string, AgeBand>> {
+  const rows = await p.user.findMany({ where: { id: { in: ids } }, select: { id: true, birthYear: true } });
+  return new Map(rows.map((r) => [r.id, ageBand(r.birthYear)]));
+}
+
+export async function assertCanMessage(p: GatePrisma, sender: string, recipient: string): Promise<void> {
+  const bands = await bandsOf(p, [sender, recipient]);
+  const s = bands.get(sender) ?? ageBand(null);
+  const r = bands.get(recipient) ?? ageBand(null);
+  const friends = s === 'adult' && r === 'adult' ? true : await areFriends(p, sender, recipient);
+  if (!canMessage(s, r, friends)) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: MESSAGING_NOT_ALLOWED,
+      message:
+        s === 'under13' || r === 'under13'
+          ? 'Messaging is not available for this account.'
+          : 'You can message this learner once you are friends. Send a friend request first.',
+    });
+  }
+}
+
+/** Under-13 accounts cannot send or receive friend requests (messaging is off for them). */
+export async function sendFriendRequest(p: GatePrisma, from: string, to: string) {
+  if (from === to) throw new BadRequestException('Cannot add yourself');
+  const target = await p.user.findFirst({ where: { id: to, deletedAt: null }, select: { id: true, birthYear: true } });
+  if (!target) throw new NotFoundException('User not found');
+  const blocked = await p.userBlock.findFirst({
+    where: { OR: [{ blockerId: from, blockedId: to }, { blockerId: to, blockedId: from }] },
+  });
+  if (blocked) throw new ForbiddenException('You can’t add this user.');
+  const bands = await bandsOf(p, [from, to]);
+  if (bands.get(from) === 'under13' || bands.get(to) === 'under13') {
+    throw new ForbiddenException({ statusCode: 403, code: MESSAGING_NOT_ALLOWED, message: 'Friends are not available for this account.' });
+  }
+  const existing = await p.friendRequest.findFirst({
+    where: { OR: [{ requesterId: from, addresseeId: to }, { requesterId: to, addresseeId: from }] },
+  });
+  if (existing) {
+    // They already asked me → accept. Mine pending/accepted → idempotent. Declined → re-open mine.
+    if (existing.requesterId === to && existing.status === 'pending') {
+      return p.friendRequest.update({ where: { id: existing.id }, data: { status: 'accepted', respondedAt: new Date() } });
+    }
+    if (existing.status === 'declined' && existing.requesterId === from) {
+      return p.friendRequest.update({ where: { id: existing.id }, data: { status: 'pending', respondedAt: null, createdAt: new Date() } });
+    }
+    if (existing.status === 'declined') throw new ForbiddenException('This learner declined your request.');
+    return existing;
+  }
+  return p.friendRequest.create({ data: { requesterId: from, addresseeId: to } });
+}
+
+export async function respondFriendRequest(p: GatePrisma, userId: string, requestId: string, accept: boolean) {
+  const row = await p.friendRequest.findFirst({ where: { id: requestId, addresseeId: userId, status: 'pending' } });
+  if (!row) throw new NotFoundException('Friend request not found');
+  return p.friendRequest.update({
+    where: { id: requestId },
+    data: { status: accept ? 'accepted' : 'declined', respondedAt: new Date() },
+  });
+}
+
+export async function removeFriend(p: GatePrisma, userId: string, peerId: string) {
+  return p.friendRequest.deleteMany({
+    where: { OR: [{ requesterId: userId, addresseeId: peerId }, { requesterId: peerId, addresseeId: userId }] },
+  });
+}

@@ -41,3 +41,10 @@ export function canMessage(sender: AgeBand, recipient: AgeBand, areFriends: bool
   if (sender === 'teen' || recipient === 'teen') return areFriends;
   return true;
 }
+
+/** Catalog age ratings a band may read; null = no restriction. */
+export function allowedAgeRatings(band: AgeBand): Array<'all_ages' | 'teen_13' | 'mature_18'> | null {
+  if (band === 'under13') return ['all_ages'];
+  if (band === 'teen') return ['all_ages', 'teen_13'];
+  return null;
+}

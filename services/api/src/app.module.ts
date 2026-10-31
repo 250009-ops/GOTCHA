@@ -16,6 +16,7 @@ import { AiModule } from './modules/ai/ai.module';
 import { BillingModule } from './modules/billing/billing.module';
 import { ImportsModule } from './modules/imports/imports.module';
 import { AdminModule } from './modules/admin/admin.module';
+import { SafetyModule } from './modules/safety/safety.module';
 import { ReadingModule } from './modules/reading/reading.module';
 import { MarketingModule } from './modules/marketing/marketing.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
@@ -47,6 +48,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     BillingModule,
     ImportsModule,
     AdminModule,
+    SafetyModule,
     MarketingModule,
     MessagingModule,
     NotificationsModule,

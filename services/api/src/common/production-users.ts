@@ -78,7 +78,17 @@ export function liveMessagingPeerWhere(): Prisma.UserWhereInput {
         ...FIGMA_SAMPLE_DISPLAY_NAMES.map((name) => ({
           displayName: { equals: name, mode: 'insensitive' as const },
         })),
+        // W-12/S6: under-13 learners are never listed in the learner directory.
+        ...under13UserWhere(),
       ],
     },
   };
+}
+
+/** Prisma OR-terms matching under-13 accounts (age uses the younger bound of birth_year). */
+export function under13UserWhere(): Prisma.UserWhereInput[] {
+  const y = new Date().getUTCFullYear();
+  const terms: Prisma.UserWhereInput[] = [{ birthYear: { gte: y - 13 } }];
+  if ((process.env.AGE_UNKNOWN_BAND ?? 'teen') === 'under13') terms.push({ birthYear: null });
+  return terms;
 }

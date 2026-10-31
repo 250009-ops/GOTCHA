@@ -14,7 +14,16 @@ import {
 } from '../../common/production-users';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { EditMessageDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { EditMessageDto, ReportUserDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
+import { assertCanMessage } from '../safety/friend-gate';
+import {
+  assertNotBlocked,
+  blockedPeerIds,
+  blockUser,
+  reportUser,
+  SafetyPrisma,
+  unblockUser,
+} from './messaging-safety';
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const ONLINE_WINDOW_MS = 90 * 1000;
@@ -192,10 +201,42 @@ export class MessagingService {
     return row;
   }
 
+  private get safety(): SafetyPrisma {
+    return this.prisma as unknown as SafetyPrisma;
+  }
+
+  async listBlocks(userId: string) {
+    const rows = await this.prisma.userBlock.findMany({
+      where: { blockerId: userId },
+      orderBy: { createdAt: 'desc' },
+      include: { blocked: { select: { id: true, displayName: true, avatarUrl: true } } },
+    });
+    return rows.map((r) => ({
+      userId: r.blockedId,
+      displayName: r.blocked.displayName,
+      avatarUrl: r.blocked.avatarUrl,
+      blockedAt: r.createdAt,
+    }));
+  }
+
+  block(userId: string, peerUserId: string) {
+    return blockUser(this.safety, userId, peerUserId);
+  }
+
+  unblock(userId: string, peerUserId: string) {
+    return unblockUser(this.safety, userId, peerUserId);
+  }
+
+  report(userId: string, dto: ReportUserDto) {
+    return reportUser(this.safety, userId, dto);
+  }
+
   async listConversations(userId: string, q?: string) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const rows = await this.prisma.conversation.findMany({
       where: {
         participants: { some: { userId } },
+        ...(hidden.length ? { NOT: { participants: { some: { userId: { in: hidden } } } } } : {}),
       },
       include: {
         participants: {
@@ -319,6 +360,8 @@ export class MessagingService {
       include: { targetLanguages: true, adminProfile: { select: { userId: true } } },
     });
     if (!peer || !isLiveMessagingPeer(peer)) throw new NotFoundException('User not found');
+    await assertNotBlocked(this.safety, userId, dto.peerUserId);
+    await assertCanMessage(this.prisma as never, userId, dto.peerUserId);
 
     const key = this.pairKey(userId, dto.peerUserId);
     let conversation = await this.prisma.conversation.findUnique({
@@ -348,6 +391,12 @@ export class MessagingService {
 
   async sendMessage(userId: string, conversationId: string, dto: SendMessageDto) {
     await this.assertParticipant(conversationId, userId);
+    const other = await this.prisma.conversationParticipant.findFirst({
+      where: { conversationId, userId: { not: userId } },
+      select: { userId: true },
+    });
+    if (other) await assertNotBlocked(this.safety, userId, other.userId);
+    if (other) await assertCanMessage(this.prisma as never, userId, other.userId);
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('Message body required');
 
@@ -495,6 +544,7 @@ export class MessagingService {
   }
 
   async suggestions(userId: string) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const myProgress = await this.prisma.readingProgress.findMany({
       where: { userId },
       select: { contentId: true },
@@ -505,7 +555,7 @@ export class MessagingService {
       // Fallback: recent active learners with any reading progress
       const peers = await this.prisma.user.findMany({
         where: {
-          id: { not: userId },
+          id: { notIn: [userId, ...hidden] },
           ...liveMessagingPeerWhere(),
           readingProgress: { some: {} },
         },
@@ -529,7 +579,7 @@ export class MessagingService {
 
     const peers = await this.prisma.user.findMany({
       where: {
-        id: { not: userId },
+        id: { notIn: [userId, ...hidden] },
         ...liveMessagingPeerWhere(),
         readingProgress: { some: { contentId: { in: contentIds } } },
       },
@@ -554,6 +604,7 @@ export class MessagingService {
   }
 
   async findLearners(userId: string, q?: string, lang?: string, sameReadings?: boolean) {
+    const hidden = await blockedPeerIds(this.safety, userId);
     const query = q?.trim().replace(/^@/, '') ?? '';
     let contentIds: string[] = [];
     if (sameReadings) {
@@ -585,7 +636,7 @@ export class MessagingService {
 
     const peers = await this.prisma.user.findMany({
       where: {
-        id: { not: userId },
+        id: { notIn: [userId, ...hidden] },
         ...liveMessagingPeerWhere(),
         AND: searchAnd,
         ...(sameReadings && contentIds.length
@@ -658,6 +709,10 @@ export class MessagingService {
     return {
       ...this.peerSummary(peer),
       createdAt: peer.createdAt,
+      // P3b: lets the client show Block vs Unblock.
+      blockedByMe: !!(await this.prisma.userBlock.findUnique({
+        where: { blockerId_blockedId: { blockerId: userId, blockedId: peerUserId } },
+      })),
       stats: { booksRead, wordsLearned, chats },
       currentlyReading: peer.readingProgress[0]
         ? {

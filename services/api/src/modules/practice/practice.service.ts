@@ -58,6 +58,7 @@ export class PracticeService {
         : shuffleQuestionOptions(await this.ai.generateQuiz(segmentText, dto.practiceType, {
             questionLang,
             passageLang,
+            userId,
           }));
 
     const session = await this.prisma.practiceSession.create({

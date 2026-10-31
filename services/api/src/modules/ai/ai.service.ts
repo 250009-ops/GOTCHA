@@ -14,6 +14,8 @@ import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LookupDto, TranslateDto } from './dto/ai.dto';
+import { ageBand, AgeBand, isMinorBand } from '../../common/safety/age-policy';
+import { aiDisabledError, DailyCounter, MODERATED_PLACEHOLDER, ttsDailyLimit, withChildSafe } from './ai-safety';
 import {
   AiPlatformSettings,
   defaultAiPlatformSettings,
@@ -122,6 +124,36 @@ export class AiService {
       map[row.key] = row.value;
     }
     return parseAiPlatformSettings(map);
+  }
+
+  private readonly ttsCounter = new DailyCounter(ttsDailyLimit);
+
+  /**
+   * S7 + AI-1: per-user AI gate. Throws AI_DISABLED when support/admin turned AI off for the
+   * account; returns the age band so prompts/moderation can be tightened for minors.
+   */
+  async userAiGate(userId?: string): Promise<{ band: AgeBand }> {
+    if (!userId || this.useMemory()) return { band: ageBand(null) };
+    const u = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { aiDisabled: true, birthYear: true },
+    });
+    if (u?.aiDisabled) throw aiDisabledError();
+    return { band: ageBand(u?.birthYear ?? null) };
+  }
+
+  /** AI-1: OpenAI moderation on text shown to minors. Fails open (logs) if moderation is unavailable. */
+  private async moderateForMinor(band: AgeBand, text: string): Promise<string> {
+    if (!isMinorBand(band) || !text.trim()) return text;
+    const client = this.getClient();
+    if (!client) return text;
+    try {
+      const res = await client.moderations.create({ model: 'omni-moderation-latest', input: text.slice(0, 4000) });
+      return res.results?.some((r) => r.flagged) ? MODERATED_PLACEHOLDER : text;
+    } catch (err) {
+      this.logger.warn(`moderation failed: ${err instanceof Error ? err.message : err}`);
+      return text;
+    }
   }
 
   private async assertAiAvailable(settings: AiPlatformSettings) {
@@ -263,6 +295,7 @@ export class AiService {
    * Pure cache hits never burn quota or platform daily OpenAI budget.
    */
   async lookup(userId: string, dto: LookupDto) {
+    const { band } = await this.userAiGate(userId);
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
     const kind = classifyLookup(surface, context);
@@ -332,7 +365,7 @@ export class AiService {
           max_tokens: lookupMaxTokens(kind, surface),
           response_format: { type: 'json_object' },
           messages: [
-            { role: 'system', content: LOOKUP_SYSTEM_PROMPT },
+            { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, band) },
             {
               role: 'user',
               content: [
@@ -591,6 +624,7 @@ export class AiService {
    * Never logs raw message text.
    */
   async translate(userId: string, dto: TranslateDto) {
+    const { band } = await this.userAiGate(userId);
     const text = (dto.text ?? '').trim();
     if (!text) {
       return { translation: '', sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: true };
@@ -605,7 +639,7 @@ export class AiService {
     const cached = this.memoryGet(hash);
     if (cached?.translation) {
       return {
-        translation: cached.translation,
+        translation: await this.moderateForMinor(band, cached.translation),
         sourceLang: dto.sourceLang,
         targetLang: dto.targetLang,
         cached: true,
@@ -627,8 +661,10 @@ export class AiService {
           messages: [
             {
               role: 'system',
-              content:
+              content: withChildSafe(
                 'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Translate the ENTIRE message into the target language. Keep every clause, meaning, and tone. Do not summarize, omit, add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
+                band,
+              ),
             },
             {
               role: 'user',
@@ -662,13 +698,18 @@ export class AiService {
       grammarNote: null,
       partOfSpeech: null,
     });
-    return { translation, sourceLang: dto.sourceLang, targetLang: dto.targetLang, cached: false };
+    return {
+      translation: await this.moderateForMinor(band, translation),
+      sourceLang: dto.sourceLang,
+      targetLang: dto.targetLang,
+      cached: false,
+    };
   }
 
   async generateQuiz(
     segmentText: string,
     practiceType: PracticeType,
-    langs?: { questionLang?: string | null; passageLang?: string | null },
+    langs?: { questionLang?: string | null; passageLang?: string | null; userId?: string },
   ): Promise<
     Array<{
       prompt: string;
@@ -677,6 +718,7 @@ export class AiService {
       explanation?: string;
     }>
   > {
+    const { band } = await this.userAiGate(langs?.userId);
     if (!segmentText.trim()) return [];
 
     const settings = await this.getPlatformAiSettings();
@@ -738,8 +780,10 @@ export class AiService {
         messages: [
           {
             role: 'system',
-            content:
+            content: withChildSafe(
               'Return JSON: {"questions":[{"prompt":"","options":["",""],"correctAnswer":"","explanation":""}]}. For cloze/writing types, options may be empty arrays.',
+              band,
+            ),
           },
           {
             role: 'user',
@@ -750,7 +794,11 @@ export class AiService {
 
       try {
         const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}');
-        return parsed.questions ?? [];
+        const questions = (parsed.questions ?? []) as Array<{ prompt: string; options?: string[]; correctAnswer: string; explanation?: string }>;
+        // AI-1: drop the quiz for a minor if moderation flags any of it.
+        const all = questions.map((q) => [q.prompt, ...(q.options ?? []), q.correctAnswer, q.explanation ?? ''].join('\n')).join('\n');
+        if ((await this.moderateForMinor(band, all)) !== all) return [];
+        return questions;
       } catch {
         return [];
       }
@@ -777,6 +825,12 @@ export class AiService {
     },
   ): Promise<ExtractedChapter[]> {
     if (!chapters.length || !isImportAiCleanupEnabled()) return chapters;
+    // S7: AI turned off for this account → skip cleanup silently (deterministic extract is kept).
+    try {
+      await this.userAiGate(opts.userId);
+    } catch {
+      return chapters;
+    }
 
     const client = this.getClient();
     if (!client) {
@@ -957,9 +1011,12 @@ export class AiService {
   }
 
   /** Word/phrase pronunciation for the reader speaker button. Cached on disk. */
-  async speak(text: string, lang: string): Promise<Buffer> {
+  async speak(text: string, lang: string, userId?: string): Promise<Buffer> {
+    await this.userAiGate(userId);
     const input = text.replace(/\s+/g, ' ').trim().slice(0, 400);
     if (!input) throw new BadRequestException('Nothing to pronounce');
+    // P1 TTS per-user daily quota (cache hits count too: it caps scripted abuse of the endpoint).
+    if (userId) this.ttsCounter.hit(userId);
     const locale = ttsLocale(lang);
     const cacheKey = createHash('sha256').update(`${locale}|${input}`).digest('hex').slice(0, 40);
     const dir = join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'tts');

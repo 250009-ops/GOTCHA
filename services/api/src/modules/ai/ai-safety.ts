@@ -1,0 +1,51 @@
+import { ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
+import { AgeBand, isMinorBand } from '../../common/safety/age-policy';
+
+/** S7: one clear error for every AI entry point when support/admin turned AI off for this account. */
+export const AI_DISABLED_CODE = 'AI_DISABLED';
+export function aiDisabledError() {
+  return new ForbiddenException({
+    statusCode: 403,
+    error: 'Forbidden',
+    code: AI_DISABLED_CODE,
+    message: 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.',
+  });
+}
+
+/** AI-1: extra system instruction for learners under 18 (or unknown age, per AGE_UNKNOWN_BAND). */
+export const CHILD_SAFE_INSTRUCTION =
+  'The learner may be a child or teenager. Keep every output age-appropriate: no sexual content, no graphic violence or self-harm detail, no slurs or hateful language, no instructions for dangerous or illegal activity. If the source text contains such material, translate or explain it neutrally and briefly without adding detail.';
+
+export function withChildSafe(systemPrompt: string, band: AgeBand): string {
+  return isMinorBand(band) ? `${systemPrompt}\n\n${CHILD_SAFE_INSTRUCTION}` : systemPrompt;
+}
+
+/** AI-1: replacement when OpenAI moderation flags an output shown to a minor. */
+export const MODERATED_PLACEHOLDER = '[hidden for safety]';
+
+/** TTS per-user daily quota (P1). In-process counter; resets at UTC midnight or on restart. */
+export class DailyCounter {
+  private day = '';
+  private counts = new Map<string, number>();
+  constructor(private limit: () => number) {}
+  hit(key: string, now = new Date()): void {
+    const d = now.toISOString().slice(0, 10);
+    if (d !== this.day) {
+      this.day = d;
+      this.counts.clear();
+    }
+    const n = (this.counts.get(key) ?? 0) + 1;
+    const limit = this.limit();
+    if (limit > 0 && n > limit) {
+      throw new HttpException(
+        { statusCode: 429, code: 'TTS_DAILY_LIMIT', message: 'Daily pronunciation limit reached. Try again tomorrow.' },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.counts.set(key, n);
+  }
+}
+export const ttsDailyLimit = () => {
+  const n = Number(process.env.TTS_DAILY_LIMIT_PER_USER ?? 300);
+  return Number.isFinite(n) ? n : 300;
+};
