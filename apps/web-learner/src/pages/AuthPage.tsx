@@ -8,7 +8,6 @@ import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
 import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
 import { authSwitchSearch, authFlowSearch } from '../lib/authRoutes';
-import { AuthIcon, authAssets as a } from '../assets/auth';
 import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
@@ -51,7 +50,6 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [searchParams] = useSearchParams();
   const { login, register } = useAuth();
   const isLogin = mode === 'login';
-  const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
