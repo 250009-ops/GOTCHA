@@ -84,9 +84,7 @@ export const LANDING_COPY = {
    "Privacy",
    "Terms"
   ],
-  "entity": "the Erkin Tizim team",
-  "plusCta_prelaunch": "Start free",
-  "plusNote_prelaunch": "You can start on Free today. Plus payment opens on the site soon."
+  "entity": "the Erkin Tizim team"
  },
  "uz": {
   "nav": [
@@ -170,9 +168,7 @@ export const LANDING_COPY = {
    "Maxfiylik",
    "Shartlar"
   ],
-  "entity": "Erkin Tizim jamoasi",
-  "plusCta_prelaunch": "Bepul boshlash",
-  "plusNote_prelaunch": "Hozir bepul tarifda boshlang. Plus uchun toʻlov saytda tez orada ochiladi."
+  "entity": "Erkin Tizim jamoasi"
  },
  "ru": {
   "nav": [
@@ -256,9 +252,7 @@ export const LANDING_COPY = {
    "Конфиденциальность",
    "Условия"
   ],
-  "entity": "команда Erkin Tizim",
-  "plusCta_prelaunch": "Начать бесплатно",
-  "plusNote_prelaunch": "Начните с бесплатного плана уже сейчас. Оплата Plus скоро появится на сайте."
+  "entity": "команда Erkin Tizim"
  }
 } as const;
 export type LandingLocale = keyof typeof LANDING_COPY;

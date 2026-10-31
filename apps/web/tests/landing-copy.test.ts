@@ -30,17 +30,12 @@ for (const l of ['uz', 'ru', 'en'] as const) {
     assert.doesNotMatch(all, /Android/i);
     assert.equal(C.faq_questions.length, 5); assert.equal(C.faq_answers.length, 5);
   });
-  test(`${l}: Plus CTA, checkout off (default)`, () => {
-    const pc = plusCta(C, false, l);
-    assert.equal(pc.label, C.plusCta_prelaunch); assert.equal(pc.note, C.plusNote_prelaunch); assert.equal(pc.live, false);
-    const u = new URL(pc.href);
-    assert.match(u.pathname, /\/register$/); assert.equal(u.searchParams.get('ui'), l);
-    assert.notEqual(pc.label, C.plusCta);
-  });
-  test(`${l}: Plus CTA, checkout on`, () => {
-    const pc = plusCta(C, true, l);
+  test(`${l}: Plus CTA = buy CTA to the learner Plus page (WLF-34)`, () => {
+    const pc = plusCta(C, l);
     assert.equal(pc.label, C.plusCta); assert.equal(pc.note, C.plusNote); assert.equal(pc.live, true);
-    assert.equal(new URL(pc.href).searchParams.get('ui'), l);
+    const u = new URL(pc.href, 'https://gotchaa.uz');
+    assert.match(u.pathname, /\/learn\/app\/plus$|\/app\/plus$/); assert.equal(u.searchParams.get('ui'), l);
+    assert.doesNotMatch(JSON.stringify(C), /prelaunch|opens on the site soon|tez orada|скоро появится/);
   });
   test(`${l}: support email`, () => assert.match(C.contactLine, /support@gotchaa\.uz/));
 }
@@ -67,14 +62,6 @@ test('JSON-LD: Web only, no offers', () => {
   const html = readFileSync(new URL('../index.html', import.meta.url), 'utf8');
   assert.doesNotMatch(html, /Android/); assert.doesNotMatch(html, /"offers"/);
   assert.match(html, /"operatingSystem": "Web"/);
-});
-test('pre-launch copy verbatim from LANDING-COPY-v2', () => {
-  assert.equal(LANDING_COPY.en.plusCta_prelaunch, 'Start free');
-  assert.equal(LANDING_COPY.uz.plusCta_prelaunch, 'Bepul boshlash');
-  assert.equal(LANDING_COPY.ru.plusCta_prelaunch, 'Начать бесплатно');
-  assert.equal(LANDING_COPY.en.plusNote_prelaunch, 'You can start on Free today. Plus payment opens on the site soon.');
-  assert.equal(LANDING_COPY.uz.plusNote_prelaunch, 'Hozir bepul tarifda boshlang. Plus uchun to\u02bblov saytda tez orada ochiladi.');
-  assert.equal(LANDING_COPY.ru.plusNote_prelaunch, 'Начните с бесплатного плана уже сейчас. Оплата Plus скоро появится на сайте.');
 });
 test('lookup: real uz capture, only the agreed edits; no ru/en glosses typed in', () => {
   const cap = JSON.parse(readFileSync(new URL('../src/data/lookup-capture.json', import.meta.url), 'utf8'));

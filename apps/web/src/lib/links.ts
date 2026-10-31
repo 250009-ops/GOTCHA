@@ -41,3 +41,11 @@ export function libraryUrl(opts?: { ui?: UiLocale }) {
   if (opts?.ui) url.searchParams.set('ui', opts.ui);
   return url.toString();
 }
+
+/** WLF-34: the learner's Plus page (checkout lives there). /app/* is behind ProtectedRoute, so logged-out visitors go to /learn/login first. */
+export function plusUrl(opts?: { from?: string; ui?: UiLocale }) {
+  const url = learnerPath('/app/plus');
+  url.searchParams.set('from', opts?.from ?? 'landing-plus');
+  if (opts?.ui) url.searchParams.set('ui', opts.ui);
+  return url.toString();
+}

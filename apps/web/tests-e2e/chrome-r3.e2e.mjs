@@ -47,6 +47,16 @@ for (const path of ['/', '/privacy', '/terms', '/oferta', '/no-such-page']) for 
 const p = await b.newPage({ viewport: { width: 1280, height: 800 } });
 await p.goto(`${BASE}/?lang=uz`);
 ok((await p.locator('header').innerText()).includes('Oʻzbekcha') || (await p.locator('header [aria-label="Oʻzbekcha"], header [title="Oʻzbekcha"]').count()) > 0, 'uz 1280: header shows Oʻzbekcha');
+// WLF-34 (r4): Plus CTA is a buy CTA to /learn/app/plus?ui=<L>; no prelaunch note in any language.
+for (const L of ['en', 'ru', 'uz']) {
+  const q = await b.newPage({ viewport: { width: 1280, height: 900 } });
+  await q.goto(`${BASE}/?lang=${L}`);
+  const r = await q.evaluate(() => ({ href: document.querySelector('a[data-cta="plus"]')?.getAttribute('href') ?? '', note: document.querySelector('#plus .note')?.textContent ?? '', body: document.body.innerText }));
+  const u = new URL(r.href, 'https://gotchaa.uz');
+  ok(u.pathname.endsWith('/learn/app/plus') && u.searchParams.get('ui') === L, `${L}: Plus CTA -> ${r.href}`);
+  ok(!/soon|tez orada|скоро/i.test(r.body), `${L}: no 'opens soon' text (note: ${r.note})`);
+  await q.close();
+}
 await b.close();
 console.log(fail ? `FAILED ${fail}` : 'ALL OK');
 process.exit(fail ? 1 : 0);

@@ -13,7 +13,6 @@ import { plusCta } from '../lib/plusCta';
 /** Landing premium rev 4 (team/uiux/landing-premium). No stats, learner counts or reader rankings are rendered (no marketing API call). */
 // PLUS-OFFER §4: the 50% import bullet (plusOpt) shows only once importDiscountPct = 50 is live in production.
 // Until Plus checkout exists (PLUS-OFFER §5), prices show but the CTA is 'Start free' + Marketing's pre-launch note.
-const CHECKOUT_LIVE = import.meta.env.VITE_PLUS_CHECKOUT_LIVE === 'true';
 const IMPORT_DISCOUNT_LIVE = import.meta.env.VITE_PLUS_IMPORT_DISCOUNT_LIVE === 'true';
 // LANDING-COPY-v2: the quiz bullet (plusB[1]) ships only once the separate quiz cap (Free 10 / Plus 200) exists in code.
 const QUIZ_CAP_LIVE = import.meta.env.VITE_PLUS_QUIZ_CAP_LIVE === 'true';
@@ -93,7 +92,7 @@ export default function LandingPage() {
   }, [params]);
 
   const CAPTURED = capturedFor(L);
-  const pc = plusCta(C, CHECKOUT_LIVE, ui);
+  const pc = plusCta(C, ui);
   const plusB = [C.plusB[0], ...(QUIZ_CAP_LIVE ? [C.plusB[1]] : []), ...(IMPORT_DISCOUNT_LIVE ? [C.plusOpt] : []), C.plusB[2]].filter(Boolean);
   // SHOW_PLUS_ON_LANDING (landingCopy.ts, default true): false hides the Plus card, its nav item (LandingChrome) and FAQ Q5.
   const faqN = SHOW_PLUS_ON_LANDING ? C.faq_questions.length : C.faq_questions.length - 1;

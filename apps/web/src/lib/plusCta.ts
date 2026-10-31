@@ -1,13 +1,6 @@
-import { registerUrl, type UiLocale } from './links.ts';
+import { plusUrl, type UiLocale } from './links.ts';
 
-/** VITE_PLUS_CHECKOUT_LIVE (default false). Prices always show; the CTA switches. */
-export function plusCta(
-  copy: { plusCta: string; plusNote: string; plusCta_prelaunch: string; plusNote_prelaunch: string },
-  checkoutLive: boolean,
-  ui: UiLocale,
-) {
-  if (checkoutLive) {
-    return { label: copy.plusCta, note: copy.plusNote, href: registerUrl({ plan: 'free', from: 'landing-plus', ui }), live: true };
-  }
-  return { label: copy.plusCta_prelaunch, note: copy.plusNote_prelaunch, href: registerUrl({ plan: 'free', from: 'landing', ui }), live: false };
+/** WLF-34 (Kai 19:36): Plus is on sale, so the landing CTA is always the buy CTA to the learner Plus page (/learn/app/plus). */
+export function plusCta(copy: { plusCta: string; plusNote: string }, ui: UiLocale) {
+  return { label: copy.plusCta, note: copy.plusNote, href: plusUrl({ ui }), live: true };
 }
