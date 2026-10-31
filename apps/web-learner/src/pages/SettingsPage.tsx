@@ -1,3 +1,4 @@
+import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -692,6 +693,10 @@ export default function SettingsPage() {
         >
           <Toggle checked={notificationsEnabled} onChange={setNotificationsEnabled} />
         </Row>
+      </Section>
+
+      <Section title={aiSwitchText(user?.uiLanguage).title}>
+        <AiSwitch lang={user?.uiLanguage} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
       </Section>
 
       <Section title={copy.settings.usageImports}>

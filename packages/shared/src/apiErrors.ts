@@ -25,6 +25,14 @@ Object.assign(BY_CODE, {
   session_completed: { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
 });
 
+// Launch safety (Kai 31 Oct): AI off switch + moderation fails closed.
+Object.assign(BY_CODE, {
+  AI_MODERATION_UNAVAILABLE: { en: 'This answer could not be checked right now. Please try again.', ru: 'Сейчас не удалось проверить ответ. Попробуйте ещё раз.', uz: 'Hozir javobni tekshirib boʻlmadi. Qayta urinib koʻring.' },
+  AI_OFF_BY_USER: { en: 'You turned AI features off. Turn them back on in Settings.', ru: 'Вы отключили функции ИИ. Включить их можно в настройках.', uz: 'Siz AI funksiyalarini oʻchirgansiz. Ularni Sozlamalarda qayta yoqishingiz mumkin.' },
+  AI_DISABLED: { en: 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключены для этого аккаунта. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'Bu hisob uchun AI funksiyalari oʻchirilgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
+  AI_DISABLED_BY_SUPPORT: { en: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключила поддержка. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'AI funksiyalarini qoʻllab-quvvatlash xizmati oʻchirgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
+});
+
 const BY_MESSAGE: Record<string, T3> = {
   'Invalid credentials': { en: 'Wrong email or password.', ru: 'Неверный email или пароль.', uz: 'Email yoki parol notoʻgʻri.' },
   'Please verify your email before signing in.': BY_CODE.EMAIL_NOT_VERIFIED,
