@@ -13,6 +13,7 @@ import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
@@ -54,6 +55,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const { login, register, updateProfile } = useAuth();
   const copy = useLearnerCopy();
   const { locale } = useLearnerLocale();
+  // S3 consent (unticked by default) + W-12 optional birth year.
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
   const isLogin = mode === 'login';
   const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
@@ -176,6 +180,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           nativeLanguage,
           targetLanguages,
           uiLanguage: locale,
+          acceptTerms,
+          ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {
           toast.success(copy.authToasts.checkInbox);
@@ -308,7 +314,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !nativeLanguage || targetLanguages.length === 0}
+                  disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms}
                   className="flex-1 h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
                 >
                   {loading ? (
@@ -321,7 +327,13 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   )}
                 </Button>
               </div>
-              <LegalConsent />
+              <SignupSafetyFields
+                locale={locale}
+                accepted={acceptTerms}
+                onAccepted={setAcceptTerms}
+                birthYear={birthYear}
+                onBirthYear={setBirthYear}
+              />
             </form>
           ) : (
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
