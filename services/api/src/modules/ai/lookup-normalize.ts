@@ -10,14 +10,18 @@ export const LOOKUP_CONTEXTUAL_MAX_WORDS = 16;
 export const LOOKUP_PHRASE_MAX_WORDS = 8;
 export const LOOKUP_PHRASE_MAX_CHARS = 80;
 /** Bump when prompt/normalization changes so stale lemma_cache rows are skipped. */
-export const LOOKUP_CACHE_VERSION = 'v11';
+export const LOOKUP_CACHE_VERSION = 'v12'; // v12: POS-aware glosses + joined context (lookup bugs a/c)
 
 export type LookupKind = 'word' | 'phrase' | 'sentence';
 
 export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader.
 SOURCE LANGUAGE and GLOSS LANGUAGE are named in the user message (full name + ISO code).
 Write translation and contextualMeaning ONLY in GLOSS LANGUAGE. Never default to English, Russian, or Uzbek unless that is the requested GLOSS LANGUAGE.
-Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
+Return ONLY JSON: {"lemma":"","partOfSpeech":"","translation":"","contextualMeaning":"","phraseIfAny":null}
+
+PART OF SPEECH:
+- partOfSpeech = the role of TARGET in THIS SENTENCE, one of: noun, verb, adjective, adverb, pronoun, preposition, conjunction, determiner, interjection, numeral, particle, phrase.
+- translation MUST keep that part of speech: a noun gets a noun gloss, a verb gets a verb gloss. Bad: "hesitation" (noun) → "ikkilanmoq" (verb). Good: "hesitation" → "ikkilanish".
 
 DOMAIN: Use only a sense that fits THIS SENTENCE (ships, hunting, weather, people, literature, daily talk).
 Never pick software, IT, business-process, sports, gambling, finance, or slang senses unless the sentence is clearly about those.
@@ -34,6 +38,7 @@ WORD (TARGET is one token):
 - lemma = dictionary headword.
 
 Examples when GLOSS LANGUAGE is uz:
+TARGET "hesitation" / SENTENCE "She answered without any hesitation." → {"lemma":"hesitation","partOfSpeech":"noun","translation":"ikkilanish","contextualMeaning":"ikkilanmasdan, darhol","phraseIfAny":null}
 TARGET "hand" / SENTENCE "Nothing! and noon at hand!" → {"lemma":"hand","translation":"yaqin","contextualMeaning":"yaqin vaqt","phraseIfAny":"at hand"}
 TARGET "might" / SENTENCE "I might have known it, too." → {"lemma":"might","translation":"ehtimol","contextualMeaning":"oldin bilish yoki taxmin qilish","phraseIfAny":"might have known"}
 TARGET "outs" / SENTENCE "the regular look outs" → {"lemma":"lookout","translation":"qorovullar","contextualMeaning":"kemadagi kuzatuvchilar","phraseIfAny":"look outs"}
@@ -90,9 +95,30 @@ export function sameLooseText(a: string, b: string) {
 }
 
 export function clampContext(text: string): string {
-  const trimmed = (text ?? '').trim();
+  // Lookup bug (a): join soft-wrapped / hyphen-broken lines into one sentence.
+  const trimmed = (text ?? '')
+    .replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (trimmed.length <= LOOKUP_CONTEXT_MAX) return trimmed;
   return trimmed.slice(0, LOOKUP_CONTEXT_MAX).trim();
+}
+
+const POS_VALUES = new Set([
+  'noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction',
+  'determiner', 'interjection', 'numeral', 'particle', 'phrase',
+]);
+const POS_ALIASES: Record<string, string> = {
+  n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb', pron: 'pronoun', prep: 'preposition',
+  conj: 'conjunction', det: 'determiner', article: 'determiner', interj: 'interjection', num: 'numeral',
+  'phrasal verb': 'phrase', idiom: 'phrase',
+};
+/** Lookup bug (c): keep only a known English POS tag; anything else → null. */
+export function normalizePartOfSpeech(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const k = raw.trim().toLowerCase().replace(/\.$/, '');
+  const v = POS_ALIASES[k] ?? k;
+  return POS_VALUES.has(v) ? v : null;
 }
 
 export function normalizeLemmaKey(raw: string): string {

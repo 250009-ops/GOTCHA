@@ -48,6 +48,7 @@ import {
   looksLikeDefinitionGloss,
   needsLookupRepair,
   normalizeLemmaKey,
+  normalizePartOfSpeech,
   normalizeSentenceForHash,
   packLookupNote,
   sanitizeContextualMeaning,
@@ -377,7 +378,7 @@ export class AiService {
     let contextualMeaning: string | null = null;
     let phrase: string | null = kind === 'phrase' ? surface.trim() : null;
     const grammarNote: string | null = null;
-    const partOfSpeech: string | null = null;
+    let partOfSpeech: string | null = null;
     const model = settings.lookupModel;
     let usedOpenAi = false;
 
@@ -419,7 +420,9 @@ export class AiService {
             translation?: string;
             contextualMeaning?: string;
             phraseIfAny?: string | null;
+            partOfSpeech?: string;
           };
+          partOfSpeech = kind === 'sentence' ? null : (kind === 'phrase' ? normalizePartOfSpeech(parsed.partOfSpeech) ?? 'phrase' : normalizePartOfSpeech(parsed.partOfSpeech));
           phrase = sanitizePhrase(parsed.phraseIfAny, context, surface, kind)
             ?? (kind === 'phrase' ? surface.trim() : null);
           lemma = normalizeLemmaKey(parsed.lemma || phrase || cacheKeyLemma) || cacheKeyLemma;
@@ -435,7 +438,7 @@ export class AiService {
 
         try {
           if (kind === 'word' && looksLikeDefinitionGloss(translation)) {
-            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang, band);
+            const strict = await this.strictBaseGloss(client, model, surface, dto.targetLang, band, partOfSpeech);
             if (strict) translation = sanitizeGloss(strict, translation, limits, kind);
           }
           if (
@@ -554,6 +557,7 @@ export class AiService {
     word: string,
     glossLang: string,
     band?: AgeBand,
+    partOfSpeech?: string | null,
   ): Promise<string | null> {
     try {
       const response = await client.chat.completions.create({
@@ -571,7 +575,7 @@ export class AiService {
           },
           {
             role: 'user',
-            content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}`,
+            content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}${partOfSpeech && partOfSpeech !== 'phrase' ? `\nPart of speech: ${partOfSpeech} (the gloss must be a ${partOfSpeech} too)` : ''}`,
           },
         ],
       });
