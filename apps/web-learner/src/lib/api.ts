@@ -1,3 +1,5 @@
+import { refreshRejected } from './authErrors';
+
 const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
 
 const ACCESS_KEY = 'gotcha_learner_access';
@@ -57,14 +59,15 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          clearTokens();
+          // Tester P0: a 5xx/429 from /auth/refresh must not sign the user out; only 401 does.
+          if (refreshRejected(res.status)) clearTokens();
           return null;
         }
         const data = (await res.json()) as AuthTokens;
         setTokens(data);
         return data.accessToken;
       } catch {
-        clearTokens();
+        // Network error: keep the session; the caller surfaces an error state.
         return null;
       } finally {
         refreshPromise = null;

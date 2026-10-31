@@ -10,6 +10,7 @@ import {
 import { useLocation } from 'react-router-dom';
 import { api, clearTokens, setTokens } from './api';
 import { isPublicAuthPath } from './authRoutes';
+import { isSessionRejected } from './authErrors';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
 
 interface AuthContextValue {
@@ -30,6 +31,9 @@ interface AuthContextValue {
     targetLanguages: string[];
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
+  /** Set when the session could not be loaded for a non-auth reason (5xx/network). */
+  sessionError: string | null;
+  retrySession: () => void;
   refreshProfile: () => Promise<void>;
   updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
   updatePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
@@ -60,6 +64,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isPublicAuthRoute = isPublicAuthPath(pathname);
   const [user, setUser] = useState<UserProfile | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
   const [preferences, setPreferences] = useState<UserPreferences | null>(null);
   const [vocabItems, setVocabItems] = useState<VocabItem[]>([]);
   const [vocabLoading, setVocabLoading] = useState(false);
@@ -68,9 +73,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [bootstrapped, setBootstrapped] = useState(false);
 
   const refreshProfile = useCallback(async () => {
+    // Tester P0: /users/me/stats returned 502 and Promise.all made bootstrap sign the user out.
+    // Stats are fail-soft now: a stats error leaves zeros and never touches the session.
     const [profile, userStats] = await Promise.all([
       api<UserProfile & { preferences?: UserPreferences | null }>('/users/me'),
-      api<Record<string, number>>('/users/me/stats'),
+      api<Record<string, number>>('/users/me/stats').catch((e) => {
+        console.error('stats unavailable', e);
+        return {} as Record<string, number>;
+      }),
     ]);
     setUser(profile);
     setStats({
@@ -110,6 +120,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setBootstrapped(true);
       return;
     }
+    setSessionError(null);
     try {
       await refreshProfile();
       try {
@@ -117,12 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* profile ok; vocab error surfaced via vocabError */
       }
-    } catch {
-      clearTokens();
-      setUser(null);
-      setStats(null);
-      setPreferences(null);
-      setVocabItems([]);
+    } catch (e) {
+      if (isSessionRejected(e)) {
+        clearTokens();
+        setUser(null);
+        setStats(null);
+        setPreferences(null);
+        setVocabItems([]);
+      } else {
+        // 5xx / network: keep the tokens and show a retry screen (ProtectedRoute).
+        setSessionError(e instanceof Error ? e.message : 'Server unavailable');
+      }
     } finally {
       setLoading(false);
       setBootstrapped(true);
@@ -295,6 +311,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [refreshVocab],
   );
 
+  const retrySession = useCallback(() => {
+    setLoading(true);
+    void bootstrap();
+  }, [bootstrap]);
+
   const value = useMemo(
     () => ({
       user,
@@ -304,6 +325,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      sessionError,
+      retrySession,
       refreshProfile,
       updateProfile,
       updatePreferences,
@@ -324,6 +347,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       register,
       logout,
+      sessionError,
+      retrySession,
       refreshProfile,
       updateProfile,
       updatePreferences,
