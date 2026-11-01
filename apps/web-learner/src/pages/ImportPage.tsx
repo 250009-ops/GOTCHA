@@ -852,7 +852,7 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport: getQuote, checkoutImport } = await import('../lib/importBilling');
+      const { quoteImport: getQuote } = await import('../lib/importBilling');
       const preview = await api<{ title: string; wordCount: number; textLength: number }>('/imports/url/preview', {
         method: 'POST',
         body: JSON.stringify({ url: data.url }),
@@ -891,14 +891,9 @@ export default function ImportPage() {
         return;
       }
 
-      let paymentId: string | null = null;
-      if (quote.gatewayEnabled) {
-        const checkout = await checkoutImport(quoteParams);
-        paymentId = checkout.paymentId;
-      }
       const item = await api<ImportItem>('/imports/url', {
         method: 'POST',
-        body: JSON.stringify({ url: data.url, language: data.lang, title: data.title || undefined, ...(paymentId ? { paymentId } : {}) }),
+        body: JSON.stringify({ url: data.url, language: data.lang, title: data.title || undefined }),
       });
       toastReady(item);
       await load(1);
@@ -913,7 +908,7 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport: getQuote, checkoutImport, wordCountOf } = await import('../lib/importBilling');
+      const { quoteImport: getQuote, wordCountOf } = await import('../lib/importBilling');
       const words = wordCountOf(data.text);
       const quoteParams = { importType: 'paste' as const, contentFormat: 'article', textLength: data.text.length, wordCount: words };
       const quote = await getQuote(quoteParams);
@@ -944,14 +939,9 @@ export default function ImportPage() {
         return;
       }
 
-      let paymentId: string | null = null;
-      if (quote.gatewayEnabled) {
-        const checkout = await checkoutImport(quoteParams);
-        paymentId = checkout.paymentId;
-      }
       const item = await api<ImportItem>('/imports/paste', {
         method: 'POST',
-        body: JSON.stringify({ title: data.title, text: data.text, language: data.lang, ...(paymentId ? { paymentId } : {}) }),
+        body: JSON.stringify({ title: data.title, text: data.text, language: data.lang }),
       });
       toastReady(item);
       await load(1);
@@ -966,7 +956,7 @@ export default function ImportPage() {
     if (!guardLimit()) return;
     setLoading(true);
     try {
-      const { quoteImport: getQuote, checkoutImport } = await import('../lib/importBilling');
+      const { quoteImport: getQuote } = await import('../lib/importBilling');
       const isEpub = data.file.name.toLowerCase().endsWith('.epub');
       const importType = isEpub ? 'epub' : 'pdf';
       let pageCount = !isEpub ? await countPdfPagesFromFile(data.file) : null;
@@ -1004,16 +994,10 @@ export default function ImportPage() {
         return;
       }
 
-      let paymentId: string | null = null;
-      if (quote.gatewayEnabled) {
-        const checkout = await checkoutImport(quoteParams);
-        paymentId = checkout.paymentId;
-      }
       const form = new FormData();
       form.append('file', data.file);
       form.append('language', data.lang);
       if (data.title.trim()) form.append('title', data.title.trim());
-      if (paymentId) form.append('paymentId', paymentId);
       const item = await api<ImportItem>('/imports/file', { method: 'POST', body: form });
       toastReady(item);
       await load(1);

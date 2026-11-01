@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Headers, Ip, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Public } from '../../common/decorators';
+import { AuthUserPayload, CurrentUser, Public } from '../../common/decorators';
 import { AuthService } from './auth.service';
 import {
   ForgotPasswordDto,
@@ -43,6 +43,19 @@ export class AuthController {
   @Post('refresh')
   refresh(@Body() dto: RefreshDto) {
     return this.auth.refresh(dto.refreshToken);
+  }
+
+  /** Revokes the refresh token in the body. Public so an expired access token can still end the session. */
+  @Public()
+  @Post('logout')
+  logout(@Body() dto: RefreshDto) {
+    return this.auth.logout(dto.refreshToken);
+  }
+
+  /** Revokes every refresh token for the signed-in user. */
+  @Post('logout-all')
+  logoutAll(@CurrentUser() user: AuthUserPayload) {
+    return this.auth.logoutAll(user.sub);
   }
 
   @Public()

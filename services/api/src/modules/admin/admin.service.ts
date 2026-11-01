@@ -672,13 +672,15 @@ export class AdminService {
       fairUseQuizzesPerDay: caps.plus.quizzes,
       freeLookupsPerDay: caps.free.lookups,
       freeQuizzesPerDay: caps.free.quizzes,
+      freeMashqPerDay: caps.free.mashq,
+      plusMashqPerDay: caps.plus.mashq,
       // Sarvarbek 13:57: Plus import discount default 50% (combined with promo capped at 70%).
       importDiscountPct: plusPassConfig(process.env, 500, { [PLUS_SETTING_KEYS.benefits]: v(PLUS_SETTING_KEYS.benefits) }).benefits.importDiscountPct,
       webPlusPassEnabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.WEB_PLUS_PASS ?? '').toLowerCase()),
     };
   }
 
-  async updatePlusSettings(body: { price30Uzs?: unknown; price365Uzs?: unknown; plusAiLookupQuota?: unknown; plusLookupHardCap?: unknown; lookupBurstPerMinute?: unknown; lookupBurstPerHour?: unknown; fairUseQuizzesPerDay?: unknown; freeLookupsPerDay?: unknown; freeQuizzesPerDay?: unknown; importDiscountPct?: unknown }) {
+  async updatePlusSettings(body: { price30Uzs?: unknown; price365Uzs?: unknown; plusAiLookupQuota?: unknown; plusLookupHardCap?: unknown; lookupBurstPerMinute?: unknown; lookupBurstPerHour?: unknown; fairUseQuizzesPerDay?: unknown; freeLookupsPerDay?: unknown; freeQuizzesPerDay?: unknown; freeMashqPerDay?: unknown; plusMashqPerDay?: unknown; importDiscountPct?: unknown }) {
     const minSom = Math.max(1, Math.round(Number(process.env.ATMOS_MIN_AMOUNT_SOM) || 500));
     const writes: Array<[string, number]> = [];
     const int = (x: unknown, name: string, min: number, max: number) => {
@@ -719,6 +721,18 @@ export class AdminService {
     }
     for (const [key, value] of writes) {
       await this.prisma.platformSetting.upsert({ where: { key }, update: { value }, create: { key, value } });
+    }
+    if (body.freeMashqPerDay !== undefined) {
+      const n = int(body.freeMashqPerDay, 'freeMashqPerDay', 0, 10_000);
+      await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.freeMashq }, update: { value: n }, create: { key: DAILY_CAP_KEYS.freeMashq, value: n } });
+      resetPlanCapsCache();
+    }
+    if (body.plusMashqPerDay !== undefined) {
+      const raw = body.plusMashqPerDay;
+      const value = raw === null || raw === '' ? null : int(raw, 'plusMashqPerDay', 1, 10_000);
+      const json = value === null ? Prisma.JsonNull : value;
+      await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.plusMashq }, update: { value: json }, create: { key: DAILY_CAP_KEYS.plusMashq, value: json } });
+      resetPlanCapsCache();
     }
     return this.plusSettings();
   }

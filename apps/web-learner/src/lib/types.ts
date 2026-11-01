@@ -38,12 +38,15 @@ export interface UserTargetLanguage {
 
 export interface UserProfile {
   id: string;  email: string;
-  displayName: string;
+  displayName: string | null;
   avatarUrl?: string | null;
   nativeLanguage: AppLanguage;
   uiLanguage: AppLanguage;
   streakCount: number;
   streakLastDate?: string | null;
+  emailVerifiedAt?: string | null;
+  aiDisabled?: boolean;
+  aiDisabledBy?: string | null;
   targetLanguages?: UserTargetLanguage[];
 }
 
@@ -97,6 +100,7 @@ export interface UserPreferences {
   readerTheme: 'light' | 'dark' | 'sepia';
   appTheme?: 'system' | 'light' | 'dark';
   dailyGoalXp?: number;
+  dailyNewWords?: number;
   readerLineSpacing: number;
   showKnownWords: boolean;
   ttsEnabled: boolean;
@@ -220,6 +224,9 @@ export interface SubscriptionInfo {
   usage: {
     lookupsToday: number;
     quizzesToday: number;
+    /** SET-20: present once the Mashq bank ships. Hidden in Settings until then. */
+    mashqToday?: number;
+    mashqQuota?: number | null;
     /** null = no daily lookup cap (Plus). */
     quota: number | null;
     /** final-5: daily quiz cap (null = no cap). */

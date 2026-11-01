@@ -24,6 +24,7 @@ const PUBLIC_AUTH_API = new Set([
   '/auth/resend-verification',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/logout',
 ]);
 
 function isPublicAuthApi(path: string) {

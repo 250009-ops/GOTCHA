@@ -320,12 +320,14 @@ export default function ReaderPage() {
     content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
   const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
-  const [mashqStatus, setMashqStatus] = useState<{ unseenCount: number; missedToday: number; remaining: number | null } | null>(null);
+  const [mashqStatus, setMashqStatus] = useState<{ state?: string; unseenCount: number; missedToday: number; remaining: number | null } | null>(null);
   const [mashqOpen, setMashqOpen] = useState(false);
   const [mashqStarting, setMashqStarting] = useState(false);
+  const [mashqNotice, setMashqNotice] = useState<string | null>(null);
   const [mashqCardHidden, setMashqCardHidden] = useState(false);
   useEffect(() => {
     setMashqOpen(false);
+    setMashqNotice(null);
     setMashqCardHidden(false);
     const sid = segment?.id;
     if (!sid || (segment?.wordCount ?? 0) < 60) {
@@ -333,7 +335,7 @@ export default function ReaderPage() {
       return;
     }
     let cancel = false;
-    api<{ unseenCount: number; missedToday: number; remaining: number | null }>(`/practice/pages/${sid}/bank-status`)
+    api<{ state?: string; unseenCount: number; missedToday: number; remaining: number | null }>(`/practice/pages/${sid}/bank-status`)
       .then((status) => { if (!cancel) setMashqStatus(status); })
       .catch(() => { if (!cancel) setMashqStatus(null); });
     return () => { cancel = true; };
@@ -823,12 +825,18 @@ export default function ReaderPage() {
           idempotencyKey: crypto.randomUUID(),
         }),
       });
-      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}`);
+      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}&segmentId=${segment.id}`);
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
-      if (code === 'quiz_empty') toast.error(copy.practice.quizUnavailable);
-      else if (code === 'mashq_burst') toast.message(e instanceof Error ? e.message : '');
-      else if (!isDailyLimitError(e) && !handleLimitError(e)) toast.error(e instanceof Error ? e.message : copy.commonExt.error);
+      const message = e instanceof Error ? e.message : copy.commonExt.error;
+      if (code === 'quiz_empty') {
+        setMashqNotice(message || mashqCopy(locale).noneLeft);
+        setMashqStatus((prev) => prev ? { ...prev, state: 'empty', unseenCount: 0 } : prev);
+      } else if (code === 'mashq_burst') toast.message(message);
+      else if (!isDailyLimitError(e) && !handleLimitError(e)) {
+        setMashqNotice(message);
+        toast.error(message);
+      }
     } finally {
       setMashqStarting(false);
     }
@@ -1403,8 +1411,10 @@ export default function ReaderPage() {
         remaining={mashqStatus?.remaining ?? null}
         missedToday={mashqStatus?.missedToday ?? 0}
         starting={mashqStarting}
-        onClose={() => setMashqOpen(false)}
-        onStart={(count, repeat) => { void startMashq(count, repeat); }}
+        empty={mashqStatus?.state === 'empty'}
+        notice={mashqNotice}
+        onClose={() => { setMashqOpen(false); setMashqNotice(null); }}
+        onStart={(count, repeat) => { setMashqNotice(null); void startMashq(count, repeat); }}
       />
     </div>
   );

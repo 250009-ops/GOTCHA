@@ -181,7 +181,7 @@ export default function UsersPage() {
     setBusyId(id);
     setActionErr(null);
     try {
-      await api(`/admin/users/${id}`, { method: 'DELETE' });
+      await api(`/admin/users/${id}?confirm=${encodeURIComponent(id)}`, { method: 'DELETE' });
       setSelected(null);
       setConfirmHardDelete(false);
       await load();

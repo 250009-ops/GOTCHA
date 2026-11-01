@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { ImportPaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ImportCommerceService } from '../billing/import-commerce.service';
@@ -119,5 +119,33 @@ export class AdminOpsService {
 
   reconcileRefunds() {
     return this.commerce.reconcileStaleRefunds(0);
+  }
+
+  /** Close a refund that Atmos already accepted, or that an admin confirms by typing a reason. Paid rows are refused. */
+  async finalizeRefund(actorId: string, id: string, body: { reason?: string }) {
+    const reason = String(body.reason ?? '').trim();
+    if (reason.length < 3) throw new BadRequestException('A refund reason is required.');
+    const payment = await this.prisma.importPayment.findUnique({ where: { id } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.paid) {
+      throw new BadRequestException('A paid payment is not waiting to be closed. Refund it first.');
+    }
+    if (payment.status === ImportPaymentStatus.refunded) return { id, status: 'refunded', already: true };
+    if (payment.status !== ImportPaymentStatus.refunding) {
+      throw new BadRequestException('Only a refund that is still processing can be marked completed.');
+    }
+    const moved = await this.prisma.importPayment.updateMany({
+      where: { id, status: ImportPaymentStatus.refunding },
+      data: {
+        status: ImportPaymentStatus.refunded,
+        refundState: 'refunded',
+        refundedAt: new Date(),
+        refundReason: reason,
+        needsAttention: false,
+      },
+    });
+    if (!moved.count) throw new ConflictException('This refund was already closed.');
+    await this.auditStrict(actorId, 'payment.refund.finalize', 'import_payment', id, { reason });
+    return { id, status: 'refunded', note: 'Refund closed as completed.' };
   }
 }

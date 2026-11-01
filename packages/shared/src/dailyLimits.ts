@@ -23,6 +23,8 @@ export const DAILY_CAP_KEYS = {
   freeMashq: 'caps.free.mashq',
   plusMashq: 'caps.plus.mashq',
 } as const;
+/** SET-20: the Settings usage card hides Mashq until the §16 question bank is live. */
+export const PAGE_QUIZ_BANKS_LIVE = false;
 export const MASHQ_BURST_KEYS = { perMinute: 'mashq.burst_per_minute', perHour: 'mashq.burst_per_hour', maxOpenSessions: 'mashq.max_open_sessions' } as const;
 export const MASHQ_BURST_FALLBACKS = { perMinute: 60, perHour: 600, maxOpenSessions: 3 } as const;
 export const PLUS_AI_LOOKUP_QUOTA_KEY = 'plus.ai_lookup_quota'; // plusAiLookupQuota

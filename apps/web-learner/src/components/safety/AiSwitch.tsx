@@ -3,9 +3,9 @@ import { api } from '../../lib/api';
 
 /** Learner AI-off switch (Kai 31 Oct). Same per-account flag support uses; a support lock can't be undone here. */
 const T = {
-  en: { title: 'AI features', hint: 'Word lookups, translations, quizzes and pronunciation use AI. Turn this off to stop all AI features for your account.', on: 'On', off: 'Off', locked: 'Turned off by support. Contact support@gotchaa.uz to turn them back on.' },
-  ru: { title: 'Функции ИИ', hint: 'Поиск слов, переводы, тесты и произношение работают с помощью ИИ. Выключите, чтобы отключить все функции ИИ для вашего аккаунта.', on: 'Вкл.', off: 'Выкл.', locked: 'Отключено поддержкой. Чтобы включить, напишите на support@gotchaa.uz.' },
-  uz: { title: 'AI funksiyalari', hint: 'Soʻz qidirish, tarjima, testlar va talaffuz AI yordamida ishlaydi. Hisobingiz uchun barcha AI funksiyalarini oʻchirish uchun buni oʻchiring.', on: 'Yoqilgan', off: 'Oʻchirilgan', locked: 'Qoʻllab-quvvatlash xizmati oʻchirgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
+  en: { title: 'AI features', privacyTitle: 'Privacy & AI', hint: 'Word lookups, translations, quizzes and pronunciation use AI. Turn this off to stop all AI features for your account.', on: 'On', off: 'Off', locked: 'Turned off by support. Contact support@gotchaa.uz to turn them back on.', saveFailed: 'Couldn’t save' },
+  ru: { title: 'Функции ИИ', privacyTitle: 'Конфиденциальность и ИИ', hint: 'Поиск слов, переводы, тесты и произношение работают с помощью ИИ. Выключите, чтобы отключить все функции ИИ для вашего аккаунта.', on: 'Вкл.', off: 'Выкл.', locked: 'Отключено поддержкой. Чтобы включить, напишите на support@gotchaa.uz.', saveFailed: 'Не удалось сохранить' },
+  uz: { title: 'AI funksiyalari', privacyTitle: 'Maxfiylik va AI', hint: 'Soʻz qidirish, tarjima, testlar va talaffuz AI yordamida ishlaydi. Hisobingiz uchun barcha AI funksiyalarini oʻchirish uchun buni oʻchiring.', on: 'Yoqilgan', off: 'Oʻchirilgan', locked: 'Qoʻllab-quvvatlash xizmati oʻchirgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.', saveFailed: 'Saqlab boʻlmadi' },
 };
 export const aiSwitchText = (lang?: string | null) => T[lang === 'ru' || lang === 'uz' ? lang : 'en'];
 
@@ -35,9 +35,12 @@ export function AiSwitch({ lang, aiDisabled, aiDisabledBy, onChanged }: {
           try {
             await api('/users/me/ai', { method: 'PATCH', body: JSON.stringify({ aiDisabled: enabled }) });
             await onChanged();
-          } catch (e) { setErr(e instanceof Error ? e.message : 'Error'); } finally { setBusy(false); }
+          } catch (e) {
+            const code = (e as { code?: string }).code;
+            setErr(code === 'AI_DISABLED_BY_SUPPORT' || code === 'AI_DISABLED' ? t.locked : (e instanceof Error ? e.message : t.saveFailed));
+          } finally { setBusy(false); }
         }}
-        className={`h-8 px-3 rounded-full text-sm font-medium shrink-0 disabled:opacity-60 ${enabled ? 'bg-g-blue-700 text-g-on-cta' : 'bg-gray-200 text-gray-700'}`}
+        className={`min-h-11 px-4 rounded-full text-sm font-medium shrink-0 disabled:opacity-60 ${enabled ? 'bg-g-blue-700 text-g-on-cta' : 'bg-gray-200 text-gray-700'}`}
       >
         {enabled ? t.on : t.off}
       </button>

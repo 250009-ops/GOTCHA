@@ -21,7 +21,7 @@ export function DeleteAccount({ lang, onDeleted }: { lang?: string | null; onDel
     <div id="delete-account" className="px-4 sm:px-5 py-4 space-y-3">
       <p className="text-xs text-[#6b7382]">{t.hint}</p>
       {!open ? (
-        <button type="button" className="h-9 px-4 rounded-[14px] border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50" onClick={() => setOpen(true)}>{t.open}</button>
+        <button type="button" className="min-h-11 px-4 rounded-[14px] border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50" onClick={() => setOpen(true)}>{t.open}</button>
       ) : (
         <form className="flex flex-col sm:flex-row gap-2" onSubmit={async (e) => {
           e.preventDefault();

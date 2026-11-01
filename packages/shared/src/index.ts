@@ -201,6 +201,7 @@ export interface CatalogLanguage {
 
 /** Type-only re-exports — runtime import via `@gotcha/shared/learner-copy`. */
 export type { LearnerCopy, FullLearnerCopy, LearnerCopyExt, UiLanguage as LearnerUiLanguage } from './learnerCopy';
+export { READING_PREVIEW } from './learnerCopy';
 
 export {
   formatNotification,

@@ -15,6 +15,8 @@ const mashq = {
     limitBody: 'Plus has no daily cap on Practice.',
     seePlus: 'See Plus',
     shortPage: 'This page is too short for Practice.',
+    noneLeft: 'Every question on this page has been used.',
+    retry: 'Try again',
   },
   uz: {
     pill: 'Shu sahifa boʻyicha mashq',
@@ -28,6 +30,8 @@ const mashq = {
     limitBody: 'Plusda Mashq uchun kunlik cheklov yoʻq.',
     seePlus: 'Plusni koʻrish',
     shortPage: 'Bu sahifa Mashq uchun juda qisqa.',
+    noneLeft: 'Bu sahifadagi savollar tugadi.',
+    retry: 'Qayta urinish',
   },
   ru: {
     pill: 'Практика по этой странице',
@@ -41,6 +45,8 @@ const mashq = {
     limitBody: 'В Plus нет дневного лимита на Практику.',
     seePlus: 'Смотреть Plus',
     shortPage: 'Эта страница слишком короткая для Практики.',
+    noneLeft: 'Вопросы по этой странице закончились.',
+    retry: 'Попробовать снова',
   },
 } as const;
 

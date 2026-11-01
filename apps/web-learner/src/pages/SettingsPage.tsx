@@ -1,14 +1,15 @@
-import { AiSwitch, aiSwitchText } from '../components/safety/AiSwitch';
+import { AiSwitch } from '../components/safety/AiSwitch';
 import { buildLabel } from '../lib/buildInfo';
-import { DeleteAccount, deleteAccountText } from '../components/safety/DeleteAccount';
+import { DeleteAccount } from '../components/safety/DeleteAccount';
 import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
   BookOpen,
   Check,
   ChevronRight,
+  Download,
   Eye,
   EyeOff,
   Loader2,
@@ -17,10 +18,10 @@ import {
   Plus,
   Sun,
   Trash2,
-  X,
   Zap,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import { Dialog } from '../components/ui/dialog';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { cn } from '../components/ui/utils';
@@ -28,9 +29,8 @@ import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
-import { persistLearnerLocale } from '../lib/learnerLocale';
 import type { UiLanguage } from '@gotcha/shared';
-import { payCopyFor, practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
+import { DAILY_GOAL_OPTIONS, PAGE_QUIZ_BANKS_LIVE, READING_PREVIEW, payCopyFor, practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
 import { usePaymentsEnabled } from '../lib/limits';
 import { applyAppTheme } from '../lib/appTheme';
 import {
@@ -44,13 +44,45 @@ import {
   type CatalogLanguage,
   type CefrLevel,
   type SubscriptionInfo,
+  type UserPreferences,
   type UserTargetLanguage,
 } from '../lib/types';
 
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const PHOTO_MAX = 2 * 1024 * 1024;
+const MINUTE_CHOICES = [5, 10, 15, 20, 30, 45, 60];
+const NEW_WORD_CHOICES = [0, 5, 10, 15, 20, 30];
+const DISPLAY_NAME_RE = /^(?!.*(?:https?:\/\/|www\.))[^\u0000-\u001F\u007F\u2028\u2029]*$/u;
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const fieldClass = 'w-full h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700';
+
+function displayNameError(value: string, tooLong: string, invalid: string): string | null {
+  const trimmed = value.trim();
+  if (trimmed.length > 50) return tooLong;
+  if (trimmed && !DISPLAY_NAME_RE.test(trimmed)) return invalid;
+  return null;
+}
+
+function tashkentDaysLeft(iso: string): number {
+  const off = 5 * 3_600_000;
+  const end = new Date(new Date(iso).getTime() + off);
+  const now = new Date(Date.now() + off);
+  const endDay = Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate());
+  const nowDay = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  return Math.max(0, Math.round((endDay - nowDay) / 86_400_000));
+}
+
+function isPlusActive(sub: SubscriptionInfo['subscription']): boolean {
+  if (!sub) return false;
+  if (sub.status !== 'active' && sub.status !== 'trialing') return false;
+  if (sub.plan?.tier && sub.plan.tier !== 'premium') return false;
+  if (sub.currentPeriodEnd && new Date(sub.currentPeriodEnd).getTime() <= Date.now()) return false;
+  return true;
+}
+
+function Section({ title, children, danger }: { title: string; children: React.ReactNode; danger?: boolean }) {
   return (
-    <div className="bg-white rounded-2xl border border-[#f3f4f6] overflow-hidden">
+    <div className={cn('bg-white rounded-2xl border overflow-hidden', danger ? 'border-red-300' : 'border-[#f3f4f6]')}>
       <div className="px-4 sm:px-5 py-4 border-b border-[#f9fafb]">
         <h2 className="font-bold text-gray-900 text-xl">{title}</h2>
       </div>
@@ -59,7 +91,6 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-/** WL4-08: Row shares its label with the control inside it (sliders/toggles/selects get an accessible name). */
 const RowLabel = createContext<string | undefined>(undefined);
 
 function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
@@ -90,7 +121,7 @@ function RangeSlider({ value, min, max, step, onChange }: { value: number; min: 
       step={step}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="range-slider w-full sm:w-28 max-w-full"
+      className="range-slider w-full sm:w-28 max-w-full min-h-11"
       style={{ '--range-progress': `${pct}%` } as React.CSSProperties}
     />
   );
@@ -105,29 +136,31 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={cn('relative inline-flex h-6 w-8 shrink-0 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}
+      className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center"
     >
-      <span className={cn('inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[15px]' : 'translate-x-[1px]')} />
+      <span className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}>
+        <span className={cn('inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+      </span>
     </button>
   );
 }
 
-function ModalShell({ title, onClose, children, closeLabel }: { title: string; onClose: () => void; children: React.ReactNode; closeLabel?: string }) {
+function ChoiceButton({ selected, onClick, children }: { selected: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
-        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-100">
-          <span className="text-sm font-semibold text-gray-900">{title}</span>
-          <button type="button" onClick={onClose} aria-label={closeLabel} className="p-1 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-50">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="p-5">{children}</div>
-      </div>
-    </div>
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onClick}
+      className={cn(
+        'min-h-11 min-w-11 px-3 rounded-[10px] border text-xs font-semibold',
+        selected ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+      )}
+    >
+      {children}
+    </button>
   );
 }
-
 
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const copy = useLearnerCopy();
@@ -136,18 +169,22 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [show, setShow] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [currentError, setCurrentError] = useState('');
+  const [formError, setFormError] = useState('');
 
   const submit = async () => {
+    setCurrentError('');
+    setFormError('');
     if (!currentPassword || !newPassword) {
-      toast.error(copy.settings.fillPasswordFields);
+      setFormError(copy.settings.fillPasswordFields);
       return;
     }
-    if (newPassword.length < 8) {
-      toast.error(copy.settings.newPasswordMinLength);
+    if (newPassword.length < 8 || newPassword.length > 128) {
+      setFormError(copy.settings.newPasswordMinLength);
       return;
     }
     if (newPassword !== confirmPassword) {
-      toast.error(copy.settings.passwordsMismatch);
+      setFormError(copy.settings.passwordsMismatch);
       return;
     }
     setSaving(true);
@@ -158,67 +195,83 @@ function ChangePasswordModal({ onClose }: { onClose: () => void }) {
       });
       toast.success(copy.settings.passwordUpdated);
       onClose();
-      // Backend revokes all refresh tokens on password change — force a fresh login.
       clearTokens();
       window.location.assign(withAppBase('/login'));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.settings.passwordChangeFailed);
+      const status = (e as { status?: number }).status;
+      const message = e instanceof Error ? e.message : copy.settings.passwordChangeFailed;
+      if (status === 401) setCurrentError(message);
+      else setFormError(message);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <ModalShell title={copy.settings.changePassword} onClose={onClose} closeLabel={copy.common.cancel}>
-      <div className="flex flex-col gap-3">
+    <Dialog open title={copy.settings.changePassword} closeLabel={copy.settings.close} onOpenChange={(open) => { if (!open) onClose(); }}>
+      <form className="flex flex-col gap-3 p-5" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.currentPassword}</label>
+          <label htmlFor="settings-current-password" className="text-xs font-semibold text-[#4a5565]">{copy.settings.currentPassword}</label>
           <input
+            id="settings-current-password"
             type={show ? 'text' : 'password'}
+            autoComplete="current-password"
             value={currentPassword}
-            onChange={(e) => setCurrentPassword(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
+            aria-invalid={currentError ? true : undefined}
+            aria-describedby={currentError ? 'settings-current-password-error' : undefined}
+            onChange={(e) => { setCurrentPassword(e.target.value); setCurrentError(''); }}
+            className={fieldClass}
           />
+          {currentError && <p id="settings-current-password-error" className="text-xs text-red-600">{currentError}</p>}
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.newPassword}</label>
+          <label htmlFor="settings-new-password" className="text-xs font-semibold text-[#4a5565]">{copy.settings.newPassword}</label>
           <div className="relative">
             <input
+              id="settings-new-password"
               type={show ? 'text' : 'password'}
+              autoComplete="new-password"
+              maxLength={128}
               value={newPassword}
+              aria-describedby="settings-password-rules"
               onChange={(e) => setNewPassword(e.target.value)}
               placeholder={copy.auth.passwordPlaceholderRegister}
-              className="w-full h-9 pl-3 pr-9 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
+              className={cn(fieldClass, 'pr-12')}
             />
             <button
               type="button"
               onClick={() => setShow((s) => !s)}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              aria-label={show ? copy.settings.hidePassword : copy.settings.showPassword}
+              className="absolute right-1 top-1/2 -translate-y-1/2 min-h-11 min-w-11 inline-flex items-center justify-center text-gray-400 hover:text-gray-600"
             >
-              {show ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+              {show ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
             </button>
           </div>
+          <p id="settings-password-rules" className="text-xs text-[#99a1af]">{copy.settings.passwordRules}</p>
         </div>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.confirmPassword}</label>
+          <label htmlFor="settings-confirm-password" className="text-xs font-semibold text-[#4a5565]">{copy.settings.confirmPassword}</label>
           <input
+            id="settings-confirm-password"
             type={show ? 'text' : 'password'}
+            autoComplete="new-password"
+            maxLength={128}
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
+            className={fieldClass}
           />
         </div>
+        {formError && <p className="text-xs text-red-600" role="alert">{formError}</p>}
         <button
-          type="button"
-          onClick={() => void submit()}
+          type="submit"
           disabled={saving}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 min-h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {copy.settings.updatePassword}
         </button>
-      </div>
-    </ModalShell>
+      </form>
+    </Dialog>
   );
 }
 
@@ -249,13 +302,15 @@ function TargetLanguageModal({
   const [cefrLevel, setCefrLevel] = useState<CefrLevel>(existing?.cefrLevel ?? 'a1');
   const [isPrimary, setIsPrimary] = useState(existing?.isPrimary ?? false);
   const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const submit = async () => {
     if (mode === 'add' && targetLanguage === nativeLanguage) {
-      toast.error(copy.settings.targetSameAsNative);
+      setError(copy.settings.targetSameAsNative);
       return;
     }
     setSaving(true);
+    setError('');
     try {
       if (mode === 'add') {
         await api('/users/me/target-languages', {
@@ -273,17 +328,22 @@ function TargetLanguageModal({
       await onSaved();
       onClose();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : copy.settings.languageSaveFailed);
+      setError(e instanceof Error ? e.message : copy.settings.languageSaveFailed);
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <ModalShell title={mode === 'add' ? copy.settings.addTargetLanguage : copy.settings.editTargetLanguage} onClose={onClose}>
-      <div className="flex flex-col gap-3">
+    <Dialog
+      open
+      title={mode === 'add' ? copy.settings.addTargetLanguage : copy.settings.editTargetLanguage}
+      closeLabel={copy.settings.close}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+    >
+      <form className="flex flex-col gap-3 p-5" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="flex flex-col gap-1.5">
-          <label className="text-xs font-semibold text-[#4a5565]">{copy.settings.languageLabel}</label>
+          <label htmlFor="settings-target-language" className="text-xs font-semibold text-[#4a5565]">{copy.settings.languageLabel}</label>
           {mode === 'add' ? (
             <LanguageSearchInput
               options={available}
@@ -293,7 +353,7 @@ function TargetLanguageModal({
               placeholder={copy.auth.targetLanguagesPlaceholder}
             />
           ) : (
-            <div className="h-9 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
+            <div id="settings-target-language" className="h-11 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
               {languageFlag(existing?.targetLanguage)} {languageLabel(existing?.targetLanguage)}
             </div>
           )}
@@ -304,7 +364,7 @@ function TargetLanguageModal({
             id="settings-cefr"
             value={cefrLevel}
             onChange={(e) => setCefrLevel(e.target.value as CefrLevel)}
-            className="w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700"
+            className={fieldClass}
           >
             {CEFR_LEVELS.map((lvl) => (
               <option key={lvl} value={lvl}>
@@ -313,21 +373,63 @@ function TargetLanguageModal({
             ))}
           </select>
         </div>
-        <label className="flex items-center gap-2 text-sm text-[#364153] cursor-pointer">
-          <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} className="rounded" />
-          {copy.settings.setPrimary}
+        <label className="flex items-start gap-2 text-sm text-[#364153] cursor-pointer min-h-11">
+          <input type="checkbox" checked={isPrimary} onChange={(e) => setIsPrimary(e.target.checked)} className="mt-1 rounded" />
+          <span>
+            {copy.settings.setPrimary}
+            <span className="block text-xs text-[#99a1af] mt-0.5">{copy.settings.primaryHint}</span>
+          </span>
         </label>
+        {error && <p className="text-xs text-red-600" role="alert">{error}</p>}
         <button
-          type="button"
-          onClick={() => void submit()}
+          type="submit"
           disabled={saving || (mode === 'add' && available.length === 0)}
-          className="mt-1 h-9 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
+          className="mt-1 min-h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-semibold flex items-center justify-center gap-2"
         >
           {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
           {mode === 'add' ? copy.settings.addLanguage : copy.settings.saveLanguage}
         </button>
-      </div>
-    </ModalShell>
+      </form>
+    </Dialog>
+  );
+}
+
+function ConfirmDialog({
+  title,
+  body,
+  confirmLabel,
+  cancelLabel,
+  closeLabel,
+  danger,
+  onConfirm,
+  onClose,
+}: {
+  title: string;
+  body: string;
+  confirmLabel: string;
+  cancelLabel: string;
+  closeLabel: string;
+  danger?: boolean;
+  onConfirm: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <Dialog open title={title} closeLabel={closeLabel} onOpenChange={(next) => { if (!next) onClose(); }}>
+      <form className="p-5 flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); onConfirm(); }}>
+        <p className="text-sm text-[#364153] leading-relaxed">{body}</p>
+        <div className="flex flex-col-reverse sm:flex-row sm:justify-end gap-2">
+          <button type="button" onClick={onClose} className="min-h-11 px-4 rounded-[14px] border border-[#e5e7eb] text-sm font-medium text-[#364153]">
+            {cancelLabel}
+          </button>
+          <button
+            type="submit"
+            className={cn('min-h-11 px-4 rounded-[14px] text-sm font-semibold text-white', danger ? 'bg-red-600' : 'bg-g-blue-700')}
+          >
+            {confirmLabel}
+          </button>
+        </div>
+      </form>
+    </Dialog>
   );
 }
 
@@ -335,8 +437,9 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const { user, preferences, updateProfile, updatePreferences, uploadAvatar, refreshProfile, logout } = useAuth();
   const copy = useLearnerCopy();
-  const { locale } = useLearnerLocale();
+  const { locale, setLocale } = useLearnerLocale();
   const practiceCopy = useMemo(() => practiceCopyFor(locale), [locale]);
+  const payments = usePaymentsEnabled();
 
   const readerThemes = [
     { value: 'light' as const, label: copy.settings.themeLight, icon: Sun },
@@ -347,71 +450,146 @@ export default function SettingsPage() {
   const [pwModalOpen, setPwModalOpen] = useState(false);
   const [langModal, setLangModal] = useState<{ mode: 'add' | 'edit'; existing?: UserTargetLanguage } | null>(null);
   const [langBusy, setLangBusy] = useState<string | null>(null);
+  const [pendingRemove, setPendingRemove] = useState<string | null>(null);
+  const [pendingNative, setPendingNative] = useState<AppLanguage | null>(null);
+  const [signOutAllOpen, setSignOutAllOpen] = useState(false);
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
-  // WL4-05: show the language the UI is actually in (local choice wins over a stale server value).
-  const [uiLanguage, setUiLanguage] = useState<AppLanguage>(locale as AppLanguage);
-  const [avatarBusy, setAvatarBusy] = useState(false);
+  const [avatarBusy, setAvatarBusy] = useState<'upload' | 'remove' | null>(null);
+  const [nameStatus, setNameStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [exporting, setExporting] = useState(false);
+  const [resendIn, setResendIn] = useState(0);
 
   const [fontScale, setFontScale] = useState(preferences?.readerFontScale ?? 1);
   const [lineSpacing, setLineSpacing] = useState(preferences?.readerLineSpacing ?? 1.5);
   const [theme, setTheme] = useState(preferences?.readerTheme ?? 'light');
+  const [appTheme, setAppTheme] = useState<'system' | 'light'>(preferences?.appTheme === 'light' ? 'light' : 'system');
   const [showKnownWords, setShowKnownWords] = useState(preferences?.showKnownWords ?? false);
   const [ttsEnabled, setTtsEnabled] = useState(preferences?.ttsEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences?.notificationsEnabled ?? true);
   const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
-  const [saving, setSaving] = useState(false);
+  const [dailyGoalXp, setDailyGoalXp] = useState(preferences?.dailyGoalXp ?? 60);
+  const [dailyNewWords, setDailyNewWords] = useState(preferences?.dailyNewWords ?? 10);
+  const [prefStatus, setPrefStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [subLoading, setSubLoading] = useState(true);
   const [catalogLangs, setCatalogLangs] = useState<CatalogLanguage[]>([]);
+
+  const pendingPref = useRef<Partial<UserPreferences>>({});
+  const prefTimer = useRef<number | null>(null);
+  const prefInFlight = useRef(false);
+  const updatePreferencesRef = useRef(updatePreferences);
+  updatePreferencesRef.current = updatePreferences;
+
+  const flushPref = useCallback(async () => {
+    if (prefInFlight.current) return;
+    const patch = pendingPref.current;
+    if (!Object.keys(patch).length) return;
+    pendingPref.current = {};
+    prefInFlight.current = true;
+    setPrefStatus('saving');
+    try {
+      await updatePreferencesRef.current(patch);
+      setPrefStatus('saved');
+    } catch (e) {
+      pendingPref.current = { ...patch, ...pendingPref.current };
+      setPrefStatus('error');
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
+      prefInFlight.current = false;
+      return;
+    }
+    prefInFlight.current = false;
+    if (Object.keys(pendingPref.current).length) void flushPref();
+  }, [copy.settings.saveFailed]);
+
+  const queuePref = useCallback((patch: Partial<UserPreferences>, delay = 400) => {
+    pendingPref.current = { ...pendingPref.current, ...patch };
+    if (prefTimer.current) window.clearTimeout(prefTimer.current);
+    prefTimer.current = window.setTimeout(() => { void flushPref(); }, delay);
+  }, [flushPref]);
 
   useEffect(() => {
     void refreshProfile();
   }, [refreshProfile]);
 
   useEffect(() => {
-    if (user) {
-      setDisplayName(user.displayName ?? '');
-      setNativeLanguage(user.nativeLanguage ?? 'en');
-    }
+    if (!user) return;
+    setNativeLanguage(user.nativeLanguage ?? 'en');
+    setDisplayName((current) => (document.activeElement?.id === 'settings-display-name' ? current : (user.displayName ?? '')));
   }, [user]);
-
-  useEffect(() => {
-    setUiLanguage(locale as AppLanguage);
-  }, [locale]);
 
   useEffect(() => {
     api<CatalogLanguage[]>('/content/languages')
       .then(setCatalogLangs)
-      .catch(console.error);
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
-    if (preferences) {
-      setFontScale(preferences.readerFontScale);
-      setLineSpacing(preferences.readerLineSpacing);
-      setTheme(preferences.readerTheme);
-      setShowKnownWords(preferences.showKnownWords);
-      setTtsEnabled(preferences.ttsEnabled);
-      setNotificationsEnabled(preferences.notificationsEnabled);
-      setDailyGoal(preferences.dailyGoalMinutes ?? 15);
-    }
+    if (!preferences || Object.keys(pendingPref.current).length || prefInFlight.current) return;
+    setFontScale(preferences.readerFontScale ?? 1);
+    setLineSpacing(preferences.readerLineSpacing ?? 1.5);
+    setTheme(preferences.readerTheme ?? 'light');
+    setAppTheme(preferences.appTheme === 'light' ? 'light' : 'system');
+    setShowKnownWords(preferences.showKnownWords ?? false);
+    setTtsEnabled(preferences.ttsEnabled ?? true);
+    setNotificationsEnabled(preferences.notificationsEnabled ?? true);
+    setDailyGoal(preferences.dailyGoalMinutes ?? 15);
+    setDailyGoalXp(preferences.dailyGoalXp ?? 60);
+    setDailyNewWords(preferences.dailyNewWords ?? 10);
   }, [preferences]);
 
   useEffect(() => {
     if (preferences?.appTheme !== 'dark') return;
     applyAppTheme('system');
-    void updatePreferences({ appTheme: 'system' }).catch(() => undefined);
-  }, [preferences?.appTheme, updatePreferences]);
+    setAppTheme('system');
+    queuePref({ appTheme: 'system' }, 0);
+  }, [preferences?.appTheme, queuePref]);
 
   useEffect(() => {
     api<SubscriptionInfo>('/billing/subscription')
       .then(setSubscription)
-      .catch(console.error)
+      .catch(() => undefined)
       .finally(() => setSubLoading(false));
   }, []);
+
+  useEffect(() => {
+    if (resendIn <= 0) return;
+    const id = window.setTimeout(() => setResendIn((n) => n - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [resendIn]);
+
+  useEffect(() => {
+    if (prefStatus !== 'saved') return;
+    const id = window.setTimeout(() => setPrefStatus('idle'), 2000);
+    return () => window.clearTimeout(id);
+  }, [prefStatus]);
+
+  const nameDirty = displayName.trim() !== (user?.displayName ?? '').trim();
+  useEffect(() => {
+    if (!nameDirty) return;
+    const onBefore = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    const onClick = (e: MouseEvent) => {
+      const anchor = (e.target as Element | null)?.closest?.('a[href]');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href') || '';
+      if (!href || href.startsWith('#')) return;
+      if (!window.confirm(copy.settings.unsavedLeave)) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener('beforeunload', onBefore);
+    document.addEventListener('click', onClick, true);
+    return () => {
+      window.removeEventListener('beforeunload', onBefore);
+      document.removeEventListener('click', onClick, true);
+    };
+  }, [nameDirty, copy.settings.unsavedLeave]);
 
   const languageOptions =
     catalogLangs.length > 0
@@ -426,51 +604,52 @@ export default function SettingsPage() {
             isEnabled: true,
           }));
 
-  const saveAll = async () => {
-    setSaving(true);
+  const nameProblem = displayNameError(displayName, copy.settings.displayNameTooLong, copy.settings.displayNameInvalid);
+
+  const saveName = async () => {
+    if (nameProblem) return;
+    setNameStatus('saving');
     try {
-      // W-21a: the header/localStorage locale used to win over Settings (a second PATCH reverted it).
-      // Persist the chosen UI language locally first so header, storage and server agree.
-      if ((UI_LANGUAGES as readonly string[]).includes(uiLanguage)) persistLearnerLocale(uiLanguage as UiLanguage);
-      await Promise.all([
-        updateProfile({ displayName: displayName.trim() || undefined, nativeLanguage, uiLanguage }),
-        updatePreferences({
-          readerFontScale: fontScale,
-          readerLineSpacing: lineSpacing,
-          readerTheme: theme as 'light' | 'dark' | 'sepia',
-          showKnownWords,
-          ttsEnabled,
-          notificationsEnabled,
-          dailyGoalMinutes: dailyGoal,
-        }),
-      ]);
+      await updateProfile({ displayName: displayName.trim() });
       await refreshProfile();
+      setNameStatus('saved');
       toast.success(copy.settings.saved);
     } catch (e) {
+      setNameStatus('error');
       toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
-    } finally {
-      setSaving(false);
     }
   };
 
   const plan = subscription?.subscription?.plan;
-  // Plus (31 Oct 14:40): quota null = no daily lookup cap. Show the count only; never a number or a limit claim.
+  const sub = subscription?.subscription ?? null;
+  const plusActive = isPlusActive(sub);
+  const plusExpired = !!sub && !plusActive;
+  const plusLabel = plan?.name || copy.settings.plusName;
+  const periodEnd = sub?.currentPeriodEnd ?? null;
   const rawQuota = subscription ? subscription.usage.quota : (plan?.aiDailyQuota ?? null);
   const quota = typeof rawQuota === 'number' && rawQuota > 0 && rawQuota < 1_000_000 ? rawQuota : null;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
   const usagePct = quota !== null ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const importAllowance = subscription?.usage.importAllowance;
-  // final-5 B5: real limits and counters; every reset is 00:00 Asia/Tashkent (pages: the 1st).
   const limitCopy = LIMIT_COPY[limitLang(locale)];
   const rawQuizQuota = subscription?.usage.quizQuota;
   const quizQuota = typeof rawQuizQuota === 'number' && rawQuizQuota > 0 && rawQuizQuota < 1_000_000 ? rawQuizQuota : null;
   const quizzesToday = subscription?.usage.quizzesToday ?? 0;
-  const payments = usePaymentsEnabled();
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
     () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),
     [targetLanguages, nativeLanguage],
   );
+  const primaryTarget = visibleTargetLanguages.find((tl) => tl.isPrimary)?.targetLanguage ?? visibleTargetLanguages[0]?.targetLanguage;
+  const previewKey = primaryTarget === 'ru' || primaryTarget === 'uz' || primaryTarget === 'en'
+    ? primaryTarget
+    : (locale === 'ru' || locale === 'uz' ? locale : 'en');
+  const preview = READING_PREVIEW[previewKey];
+  const minuteChoices = MINUTE_CHOICES.includes(dailyGoal) ? MINUTE_CHOICES : [...MINUTE_CHOICES, dailyGoal];
+  const xpChoices = (DAILY_GOAL_OPTIONS as readonly number[]).includes(dailyGoalXp) ? [...DAILY_GOAL_OPTIONS] : [...DAILY_GOAL_OPTIONS, dailyGoalXp];
+  const wordChoices = NEW_WORD_CHOICES.includes(dailyNewWords) ? NEW_WORD_CHOICES : [...NEW_WORD_CHOICES, dailyNewWords];
+  const verified = Boolean(user?.emailVerifiedAt);
+  const removeName = languageOptions.find((l) => l.code === pendingRemove)?.name ?? (pendingRemove ? languageLabel(pendingRemove) : '');
 
   const handleRemoveLanguage = async (lang: string) => {
     if (visibleTargetLanguages.length <= 1) {
@@ -486,11 +665,95 @@ export default function SettingsPage() {
       toast.error(e instanceof Error ? e.message : copy.settings.languageRemoveFailed);
     } finally {
       setLangBusy(null);
+      setPendingRemove(null);
     }
   };
 
+  const confirmNative = async () => {
+    const next = pendingNative;
+    setPendingNative(null);
+    if (!next) return;
+    setNativeLanguage(next);
+    try {
+      await updateProfile({ nativeLanguage: next });
+      await refreshProfile();
+      toast.success(copy.settings.saved);
+    } catch (e) {
+      setNativeLanguage(user?.nativeLanguage ?? 'en');
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
+    }
+  };
+
+  const downloadData = async () => {
+    setExporting(true);
+    try {
+      const data = await api<unknown>('/users/me/export');
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gotcha-export-${new Date().toISOString().slice(0, 10)}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const resendVerification = async () => {
+    if (!user?.email || resendIn > 0) return;
+    try {
+      await api('/auth/resend-verification', {
+        method: 'POST',
+        body: JSON.stringify({ email: user.email, clientPlatform: 'web' }),
+      });
+      toast.success(copy.settings.resendSent);
+      setResendIn(60);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
+    }
+  };
+
+  const signOutEverywhere = async () => {
+    setSignOutAllOpen(false);
+    try {
+      await api('/auth/logout-all', { method: 'POST' });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : copy.settings.saveFailed);
+    }
+    logout();
+    navigate('/login');
+  };
+
+  const onPhoto = (file: File) => {
+    if (!PHOTO_TYPES.includes(file.type)) {
+      toast.error(copy.settings.photoWrongType);
+      return;
+    }
+    if (file.size > PHOTO_MAX) {
+      toast.error(copy.settings.photoTooBig);
+      return;
+    }
+    setAvatarBusy('upload');
+    void uploadAvatar(file)
+      .then(() => toast.success(copy.settings.photoUpdated))
+      .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.uploadFailed))
+      .finally(() => setAvatarBusy(null));
+  };
+
+  const removePhoto = () => {
+    setAvatarBusy('remove');
+    void api('/users/me/avatar', { method: 'DELETE' })
+      .then(() => refreshProfile())
+      .then(() => toast.success(copy.settings.photoRemoved))
+      .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.uploadFailed))
+      .finally(() => setAvatarBusy(null));
+  };
+
   return (
-    <div className="max-w-3xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-5 min-w-0">
+    <div className="max-w-3xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-5 min-w-0 overflow-x-hidden">
       {pwModalOpen && <ChangePasswordModal onClose={() => setPwModalOpen(false)} />}
       {langModal && (
         <TargetLanguageModal
@@ -503,66 +766,120 @@ export default function SettingsPage() {
           onSaved={refreshProfile}
         />
       )}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">{copy.settings.title}</h1>
-          <p className="text-[#99a1af] text-sm mt-0.5">{copy.settings.subtitle}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => void saveAll()}
-          disabled={saving}
-          className="h-9 px-4 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-700 disabled:opacity-60 text-g-on-cta text-sm font-medium flex items-center justify-center gap-2 shrink-0 w-full sm:w-auto"
-        >
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          {copy.common.saveChanges}
-        </button>
+      {pendingRemove && (
+        <ConfirmDialog
+          title={copy.settings.removeLanguageTitle}
+          body={copy.settings.removeLanguageBody(removeName)}
+          confirmLabel={copy.settings.removeLanguage}
+          cancelLabel={copy.common.cancel}
+          closeLabel={copy.settings.close}
+          danger
+          onClose={() => setPendingRemove(null)}
+          onConfirm={() => { void handleRemoveLanguage(pendingRemove); }}
+        />
+      )}
+      {pendingNative && (
+        <ConfirmDialog
+          title={copy.settings.nativeChangeTitle}
+          body={copy.settings.nativeChangeBody}
+          confirmLabel={copy.settings.confirm}
+          cancelLabel={copy.common.cancel}
+          closeLabel={copy.settings.close}
+          onClose={() => setPendingNative(null)}
+          onConfirm={() => { void confirmNative(); }}
+        />
+      )}
+      {signOutAllOpen && (
+        <ConfirmDialog
+          title={copy.settings.signOutAll}
+          body={copy.settings.signOutAllBody}
+          confirmLabel={copy.settings.signOutAll}
+          cancelLabel={copy.common.cancel}
+          closeLabel={copy.settings.close}
+          danger
+          onClose={() => setSignOutAllOpen(false)}
+          onConfirm={() => { void signOutEverywhere(); }}
+        />
+      )}
+
+      <div className="min-w-0">
+        <h1 className="text-2xl font-bold text-gray-900">{copy.settings.title}</h1>
+        <p className="text-[#99a1af] text-sm mt-0.5">{copy.settings.subtitle}</p>
       </div>
 
       <Section title={copy.settings.account}>
         <Row label={copy.settings.photo} description={copy.settings.photoHint}>
-          <div className="flex items-center gap-3 min-w-0">
+          <div className="flex items-center gap-3 min-w-0 flex-wrap">
             <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
             {isUnder13(user) ? (
               <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[locale === 'ru' || locale === 'uz' ? locale : 'en']}</span>
             ) : (
-            <label className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
-              {avatarBusy ? copy.settings.uploading : copy.settings.changePhoto}
+            <>
+            <label className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
+              {avatarBusy === 'upload' ? copy.settings.uploading : copy.settings.changePhoto}
               <input
                 type="file"
                 accept="image/jpeg,image/png,image/webp"
                 className="hidden"
-                disabled={avatarBusy}
+                disabled={avatarBusy !== null}
                 onChange={(e) => {
                   const file = e.target.files?.[0];
                   e.target.value = '';
-                  if (!file) return;
-                  setAvatarBusy(true);
-                  void uploadAvatar(file)
-                    .then(() => toast.success(copy.settings.photoUpdated))
-                    .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.uploadFailed))
-                    .finally(() => setAvatarBusy(false));
+                  if (file) onPhoto(file);
                 }}
               />
             </label>
+            {user?.avatarUrl && (
+              <button
+                type="button"
+                disabled={avatarBusy !== null}
+                onClick={removePhoto}
+                className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
+              >
+                {avatarBusy === 'remove' ? copy.settings.removingPhoto : copy.settings.removePhoto}
+              </button>
+            )}
+            </>
             )}
           </div>
         </Row>
         <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
-          <input
-            type="text"
-            value={displayName}
-            onChange={(e) => setDisplayName(e.target.value)}
-            placeholder={copy.settings.displayNamePlaceholder}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
-          />
+          <form className="flex flex-col items-stretch sm:items-end gap-1.5 w-full sm:w-56" onSubmit={(e) => { e.preventDefault(); void saveName(); }}>
+            <input
+              type="text"
+              value={displayName}
+              maxLength={50}
+              id="settings-display-name"
+              aria-label={copy.settings.displayName}
+              aria-invalid={nameProblem ? true : undefined}
+              onChange={(e) => { setDisplayName(e.target.value); setNameStatus('idle'); }}
+              placeholder={copy.settings.displayNamePlaceholder}
+              className={cn(fieldClass, 'sm:w-56')}
+            />
+            <div className="flex items-center justify-between gap-2 w-full">
+              <span className={cn('text-xs', nameProblem ? 'text-red-600' : 'text-[#99a1af]')}>
+                {nameProblem || `${displayName.trim().length}/50`}
+              </span>
+              <button
+                type="submit"
+                disabled={!nameDirty || !!nameProblem || nameStatus === 'saving'}
+                className="min-h-11 px-3 rounded-[14px] bg-g-blue-700 disabled:opacity-50 text-g-on-cta text-sm font-medium"
+              >
+                {nameStatus === 'saving' ? copy.common.saving : copy.common.saveChanges}
+              </button>
+            </div>
+          </form>
         </Row>
         <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
           <select
             aria-label={copy.settings.nativeLanguage}
             value={nativeLanguage}
-            onChange={(e) => setNativeLanguage(e.target.value as AppLanguage)}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
+            onChange={(e) => {
+              const next = e.target.value as AppLanguage;
+              if (next === (user?.nativeLanguage ?? nativeLanguage)) return;
+              setPendingNative(next);
+            }}
+            className={cn(fieldClass, 'sm:w-48')}
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
@@ -574,9 +891,14 @@ export default function SettingsPage() {
         <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
           <select
             aria-label={copy.settings.appLanguage}
-            value={uiLanguage}
-            onChange={(e) => setUiLanguage(e.target.value as AppLanguage)}
-            className="w-full sm:w-48 max-w-full h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700 transition-all"
+            value={locale}
+            onChange={(e) => {
+              const next = e.target.value as UiLanguage;
+              void setLocale(next)
+                .then(() => toast.success(copy.settings.saved))
+                .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed));
+            }}
+            className={cn(fieldClass, 'sm:w-48')}
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
@@ -586,20 +908,163 @@ export default function SettingsPage() {
           </select>
         </Row>
         <Row label={copy.settings.email} description={copy.settings.emailHint}>
-          <div className="flex items-center gap-2 min-w-0 max-w-full">
-            <span className="text-sm text-[#6a7282] truncate">{user?.email}</span>
-            <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">{copy.common.verified}</span>
+          <div className="flex flex-col items-stretch sm:items-end gap-2 min-w-0 max-w-full">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm text-[#6a7282] truncate">{user?.email}</span>
+              {user && (verified ? (
+                <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">{copy.common.verified}</span>
+              ) : (
+                <span className="text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] rounded-full px-1.5 py-0.5 shrink-0">{copy.settings.notVerified}</span>
+              ))}
+            </div>
+            {user && !verified && (
+              <button
+                type="button"
+                disabled={resendIn > 0}
+                onClick={() => { void resendVerification(); }}
+                className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
+              >
+                {resendIn > 0 ? copy.settings.resendWait(resendIn) : copy.settings.resendEmail}
+              </button>
+            )}
           </div>
         </Row>
         <Row label={copy.settings.password}>
           <button
             type="button"
             onClick={() => setPwModalOpen(true)}
-            className="h-8 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 w-full sm:w-auto"
+            className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 w-full sm:w-auto"
           >
             {copy.settings.changePassword}
           </button>
         </Row>
+      </Section>
+
+      <Section title={copy.settings.planAndUsage}>
+        <div className="p-4 sm:p-5 min-w-0 space-y-4">
+          {subLoading ? (
+            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">{copy.settings.loadingUsage}</div>
+          ) : (
+            <>
+              <div
+                className="rounded-[14px] p-4 sm:p-5 min-w-0"
+                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
+              >
+                <div className="text-g-on-cta min-w-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      {!plusActive && (
+                        <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
+                      )}
+                      <div className="text-xl sm:text-2xl font-bold mt-1">
+                        {plusActive
+                          ? (periodEnd ? copy.settings.plusUntil(plusLabel, tashkentDate(periodEnd, limitLang(locale))) : plusLabel)
+                          : limitCopy.freePlan}
+                      </div>
+                      {plusActive && periodEnd && (
+                        <span className="inline-flex mt-2 min-h-7 items-center rounded-full bg-white/15 px-2.5 text-xs font-semibold">
+                          {copy.settings.daysLeft(tashkentDaysLeft(periodEnd))}
+                        </span>
+                      )}
+                    </div>
+                    <Zap className="w-6 h-6 text-white shrink-0" />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => navigate('/app/plus')}
+                    className="mt-4 w-full min-h-11 px-3 rounded-[14px] bg-white text-g-blue-700 text-sm font-semibold"
+                  >
+                    {plusActive || plusExpired ? copy.settings.renew : copy.settings.upgrade}
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-[#364153] mb-2">{copy.settings.usageToday}</h3>
+                <div className="space-y-1.5">
+                  {[
+                    quota !== null
+                      ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
+                      : copy.settings.aiLookupsLine(lookupsToday, null),
+                    quizQuota !== null ? limitCopy.quizzesLeft(Math.max(0, quizQuota - quizzesToday), quizQuota) : null,
+                    PAGE_QUIZ_BANKS_LIVE && typeof subscription?.usage.mashqToday === 'number'
+                      ? copy.settings.mashqLine(subscription.usage.mashqToday, subscription.usage.mashqQuota ?? null)
+                      : null,
+                    importAllowance
+                      ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
+                      : plan?.importLimit && plan.importLimit < 1_000_000
+                        ? copy.settings.importLimitLine(plan.importLimit)
+                        : null,
+                    importAllowance
+                      ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
+                      : null,
+                    limitCopy.dailyReset,
+                    importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
+                    copy.settings.publicLibraryAccess,
+                  ].filter(Boolean).map((f) => (
+                    <div key={f as string} className="flex items-start gap-2 text-sm text-[#364153]">
+                      <Check className="w-3.5 h-3.5 shrink-0 text-g-blue-700 mt-0.5" />
+                      <span className="break-words">{f}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {payments && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/import')}
+                  className="w-full min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-semibold text-[#0a0a0a] flex items-center justify-center gap-2"
+                >
+                  <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
+                </button>
+              )}
+              {payments && (
+                <button
+                  type="button"
+                  onClick={() => navigate('/app/payments')}
+                  className="w-full min-h-11 px-3 rounded-[14px] text-g-blue-700 text-sm font-medium underline"
+                >
+                  {payCopyFor(locale)['history.title']}
+                </button>
+              )}
+
+              <div className="space-y-3">
+                <div>
+                  <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
+                    <span>{copy.settings.aiLookupsToday}</span>
+                    <span>{quota === null ? copy.settings.countToday(lookupsToday) : `${lookupsToday}/${quota}`}</span>
+                  </div>
+                  {quota !== null && (
+                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
+                      <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${usagePct}%` }} />
+                    </div>
+                  )}
+                </div>
+                {importAllowance ? (
+                  <div>
+                    <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
+                      <span>{copy.settings.freeImportsToday}</span>
+                      <span>{importAllowance.dailyFreeUsed}/{importAllowance.dailyFreeImportsPerUser}</span>
+                    </div>
+                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-g-blue-700 transition-all"
+                        style={{
+                          width: `${
+                            importAllowance.dailyFreeImportsPerUser > 0
+                              ? Math.min(100, Math.round((importAllowance.dailyFreeUsed / importAllowance.dailyFreeImportsPerUser) * 100))
+                              : 0
+                          }%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </>
+          )}
+        </div>
       </Section>
 
       <Section title={copy.settings.targetLanguages}>
@@ -629,19 +1094,19 @@ export default function SettingsPage() {
                   <button
                     type="button"
                     disabled={langBusy === tl.targetLanguage}
-                    onClick={() => void handleRemoveLanguage(tl.targetLanguage)}
-                    className="p-1.5 rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
+                    onClick={() => setPendingRemove(tl.targetLanguage)}
+                    className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
                     title={copy.settings.removeLanguage}
                     aria-label={copy.settings.removeLanguage}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />
+                    <Trash2 className="w-4 h-4" />
                   </button>
                 )}
                 <button
                   type="button"
                   onClick={() => setLangModal({ mode: 'edit', existing: tl })}
                   aria-label={copy.settings.editTargetLanguage}
-                  className="p-1.5 rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
+                  className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -653,7 +1118,7 @@ export default function SettingsPage() {
           <button
             type="button"
             onClick={() => setLangModal({ mode: 'add' })}
-            className="inline-flex items-center gap-1.5 h-8 px-2.5 rounded-[14px] border border-black/10 bg-white text-xs font-medium text-[#0a0a0a] hover:bg-gray-50"
+            className="inline-flex items-center gap-1.5 min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50"
           >
             <Plus className="w-4 h-4" />{copy.settings.addLanguage}
           </button>
@@ -667,229 +1132,166 @@ export default function SettingsPage() {
             className="font-serif text-[#1e2939] bg-white rounded-[14px] p-4"
             style={{ fontSize: `${14 * fontScale}px`, lineHeight: lineSpacing }}
           >
-            The old lighthouse had stood on the cliff for more than a hundred years. Its white walls,{' '}
-            <span className="border-b-[1.6px] border-dashed border-[#ffb900]">weathered</span> by salt and storm, rose{' '}
-            <span className="border-b-[1.6px] border-[#51a2ff]">magnificently</span> against the grey winter sky.
+            {preview.before}
+            <span className="border-b-[1.6px] border-dashed border-[#ffb900]">{preview.known}</span>
+            {preview.middle}
+            <span className="border-b-[1.6px] border-[#51a2ff]">{preview.learning}</span>
+            {preview.after}
           </div>
         </div>
 
         <Row label={copy.settings.fontSize} description={copy.settings.fontSizeHint(Math.round(fontScale * 100))}>
           <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
             <span className="text-xs text-[#99a1af] shrink-0">A</span>
-            <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={setFontScale} />
+            <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={(v) => { setFontScale(v); queuePref({ readerFontScale: v }); }} />
             <span className="text-sm font-semibold text-[#0a0a0a] shrink-0">A</span>
           </div>
         </Row>
         <Row label={copy.settings.lineSpacing} description={copy.settings.lineSpacingHint(lineSpacing.toFixed(1))}>
-          <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={setLineSpacing} />
+          <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={(v) => { setLineSpacing(v); queuePref({ readerLineSpacing: v }); }} />
         </Row>
         <Row label={practiceCopy.appTheme}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={practiceCopy.appTheme}>
-            {(['system', 'light'] as const).map((t) => {
-              const selected = (preferences?.appTheme === 'light' ? 'light' : 'system') === t;
-              return (
-              <button
+            {(['system', 'light'] as const).map((t) => (
+              <ChoiceButton
                 key={t}
-                type="button"
-                role="radio"
-                aria-checked={selected}
+                selected={appTheme === t}
                 onClick={() => {
+                  setAppTheme(t);
                   applyAppTheme(t);
-                  void updatePreferences({ appTheme: t }).catch(() => toast.error(copy.settings.saveFailed));
+                  queuePref({ appTheme: t }, 0);
                 }}
-                className={cn(
-                  'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
-                  selected ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
-                )}
               >
                 {t === 'system' ? practiceCopy.themeSystem : practiceCopy.themeLight}
-              </button>
-              );
-            })}
+              </ChoiceButton>
+            ))}
           </div>
         </Row>
         <Row label={copy.settings.readerTheme}>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.readerTheme}>
             {readerThemes.map((t) => (
-              <button
+              <ChoiceButton
                 key={t.value}
-                type="button"
-                onClick={() => setTheme(t.value)}
-                className={cn(
-                  'flex items-center gap-1 px-2.5 py-1.5 rounded-[10px] border text-xs font-medium transition-all',
-                  theme === t.value ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#6a7282] hover:border-gray-300',
-                )}
+                selected={theme === t.value}
+                onClick={() => { setTheme(t.value); queuePref({ readerTheme: t.value }); }}
               >
-                <t.icon className="w-3 h-3" />
-                {t.label}
-              </button>
+                <span className="inline-flex items-center gap-1">
+                  <t.icon className="w-3.5 h-3.5" />
+                  {t.label}
+                </span>
+              </ChoiceButton>
             ))}
           </div>
         </Row>
         <Row label={copy.settings.showKnownWords} description={copy.settings.showKnownWordsHint}>
-          <Toggle checked={showKnownWords} onChange={setShowKnownWords} />
+          <Toggle checked={showKnownWords} onChange={(v) => { setShowKnownWords(v); queuePref({ showKnownWords: v }); }} />
         </Row>
         <Row label={copy.settings.tts} description={copy.settings.ttsHint}>
-          <Toggle checked={ttsEnabled} onChange={setTtsEnabled} />
+          <Toggle checked={ttsEnabled} onChange={(v) => { setTtsEnabled(v); queuePref({ ttsEnabled: v }); }} />
         </Row>
       </Section>
 
       <Section title={copy.settings.learningGoals}>
-        <Row label={copy.stats.dailyGoal} description={`${dailyGoal} ${copy.stats.minutes}`}>
+        <Row label={copy.stats.dailyGoal} description={copy.settings.minutesLabel(dailyGoal)}>
           <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.stats.dailyGoal}>
-            {[5, 10, 15, 20, 30].map((minutes) => (
-              <button
-                key={minutes}
-                type="button"
-                role="radio"
-                aria-checked={dailyGoal === minutes}
-                onClick={() => setDailyGoal(minutes)}
-                className={cn(
-                  'h-9 min-w-12 px-2.5 rounded-[10px] border text-xs font-semibold',
-                  dailyGoal === minutes ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
-                )}
-              >
+            {minuteChoices.map((minutes) => (
+              <ChoiceButton key={minutes} selected={dailyGoal === minutes} onClick={() => { setDailyGoal(minutes); queuePref({ dailyGoalMinutes: minutes }); }}>
                 {minutes}
-              </button>
+              </ChoiceButton>
             ))}
           </div>
         </Row>
-        <Row
-          label={copy.settings.emailNotifications}
-          description={copy.settings.emailNotificationsHint}
-        >
-          <Toggle checked={notificationsEnabled} onChange={setNotificationsEnabled} />
+        <Row label={copy.settings.dailyXpGoal} description={(practiceCopy.goalNames as Record<number, string>)[dailyGoalXp]}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.dailyXpGoal}>
+            {xpChoices.map((xp) => (
+              <ChoiceButton key={xp} selected={dailyGoalXp === xp} onClick={() => { setDailyGoalXp(xp); queuePref({ dailyGoalXp: xp }); }}>
+                {xp}
+              </ChoiceButton>
+            ))}
+          </div>
+        </Row>
+        <Row label={copy.settings.dailyNewWords} description={copy.settings.dailyNewWordsHint}>
+          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.dailyNewWords}>
+            {wordChoices.map((n) => (
+              <ChoiceButton key={n} selected={dailyNewWords === n} onClick={() => { setDailyNewWords(n); queuePref({ dailyNewWords: n }); }}>
+                {n}
+              </ChoiceButton>
+            ))}
+          </div>
         </Row>
       </Section>
 
-      <Section title={aiSwitchText(locale).title}>
-        <AiSwitch lang={locale} aiDisabled={(user as { aiDisabled?: boolean } | null)?.aiDisabled} aiDisabledBy={(user as { aiDisabledBy?: string | null } | null)?.aiDisabledBy} onChanged={refreshProfile} />
+      <Section title={copy.settings.notifications}>
+        <Row label={copy.settings.emailNotifications} description={copy.settings.emailNotificationsHint}>
+          <Toggle checked={notificationsEnabled} onChange={(v) => { setNotificationsEnabled(v); queuePref({ notificationsEnabled: v }); }} />
+        </Row>
       </Section>
 
-      <Section title={deleteAccountText(locale).title}>
+      <Section title={copy.settings.privacyAi}>
+        <AiSwitch lang={locale} aiDisabled={user?.aiDisabled} aiDisabledBy={user?.aiDisabledBy} onChanged={refreshProfile} />
+        <Row label={copy.settings.downloadData} description={exporting ? copy.settings.downloadingData : undefined}>
+          <button
+            type="button"
+            disabled={exporting}
+            onClick={() => { void downloadData(); }}
+            className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center gap-2 disabled:opacity-60"
+          >
+            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+            {exporting ? copy.settings.downloadingData : copy.settings.downloadData}
+          </button>
+        </Row>
+      </Section>
+
+      <Section title={copy.settings.dangerZone} danger>
         <DeleteAccount lang={locale} onDeleted={() => { logout(); window.location.assign('/'); }} />
       </Section>
 
-      <Section title={copy.settings.usageImports}>
-        <div className="p-4 sm:p-5 min-w-0">
-          {subLoading ? (
-            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">{copy.settings.loadingUsage}</div>
-          ) : (
-            <>
-              {/* GOTCHA has no recurring subscription — every account gets a free daily/monthly
-                  allowance, and imports beyond that are billed per-document via Atmos (see the
-                  Import page). This card reports real usage, not a "plan" tier. */}
-              <div
-                className="rounded-[14px] p-4 sm:p-5 min-w-0"
-                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
-              >
-                <div className="rounded-[14px] text-g-on-cta min-w-0">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
-                      <div className="text-xl sm:text-2xl font-bold mt-1">{payments ? copy.settings.payPerImport : subscription?.subscription ? (plan?.name ?? 'Plus') : limitCopy.freePlan}</div>
-                    </div>
-                    <Zap className="w-6 h-6 text-white shrink-0" />
-                  </div>
-                  <div className="space-y-1.5 py-4">
-                    {[
-                      quota !== null
-                        ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
-                        : copy.settings.aiLookupsLine(lookupsToday, null),
-                      quizQuota !== null ? limitCopy.quizzesLeft(Math.max(0, quizQuota - quizzesToday), quizQuota) : null,
-                      importAllowance
-                        ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
-                        : plan?.importLimit && plan.importLimit < 1_000_000
-                          ? copy.settings.importLimitLine(plan.importLimit)
-                          : null,
-                      importAllowance
-                        ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
-                        : null,
-                      limitCopy.dailyReset,
-                      importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
-                      copy.settings.publicLibraryAccess,
-                    ].filter(Boolean).map((f) => (
-                      <div key={f as string} className="flex items-start gap-2 text-sm">
-                        <Check className="w-3.5 h-3.5 shrink-0 text-g-blue-200 mt-0.5" />
-                        <span className="text-g-blue-200 break-words">{f}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {payments && (<>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/app/import')}
-                    className="w-full min-w-0 h-9 px-3 rounded-[14px] bg-white text-g-blue-700 text-sm font-semibold flex items-center justify-center gap-2 hover:bg-violet-50"
-                  >
-                    <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => navigate('/app/payments')}
-                    className="w-full min-w-0 h-9 px-3 rounded-[14px] text-white/90 text-sm font-medium underline hover:text-white"
-                  >
-                    {payCopyFor(locale)['history.title']}
-                  </button>
-                  </>)}
-                </div>
-              </div>
-
-              <div className="pt-4 space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                    <span>{copy.settings.aiLookupsToday}</span>
-                    <span>{quota === null ? lookupsToday : `${lookupsToday}/${quota}`}</span>
-                  </div>
-                  <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                    <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${quota === null ? 4 : usagePct}%` }} />
-                  </div>
-                </div>
-                {importAllowance ? (
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                      <span>{copy.settings.freeImportsToday}</span>
-                      <span>{importAllowance.dailyFreeUsed}/{importAllowance.dailyFreeImportsPerUser}</span>
-                    </div>
-                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-g-blue-700 transition-all"
-                        style={{
-                          width: `${
-                            importAllowance.dailyFreeImportsPerUser > 0
-                              ? Math.min(100, Math.round((importAllowance.dailyFreeUsed / importAllowance.dailyFreeImportsPerUser) * 100))
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-      </Section>
-
-      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
-        <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
-          <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
-          <span className="min-w-0 truncate">
-            {copy.settings.signedInAs}{' '}
-            <span className="font-medium text-gray-600">
-              {user?.displayName ?? user?.email}
+      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-4 sm:p-5 flex flex-col gap-3 min-w-0">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
+          <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
+            <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
+            <span className="min-w-0 truncate">
+              {copy.settings.signedInAs}{' '}
+              <span className="font-medium text-gray-600">
+                {user?.displayName || user?.email}
+              </span>
             </span>
-          </span>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => { logout(); navigate('/login'); }}
+            className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2 w-full sm:w-auto shrink-0 min-h-11"
+          >
+            <LogOut className="w-4 h-4" />
+            {copy.settings.signOut}
+          </Button>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => { logout(); navigate('/login'); }}
-          className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2 w-full sm:w-auto shrink-0"
+        <button
+          type="button"
+          onClick={() => setSignOutAllOpen(true)}
+          className="min-h-11 px-3 rounded-[14px] border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 w-full sm:w-auto self-start"
         >
-          <LogOut className="w-4 h-4" />
-          {copy.settings.signOut}
-        </Button>
+          {copy.settings.signOutAll}
+        </button>
       </div>
       <p data-testid="build-id" className="text-center text-[11px] text-[#99a1af] select-all">{buildLabel()}</p>
+
+      {prefStatus !== 'idle' && (
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40" role="status">
+          <div className="min-h-11 px-4 rounded-full border border-[#e5e7eb] bg-white shadow-lg flex items-center gap-3 text-sm text-[#364153]">
+            {prefStatus === 'saving' && <><Loader2 className="w-4 h-4 animate-spin" />{copy.common.saving}</>}
+            {prefStatus === 'saved' && <><Check className="w-4 h-4 text-[#007a55]" />{copy.settings.saved}</>}
+            {prefStatus === 'error' && (
+              <>
+                <span>{copy.settings.saveFailed}</span>
+                <button type="button" className="min-h-11 font-semibold text-g-blue-700" onClick={() => { void flushPref(); }}>
+                  {copy.settings.retry}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

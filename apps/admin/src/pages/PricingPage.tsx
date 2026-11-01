@@ -44,6 +44,91 @@ type StoreProduct = {
   active: boolean;
 };
 type Pricing = { currency: 'UZS'; plans: Plan[]; tiers: Tier[]; promos: Promo[]; storeProducts?: StoreProduct[] };
+type PlusSettings = {
+  price30Uzs: number;
+  price365Uzs: number;
+  importDiscountPct: number;
+  webPlusPassEnabled: boolean;
+  freeMashqPerDay: number;
+  plusMashqPerDay: number | null;
+};
+
+function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
+  const [plus, setPlus] = useState<PlusSettings | null>(null);
+  const [price30, setPrice30] = useState('');
+  const [price365, setPrice365] = useState('');
+  const [discount, setDiscount] = useState('');
+  const [freeMashq, setFreeMashq] = useState('');
+  const [plusMashq, setPlusMashq] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    const row = await api<PlusSettings>('/admin/plus-settings');
+    setPlus(row);
+    setPrice30(String(row.price30Uzs));
+    setPrice365(String(row.price365Uzs));
+    setDiscount(String(row.importDiscountPct));
+    setFreeMashq(String(row.freeMashqPerDay));
+    setPlusMashq(row.plusMashqPerDay == null ? '' : String(row.plusMashqPerDay));
+  }, []);
+  useEffect(() => { void load().catch((e) => setErr(e instanceof Error ? e.message : 'Could not load Plus settings')); }, [load]);
+
+  const save = async () => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await api('/admin/plus-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          price30Uzs: Number(price30),
+          price365Uzs: Number(price365),
+          importDiscountPct: Number(discount),
+          freeMashqPerDay: Number(freeMashq),
+          plusMashqPerDay: plusMashq.trim() === '' ? null : Number(plusMashq),
+        }),
+      });
+      await load();
+      onSaved('Plus pass and Mashq caps saved.');
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : 'Save failed');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!plus && !err) return <LoadingBlock />;
+  return (
+    <Card className="p-4">
+      <h2 className="text-base font-bold text-slate-900">Plus pass</h2>
+      <p className="mt-1 mb-3 text-xs text-slate-500">
+        These are the prices learners pay. Web checkout is {plus?.webPlusPassEnabled ? 'on' : 'off'} (read-only).
+        Mashq is questions per day and resets at 00:00 Tashkent. Leave Plus empty for unlimited.
+      </p>
+      {err ? <p className="mb-2 text-sm text-rose-700">{err}</p> : null}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <label className="text-xs font-semibold text-slate-600">30-day price (UZS)
+          <Input inputMode="numeric" value={price30} onChange={(e) => setPrice30(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">365-day price (UZS)
+          <Input inputMode="numeric" value={price365} onChange={(e) => setPrice365(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">Plus import discount %
+          <Input inputMode="numeric" value={discount} onChange={(e) => setDiscount(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">Free Mashq questions / day
+          <Input inputMode="numeric" value={freeMashq} onChange={(e) => setFreeMashq(e.target.value.replace(/\D/g, ''))} />
+        </label>
+        <label className="text-xs font-semibold text-slate-600">Plus Mashq / day (empty = unlimited)
+          <Input inputMode="numeric" value={plusMashq} placeholder="Unlimited" onChange={(e) => setPlusMashq(e.target.value.replace(/\D/g, ''))} />
+        </label>
+      </div>
+      <div className="mt-3">
+        <Button disabled={busy} onClick={() => void save()}><Save className="size-4" /> Save Plus pass</Button>
+      </div>
+    </Card>
+  );
+}
 
 const tashkentDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-GB', { timeZone: 'Asia/Tashkent', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
@@ -105,6 +190,8 @@ export default function PricingPage() {
       />
       {msg && <p className="text-sm text-slate-600" role="status">{msg}</p>}
 
+      <PlusPassCard onSaved={(text) => setMsg(text)} />
+
       <Card className="p-4">
         <h2 className="mb-3 text-base font-bold text-slate-900">Plans</h2>
         <div className="grid gap-4 md:grid-cols-2">
@@ -128,11 +215,12 @@ export default function PricingPage() {
                 <div className="grid grid-cols-3 gap-2">
                   <label className="text-xs font-semibold text-slate-600">
                     Price (UZS)
-                    <Input inputMode="numeric" disabled={p.tier === 'free'} value={String(e.priceUzs ?? p.priceUzs)} onChange={(ev) => setPlan(p.tier, { priceUzs: Number(ev.target.value.replace(/\D/g, '') || 0) })} />
+                    <Input inputMode="numeric" disabled readOnly value={String(p.priceUzs)} title={p.tier === 'free' ? 'Free has no price' : 'Charged price is the Plus pass above'} />
+                    {p.tier !== 'free' ? <span className="mt-1 block font-normal text-slate-500">Charged price is the Plus pass above.</span> : null}
                   </label>
                   <label className="text-xs font-semibold text-slate-600">
                     Period
-                    <Select value={e.period ?? p.period} onChange={(ev) => setPlan(p.tier, { period: ev.target.value as Plan['period'] })}>
+                    <Select value={p.period} disabled title="Plus is a 30-day or 365-day pass">
                       <option value="month">month</option>
                       <option value="year">year</option>
                       <option value="one_time">one time</option>

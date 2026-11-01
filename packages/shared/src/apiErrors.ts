@@ -32,6 +32,9 @@ Object.assign(BY_CODE, {
   AI_OFF_BY_USER: { en: 'You turned AI features off. Turn them back on in Settings.', ru: 'Вы отключили функции ИИ. Включить их можно в настройках.', uz: 'Siz AI funksiyalarini oʻchirgansiz. Ularni Sozlamalarda qayta yoqishingiz mumkin.' },
   AI_DISABLED: { en: 'AI features are turned off for this account. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключены для этого аккаунта. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'Bu hisob uchun AI funksiyalari oʻchirilgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
   AI_DISABLED_BY_SUPPORT: { en: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.', ru: 'Функции ИИ отключила поддержка. Чтобы включить их, напишите на support@gotchaa.uz.', uz: 'AI funksiyalarini qoʻllab-quvvatlash xizmati oʻchirgan. Qayta yoqish uchun support@gotchaa.uz manziliga yozing.' },
+  TARGET_SAME_AS_NATIVE: { en: 'Target language cannot be the same as your native language.', ru: 'Целевой язык не может совпадать с родным.', uz: 'Maqsad til ona til bilan bir xil boʻla olmaydi.' },
+  KEEP_ONE_TARGET: { en: 'You must keep at least one target language.', ru: 'Нужен хотя бы один целевой язык.', uz: 'Kamida bitta maqsad til kerak.' },
+  DISPLAY_NAME_INVALID: { en: 'Display name cannot contain links or control characters.', ru: 'Имя не может содержать ссылки или служебные символы.', uz: 'Ismda havola yoki maxsus belgilar boʻlmasligi kerak.' },
 });
 
 const BY_MESSAGE: Record<string, T3> = {
@@ -60,6 +63,9 @@ const BY_MESSAGE: Record<string, T3> = {
   'Practice session not found': { en: 'Practice session not found.', ru: 'Сессия практики не найдена.', uz: 'Mashq sessiyasi topilmadi.' },
   'Session already completed': { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
   'Request failed': { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.', uz: 'Nimadir xato ketdi. Qayta urinib koʻring.' },
+  'Target language cannot be the same as your native language.': BY_CODE.TARGET_SAME_AS_NATIVE,
+  'You must keep at least one target language.': BY_CODE.KEEP_ONE_TARGET,
+  'Display name cannot contain links or control characters.': BY_CODE.DISPLAY_NAME_INVALID,
 };
 
 const BY_STATUS: Record<string, T3> = {
@@ -81,6 +87,10 @@ export function localizeApiError(
   const raw = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? '').trim();
   const hit = (err.code && BY_CODE[err.code]) || BY_MESSAGE[raw] || BY_MESSAGE[raw.replace(/\.$/, '')];
   if (hit) return hit[l];
+  // class-validator / whitelist noise ("property dailyGoalXp should not exist", "must not be greater than 500").
+  if (/should not exist|must not be|must be an |must be shorter|must be longer|must be a /i.test(raw)) {
+    return BY_STATUS['400'][l];
+  }
   if (l === 'en' && raw && !Array.isArray(err.message)) return raw;
   const s = err.status ?? 0;
   const key = s >= 500 ? '5xx' : s === 0 ? 'network' : String(s);

@@ -1384,6 +1384,8 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     }
 
     if (!paymentId) {
+      const quote = await this.quote(userId, { importType, pageCount: Math.max(1, Math.floor(pages ?? 1) || 1) });
+      if (quote.isFree) return this.grantFreeImportCredit(userId, importType, pages ?? 1);
       throw new ForbiddenException('Payment required for this import. Get a quote and checkout first.');
     }
 

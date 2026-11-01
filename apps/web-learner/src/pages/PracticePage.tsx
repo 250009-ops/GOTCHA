@@ -4,10 +4,11 @@ import DailyPractice from '../components/practice/DailyPractice';
 
 /**
  * /app/practice → "Practice my words" (daily mixed session, no chapter needed).
+ * /app/practice?sessionId → a Mashq or chapter session that was already started.
  * /app/practice?contentId&segmentId → chapter quiz opened from the Reader.
  */
 export default function PracticePage() {
   const [params] = useSearchParams();
-  if (params.get('segmentId')) return <ChapterQuizPage />;
+  if (params.get('sessionId') || params.get('segmentId')) return <ChapterQuizPage />;
   return <DailyPractice />;
 }

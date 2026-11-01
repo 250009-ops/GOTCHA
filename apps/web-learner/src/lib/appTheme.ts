@@ -3,31 +3,29 @@ import type { AppTheme } from '@gotcha/shared';
 
 const KEY = 'gotcha.appTheme';
 
-export function resolveTheme(pref: AppTheme | undefined | null): 'light' | 'dark' {
-  if (pref === 'light') return 'light';
-  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+/**
+ * Dark mode is unfinished (hard-coded light panels on most pages).
+ * Until those tokens cover every screen, System and any stored "dark" stay light.
+ * Reader sepia/dark is a separate preference and is not affected.
+ */
+export function resolveTheme(_pref: AppTheme | undefined | null): 'light' | 'dark' {
+  return 'light';
 }
 
 export function applyAppTheme(pref: AppTheme | undefined | null) {
-  const p: AppTheme = pref === 'light' ? 'light' : 'system';
+  const stored: AppTheme = pref === 'light' ? 'light' : 'system';
   try {
-    localStorage.setItem(KEY, p);
+    localStorage.setItem(KEY, stored);
   } catch {
     /* private mode */
   }
-  document.documentElement.dataset.theme = resolveTheme(p);
+  document.documentElement.dataset.theme = 'light';
 }
 
-/** Keeps <html data-theme> in sync with the appTheme preference (and the OS when it is "system"). */
+/** Keeps <html data-theme> light until the dark theme covers every page. */
 export function useAppTheme(pref: AppTheme | undefined | null) {
   useEffect(() => {
-    if (pref == null) return; // not loaded yet — keep the pre-paint value from index.html
-    const effective: AppTheme = pref === 'light' ? 'light' : 'system';
-    applyAppTheme(effective);
-    if (effective !== 'system') return;
-    const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const on = () => applyAppTheme('system');
-    mq.addEventListener('change', on);
-    return () => mq.removeEventListener('change', on);
+    if (pref == null) return;
+    applyAppTheme(pref === 'light' ? 'light' : 'system');
   }, [pref]);
 }

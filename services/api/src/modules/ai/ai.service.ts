@@ -17,7 +17,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
 import { DAILY_CAP_FALLBACKS, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, languagePromptLabel, slowDownMessage, ttsLocale } from '@gotcha/shared';
-import { groundPageItems, groundQuizQuestions, parsePageBankItems, type PageBankItem } from './quiz-grounding';
+import { groundPageItems, groundQuizQuestions, parsePageBankItems, readingPassage, type PageBankItem } from './quiz-grounding';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -1075,8 +1075,8 @@ export class AiService {
   }
 
   /** One grounded bank for a single page, in en, uz and ru. Empty when the model is off or nothing survives the checks. */
-  async generatePageQuiz(passage: string, userId?: string): Promise<PageBankItem[]> {
-    const text = passage.slice(0, 4000);
+  async generatePageQuiz(passage: string, userId?: string, avoidQuotes: string[] = []): Promise<PageBankItem[]> {
+    const text = readingPassage(passage).slice(0, 4000);
     if (text.trim().length < 80) return [];
     const { band } = await this.userAiGate(userId);
     const settings = await this.getPlatformAiSettings();
@@ -1095,7 +1095,16 @@ export class AiService {
             band,
           ),
         },
-        { role: 'user', content: `Write 8 questions about this page:\n\n${text}` },
+        {
+          role: 'user',
+          content: [
+            'Write 8 questions about the story on this page. Ignore publisher advertisements, download offers and license text.',
+            avoidQuotes.filter(Boolean).length
+              ? `Do not repeat these passages, which were already asked:\n${avoidQuotes.filter(Boolean).slice(0, 12).map((quote) => `- ${quote.slice(0, 180)}`).join('\n')}`
+              : '',
+            `Page:\n\n${text}`,
+          ].filter(Boolean).join('\n\n'),
+        },
       ],
     });
     let parsed: { questions?: unknown } = {};

@@ -17,6 +17,7 @@ import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
 import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
+import { toPublicProfile } from './public-profile';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -152,12 +153,10 @@ export class UsersService {
       },
     });
     if (!refreshed) throw new NotFoundException('User not found');
-    const { passwordHash: _, consentIp: _consentIp, ...safe } = refreshed;
-    return {
-      ...safe,
+    return toPublicProfile(refreshed, {
       ageBand: ageBand(refreshed.birthYear),
       needsAgePrompt: needsAgePrompt(refreshed),
-    };
+    });
 
   }
 
@@ -398,6 +397,30 @@ export class UsersService {
     });
   }
 
+  async removeAvatar(userId: string) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Photo upload is not available for demo accounts.');
+    }
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const dir = join(root, 'avatars');
+    for (const oldExt of ['jpg', 'jpeg', 'png', 'webp']) {
+      await rm(join(dir, `${userId}.${oldExt}`), { force: true });
+    }
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatarUrl: null },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarUrl: true,
+        uiLanguage: true,
+        nativeLanguage: true,
+        streakCount: true,
+      },
+    });
+  }
+
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
 
     if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
@@ -406,15 +429,16 @@ export class UsersService {
 
     }
 
-
+    const data = { ...dto };
+    if (data.appTheme === 'dark') data.appTheme = 'system';
 
     return this.prisma.userPreferences.upsert({
 
       where: { userId },
 
-      create: { userId, ...dto },
+      create: { userId, ...data },
 
-      update: dto,
+      update: data,
 
     });
 
@@ -452,7 +476,11 @@ export class UsersService {
       select: { nativeLanguage: true },
     });
     if (user?.nativeLanguage === dto.targetLanguage) {
-      throw new BadRequestException('Target language cannot be the same as your native language.');
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'TARGET_SAME_AS_NATIVE',
+        message: 'Target language cannot be the same as your native language.',
+      });
     }
     const existingCount = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (dto.isPrimary || existingCount === 0) {
@@ -502,7 +530,11 @@ export class UsersService {
   async removeTargetLanguage(userId: string, targetLanguage: string) {
     const total = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (total <= 1) {
-      throw new BadRequestException('You must keep at least one target language.');
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'KEEP_ONE_TARGET',
+        message: 'You must keep at least one target language.',
+      });
     }
 
     const existing = await this.prisma.userTargetLanguage.findUnique({

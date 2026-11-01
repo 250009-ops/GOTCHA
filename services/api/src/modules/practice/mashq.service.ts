@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { capOf, getPlanCaps, usageDayStart, userCapPlan } from '../../common/plan-caps';
 import { AiService } from '../ai/ai.service';
-import { foldSpace, type PageBankItem } from '../ai/quiz-grounding';
+import { foldSpace, readingPassage, type PageBankItem } from '../ai/quiz-grounding';
 import { canReadUserImport } from '../content/user-import-privacy';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 import { redactSession } from './practice-redact';
@@ -21,9 +21,9 @@ type LangOpts = Record<Lang, string[]>;
 
 export function quizEmptyException() {
   const messages = {
-    en: "Couldn't build a quiz for this chapter. Try again.",
-    uz: 'Bu bob uchun test tuzib boʻlmadi. Qayta urinib koʻring.',
-    ru: 'Не удалось составить тест по этой главе. Попробуйте ещё раз.',
+    en: "Couldn't build more questions for this page. Try again.",
+    uz: 'Bu sahifa uchun yana savol tuzib boʻlmadi. Qayta urinib koʻring.',
+    ru: 'Не удалось составить ещё вопросы по этой странице. Попробуйте ещё раз.',
   };
   return new ServiceUnavailableException({ statusCode: 503, code: 'quiz_empty', message: messages.en, messages });
 }
@@ -72,8 +72,9 @@ export class MashqService {
     if (segment.wordCount < MIN_WORDS) {
       return { state: 'none' as const, unseenCount: 0, missedToday: 0, remaining: null, maxPerSession: MAX_PER_SESSION };
     }
-    const hash = this.hash(segment.plainText);
-    const [unseenCount, missedToday, remaining] = await Promise.all([
+    const passage = readingPassage(segment.plainText);
+    const hash = this.hash(passage);
+    const [unseenCount, missedToday, bankSize, remaining] = await Promise.all([
       this.countUnseen(userId, segment.id, hash),
       this.prisma.pageQuestionSeen.count({
         where: {
@@ -83,10 +84,12 @@ export class MashqService {
           question: { segmentId: segment.id, status: 'active', segmentHash: hash },
         },
       }),
+      this.prisma.pageQuestion.count({ where: { segmentId: segment.id, status: 'active', segmentHash: hash } }),
       this.remaining(userId),
     ]);
+    const exhausted = bankSize > 0 && unseenCount === 0 && missedToday === 0;
     return {
-      state: 'ready' as const,
+      state: exhausted ? 'empty' as const : 'ready' as const,
       unseenCount,
       missedToday,
       remaining,
@@ -96,8 +99,9 @@ export class MashqService {
 
   async start(userId: string, dto: StartPracticeDto) {
     if (!dto.segmentId) throw new BadRequestException('segmentId required');
-    const segment = await this.loadSegment(userId, dto.segmentId);
-    if (segment.wordCount < MIN_WORDS) throw new BadRequestException('This page is too short for Mashq');
+    const loaded = await this.loadSegment(userId, dto.segmentId);
+    if (loaded.wordCount < MIN_WORDS) throw new BadRequestException('This page is too short for Mashq');
+    const segment = { ...loaded, plainText: readingPassage(loaded.plainText) };
 
     if (dto.idempotencyKey) {
       const existing = await this.findIdempotent(userId, dto.idempotencyKey);
@@ -224,14 +228,20 @@ export class MashqService {
   }
 
   private async ensureAndPick(userId: string, segment: { id: string; contentId: string; plainText: string }, need: number) {
-    const hash = this.hash(segment.plainText);
+    const plainText = readingPassage(segment.plainText);
+    segment = { ...segment, plainText };
+    const hash = this.hash(plainText);
     await this.prisma.pageQuestion.updateMany({
       where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
       data: { status: 'retired' },
     });
     let picked = await this.unseen(userId, segment.id, hash, need);
     if (picked.length >= need) return picked;
-    const items = await this.ai.generatePageQuiz(segment.plainText, userId);
+    const used = await this.prisma.pageQuestion.findMany({
+      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+      select: { evidenceQuote: true },
+    });
+    const items = await this.ai.generatePageQuiz(segment.plainText, userId, used.map((row) => row.evidenceQuote));
     await this.storeItems(segment, hash, items);
     picked = await this.unseen(userId, segment.id, hash, need);
     return picked;

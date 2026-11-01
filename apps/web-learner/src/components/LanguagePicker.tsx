@@ -14,7 +14,7 @@ export function LanguagePicker({ className, compact = false, variant = 'default'
   return (
     <UiLanguageDropdown
       value={locale}
-      onChange={(code) => setLocale(code as UiLanguage)}
+      onChange={(code) => { void setLocale(code as UiLanguage).catch(() => undefined); }}
       ariaLabel={copy.shell.language}
       className={className}
       variant={variant}

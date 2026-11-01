@@ -85,6 +85,11 @@ export class UsersController {
     return this.users.uploadAvatar(user.sub, file);
   }
 
+  @Delete('me/avatar')
+  removeAvatar(@CurrentUser() user: AuthUserPayload) {
+    return this.users.removeAvatar(user.sub);
+  }
+
   @Patch('me/preferences')
   updatePreferences(@CurrentUser() user: AuthUserPayload, @Body() dto: UpdatePreferencesDto) {
     return this.users.updatePreferences(user.sub, dto);

@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation } from 'react-router-dom';
-import { api, clearTokens, setTokens } from './api';
+import { api, clearTokens, getRefreshToken, setTokens } from './api';
 import { isPublicAuthPath } from './authRoutes';
 import { detectLearnerLocale } from './learnerLocale';
 import { learnerCopyFor } from '@gotcha/shared/learner-copy';
@@ -44,7 +44,7 @@ interface AuthContextValue {
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
-  updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
+  updateProfile: (patch: { displayName?: string | null; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
   updatePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
   uploadAvatar: (file: File) => Promise<void>;
   vocabItems: VocabItem[];
@@ -66,6 +66,8 @@ const defaultPreferences: UserPreferences = {
   showKnownWords: false,
   ttsEnabled: true,
   dailyGoalMinutes: 15,
+  dailyGoalXp: 60,
+  dailyNewWords: 10,
   notificationsEnabled: true,
 };
 
@@ -260,6 +262,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      void api('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }).catch(() => undefined);
+    }
     clearTokens();
     setUser(null);
     setStats(null);
@@ -282,7 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(
-    async (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => {
+    async (patch: { displayName?: string | null; nativeLanguage?: string; uiLanguage?: string }) => {
       const updated = await api<UserProfile>('/users/me', {
         method: 'PATCH',
         body: JSON.stringify(patch),

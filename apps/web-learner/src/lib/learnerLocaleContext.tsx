@@ -19,6 +19,8 @@ import { useAuth } from './auth';
 import {
   detectLearnerLocale,
   isLegacyDefaultEnglishUiLanguage,
+  LEARNER_LOCALE_STORAGE,
+  SHARED_LOCALE_STORAGE,
   persistLearnerLocale,
   readStoredLearnerLocale,
 } from './learnerLocale';
@@ -26,7 +28,7 @@ import {
 interface LearnerLocaleContextValue {
   locale: UiLanguage;
   copy: FullLearnerCopy;
-  setLocale: (code: UiLanguage) => void;
+  setLocale: (code: UiLanguage) => Promise<void>;
   localeOptions: Array<{ code: UiLanguage; label: string; nativeName: string }>;
 }
 
@@ -36,12 +38,14 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
   const { user, updateProfile } = useAuth();
   const [searchParams] = useSearchParams();
   const [guestLocale, setGuestLocale] = useState<UiLanguage>(() => detectLearnerLocale(searchParams));
+  const [picked, setPicked] = useState<UiLanguage | null>(null);
 
   useEffect(() => {
     if (!user) setGuestLocale(detectLearnerLocale(searchParams));
   }, [searchParams, user]);
 
   const locale: UiLanguage = useMemo(() => {
+    if (picked) return picked;
     // WLF-36: an explicit ?ui= on a guest page (landing CTA → /learn/register?ui=en) wins over an older stored choice.
     const urlUi = (searchParams.get('ui') || '').toLowerCase().slice(0, 2);
     if (!user && UI_LANGUAGES.includes(urlUi as UiLanguage)) return urlUi as UiLanguage;
@@ -58,7 +62,7 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
     }
 
     return guestLocale;
-  }, [user, user?.uiLanguage, guestLocale, searchParams]);
+  }, [picked, user, user?.uiLanguage, guestLocale, searchParams]);
 
   const copy = useMemo(() => learnerCopyFor(locale), [locale]);
 
@@ -77,12 +81,26 @@ export function LearnerLocaleProvider({ children }: { children: ReactNode }) {
 
   const setLocale = useCallback(
     (code: UiLanguage) => {
+      const prev = readStoredLearnerLocale();
+      setPicked(code);
       persistLearnerLocale(code);
-      if (user) {
-        void updateProfile({ uiLanguage: code }).catch(() => undefined);
-      } else {
+      if (!user) {
         setGuestLocale(code);
+        return Promise.resolve();
       }
+      return updateProfile({ uiLanguage: code }).catch((err: unknown) => {
+        if (prev) persistLearnerLocale(prev);
+        else {
+          try {
+            localStorage.removeItem(LEARNER_LOCALE_STORAGE);
+            localStorage.removeItem(SHARED_LOCALE_STORAGE);
+          } catch {
+            /* private mode */
+          }
+        }
+        setPicked(prev);
+        throw err;
+      });
     },
     [user, updateProfile],
   );

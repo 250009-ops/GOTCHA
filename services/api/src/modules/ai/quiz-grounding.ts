@@ -39,6 +39,17 @@ export function foldSpace(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+/** Publisher ads and license blocks are not the book. Drop those sentences before a page quiz is written. */
+const PUBLISHER_BOILERPLATE = /planet\s*e-?books?|project gutenberg|this (?:e-?book|ebook) is for the use of anyone|gutenberg\.org|subscribe (?:to|for)|free ebooks? at|www\.planetebook/i;
+
+export function readingPassage(text: string): string {
+  const raw = String(text ?? '');
+  const parts = raw.split(/(?<=[.!?…])\s+|\n+/).map((part) => part.trim()).filter(Boolean);
+  const kept = parts.filter((part) => !PUBLISHER_BOILERPLATE.test(part));
+  const out = foldSpace(kept.join(' '));
+  return out.length >= 80 ? out : foldSpace(raw);
+}
+
 export function quoteInPassage(passage: string, quote: string): boolean {
   const q = foldSpace(quote);
   if (q.length < 8) return false;

@@ -189,6 +189,49 @@ export interface LearnerCopy {
     freePagesLine: (remaining: number, total: number, cycle: string) => string;
     publicLibraryAccess: string;
     importLimitLine: (limit: number) => string;
+    displayNameTooLong: string;
+    displayNameInvalid: string;
+    notVerified: string;
+    resendEmail: string;
+    resendSent: string;
+    resendWait: (seconds: number) => string;
+    showPassword: string;
+    hidePassword: string;
+    passwordRules: string;
+    removePhoto: string;
+    removingPhoto: string;
+    photoTooBig: string;
+    photoWrongType: string;
+    photoRemoved: string;
+    downloadData: string;
+    downloadingData: string;
+    planAndUsage: string;
+    usageToday: string;
+    plusName: string;
+    plusUntil: (name: string, date: string) => string;
+    daysLeft: (n: number) => string;
+    renew: string;
+    upgrade: string;
+    countToday: (n: number) => string;
+    notifications: string;
+    privacyAi: string;
+    dangerZone: string;
+    signOutAll: string;
+    signOutAllBody: string;
+    retry: string;
+    unsavedLeave: string;
+    nativeChangeTitle: string;
+    nativeChangeBody: string;
+    confirm: string;
+    primaryHint: string;
+    removeLanguageTitle: string;
+    removeLanguageBody: (name: string) => string;
+    dailyXpGoal: string;
+    dailyNewWords: string;
+    dailyNewWordsHint: string;
+    minutesLabel: (n: number) => string;
+    mashqLine: (used: number, quota: number | null) => string;
+    close: string;
   };
   library: {
     title: string;
@@ -426,7 +469,7 @@ const EN: LearnerCopy = {
     photoUpdated: 'Photo updated',
     uploadFailed: 'Upload failed',
     displayName: 'Display name',
-    displayNameHint: 'Shown on your profile',
+    displayNameHint: 'Shown to other learners in Messages. Leave it empty to use the start of your email.',
     displayNamePlaceholder: 'Your name',
     nativeLanguage: 'Native language',
     nativeLanguageHint: 'Used for translations and lookups',
@@ -475,7 +518,7 @@ const EN: LearnerCopy = {
     saved: 'Settings saved',
     saveFailed: 'Save failed',
     fillPasswordFields: 'Fill in both password fields',
-    newPasswordMinLength: 'New password must be at least 8 characters',
+    newPasswordMinLength: 'New password must be 8–128 characters',
     passwordsMismatch: 'Passwords do not match',
     passwordUpdated: 'Password updated. Please sign in again.',
     passwordChangeFailed: 'Could not change password',
@@ -496,6 +539,49 @@ const EN: LearnerCopy = {
     freePagesLine: (remaining, total, cycle) => `${remaining} of ${total} free pages left ${cycle}`,
     publicLibraryAccess: 'Access to the public library',
     importLimitLine: (limit) => `Up to ${limit} free imports per day`,
+    displayNameTooLong: 'Display name must be 50 characters or fewer',
+    displayNameInvalid: 'Display name cannot contain links or control characters',
+    notVerified: 'Not verified',
+    resendEmail: 'Resend email',
+    resendSent: 'Verification email sent',
+    resendWait: (seconds) => `Resend in ${seconds}s`,
+    showPassword: 'Show password',
+    hidePassword: 'Hide password',
+    passwordRules: 'Use 8–128 characters.',
+    removePhoto: 'Remove photo',
+    removingPhoto: 'Removing…',
+    photoTooBig: 'Image must be 2 MB or smaller',
+    photoWrongType: 'Use a JPG, PNG, or WebP image',
+    photoRemoved: 'Photo removed',
+    downloadData: 'Download my data (JSON)',
+    downloadingData: 'Preparing download…',
+    planAndUsage: 'Plan & usage',
+    usageToday: 'Usage today',
+    plusName: 'Plus',
+    plusUntil: (name, date) => `${name} · active until ${date}`,
+    daysLeft: (n) => `${n} ${pluralEn(n, 'day', 'days')} left`,
+    renew: 'Renew',
+    upgrade: 'Upgrade',
+    countToday: (n) => `${n} today`,
+    notifications: 'Notifications',
+    privacyAi: 'Privacy & AI',
+    dangerZone: 'Danger zone',
+    signOutAll: 'Sign out of all devices',
+    signOutAllBody: 'This signs you out of every device, including this one.',
+    retry: 'Retry',
+    unsavedLeave: 'You have an unsaved display name. Leave without saving?',
+    nativeChangeTitle: 'Change native language?',
+    nativeChangeBody: 'Your new native language will be removed from the languages you are learning, and your previous native language will be added as a language to learn.',
+    confirm: 'Confirm',
+    primaryHint: 'This becomes your main language. The current main language will no longer be primary.',
+    removeLanguageTitle: 'Remove language?',
+    removeLanguageBody: (name) => `Remove ${name}? You can add it again later.`,
+    dailyXpGoal: 'Daily XP goal',
+    dailyNewWords: 'New words per day',
+    dailyNewWordsHint: 'How many new words practice may introduce',
+    minutesLabel: (n) => `${n} ${pluralEn(n, 'minute', 'minutes')}`,
+    mashqLine: (used, quota) => (quota === null ? 'Mashq: no daily limit' : `Mashq: ${used}/${quota} today`),
+    close: 'Close',
   },
   library: {
     title: 'Library',
@@ -737,7 +823,7 @@ const RU: LearnerCopy = {
     photoUpdated: 'Фото обновлено',
     uploadFailed: 'Ошибка загрузки',
     displayName: 'Имя',
-    displayNameHint: 'Отображается в профиле',
+    displayNameHint: 'Видно другим ученикам в сообщениях. Пустое имя заменяется началом email.',
     displayNamePlaceholder: 'Ваше имя',
     nativeLanguage: 'Родной язык',
     nativeLanguageHint: 'Для переводов и поиска слов',
@@ -786,7 +872,7 @@ const RU: LearnerCopy = {
     saved: 'Настройки сохранены',
     saveFailed: 'Ошибка сохранения',
     fillPasswordFields: 'Заполните оба поля пароля',
-    newPasswordMinLength: 'Новый пароль — минимум 8 символов',
+    newPasswordMinLength: 'Новый пароль — от 8 до 128 символов',
     passwordsMismatch: 'Пароли не совпадают',
     passwordUpdated: 'Пароль обновлён. Войдите снова.',
     passwordChangeFailed: 'Не удалось сменить пароль',
@@ -807,6 +893,52 @@ const RU: LearnerCopy = {
     freePagesLine: (remaining, total, cycle) => `${remaining} из ${total} бесплатных страниц ${cycle}`,
     publicLibraryAccess: 'Доступ к публичной библиотеке',
     importLimitLine: (limit) => `До ${limit} бесплатных импортов в день`,
+    displayNameTooLong: 'Имя — не больше 50 символов',
+    displayNameInvalid: 'Имя не может содержать ссылки или служебные символы',
+    notVerified: 'Не подтверждён',
+    resendEmail: 'Отправить письмо снова',
+    resendSent: 'Письмо для подтверждения отправлено',
+    resendWait: (seconds) => `Повторить через ${seconds} с`,
+    showPassword: 'Показать пароль',
+    hidePassword: 'Скрыть пароль',
+    passwordRules: 'От 8 до 128 символов.',
+    removePhoto: 'Удалить фото',
+    removingPhoto: 'Удаление…',
+    photoTooBig: 'Изображение должно быть не больше 2 МБ',
+    photoWrongType: 'Используйте изображение JPG, PNG или WebP',
+    photoRemoved: 'Фото удалено',
+    downloadData: 'Скачать мои данные (JSON)',
+    downloadingData: 'Готовим файл…',
+    planAndUsage: 'Тариф и использование',
+    usageToday: 'Сегодня',
+    plusName: 'Plus',
+    plusUntil: (name, date) => `${name} · действует до ${date}`,
+    daysLeft: (n) => {
+      const word = pluralRu(n, 'день', 'дня', 'дней');
+      return `Осталось ${n} ${word}`;
+    },
+    renew: 'Продлить',
+    upgrade: 'Улучшить',
+    countToday: (n) => `${n} сегодня`,
+    notifications: 'Уведомления',
+    privacyAi: 'Конфиденциальность и ИИ',
+    dangerZone: 'Опасная зона',
+    signOutAll: 'Выйти на всех устройствах',
+    signOutAllBody: 'Вы выйдете на всех устройствах, включая это.',
+    retry: 'Повторить',
+    unsavedLeave: 'Имя не сохранено. Уйти без сохранения?',
+    nativeChangeTitle: 'Сменить родной язык?',
+    nativeChangeBody: 'Новый родной язык будет убран из изучаемых, а прежний родной язык станет языком для изучения.',
+    confirm: 'Подтвердить',
+    primaryHint: 'Этот язык станет основным. Текущий основной язык больше не будет основным.',
+    removeLanguageTitle: 'Удалить язык?',
+    removeLanguageBody: (name) => `Удалить ${name}? Его можно добавить снова.`,
+    dailyXpGoal: 'Цель XP на день',
+    dailyNewWords: 'Новых слов в день',
+    dailyNewWordsHint: 'Сколько новых слов практика может добавить',
+    minutesLabel: (n) => `${n} ${pluralRu(n, 'минута', 'минуты', 'минут')}`,
+    mashqLine: (used, quota) => (quota === null ? 'Mashq: без дневного лимита' : `Mashq: ${used}/${quota} сегодня`),
+    close: 'Закрыть',
   },
   library: {
     title: 'Библиотека',
@@ -1048,7 +1180,7 @@ const UZ: LearnerCopy = {
     photoUpdated: 'Rasm yangilandi',
     uploadFailed: 'Yuklash xatosi',
     displayName: 'Koʻrinadigan ism',
-    displayNameHint: 'Profilda koʻrinadi',
+    displayNameHint: 'Xabarlarda boshqa oʻquvchilarga koʻrinadi. Boʻsh qoldirsangiz, emailning boshi ishlatiladi.',
     displayNamePlaceholder: 'Ismingiz',
     nativeLanguage: 'Ona tili',
     nativeLanguageHint: 'Tarjima va soʻz qidirish uchun',
@@ -1097,7 +1229,7 @@ const UZ: LearnerCopy = {
     saved: 'Sozlamalar saqlandi',
     saveFailed: 'Saqlash xatosi',
     fillPasswordFields: 'Ikkala parol maydonini toʻldiring',
-    newPasswordMinLength: 'Yangi parol kamida 8 belgi',
+    newPasswordMinLength: 'Yangi parol 8–128 belgidan iborat boʻlishi kerak',
     passwordsMismatch: 'Parollar mos kelmadi',
     passwordUpdated: 'Parol yangilandi. Qayta kiring.',
     passwordChangeFailed: 'Parolni oʻzgartirib boʻlmadi',
@@ -1118,6 +1250,49 @@ const UZ: LearnerCopy = {
     freePagesLine: (remaining, total, cycle) => `${cycle} ${total} dan ${remaining} bepul sahifa qoldi`,
     publicLibraryAccess: 'Ommaviy kutubxonaga kirish',
     importLimitLine: (limit) => `Kuniga ${limit} gacha bepul import`,
+    displayNameTooLong: 'Ism 50 ta belgidan oshmasligi kerak',
+    displayNameInvalid: 'Ismda havola yoki maxsus belgilar boʻlmasligi kerak',
+    notVerified: 'Tasdiqlanmagan',
+    resendEmail: 'Xatni qayta yuborish',
+    resendSent: 'Tasdiqlash xati yuborildi',
+    resendWait: (seconds) => `${seconds} s dan keyin qayta yuborish`,
+    showPassword: 'Parolni koʻrsatish',
+    hidePassword: 'Parolni yashirish',
+    passwordRules: '8–128 ta belgi.',
+    removePhoto: 'Rasmni olib tashlash',
+    removingPhoto: 'Olib tashlanmoqda…',
+    photoTooBig: 'Rasm hajmi 2 MB dan oshmasligi kerak',
+    photoWrongType: 'JPG, PNG yoki WebP rasmdan foydalaning',
+    photoRemoved: 'Rasm olib tashlandi',
+    downloadData: 'Maʼlumotlarimni yuklab olish (JSON)',
+    downloadingData: 'Fayl tayyorlanmoqda…',
+    planAndUsage: 'Tarif va foydalanish',
+    usageToday: 'Bugungi foydalanish',
+    plusName: 'Plus',
+    plusUntil: (name, date) => `${name} · ${date} gacha faol`,
+    daysLeft: (n) => `${n} kun qoldi`,
+    renew: 'Yangilash',
+    upgrade: 'Plusga oʻtish',
+    countToday: (n) => `Bugun ${n}`,
+    notifications: 'Bildirishnomalar',
+    privacyAi: 'Maxfiylik va AI',
+    dangerZone: 'Xavfli hudud',
+    signOutAll: 'Barcha qurilmalardan chiqish',
+    signOutAllBody: 'Shu jumladan shu qurilmadan, barcha qurilmalardan chiqasiz.',
+    retry: 'Qayta urinish',
+    unsavedLeave: 'Ism saqlanmagan. Saqlamasdan chiqilsinmi?',
+    nativeChangeTitle: 'Ona til oʻzgartirilsinmi?',
+    nativeChangeBody: 'Yangi ona til oʻrganilayotgan tillardan olib tashlanadi, avvalgi ona til esa oʻrganiladigan til sifatida qoʻshiladi.',
+    confirm: 'Tasdiqlash',
+    primaryHint: 'Bu til asosiy boʻladi. Hozirgi asosiy til endi asosiy boʻlmaydi.',
+    removeLanguageTitle: 'Til olib tashlansinmi?',
+    removeLanguageBody: (name) => `${name} olib tashlansinmi? Keyinroq qayta qoʻshish mumkin.`,
+    dailyXpGoal: 'Kunlik XP maqsadi',
+    dailyNewWords: 'Kuniga yangi soʻzlar',
+    dailyNewWordsHint: 'Mashq qancha yangi soʻz kiritishi mumkin',
+    minutesLabel: (n) => `${n} daqiqa`,
+    mashqLine: (used, quota) => (quota === null ? 'Mashq: kunlik limit yoʻq' : `Mashq: bugun ${used}/${quota}`),
+    close: 'Yopish',
   },
   library: {
     title: 'Kutubxona',
@@ -1240,6 +1415,31 @@ const UZ: LearnerCopy = {
 };
 
 const COPIES: Record<UiLanguage, LearnerCopy> = { en: EN, ru: RU, uz: UZ };
+
+/** Reading-preferences preview, chosen by the learner's primary target language. */
+export const READING_PREVIEW: Record<'en' | 'ru' | 'uz', { before: string; known: string; middle: string; learning: string; after: string }> = {
+  en: {
+    before: 'The old lighthouse had stood on the cliff for more than a hundred years. Its white walls, ',
+    known: 'weathered',
+    middle: ' by salt and storm, rose ',
+    learning: 'magnificently',
+    after: ' against the grey winter sky.',
+  },
+  ru: {
+    before: 'Старый маяк стоял на утёсе больше ста лет. Его белые стены, ',
+    known: 'обветренные',
+    middle: ' солью и штормом, ',
+    learning: 'величественно',
+    after: ' поднимались на фоне серого зимнего неба.',
+  },
+  uz: {
+    before: 'Eski mayoq qoyada yuz yildan beri turardi. Uning oq devorlari, tuz va boʻrondan ',
+    known: 'yemirilgan',
+    middle: ', qishki kulrang osmon fonida ',
+    learning: 'ulugʻvor',
+    after: ' koʻtarilardi.',
+  },
+};
 
 export function learnerCopyFor(locale: UiLanguage): FullLearnerCopy {
   return { ...COPIES[locale] ?? EN, ...learnerCopyExtFor(locale) };

@@ -9,8 +9,6 @@ import {
   Headphones,
   Keyboard,
   Lightbulb,
-  Moon,
-  Sun,
   Loader2,
   RotateCcw,
   Snowflake,
@@ -20,12 +18,11 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { isDailyLimitError } from '../../lib/dailyLimit';
-import { DAILY_GOAL_OPTIONS, practiceCopyFor, type ExerciseType, type PracticeCopy, type SrsRatingValue } from '@gotcha/shared';
+import { DAILY_GOAL_OPTIONS, localizeApiError, practiceCopyFor, type ExerciseType, type PracticeCopy, type SrsRatingValue } from '@gotcha/shared';
 import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
 import { useLearnerLocale } from '../../lib/learnerLocaleContext';
 import { useAuth } from '../../lib/auth';
-import { applyAppTheme } from '../../lib/appTheme';
 import { BrandMark, GotchaLogo } from '../GotchaLogo';
 import { speakText, stopSpeaking } from '../../lib/tts';
 import {
@@ -67,6 +64,7 @@ async function playItemAudio(item: PracticeItem, slow = false) {
 export default function DailyPractice() {
   const navigate = useNavigate();
   const { locale } = useLearnerLocale();
+  const { updatePreferences } = useAuth();
   const t = useMemo(() => practiceCopyFor(locale), [locale]);
 
   const [phase, setPhase] = useState<Phase>('hub');
@@ -216,11 +214,11 @@ export default function DailyPractice() {
         onExtra={() => void start({ extra: true })}
         onGoal={async (g) => {
           try {
-            await practiceApi.setGoal(g);
+            await updatePreferences({ dailyGoalXp: g });
             setStats((s) => ({ ...s, dailyGoalXp: g }));
             setOverview((o) => (o ? { ...o, dailyGoalXp: g } : o));
           } catch (e) {
-            (isDailyLimitError(e) ? undefined : toast.error(e instanceof Error ? e.message : String(e)));
+            if (!isDailyLimitError(e)) toast.error(e instanceof Error ? e.message : localizeApiError(locale, { status: 400 }));
           }
         }}
         onLibrary={() => navigate('/app')}
@@ -245,20 +243,12 @@ function Shell({
   stats: { xpToday: number; dailyGoalXp: number; streakCount: number; streakFreezes: number };
   progress?: { done: number; total: number };
 }) {
-  const { updatePreferences } = useAuth();
-  const [dark, setDark] = useState(() => document.documentElement.dataset.theme === 'dark');
-  const toggleTheme = () => {
-    const next = dark ? 'light' : 'dark';
-    applyAppTheme(next);
-    setDark(!dark);
-    void updatePreferences({ appTheme: next }).catch(() => undefined);
-  };
   const pct = Math.min(100, stats.dailyGoalXp ? (stats.xpToday / stats.dailyGoalXp) * 100 : 0);
   return (
     <div className="min-h-screen flex flex-col bg-g-bg">
       <header className="h-14 bg-g-topbar backdrop-blur border-b border-g-line flex items-center gap-3 px-3 sm:px-4 shrink-0 sticky top-0 z-20">
         <span className="hidden lg:inline-flex">
-          <GotchaLogo size={28} tone={dark ? 'light' : 'ink'} />
+          <GotchaLogo size={28} tone="ink" />
         </span>
         <span className="hidden lg:block w-px h-6 bg-g-line" aria-hidden />
         <button
@@ -302,15 +292,6 @@ function Shell({
           {stats.streakCount}
           {stats.streakFreezes > 0 && <Snowflake className="w-3 h-3 text-g-info ml-0.5" aria-label={t.freezes(stats.streakFreezes)} />}
         </div>
-        <button
-          type="button"
-          onClick={toggleTheme}
-          aria-pressed={dark}
-          aria-label={dark ? t.themeLight : t.themeDark}
-          className="w-9 h-9 rounded-full border border-g-line bg-g-card text-g-text-2 hover:text-g-text flex items-center justify-center shrink-0"
-        >
-          {dark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-        </button>
       </header>
       {children}
     </div>

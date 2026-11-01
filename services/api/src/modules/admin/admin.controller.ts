@@ -151,6 +151,17 @@ export class AdminController {
     return this.ops.refundPayment(actor.sub, id, body, idempotencyKey?.slice(0, 100));
   }
 
+  /** Close a refunding row after Atmos confirms, or when an admin records why it is complete. */
+  @Post('payments/:id/refund/finalize')
+  @Roles(AdminRole.superadmin)
+  finalizeRefund(
+    @CurrentUser() actor: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+  ) {
+    return this.ops.finalizeRefund(actor.sub, id, body);
+  }
+
   /** Resolve refunds stuck in `refunding` (also runs every 10 minutes). */
   @Post('payments/reconcile')
   @Roles(AdminRole.superadmin)

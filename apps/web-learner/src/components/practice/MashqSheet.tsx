@@ -8,6 +8,8 @@ export function MashqSheet({
   remaining,
   missedToday,
   starting,
+  empty,
+  notice,
   onClose,
   onStart,
 }: {
@@ -15,6 +17,8 @@ export function MashqSheet({
   remaining: number | null;
   missedToday: number;
   starting: boolean;
+  empty?: boolean;
+  notice?: string | null;
   onClose: () => void;
   onStart: (count: number, repeatMissed: boolean) => void;
 }) {
@@ -38,13 +42,28 @@ export function MashqSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold text-[#101828]">{copy.cardTitle}</h2>
-        <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : copy.cardBody}</p>
+        <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : empty ? copy.noneLeft : copy.cardBody}</p>
+        {notice ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{notice}</p> : null}
         {blocked ? (
           <div className="mt-4">
             <div className="text-sm font-semibold text-[#101828] mb-3">{copy.limitTitle}</div>
             <Link to="/app/plus" className="inline-flex h-11 items-center justify-center rounded-xl bg-g-blue-700 px-4 text-sm font-semibold text-white">
               {copy.seePlus}
             </Link>
+          </div>
+        ) : empty ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={starting}
+              onClick={() => onStart(3, false)}
+              className="h-11 px-4 rounded-xl bg-g-blue-700 text-white text-sm font-semibold disabled:opacity-50"
+            >
+              {copy.retry}
+            </button>
+            <button type="button" onClick={onClose} className="h-11 px-4 rounded-xl text-sm font-semibold text-[#6b7280]">
+              {copy.later}
+            </button>
           </div>
         ) : (
           <>

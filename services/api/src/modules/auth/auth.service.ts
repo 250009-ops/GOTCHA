@@ -347,6 +347,28 @@ export class AuthService {
     return { user: this.sanitizeUser(stored.user), ...tokens };
   }
 
+  /** Idempotent. Unknown tokens still return ok so the client can always clear local state. */
+  async logout(refreshToken: string) {
+    if (isDevAuthEnabled()) this.devAuth.revokeRefresh(refreshToken);
+    if (!this.prisma.dbAvailable || !refreshToken) return { ok: true };
+    const tokenHash = this.hashToken(refreshToken);
+    await this.prisma.authRefreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  async logoutAll(userId: string) {
+    if (isDevAuthEnabled()) this.devAuth.revokeAll(userId);
+    if (!this.prisma.dbAvailable) return { ok: true };
+    await this.prisma.authRefreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
   async verifyEmail(token: string) {
     const raw = token?.trim();
     if (!raw) throw new BadRequestException('Verification token is required.');
