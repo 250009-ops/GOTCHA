@@ -18,9 +18,9 @@ const prodFree = { id: 'f', tier: 'free', name: 'Free', priceMonthly: 0, aiDaily
 const prodPlus = { id: 'p', tier: 'premium', name: 'Premium', priceMonthly: '9.00', aiDailyQuota: 1000000, importLimit: 1000000, offlineEnabled: false } as any;
 const imports = { dailyFreeImportsPerUser: 3, monthlyFreePageLimit: 50, resetCycle: 'monthly' };
 const EXPECT = {
-  en: { name: 'Free', bits: ['20 word lookups a day', '10 chapter quizzes a day', '3 free imports a day', '50 free pages of imports a month'] },
-  ru: { name: 'Бесплатно', bits: ['20 ', '10 ', '3 бесплатных импорта в день', '50 бесплатных страниц импорта в месяц'] },
-  uz: { name: 'Bepul', bits: ['Kuniga 20 ta', 'Kuniga 10 ta', 'Kuniga 3 ta bepul import', 'Oyiga 50'] },
+  en: { name: 'Free', bits: ['20 word lookups a day', '20 Mashq questions a day, across all books', '3 free imports a day', '50 free pages of imports a month'] },
+  ru: { name: 'Бесплатно', bits: ['20 ', '20 вопросов Mashq в день по всем книгам', '3 бесплатных импорта в день', '50 бесплатных страниц импорта в месяц'] },
+  uz: { name: 'Bepul', bits: ['Kuniga 20 ta', 'kuniga 20 ta Mashq savoli', 'Kuniga 3 ta bepul import', 'Oyiga 50'] },
 } as const;
 
 setConfiguredPlanLimitsForTest({});
@@ -57,7 +57,7 @@ assert.equal(paymentsUiEnabled({ PAYMENT_GATEWAY_ENABLED: 'true' } as any), true
   // admin-configured caps flow into every surface
   setConfiguredPlanLimitsForTest({ freeLookups: 25, freeQuizzes: 12 });
   const f = enrichPlan(prodFree, 'en', undefined, 25, 12, null, 3, 200, { pages: 50, cycle: 'monthly' } as any) // r3b: caps come from plan-caps (platform_settings) and are passed in;
-  assert.equal(f.aiDailyQuota, 25); assert.ok(f.features.includes('25 word lookups a day') && f.features.includes('12 chapter quizzes a day'));
+  assert.equal(f.aiDailyQuota, 25); assert.ok(f.features.includes('25 word lookups a day') && f.features.includes('20 Mashq questions a day, across all books'));
   setConfiguredPlanLimitsForTest({});
   console.log('plan-copy-final5.test: OK (en/ru/uz; 20/10/3/50; soʻm only; banned words absent; PAYMENTS_UI off hides pay-per-import)');
 })().catch((e) => { console.error(e); process.exit(1); });

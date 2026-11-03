@@ -195,7 +195,7 @@ export default function LearnerShell() {
         {/* Sidebar — always present for web; icon rail on narrow widths */}
         <div
           className={cn(
-            'shrink-0 relative h-full transition-[width] duration-200',
+            'hidden md:block shrink-0 relative h-full transition-[width] duration-200',
             highlightPractice ? 'z-50' : 'z-20',
             expanded ? 'w-60' : 'w-14',
           )}
@@ -344,16 +344,41 @@ export default function LearnerShell() {
 
           <main
             className={cn(
-              'flex-1 min-h-0 min-w-0 relative z-0 overflow-x-hidden',
+              'flex-1 min-h-0 min-w-0 relative z-0 overflow-x-hidden pb-16 md:pb-0',
               location.pathname.startsWith('/app/messages') ? 'overflow-hidden' : 'overflow-y-auto',
             )}
           >
+            <AgePrompt />
             <Outlet />
             <Onboarding onStep={setOnboardingStep} />
-            <AgePrompt />
             <LimitDialog lang={locale} />
           </main>
         </div>
+        <nav
+          className="md:hidden fixed bottom-0 inset-x-0 z-40 flex items-stretch justify-around border-t border-[#e5e7eb] bg-white pb-[env(safe-area-inset-bottom,0px)]"
+          aria-label={copy.nav.mainLabel}
+        >
+          {([...primaryNav, { path: '/app/settings', labelKey: 'settings', icon: Settings, exact: false }] as NavItem[]).map((item) => {
+            const active = isActive(item.path, item.exact);
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.path}
+                type="button"
+                aria-label={copy.nav[item.labelKey]}
+                aria-current={active ? 'page' : undefined}
+                onClick={() => navigate(item.path)}
+                className={cn(
+                  'flex flex-1 flex-col items-center justify-center gap-0.5 min-h-14 min-w-0 px-1 text-[10px] font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700',
+                  active ? 'text-g-blue-700' : 'text-[#6b7280]',
+                )}
+              >
+                <Icon className="w-5 h-5" />
+                <span className="truncate max-w-full">{copy.nav[item.labelKey]}</span>
+              </button>
+            );
+          })}
+        </nav>
       </div>
     </TooltipProvider>
   );

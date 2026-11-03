@@ -76,6 +76,10 @@ export class UpdatePreferencesDto {
   @IsBoolean()
   notificationsEnabled?: boolean;
 
+  @IsOptional()
+  @IsBoolean()
+  onboardingDone?: boolean;
+
   /** `dark` is still accepted so older clients don't get a 400. The service stores it as `system`. */
   @IsOptional()
   @IsIn(['system', 'light', 'dark'])

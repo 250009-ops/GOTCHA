@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import '../landing-premium.css';
+import { GotchaLogo } from './GotchaLogo';
 import { LandingLangSwitch, LP_LANGS, type LpLang } from './LandingLangSwitch';
 import { LANDING_COPY, SHOW_PLUS_ON_LANDING } from '../lib/landingCopy';
 import { loginUrl, registerUrl } from '../lib/links';
@@ -90,7 +91,7 @@ export function LandingHeader({ onLanding = false }: { onLanding?: boolean }) {
 
   return (
     <header ref={hdr} className={menuOpen ? 'nav menu-open' : 'nav'}><div className="wrap bar">
-      <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><span className="mark">G</span><span className="wm">GOTCHA</span></a>
+      <a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><GotchaLogo size={32} tone="light" elevated={false} className="brand-lockup" /></a>
       <ul id="nav">{nav.map(([n, id]) => <li key={n}><a href={id}>{n}</a></li>)}</ul>
       <div className="right">
         <LandingLangSwitch value={L} onChange={onLang} />
@@ -133,7 +134,7 @@ export function LandingFooter() {
   const C = LANDING_COPY[L];
   return (
     <footer><div className="wrap"><div className="grid"><div>
-      <div className="row"><a className="logo" href={`/?lang=${L}`}><span className="mark">G</span><span className="wm">GOTCHA</span></a>
+      <div className="row"><a className="logo" href={`/?lang=${L}`} aria-label="Gotcha"><GotchaLogo size={28} tone="ink" elevated={false} className="brand-lockup" /></a>
         <span id="contact" style={{ marginLeft: 'auto' }}>{C.contactLine.replace('support@gotchaa.uz', '')}<a className="mail" href="mailto:support@gotchaa.uz">support@gotchaa.uz</a></span></div>
       <div className="row fine"><span>© 2026 Gotcha · {C.entity}</span><a href={`/privacy?lang=${L}`}>{C.legal[0]}</a><a href={`/terms?lang=${L}`}>{C.legal[1]}</a><a href={`/oferta?lang=${L}`} data-footer="oferta">{LEGAL_TITLES.oferta[L]}</a></div>
       {BUILD_ID && <div className="build-id" data-build-id={BUILD_ID}>build {BUILD_ID}</div>}

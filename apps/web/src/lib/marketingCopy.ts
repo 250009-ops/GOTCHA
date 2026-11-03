@@ -51,7 +51,7 @@ const EN: MarketingCopy = {
   seo: {
     title: "GOTCHA — Tap the word you don't know. Gotcha explains it in that sentence.",
     description:
-      'Turn any text into a lesson. Tap words for AI definitions, save vocabulary with spaced repetition. English, Russian, and Uzbek.',
+      'Turn any text into a lesson. Tap words for AI definitions, then review them with flashcards. English, Russian, and Uzbek.',
   },
   nav: {
     catalog: 'Catalog',
@@ -98,17 +98,17 @@ const EN: MarketingCopy = {
       {
         n: '03',
         title: 'Track progress',
-        body: 'Build your active vocabulary vault, track daily reading streaks, and see your fluency rise tier by tier.',
+        body: 'Build your vocabulary, track daily reading streaks, and see what you have read.',
       },
     ],
   },
   features: {
-    title: 'Everything you need for reading fluency',
+    title: 'Everything you need to read in a new language',
     subtitle: 'Smarter tooling built specifically to keep your brain focused on context and comprehension.',
     items: [
       { title: 'Curated Library', body: 'Classic literature, modern short stories and articles, sorted by reading level.' },
       { title: 'Tap-to-Translate', body: 'Tap any word to view a quick definition, sentence contextual usage, and phonetic pronunciation guide instantly.' },
-      { title: 'Vocabulary Builder', body: 'Automatically save tapped words into personal decks. Review them anytime with optimized spaced repetition.' },
+      { title: 'Vocabulary Builder', body: 'Automatically save tapped words into personal decks. Review them anytime with flashcards.' },
       { title: 'Reading Streaks', body: 'Streak goals and weekly milestones that help you keep reading every day.' },
       { title: 'Import Your Own', body: 'Bring any digital material into your workspace — support for URLs, PDF, text pasting, and popular eBook formats.' },
     ],
@@ -116,7 +116,7 @@ const EN: MarketingCopy = {
   catalog: { label: 'Library', title: 'Explore the catalog', browse: 'Browse full library', empty: 'Library is being curated — check back soon.' },
   cta: {
     title: 'Start reading in a new language today',
-    subtitle: 'Build fluency through stories — not flashcards.',
+    subtitle: 'Learn words from the stories you read, then review them with flashcards.',
     button: 'Create free account',
   },
   notFound: { seoTitle: 'Page not found', title: 'Page not found', body: 'This page does not exist or has moved.', home: 'Go to the home page' },
@@ -124,7 +124,7 @@ const EN: MarketingCopy = {
 
 const RU: MarketingCopy = {
   ...EN,
-  seo: { title: 'GOTCHA — Свободно говорите, читая по-настоящему', description: 'Превратите любой текст в урок. Английский, русский и узбекский.' },
+  seo: { title: 'GOTCHA — Нажмите на незнакомое слово. Gotcha объяснит его в этом предложении.', description: 'Превратите любой текст в урок. Английский, русский и узбекский.' },
   nav: { catalog: 'Каталог', features: 'Возможности', how: 'Как это работает', signIn: 'Войти', getStarted: 'Начать', openMenu: 'Открыть меню', closeMenu: 'Закрыть меню', language: 'Язык' },
   footer: { tagline: 'Изучение языков через чтение — английский, русский и узбекский.', product: 'Продукт', legal: 'Правовая информация', roadmap: 'Дорожная карта', privacy: 'Политика конфиденциальности', terms: 'Условия использования', rights: '© 2026 GOTCHA. Все права защищены.' },
   hero: { badge: 'Изучение языка через чтение', title: 'Изучайте язык, читая истории, которые вам действительно нравятся', subtitle: 'Забудьте о скучных упражнениях. Мгновенный перевод и тексты по вашему уровню.', ctaPrimary: 'Начать бесплатно', ctaSecondary: 'Как это работает', wantToLearn: 'Хочу изучать' },
@@ -137,7 +137,7 @@ const RU: MarketingCopy = {
 
 const UZ: MarketingCopy = {
   ...EN,
-  seo: { title: 'GOTCHA — Oʻqib, erkin gapiring', description: 'Har qanday matnni darsga aylantiring. Ingliz, rus va oʻzbek.' },
+  seo: { title: 'GOTCHA — Notanish soʻzni bosing. Gotcha uni oʻsha gapda tushuntiradi.', description: 'Har qanday matnni darsga aylantiring. Ingliz, rus va oʻzbek.' },
   nav: { catalog: 'Katalog', features: 'Imkoniyatlar', how: 'Qanday ishlaydi', signIn: 'Kirish', getStarted: 'Boshlash', openMenu: 'Menyuni ochish', closeMenu: 'Menyuni yopish', language: 'Til' },
   footer: { tagline: 'Til oʻrganish oʻqish orqali — ingliz, rus va oʻzbek.', product: 'Mahsulot', legal: 'Huquqiy', roadmap: 'Reja', privacy: 'Maxfiylik', terms: 'Shartlar', rights: '© 2026 GOTCHA. Barcha huquqlar himoyalangan.' },
   hero: { badge: 'Oʻqish orqali til oʻrganish', title: 'Yoqtirgan hikoyalaringizni oʻqib, til oʻrganing', subtitle: 'Zerikarli mashqlarni unuting. Darhol tarjima va darajangizga mos matnlar.', ctaPrimary: 'Bepul boshlash', ctaSecondary: 'Qanday ishlaydi', wantToLearn: 'Oʻrganmoqchi boʻlgan tilim' },

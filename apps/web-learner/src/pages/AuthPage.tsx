@@ -61,10 +61,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [loading, setLoading] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
-  // Prefill target from the landing `lang` query only. Native starts empty so the
-  // learner chooses it themselves — do not default to English (or any other language).
+  // Native starts as the UI language. Target comes from the landing `lang` query.
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
-  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage | null>(null);
+  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage | null>(
+    !isLogin && (locale === 'uz' || locale === 'ru' || locale === 'en') ? locale : null,
+  );
   const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(
     landingLang ? [landingLang] : [],
   );
@@ -160,13 +161,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           nativeLanguage,
           targetLanguages,
           uiLanguage: locale,
-          acceptTerms: acceptTerms && acceptAi,
-          ...(acceptTerms && acceptAi ? { consentVersion: CONSENT_VERSION } : {}),
+          acceptTerms,
+          acceptAiConsent: acceptAi,
+          ...(acceptTerms ? { consentVersion: CONSENT_VERSION } : {}),
           ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {
           toast.success(copy.authToasts.checkInbox);
-          navigate(`/verify-email?email=${encodeURIComponent(result.email || email)}`);
+          navigate(`/verify-email?email=${encodeURIComponent(result.email || email)}&lang=${locale}`);
           return;
         }
         try {
@@ -245,16 +247,16 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     ? copy.auth.signUpSubtitle
                     : copy.auth.signUpSubtitle}
             </p>
-            {!isLogin && !showLanguageStep && plan === 'pay-per-import' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-g-blue-200 px-3 py-1 text-xs font-semibold text-g-blue-700 self-start">
-                <AuthIcon src={a.sparkles} size={16} />
-                {copy.auth.payPerImportBadge}
-              </div>
-            )}
-            {!isLogin && !showLanguageStep && plan === 'free' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 self-start">
-                <AuthIcon src={a.check} size={16} />
-                {copy.auth.freeForeverBadge}
+            {!isLogin && !showLanguageStep && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <AuthIcon src={a.check} size={16} />
+                  {copy.auth.freeForeverBadge}
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-g-blue-200 px-3 py-1 text-xs font-semibold text-g-blue-700">
+                  <AuthIcon src={a.sparkles} size={16} />
+                  {copy.auth.payPerImportBadge}
+                </div>
               </div>
             )}
           </div>
@@ -333,7 +335,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Alex Chen"
+                    placeholder={copy.auth.namePlaceholder}
                     className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                   />
                 </div>
@@ -350,7 +352,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
+                  placeholder={copy.auth.emailPlaceholder}
                   className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
                 />
               </div>

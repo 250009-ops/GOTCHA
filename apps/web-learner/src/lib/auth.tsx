@@ -39,6 +39,7 @@ interface AuthContextValue {
     targetLanguages: string[];
     uiLanguage?: string;
     acceptTerms?: boolean;
+    acceptAiConsent?: boolean;
     consentVersion?: string;
     birthYear?: number;
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
@@ -90,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
     setUser(profile);
     setStats({
-      streakCount: profile.streakCount ?? 0,
+      streakCount: typeof userStats.streakCount === 'number' ? userStats.streakCount : (profile.streakCount ?? 0),
       todayMinutes: Number(userStats.todayReadMinutes ?? 0),
       dailyGoalMinutes: profile.preferences?.dailyGoalMinutes ?? 15,
       wordsLearned: userStats.vocabularyTotal ?? 0,
@@ -226,6 +227,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       nativeLanguage: string;
       targetLanguages: string[];
       acceptTerms?: boolean;
+      acceptAiConsent?: boolean;
       consentVersion?: string;
       birthYear?: number;
       uiLanguage?: string;

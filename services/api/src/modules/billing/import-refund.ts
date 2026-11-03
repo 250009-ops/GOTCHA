@@ -31,6 +31,26 @@ export interface Reverser {
   reverseTransaction(p: { transactionId: number; reason?: string; idempotencyKey?: string }): Promise<unknown>;
 }
 
+const BUSY_IMPORT = new Set(['queued', 'processing', 'tokenizing']);
+
+/**
+ * Admin Atmos reverse is refused while the import is still running, while an automatic
+ * reverse is in flight or may already have moved money, and while the row is flagged
+ * for a manual look. A failed import marked refund-due (or refund_state due) stays
+ * refundable: that is the manual reverse.
+ */
+export function adminRefundBlockReason(p: {
+  needsAttention?: boolean | null;
+  refundDue?: boolean | null;
+  refundState?: string | null;
+  importStatus?: string | null;
+}): 'import_processing' | 'needs_attention' | 'auto_refund_in_progress' | null {
+  if (p.importStatus && BUSY_IMPORT.has(p.importStatus)) return 'import_processing';
+  if (p.refundState === 'processing' || p.refundState === 'reverse_failed') return 'auto_refund_in_progress';
+  if (p.needsAttention && !p.refundDue && p.refundState !== 'due') return 'needs_attention';
+  return null;
+}
+
 export function liveReverseEnabled(env = process.env): boolean {
   const v = (env.IMPORT_REFUND_LIVE_REVERSE ?? '').trim().toLowerCase();
   return !(v === '0' || v === 'false' || v === 'no' || v === 'off');
@@ -66,8 +86,8 @@ export async function settleFailedImportPayment(
   try {
     await atmos!.reverseTransaction({ transactionId: Number(payment.providerPaymentId), reason: 'Import failed', idempotencyKey: payment.id });
     await db.importPayment.updateMany({
-      where: { id: payment.id, refundState: 'processing' },
-      data: { status: ImportPaymentStatus.refunded, refundState: 'refunded', refundedAt: new Date() },
+      where: { id: payment.id, refundState: 'processing', status: ImportPaymentStatus.paid },
+      data: { status: ImportPaymentStatus.refunded, refundState: 'refunded', refundedAt: new Date(), needsAttention: false },
     });
     return { action: 'refunded', paymentId: payment.id };
   } catch (err) {
@@ -91,7 +111,9 @@ export async function prepareRetryPayment(
   userImportId: string,
 ): Promise<{ ok: true; cancelledRefund: boolean } | { ok: false; reason: 'refunded' | 'refund_in_progress' }> {
   const payment = await db.importPayment.findFirst({ where: { userImportId } });
-  if (!payment || payment.refundState == null) return { ok: true, cancelledRefund: false };
+  if (!payment) return { ok: true, cancelledRefund: false };
+  if (payment.status === ImportPaymentStatus.refunded || payment.refundState === 'refunded') return { ok: false, reason: 'refunded' };
+  if (payment.refundState == null) return { ok: true, cancelledRefund: false };
   if (payment.refundState === 'due') {
     const r = await db.importPayment.updateMany({
       where: { id: payment.id, refundState: 'due' },
@@ -100,6 +122,5 @@ export async function prepareRetryPayment(
     if (r.count === 1) return { ok: true, cancelledRefund: true };
     return { ok: false, reason: 'refund_in_progress' };
   }
-  if (payment.refundState === 'refunded' || payment.status === ImportPaymentStatus.refunded) return { ok: false, reason: 'refunded' };
   return { ok: false, reason: 'refund_in_progress' };
 }

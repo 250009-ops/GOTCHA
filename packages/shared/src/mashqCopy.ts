@@ -16,6 +16,8 @@ const mashq = {
     seePlus: 'See Plus',
     shortPage: 'This page is too short for Practice.',
     noneLeft: 'Every question on this page has been used.',
+    preparing: 'Preparing questions…',
+    gaveUp: 'Questions are still being prepared. Wait a moment and try again.',
     retry: 'Try again',
   },
   uz: {
@@ -31,6 +33,8 @@ const mashq = {
     seePlus: 'Plusni koʻrish',
     shortPage: 'Bu sahifa Mashq uchun juda qisqa.',
     noneLeft: 'Bu sahifadagi savollar tugadi.',
+    preparing: 'Savollar tayyorlanmoqda…',
+    gaveUp: 'Savollar hali tayyor emas. Birozdan keyin qayta urinib koʻring.',
     retry: 'Qayta urinish',
   },
   ru: {
@@ -46,6 +50,8 @@ const mashq = {
     seePlus: 'Смотреть Plus',
     shortPage: 'Эта страница слишком короткая для Практики.',
     noneLeft: 'Вопросы по этой странице закончились.',
+    preparing: 'Вопросы готовятся…',
+    gaveUp: 'Вопросы ещё готовятся. Подождите немного и попробуйте снова.',
     retry: 'Попробовать снова',
   },
 } as const;

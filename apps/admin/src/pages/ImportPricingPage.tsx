@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Pencil, Plus, Trash2 } from 'lucide-react';
 import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
-import { Badge, Button, Card, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Button, Card, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { cn, formatMoney, formatNumber } from '../lib/utils';
@@ -104,6 +104,7 @@ export default function ImportPricingPage() {
   const [saving, setSaving] = useState(false);
   const [limitsSaved, setLimitsSaved] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const atmosMinSom = data?.atmosMinAmountSom ?? 500;
 
@@ -115,6 +116,8 @@ export default function ImportPricingPage() {
   }
 
   async function load(nextRange = range) {
+    setLoadError(null);
+    try {
     const [res, ai] = await Promise.all([
       api<ImportPricingData>(`/admin/import-pricing?range=${encodeURIComponent(nextRange)}`),
       api<{
@@ -133,10 +136,13 @@ export default function ImportPricingPage() {
       setLookupUsersAtQuota(ai.today?.usersAtQuota ?? ai.today?.rateLimitedUsers ?? 0);
       setLookupTodayUsed(ai.today?.todayPlatformUsed ?? ai.today?.lookups ?? 0);
     }
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : 'Failed to load import pricing');
+    }
   }
 
   useEffect(() => {
-    load(range).catch(console.error);
+    void load(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
@@ -157,7 +163,7 @@ export default function ImportPricingPage() {
     try {
       const next = await api<FreeLimits>('/admin/import-pricing/limits', {
         method: 'PATCH',
-        body: JSON.stringify(limits),
+        body: JSON.stringify({ ...limits, plusDailyImportsPerUser: null, plusMonthlyPageLimit: null }),
       });
       setLimits(next);
       setLimitsSaved(true);
@@ -319,6 +325,7 @@ export default function ImportPricingPage() {
     );
   }
 
+  if (loadError && !data) return <ErrorBlock message={loadError} onRetry={() => void load(range)} />;
   if (!data || !limits) return <LoadingBlock />;
 
   return (
@@ -479,28 +486,7 @@ export default function ImportPricingPage() {
                 })}
               </div>
             </div>
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>Plus imports per day</span>
-              <Input
-                type="number"
-                min="0"
-                className="w-20"
-                placeholder="Free"
-                value={limits.plusDailyImportsPerUser ?? ''}
-                onChange={(e) => setLimits({ ...limits, plusDailyImportsPerUser: e.target.value === '' ? null : Number(e.target.value) })}
-              />
-            </label>
-            <label className="flex items-center justify-between gap-3 text-sm">
-              <span>Plus pages per month</span>
-              <Input
-                type="number"
-                min="0"
-                className="w-28"
-                placeholder="Free"
-                value={limits.plusMonthlyPageLimit ?? ''}
-                onChange={(e) => setLimits({ ...limits, plusMonthlyPageLimit: e.target.value === '' ? null : Number(e.target.value) })}
-              />
-            </label>
+            <p className="text-sm text-slate-600">Plus import benefit: 50% off paid imports. Plus uses the same free pool (3 a day, 50 pages a month).</p>
             <label className="flex items-center justify-between gap-3 text-sm">
               <span>Page reset</span>
               <Select

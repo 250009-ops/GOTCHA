@@ -18,10 +18,10 @@ for (const l of ['uz', 'ru', 'en'] as const) {
   });
   test(`${l}: Plus copy = LANDING-COPY-v2 FINAL (no daily lookup limit on Plus, Free 20)`, () => {
     assert.equal(C.plusT, 'Gotcha Plus');
-    assert.equal(C.plusB.length, 3);
+    assert.equal(C.plusB.length, 5);
     assert.match(C.plusLead, /\b20\b/); assert.match(C.plusB[0], /\b20\b/);
-    assert.match(C.plusB[1], /200/); assert.match(C.plusB[1], /\b10\b/); // quiz bullet, behind VITE_PLUS_QUIZ_CAP_LIVE
-    if (l === 'en') { assert.equal(C.plusB[0], 'No daily limit on word lookups (20 on Free)'); assert.equal(C.plusB[2], 'Everything in Free stays included'); }
+    assert.match(C.plusB[3], /200/); assert.match(C.plusB[3], /\b10\b/);
+    if (l === 'en') { assert.equal(C.plusB[0], 'No fixed daily limit on word lookups (20 on Free)'); assert.equal(C.plusB[2], 'Everything in Free stays included'); }
     if (l === 'en') { assert.ok(C.plusPrice.every((p) => p.includes('soʻm'))); }
     assert.match(C.plusPrice[0], /24[ ,]990/); assert.match(C.plusPrice[1], /199[ ,]990/);
     assert.match(C.plusOpt, /50%/);

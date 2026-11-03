@@ -11,8 +11,8 @@ for (const plan of [p, f]) {
   for (const re of BANNED) assert.ok(!re.test(text), `${re} in ${text}`);
   assert.equal(plan.offlineEnabled, false);
 }
-assert.equal(p.features[0], 'No daily limit on word lookups (20 a day on Free)', JSON.stringify(p.features));
-assert.equal(p.features[1], '200 chapter quizzes a day (10 on Free)', JSON.stringify(p.features));
+assert.equal(p.features[0], 'No fixed daily limit on word lookups (20 a day on Free)', JSON.stringify(p.features));
+assert.equal(p.features[1], 'No daily limit on Mashq (20 questions a day on Free, across all books)', JSON.stringify(p.features));
 // A stale USD-like price (9) is hidden, never shown as $.
 assert.equal(p.priceMonthly, null); assert.equal(p.priceHidden, true); assert.equal(p.autoRenew, false);
 const live = enrichPlan({ ...base, tier: 'premium', name: 'Plus', priceMonthly: 24990 }, 'en', 199990);

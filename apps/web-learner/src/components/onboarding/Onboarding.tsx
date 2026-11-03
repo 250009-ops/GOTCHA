@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CEFR_LEVELS, type CefrLevel } from '@gotcha/shared';
+import { CEFR_LEVELS, languageUiName, type CefrLevel } from '@gotcha/shared';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useCatalogLanguages } from '../../lib/catalogLanguages';
@@ -15,26 +15,32 @@ import {
 } from '../../lib/onboarding';
 import { onboardingCopy } from './copy';
 
-const FIRST_BOOKS: Record<string, { id: string; title: string; author: string }> = {
-  en: { id: 'b8b9b407-ee72-4332-adc5-37c982ebffcc', title: 'Crime and Punishment', author: 'Fyodor Dostoevsky' },
-  tr: { id: '0b029c59-aaa7-4d32-b059-acc883ca40b8', title: 'Şahmerdan', author: 'Sait Faik Abasıyanık' },
-};
-
 const SENTENCE = ['He', 'stood', 'still', 'in', 'hesitation', 'at', 'the', 'door.'];
 
-function chipClass(on: boolean) {
-  return on
-    ? 'bg-[#2107AA] text-white shadow-[0_8px_18px_rgba(33,7,170,0.28)]'
-    : 'bg-[#F7F4EE] text-[#14112B] hover:bg-[#EFEAE2]';
+const selectClass =
+  'mt-2 h-12 w-full rounded-2xl border border-[#E7E2D8] bg-white px-4 text-sm font-semibold text-[#14112B] outline-none focus:ring-2 focus:ring-[#2107AA]/30';
+
+/** Prefer the chosen level, then the nearest easier level, then the nearest harder one. */
+function bookLevels(selected: CefrLevel): CefrLevel[] {
+  const i = Math.max(0, CEFR_LEVELS.indexOf(selected));
+  const out: CefrLevel[] = [CEFR_LEVELS[i]];
+  for (let d = 1; d < CEFR_LEVELS.length && out.length < 3; d++) {
+    if (i - d >= 0) out.push(CEFR_LEVELS[i - d]);
+    if (out.length < 3 && i + d < CEFR_LEVELS.length) out.push(CEFR_LEVELS[i + d]);
+  }
+  return out;
 }
 
 export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done') => void }) {
   const navigate = useNavigate();
-  const { user, refreshProfile } = useAuth();
+  const { user, preferences, refreshProfile } = useAuth();
   const { locale } = useLearnerLocale();
   const { langs } = useCatalogLanguages();
   const copy = onboardingCopy(locale);
   const [step, setStep] = useState<OnboardingStep | 'done'>(() => (isOnboardingDone() ? 'done' : readOnboardingStep()));
+  const [book, setBook] = useState<{ id: string; title: string; author: string } | null>(null);
+  const languageSeeded = useRef(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [level, setLevel] = useState<CefrLevel>('a2');
   const [language, setLanguage] = useState('en');
   const [tapped, setTapped] = useState(false);
@@ -45,10 +51,78 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
   }, [onStep, step]);
 
   useEffect(() => {
+    if (preferences?.onboardingDone) {
+      markOnboardingDone();
+      setStep('done');
+    }
+  }, [preferences?.onboardingDone]);
+
+  useEffect(() => {
+    const lang = language || 'en';
+    const wanted = bookLevels(level);
+    setBook(null);
+    let cancel = false;
+    type Row = { id: string; title: string; author?: string | null; wordCount?: number | null; cefrLevel?: string | null };
+    Promise.all(wanted.map((cefr) =>
+      api<{ items?: Row[] }>(`/content?lang=${encodeURIComponent(lang)}&level=${cefr}&page=1&pageSize=40`)
+        .then((page) => page.items ?? [])
+        .catch(() => [] as Row[]),
+    )).then((groups) => {
+      if (cancel) return;
+      for (const items of groups) {
+        const short = items
+          .filter((item) => item.id && item.title && (item.wordCount ?? 0) >= 80 && (item.wordCount ?? 1_000_000) < 8_000)
+          .sort((a, b) => (a.wordCount ?? 0) - (b.wordCount ?? 0))[0];
+        if (short) {
+          setBook({ id: short.id, title: short.title, author: short.author || '' });
+          return;
+        }
+      }
+    }).catch(() => undefined);
+    return () => { cancel = true; };
+  }, [language, level]);
+
+  useEffect(() => {
+    if (step === 'done') return;
+    const root = dialogRef.current;
+    if (!root) return;
+    const focusable = () => Array.from(root.querySelectorAll<HTMLElement>('button, [href], input, select, textarea'))
+      .filter((el) => !el.hasAttribute('disabled'));
+    focusable()[0]?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    root.addEventListener('keydown', onKey);
+    return () => root.removeEventListener('keydown', onKey);
+  }, [step]);
+
+  useEffect(() => {
+    if (languageSeeded.current) return;
+    const primary = user?.targetLanguages?.find((t) => t.isPrimary) ?? user?.targetLanguages?.[0];
+    if (primary?.targetLanguage) {
+      languageSeeded.current = true;
+      setLanguage(primary.targetLanguage);
+      if (primary.cefrLevel) setLevel(primary.cefrLevel);
+      return;
+    }
     const native = user?.nativeLanguage;
     const first = langs.find((l) => l.code !== native)?.code;
-    if (first) setLanguage(first);
-  }, [langs, user?.nativeLanguage]);
+    if (first) {
+      languageSeeded.current = true;
+      setLanguage(first);
+    }
+  }, [langs, user]);
 
   if (step === 'done') return null;
 
@@ -57,6 +131,7 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
     if (next === 'done') {
       markOnboardingDone();
       setStep('done');
+      void api('/users/me/preferences', { method: 'PATCH', body: JSON.stringify({ onboardingDone: true }) }).catch(() => undefined);
       return;
     }
     writeOnboardingStep(next);
@@ -87,11 +162,11 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
     }
   };
 
-  const book = FIRST_BOOKS[language] ?? FIRST_BOOKS.en;
   const openBook = () => {
     writeOnboardingStep('practice');
     setStep('practice');
-    navigate(`/app/read/${book.id}`);
+    if (book) navigate(`/app/read/${book.id}`);
+    else navigate('/app');
   };
 
   const practice = step === 'practice';
@@ -100,6 +175,7 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
     <div className="fixed inset-0 z-40" data-testid="onboarding" data-onboarding-step={step}>
       <div className="absolute inset-0 bg-[#14112B]/55" />
       <div
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-title"
@@ -143,33 +219,34 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
                 {copy.levelTitle}
               </h2>
               <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.levelBody}</p>
-              <div className="mt-5 grid grid-cols-6 gap-1.5" role="group" aria-label={copy.levelTitle}>
+              <select
+                id="onboarding-level"
+                aria-label={copy.levelTitle}
+                value={level}
+                onChange={(e) => setLevel(e.target.value as CefrLevel)}
+                className={`${selectClass} mt-5`}
+              >
                 {CEFR_LEVELS.map((code) => (
-                  <button
-                    key={code}
-                    type="button"
-                    aria-pressed={level === code}
-                    onClick={() => setLevel(code)}
-                    className={`h-11 rounded-2xl text-sm font-semibold ${chipClass(level === code)}`}
-                  >
-                    {code.toUpperCase()}
-                  </button>
+                  <option key={code} value={code}>{code.toUpperCase()}</option>
                 ))}
-              </div>
-              <p className="mt-5 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A847C]">{copy.languageLabel}</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {langs.map((lang) => (
-                  <button
-                    key={lang.code}
-                    type="button"
-                    aria-pressed={language === lang.code}
-                    onClick={() => setLanguage(lang.code)}
-                    className={`h-10 px-3.5 rounded-full text-sm font-semibold ${chipClass(language === lang.code)}`}
-                  >
-                    {lang.nativeName}
-                  </button>
-                ))}
-              </div>
+              </select>
+              <label htmlFor="onboarding-language" className="mt-5 block text-[11px] font-semibold uppercase tracking-[0.14em] text-[#8A847C]">
+                {copy.languageLabel}
+              </label>
+              <select
+                id="onboarding-language"
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className={selectClass}
+              >
+                {langs
+                  .filter((lang) => lang.code !== user?.nativeLanguage)
+                  .map((lang) => (
+                    <option key={lang.code} value={lang.code}>
+                      {languageUiName(lang.code, locale)}
+                    </option>
+                  ))}
+              </select>
               <button
                 type="button"
                 disabled={busy}
@@ -242,24 +319,28 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
                 {copy.bookTitle}
               </h2>
               <p className="mt-2 text-sm leading-6 text-[#5C564F]">{copy.bookBody}</p>
-              <div className="mt-5 flex items-center gap-4 rounded-2xl border border-[#E7E2D8] bg-white p-3">
-                <img
-                  src={`${import.meta.env.BASE_URL}covers/${book.id}.jpg`}
-                  alt=""
-                  className="w-[5.25rem] aspect-[2/3] rounded-lg object-cover bg-[#F4ECDF] shadow-[0_8px_18px_rgba(20,17,43,0.16)]"
-                />
-                <div className="min-w-0">
-                  <div className="font-serif text-xl leading-tight text-[#14112B]">{book.title}</div>
-                  <div className="mt-1 text-sm text-[#5C564F]">{book.author}</div>
+              {book ? (
+                <div className="mt-5 flex items-center gap-4 rounded-2xl border border-[#E7E2D8] bg-white p-3">
+                  <img
+                    src={`${import.meta.env.BASE_URL}covers/${book.id}.jpg`}
+                    alt=""
+                    className="w-[5.25rem] aspect-[2/3] rounded-lg object-cover bg-[#F4ECDF] shadow-[0_8px_18px_rgba(20,17,43,0.16)]"
+                  />
+                  <div className="min-w-0">
+                    <div className="font-serif text-xl leading-tight text-[#14112B]">{book.title}</div>
+                    <div className="mt-1 text-sm text-[#5C564F]">{book.author}</div>
+                  </div>
                 </div>
-              </div>
-              <button
-                type="button"
-                onClick={openBook}
-                className="mt-6 h-12 w-full rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)]"
-              >
-                {copy.openBook}
-              </button>
+              ) : null}
+              {book ? (
+                <button
+                  type="button"
+                  onClick={openBook}
+                  className="mt-6 h-12 w-full rounded-2xl bg-[#2107AA] text-white text-sm font-semibold shadow-[0_10px_24px_rgba(33,7,170,0.28)]"
+                >
+                  {copy.openBook}
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={() => go('practice')}

@@ -174,8 +174,8 @@ function ContentCard({
       <div className="relative shrink-0 w-full aspect-[2/3]">
         <CoverArt item={item} className="!absolute inset-0 w-full h-full" />
       </div>
-      <div className="p-3 flex-1 flex flex-col min-h-0">
-        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-g-blue-700 transition-colors mb-1">{item.title}</div>
+      <div className="p-3 flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-g-blue-700 transition-colors mb-1 min-w-0 overflow-hidden">{item.title}</div>
         {subtitle ? (
           <div className="text-gray-400 text-xs line-clamp-2 mb-auto">{subtitle}</div>
         ) : (
@@ -215,18 +215,22 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
   const copy = useLearnerCopy();
   const open = () => openReader(navigate, item.id);
   const title = coverDisplayTitle(item);
+  const author = item.authorName?.trim();
   return (
     <div
-      className="flex h-full min-h-[11rem] overflow-hidden rounded-2xl border border-gray-100/80 bg-white cursor-pointer group"
+      className="flex overflow-hidden rounded-2xl border border-gray-100/80 bg-white cursor-pointer group"
       data-testid="continue-reading-hero"
       onClick={open}
     >
-      <div className="w-[7.5rem] sm:w-[9.5rem] shrink-0 self-stretch">
+      <div className="w-[6.75rem] sm:w-[8.25rem] shrink-0 aspect-[2/3] self-start">
         <BookCover item={item} variant="hero" resolveUrl={resolveMediaUrl} className="h-full w-full" />
       </div>
-      <div className="flex-1 min-w-0 p-4 sm:p-5 flex flex-col justify-end">
-        <span className="text-[11px] font-semibold uppercase tracking-wider mb-2 text-gray-500">{copy.libraryPage.continueReading}</span>
-        <div className="font-semibold text-gray-900 text-base leading-snug line-clamp-2 mb-3" lang={item.language}>{title}</div>
+      <div className="flex-1 min-w-0 overflow-hidden p-4 sm:px-5 flex flex-col justify-center gap-3">
+        <div className="min-w-0">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{copy.libraryPage.continueReading}</span>
+          <div className="mt-1 font-semibold text-gray-900 text-base sm:text-lg leading-snug line-clamp-2 min-w-0" lang={item.language}>{title}</div>
+          {author ? <div className="mt-0.5 text-sm text-gray-500 truncate">{author}</div> : null}
+        </div>
         <div className="flex items-center justify-between gap-3">
           {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
             <span className="text-g-blue-700 font-bold text-sm">{formatUzs(item.priceUzs ?? 0)}</span>
@@ -235,14 +239,14 @@ function ContinueReadingCard({ item }: { item: ContentItem }) {
           )}
           <Button
             size="sm"
-            className="rounded-xl h-8 px-4 text-xs font-semibold"
+            className="rounded-xl min-h-11 px-4 text-xs font-semibold"
             onClick={(e) => { e.stopPropagation(); open(); }}
           >
             {copy.libraryPage.resume} <ArrowRight className="w-3 h-3 ml-1" />
           </Button>
         </div>
-        <div className="mt-3 h-1 bg-gray-100 rounded-full overflow-hidden">
-          <div className="h-full bg-violet-500 rounded-full" style={{ width: `${item.progressPct ?? 0}%` }} />
+        <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.max(item.progressPct ? 2 : 0, Math.min(100, item.progressPct ?? 0))}%` }} />
         </div>
       </div>
     </div>
@@ -693,7 +697,7 @@ export default function LibraryPage() {
             compact
           />
         ) : view === 'grid' ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr min-w-0">
             {filtered.map((item) => (
               <ContentCard key={item.id} item={item} langFlags={langFlags} libraryReturn={browseReturnPath} />
             ))}
@@ -759,11 +763,11 @@ export default function LibraryPage() {
       {hero && (
         <div
           className={cn(
-            'grid gap-5 items-stretch',
+            'grid grid-cols-1 gap-5 items-stretch min-w-0',
             heroSideItems.length > 0 && 'lg:grid-cols-3',
           )}
         >
-          <div className={cn('min-h-[11rem]', heroSideItems.length > 0 && 'lg:col-span-1')}>
+          <div className={cn('min-w-0 self-start', heroSideItems.length > 0 && 'lg:col-span-1')}>
             <ContinueReadingCard item={hero} />
           </div>
           {heroSideItems.length > 0 && (
@@ -771,8 +775,8 @@ export default function LibraryPage() {
               className={cn(
                 'lg:col-span-2 grid gap-3 lg:gap-4 auto-rows-fr',
                 heroSideItems.length === 1 && 'grid-cols-1 max-w-xs sm:max-w-sm',
-                heroSideItems.length === 2 && 'grid-cols-2',
-                heroSideItems.length >= 3 && 'grid-cols-2 md:grid-cols-3',
+                heroSideItems.length === 2 && 'grid-cols-1 sm:grid-cols-2',
+                heroSideItems.length >= 3 && 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3',
               )}
             >
               {heroSideItems.map((item) => (

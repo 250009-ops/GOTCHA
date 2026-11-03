@@ -47,7 +47,7 @@ export function buildEmailHtml(options: EmailLayoutOptions): string {
           <tr>
             <td style="background:#6c1d95;padding:24px 28px;">
               <p style="margin:0;font-size:22px;font-weight:700;color:#ffffff;letter-spacing:-0.02em;">GOTCHA</p>
-              <p style="margin:6px 0 0;font-size:12px;color:#e9d5ff;">O‘qib erkin gapiring · Read your way to fluency</p>
+              <p style="margin:6px 0 0;font-size:12px;color:#e9d5ff;">Notanish soʻzni bosing · Tap the word you don't know</p>
             </td>
           </tr>
           <tr>
@@ -338,7 +338,7 @@ export function universityInvitationEmail(
   const text = [
     firstName.trim() ? `Assalamu alaykum, ${name}!` : 'Assalamu alaykum!',
     '',
-    'We are fellow students at New Uzbekistan University building GOTCHA — a language learning app that helps you read your way to fluency.',
+    'We are fellow students at New Uzbekistan University building GOTCHA — a language learning app that explains a word in the sentence where you met it.',
     '',
     'We are in early trials and would love your honest feedback. Please try it for free and let us know what you think.',
     '',
@@ -356,7 +356,7 @@ export function universityInvitationEmail(
     title,
     bodyHtml: `
       <p style="margin:0 0 16px;font-size:16px;color:#111827;">${greeting}</p>
-      <p>We are fellow students at <strong>New Uzbekistan University</strong> building <strong>GOTCHA</strong> — a language learning app that helps you read your way to fluency.</p>
+      <p>We are fellow students at <strong>New Uzbekistan University</strong> building <strong>GOTCHA</strong> — a language learning app that explains a word in the sentence where you met it.</p>
       <p>We are in early trials and would love your honest feedback. Please try it for free and let us know what you think.</p>
       <p>If you know <strong>friends</strong> who need a product like this, please recommend us — that helps us scale.</p>
     `,

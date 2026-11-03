@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Cpu } from 'lucide-react';
 import { HorizontalBars, LineChart } from '../components/charts';
 import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
-import { Badge, Card, DataTable, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Card, DataTable, ErrorBlock, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatNumber, initials } from '../lib/utils';
@@ -58,22 +58,27 @@ export default function AiUsagePage() {
   const [data, setData] = useState<AiUsageData | null>(null);
   const [range, setRange] = useState('today');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function load(nextRange = range) {
     setLoading(true);
+    setError(null);
     try {
       const next = await api<AiUsageData>(`/admin/ai-usage?range=${encodeURIComponent(nextRange)}`);
       setData(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load AI usage');
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load(range).catch(console.error);
+    void load(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
+  if (error && !data) return <ErrorBlock message={error} onRetry={() => void load(range)} />;
   if (!data) return <LoadingBlock />;
 
   const chartData =

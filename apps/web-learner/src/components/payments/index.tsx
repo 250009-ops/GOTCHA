@@ -39,6 +39,7 @@ export function PayTrust({ refund = true, plus = false }: { refund?: boolean; pl
       </p>
       <p data-testid="pay-seller">{t('rc.seller')}: {PAY_SELLER[locale as keyof typeof PAY_SELLER] ?? PAY_SELLER.en}</p>
       {refund && <p>{t(plus ? 'trust.refundPlus' : 'trust.refund')}</p>}
+      <p data-testid="pay-no-refund">{t('trust.noRefund')}</p>
     </div>
   );
 }

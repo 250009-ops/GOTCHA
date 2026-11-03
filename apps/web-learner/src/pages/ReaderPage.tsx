@@ -325,6 +325,9 @@ export default function ReaderPage() {
   const [mashqStarting, setMashqStarting] = useState(false);
   const [mashqNotice, setMashqNotice] = useState<string | null>(null);
   const [mashqCardHidden, setMashqCardHidden] = useState(false);
+  const mashqRetry = useRef<number | null>(null);
+  const mashqOpenRef = useRef(false);
+  mashqOpenRef.current = mashqOpen;
   useEffect(() => {
     setMashqOpen(false);
     setMashqNotice(null);
@@ -809,11 +812,20 @@ export default function ReaderPage() {
     );
   }
 
-  const startMashq = async (count: number, repeatMissed: boolean) => {
+  const startMashq = async (count: number, repeatMissed: boolean, attempt = 0, idempotencyKey = crypto.randomUUID()) => {
     if (!segment?.id || mashqStatus?.remaining === 0) return;
+    if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+    const giveUp = () => {
+      setMashqNotice(null);
+      setMashqStatus((prev) => prev
+        ? { ...prev, state: 'failed' }
+        : { state: 'failed', unseenCount: 0, missedToday: 0, remaining: mashqStatus?.remaining ?? null });
+    };
     setMashqStarting(true);
+    const preparing = mashqCopy(locale).preparing;
+    const pollsLeft = attempt < 20 && mashqOpenRef.current;
     try {
-      const started = await api<{ id: string }>('/practice/sessions', {
+      const started = await api<{ id?: string; state?: string }>('/practice/sessions', {
         method: 'POST',
         body: JSON.stringify({
           contentId: id,
@@ -822,14 +834,33 @@ export default function ReaderPage() {
           source: 'page_bank',
           count,
           repeatMissed,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey,
         }),
       });
+      if (started.state === 'pending' || !started.id) {
+        if (!pollsLeft) {
+          giveUp();
+          return;
+        }
+        setMashqNotice(preparing);
+        setMashqStatus((prev) => prev ? { ...prev, state: 'pending' } : { state: 'pending', unseenCount: 0, missedToday: 0, remaining: mashqStatus?.remaining ?? null });
+        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey); }, 3000);
+        return;
+      }
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
       navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}&segmentId=${segment.id}`);
     } catch (e) {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
       const message = e instanceof Error ? e.message : copy.commonExt.error;
-      if (code === 'quiz_empty') {
+      if (code === 'quiz_pending') {
+        if (!pollsLeft) {
+          giveUp();
+          return;
+        }
+        setMashqNotice(message || preparing);
+        setMashqStatus((prev) => prev ? { ...prev, state: 'pending' } : prev);
+        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey); }, 3000);
+      } else if (code === 'quiz_empty') {
         setMashqNotice(message || mashqCopy(locale).noneLeft);
         setMashqStatus((prev) => prev ? { ...prev, state: 'empty', unseenCount: 0 } : prev);
       } else if (code === 'mashq_burst') toast.message(message);
@@ -918,8 +949,43 @@ export default function ReaderPage() {
         <div className="flex items-center gap-0.5 shrink-0">
           <button
             type="button"
+            onClick={() => {
+              const order = [1.3, 1.6, 1.9, 2.2] as const;
+              const cur = preferences?.readerLineSpacing ?? 1.5;
+              const next = order.find((n) => n > cur + 0.05) ?? order[0];
+              void updatePreferences({ readerLineSpacing: next });
+            }}
+            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
+            aria-label={copy.settings.lineSpacing}
+          >
+            Aa
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              const order = ['light', 'sepia', 'dark'] as const;
+              const cur = preferences?.readerTheme ?? 'light';
+              const next = order[(order.indexOf(cur as typeof order[number]) + 1) % order.length];
+              void updatePreferences({ readerTheme: next });
+            }}
+            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
+            aria-label={copy.settings.readerTheme}
+          >
+            {readerTheme === 'dark' ? '☾' : readerTheme === 'sepia' ? '◑' : '☼'}
+          </button>
+          <button
+            type="button"
+            aria-pressed={preferences?.ttsEnabled !== false}
+            onClick={() => { void updatePreferences({ ttsEnabled: preferences?.ttsEnabled === false }); }}
+            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
+            aria-label={copy.settings.tts}
+          >
+            ♪
+          </button>
+          <button
+            type="button"
             onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))}
-            className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
+            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
             aria-label={copy.reader.zoomOut}
           >
             <Minus className="w-3.5 h-3.5" />
@@ -928,7 +994,7 @@ export default function ReaderPage() {
           <button
             type="button"
             onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))}
-            className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
+            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
             aria-label={copy.reader.zoomIn}
           >
             <Plus className="w-3.5 h-3.5" />
@@ -1412,8 +1478,14 @@ export default function ReaderPage() {
         missedToday={mashqStatus?.missedToday ?? 0}
         starting={mashqStarting}
         empty={mashqStatus?.state === 'empty'}
+        preparing={mashqStatus?.state === 'pending'}
+        failed={mashqStatus?.state === 'failed'}
         notice={mashqNotice}
-        onClose={() => { setMashqOpen(false); setMashqNotice(null); }}
+        onClose={() => {
+          if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+          setMashqOpen(false);
+          setMashqNotice(null);
+        }}
         onStart={(count, repeat) => { setMashqNotice(null); void startMashq(count, repeat); }}
       />
     </div>

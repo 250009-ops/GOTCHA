@@ -27,7 +27,6 @@ import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { surfaceCopy } from '@gotcha/shared';
-import { PromoCodeField } from '../components/PromoCodeField';
 import { CardForm, OtpForm, PayTrust, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
 import { refundRequestHref } from '@gotcha/shared';
 import { cancelScreen } from '@gotcha/shared';
@@ -399,6 +398,7 @@ function PaymentConfirmModal({
   loading: boolean;
 }) {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const [step, setStep] = useState<PaymentStep>('price');
   const [paymentId, setPaymentId] = useState<string | null>(null);
   const pay = usePay();
@@ -411,7 +411,6 @@ function PaymentConfirmModal({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [, setCanResendOtp] = useState(false);
-  const [promoQuote, setPromoQuote] = useState<import('../lib/importBilling').ImportQuote | null>(null);
 
   useEffect(() => {
     if (state.open) {
@@ -424,7 +423,6 @@ function PaymentConfirmModal({
       setError(null);
       setLoading(false);
       setCanResendOtp(false);
-      setPromoQuote(null);
     }
   }, [state.open]);
 
@@ -438,25 +436,7 @@ function PaymentConfirmModal({
 
   if (!state.quote) return null;
 
-  const { quote: baseQuote, onPaid, importTitle, importType } = state;
-  const quote = promoQuote ?? baseQuote;
-  const applyPromo = async (code: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const { quoteImport } = await import('../lib/importBilling');
-      setPromoQuote(await quoteImport({
-        importType: baseQuote.importType as 'paste' | 'url' | 'pdf' | 'epub',
-        contentFormat: baseQuote.contentFormat,
-        pageCount: baseQuote.estimatedPages,
-        promoCode: code,
-      }));
-    } catch (err) {
-      setError(pay.errOr(err, copy.errors.failedStartPayment));
-    } finally {
-      setLoading(false);
-    }
-  };
+  const { quote, onPaid, importTitle, importType } = state;
   const displayTitle = importTitle || 'Your Import';
   const typeLabel = importType === 'pdf' || importType === 'epub'
     ? importType.toUpperCase()
@@ -602,7 +582,7 @@ function PaymentConfirmModal({
 
             <div className="flex items-center justify-center gap-4 w-full px-4 py-0.5">
               <span className="text-[#101828] text-[13px] font-semibold">
-                ~{quote.estimatedPages.toLocaleString()} {quote.estimatedPages === 1 ? 'page' : 'pages'}
+                ~{quote.estimatedPages.toLocaleString(locale === 'ru' ? 'ru-RU' : locale === 'uz' ? 'uz-Latn-UZ' : 'en-GB')} {locale === 'ru' ? (quote.estimatedPages === 1 ? 'страница' : 'страниц') : locale === 'uz' ? 'sahifa' : (quote.estimatedPages === 1 ? 'page' : 'pages')}
               </span>
               {quote.tier && (
                 <>
@@ -643,10 +623,6 @@ function PaymentConfirmModal({
                     ? copy.importPage.lengthNotPriced
                     : formatFreeAllowance(quote.freeLimits, copy.billing)}
               </p>
-            )}
-
-            {quote.requiresPayment && (
-              <PromoCodeField applied={quote.promo?.code ?? null} busy={loading} onApply={applyPromo} onRemove={() => setPromoQuote(null)} />
             )}
 
             {error && (
@@ -736,6 +712,7 @@ function blockedByFreeLimit(quote: ImportQuote): boolean {
 export default function ImportPage() {
   const payments = usePaymentsEnabled();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const navigate = useNavigate();
   const [tab, setTab] = useState<ImportTab>('url');
   const [imports, setImports] = useState<ImportItem[]>([]);
@@ -1220,7 +1197,7 @@ export default function ImportPage() {
                   >
                     {copy.importPage.previous}
                   </Button>
-                  <span className="text-xs text-gray-400">Page {page} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}</span>
+                  <span className="text-xs text-gray-400">{locale === 'ru' ? `Страница ${page} из ${Math.max(1, Math.ceil(total / PAGE_SIZE))}` : locale === 'uz' ? `${page}-sahifa / ${Math.max(1, Math.ceil(total / PAGE_SIZE))}` : `Page ${page} of ${Math.max(1, Math.ceil(total / PAGE_SIZE))}`}</span>
                   <Button
                     variant="outline"
                     size="sm"

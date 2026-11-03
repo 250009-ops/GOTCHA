@@ -185,7 +185,7 @@ export class MarketingService {
       features: [
         t.library,
         t.lookupsDay(aiDailyQuota),
-        t.quizzesDay(caps.free.quizzes),
+        t.quizzesDay(caps.free.mashq),
         t.importsDay(importLimit),
         t.importPages(pageLimit, importFree.resetCycle),
         t.review,

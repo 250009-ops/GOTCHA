@@ -38,7 +38,7 @@ export const LANDING_COPY = {
    "Books and texts sorted by language. Gotcha remembers the page you stopped on.",
    "Paste text or a link, or upload a PDF or EPUB. Scanned PDFs work too, and the book is split into chapters for you.",
    "The explanation fits the sentence in front of you, not a whole dictionary entry. Long passages can be translated or read aloud.",
-   "Mark the words you already know, and review the new ones with spaced-repetition flashcards.",
+   "Mark the words you already know, and review the new ones with flashcards.",
    "When you finish a chapter, a short AI quiz checks whether you followed what happened in it.",
    "Your streak and reading stats sit on one page, and you choose how many minutes a day you want to read."
   ],
@@ -47,11 +47,13 @@ export const LANDING_COPY = {
   "lt": "Many languages",
   "lb": "The library has books in many languages, and you can bring in a text of your own when you need one. Gotcha is made for people who speak Uzbek, Russian or English.",
   "plusT": "Gotcha Plus",
-  "plusLead": "Free gives you 20 word lookups a day, and they can run out mid-chapter. Plus has no daily limit on word lookups.",
+  "plusLead": "Free gives you 20 word lookups a day, and they can run out mid-chapter. Plus has no fixed daily limit on word lookups.",
   "plusB": [
-   "No daily limit on word lookups (20 on Free)",
-   "200 chapter quizzes a day (10 on Free)",
-   "Everything in Free stays included"
+   "No fixed daily limit on word lookups (20 on Free)",
+   "No daily limit on Mashq (20 questions a day on Free, across all books)",
+   "Everything in Free stays included",
+   "10 chapter quizzes a day on Free, 200 with Plus",
+   "50% off every paid import"
   ],
   "plusOpt": "50% off every paid import",
   "plusPrice": [
@@ -69,13 +71,14 @@ export const LANDING_COPY = {
    "Does Plus renew by itself?"
   ],
   "faq_answers": [
-   "No. Free gives you 20 word lookups and 10 quizzes a day, plus 3 imports a day of pasted text or an article link, up to 50 pages a month. Daily limits reset at 00:00 Tashkent time.",
-   "Yes. Pasted text and article links are free within the Free limits. PDF and EPUB imports (scanned PDFs too) are paid per import, from 12,000 soʻm for 1–10 pages. Plus gets 50% off every paid import.",
+   "No. Free gives you 20 word lookups and 20 Mashq questions a day across all books, 10 chapter quizzes a day, plus 3 imports a day and up to 50 pages a month. Plus gets 50% off every paid import. Daily limits reset at 00:00 Tashkent time. Monthly page limits reset at 00:00 on the 1st.",
+   "Yes. Pasted text, an article link, news, an ebook (PDF or EPUB), research and your own file all count inside the free quota. You pay per import only after 3 a day or 50 pages a month, from 12,000 soʻm for 1–10 pages. Plus gets 50% off every paid import.",
    "Many. Pick a book from the library, or import a text in the language you're learning.",
    "Yes. Settings lets you download your data or delete your account.",
    "No. Plus costs 24,990 soʻm for 30 days or 199,990 soʻm for 365 days, paid once. When it ends you go back to Free, and your words and progress stay."
   ],
   "fh": "Pick a book and read the first page.",
+  "dataUse": "AI features send the text they need to OpenAI (USA). Your data is stored in Uzbekistan. See the Privacy Policy.",
   "cta_final": "Start reading",
   "fn": "Works in the browser. You need an internet connection.",
   "contactLine": "Questions or problems: support@gotchaa.uz",
@@ -122,7 +125,7 @@ export const LANDING_COPY = {
    "Tillar boʻyicha kitob va matnlar. Qaysi sahifada toʻxtaganingizni Gotcha eslab qoladi.",
    "Matn yoki havolani joylang, PDF yoki EPUB yuklang. Skanerlangan PDF ham boʻladi, kitobni boblarga oʻzi ajratadi.",
    "Izoh lugʻatdagi uzun roʻyxat emas, koʻz oldingizdagi gap haqida. Uzun parchani bir yoʻla tarjima qilish yoki eshitish mumkin.",
-   "Biladigan soʻzlaringizni belgilab qoʻying, yangilarini esa kartalar bilan oraliq usulda takrorlang.",
+   "Biladigan soʻzlaringizni belgilab qoʻying, yangilarini esa kartochkalar bilan takrorlang.",
    "Bobni tugatganingizda qisqa AI test voqealarni toʻgʻri tushunganingizni tekshirib beradi.",
    "Ketma-ket kunlar va oʻqish statistikasi bitta sahifada. Kuniga necha daqiqa oʻqishni oʻzingiz belgilaysiz."
   ],
@@ -131,11 +134,13 @@ export const LANDING_COPY = {
   "lt": "Koʻp tillar",
   "lb": "Kutubxonada koʻp tillardagi kitoblar bor, kerakli matnni esa oʻzingiz ham yuklay olasiz. Gotcha oʻzbek, rus yoki ingliz tilida gaplashadiganlar uchun qilingan.",
   "plusT": "Gotcha Plus",
-  "plusLead": "Bepulda kuniga 20 ta soʻz qidirish bor, ular bob oʻrtasida tugashi mumkin. Plusʼda soʻz qidirishda kunlik cheklov yoʻq.",
+  "plusLead": "Bepulda kuniga 20 ta soʻz izohi bor, ular bob oʻrtasida tugashi mumkin. Plusʼda soʻz izohlari uchun belgilangan kunlik limit yoʻq.",
   "plusB": [
-   "Soʻz qidirishda kunlik cheklov yoʻq (bepulda 20)",
-   "Kuniga 200 ta bob testi (bepul tarifda 10 ta)",
-   "Bepul tarifdagi hamma narsa qoladi"
+   "Soʻz izohlari uchun belgilangan kunlik limit yoʻq (bepulda 20)",
+   "Mashqda kunlik cheklov yoʻq (bepul tarifda barcha kitoblar boʻyicha kuniga 20 ta savol)",
+   "Bepul tarifdagi hamma narsa qoladi",
+   "Bepulda kuniga 10 ta bob testi, Plus bilan 200 ta",
+   "Har bir pullik importga 50% chegirma"
   ],
   "plusOpt": "Har bir pullik importga 50% chegirma",
   "plusPrice": [
@@ -153,13 +158,14 @@ export const LANDING_COPY = {
    "Plus avtomatik uzaytiriladimi?"
   ],
   "faq_answers": [
-   "Yoʻq. Bepul tarifda kuniga 20 ta soʻz izohi va 10 ta test bor. Yana kuniga 3 ta import (joylangan matn yoki maqola havolasi), oyiga 50 sahifagacha. Kunlik limitlar Toshkent vaqti bilan soat 00:00 da yangilanadi.",
-   "Ha. Bepul tarif limitlari doirasida joylangan matn va maqola havolalari bepul. PDF va EPUB importi (skanerlangan PDF ham) har biri uchun alohida toʻlanadi: 1–10 sahifa 12 000 soʻmdan. Plus bilan har bir pullik import 50% arzon.",
+   "Yoʻq. Bepul tarifda kuniga 20 ta soʻz izohi va barcha kitoblar boʻyicha 20 ta Mashq savoli, hamda kuniga 10 ta bob testi bor. Yana kuniga 3 ta import va oyiga 50 sahifa. Har bir pullik importga 50% chegirma. Kunlik limitlar Toshkent vaqti bilan soat 00:00 da yangilanadi. Oylik sahifa limiti har oyning 1-sanasida soat 00:00 da yangilanadi.",
+   "Ha. Joylangan matn, maqola havolasi, yangilik, elektron kitob (PDF yoki EPUB), tadqiqot va oʻz faylingiz bepul kvota ichida. Toʻlov faqat kuniga 3 ta yoki oyiga 50 sahifa tugagach, har bir import uchun: 1–10 sahifa 12 000 soʻmdan. Har bir pullik importga 50% chegirma.",
    "Koʻp. Kutubxonadan kitob tanlang yoki oʻrganayotgan tilingizdagi matnni yuklang.",
    "Ha. Sozlamalarda maʼlumotlaringizni yuklab olishingiz yoki akkauntni oʻchirishingiz mumkin.",
    "Yoʻq. Plus 30 kunga 24 990 soʻm yoki 365 kunga 199 990 soʻm, bir marta toʻlanadi. Muddat tugagach, bepul tarifga qaytasiz, soʻzlaringiz va natijalaringiz saqlanib qoladi."
   ],
   "fh": "Kitob tanlang va birinchi sahifasini oʻqing.",
+  "dataUse": "AI funksiyalari kerakli matnni OpenAIʼga (AQSh) yuboradi. Maʼlumotlaringiz Oʻzbekistonda saqlanadi. Batafsil — Maxfiylik siyosatida.",
   "cta_final": "Oʻqishni boshlash",
   "fn": "Brauzerda ishlaydi, internet kerak boʻladi.",
   "contactLine": "Savol yoki muammo boʻlsa: support@gotchaa.uz",
@@ -215,11 +221,13 @@ export const LANDING_COPY = {
   "lt": "Много языков",
   "lb": "В библиотеке есть книги на многих языках, а нужный текст можно загрузить самому. Gotcha сделан для тех, кто говорит по-узбекски, по-русски или по-английски.",
   "plusT": "Gotcha Plus",
-  "plusLead": "В бесплатном плане 20 подсказок в день, и они могут закончиться посреди главы. В Plus нет дневного лимита на подсказки по словам.",
+  "plusLead": "В бесплатном плане 20 пояснений в день, и они могут закончиться посреди главы. В Plus нет фиксированного дневного лимита на пояснения слов.",
   "plusB": [
-   "Без дневного лимита на подсказки (в бесплатном 20)",
-   "200 тестов по главам в день (в бесплатном 10)",
-   "Всё из бесплатного плана остаётся"
+   "Без фиксированного дневного лимита на пояснения (в бесплатном 20)",
+   "Без дневного лимита на Mashq (в бесплатном плане 20 вопросов в день по всем книгам)",
+   "Всё из бесплатного плана остаётся",
+   "10 тестов по главам в день на бесплатном плане, 200 с Plus",
+   "Скидка 50% на каждый платный импорт"
   ],
   "plusOpt": "Скидка 50% на каждый платный импорт",
   "plusPrice": [
@@ -237,13 +245,14 @@ export const LANDING_COPY = {
    "Plus продлевается сам?"
   ],
   "faq_answers": [
-   "Нет. На бесплатном плане 20 подсказок по словам и 10 тестов в день, а ещё 3 импорта в день (вставленный текст или ссылка на статью), до 50 страниц в месяц. Дневные лимиты обновляются в 00:00 по Ташкенту.",
-   "Да. Вставленный текст и ссылки на статьи бесплатны в пределах бесплатных лимитов. Импорт PDF и EPUB (сканы тоже) оплачивается отдельно за каждый файл: от 12 000 сум за 1–10 страниц. С Plus каждый платный импорт на 50% дешевле.",
+   "Нет. На бесплатном плане 20 пояснений слов и 20 вопросов Mashq в день по всем книгам, 10 тестов по главам в день, а ещё 3 импорта в день и до 50 страниц в месяц. Скидка 50% на каждый платный импорт. Дневные лимиты обновляются в 00:00 по Ташкенту. Месячный лимит страниц обновляется в 00:00 1-го числа.",
+   "Да. Вставленный текст, ссылка на статью, новость, электронная книга (PDF или EPUB), исследование и свой файл входят в бесплатную квоту. Платите за импорт только после 3 в день или 50 страниц в месяц: от 12 000 сум за 1–10 страниц. Скидка 50% на каждый платный импорт.",
    "Много. Выберите книгу в библиотеке или загрузите текст на языке, который учите.",
    "Да. В настройках можно скачать свои данные или удалить аккаунт.",
    "Нет. Plus стоит 24 990 сум за 30 дней или 199 990 сум за 365 дней, оплата разовая. Когда срок закончится, вы вернётесь на бесплатный план, а слова и прогресс останутся."
   ],
   "fh": "Выберите книгу и прочитайте первую страницу.",
+  "dataUse": "AI-функции передают нужный текст в OpenAI (США). Ваши данные хранятся в Узбекистане. Подробнее — в Политике конфиденциальности.",
   "cta_final": "Начать читать",
   "fn": "Работает в браузере, нужен интернет.",
   "contactLine": "Вопросы и проблемы: support@gotchaa.uz",

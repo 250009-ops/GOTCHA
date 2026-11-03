@@ -59,6 +59,8 @@ export interface LearnerCopy {
     payPerImportBadge: string;
     freeForeverBadge: string;
     fullName: string;
+    namePlaceholder: string;
+    emailPlaceholder: string;
     email: string;
     password: string;
     passwordPlaceholderLogin: string;
@@ -404,6 +406,8 @@ const EN: LearnerCopy = {
     payPerImportBadge: 'Paid per import through Atmos',
     freeForeverBadge: 'Free plan',
     fullName: 'Full name',
+    namePlaceholder: 'Alex Chen',
+    emailPlaceholder: 'you@email.com',
     email: 'Email',
     password: 'Password',
     passwordPlaceholderLogin: 'Your password',
@@ -431,11 +435,11 @@ const EN: LearnerCopy = {
     privacyPolicy: 'Privacy Policy',
     legalSuffix: '.',
     readYourWay: 'Read your way',
-    readYourWayBold: 'to fluency.',
+    readYourWayBold: 'from the stories you read.',
     authTagline: 'The reading-first language app that makes every page a lesson.',
     authFeatures: [
       { title: 'Read real content', desc: 'Books, articles, and news in the languages you want to learn' },
-      { title: 'Build vocabulary', desc: 'AI-powered word lookup with spaced repetition' },
+      { title: 'Build vocabulary', desc: 'AI-powered word lookup, then flashcard review' },
       { title: 'Track your progress', desc: 'Streaks and reading stats' },
       { title: 'Learn in context', desc: 'Words stick when you learn them from real sentences' },
     ],
@@ -757,6 +761,8 @@ const RU: LearnerCopy = {
     payPerImportBadge: 'Оплата за каждый импорт через Atmos',
     freeForeverBadge: 'Бесплатный тариф',
     fullName: 'Полное имя',
+    namePlaceholder: 'Алия Каримова',
+    emailPlaceholder: 'имя@почта.ru',
     email: 'Email',
     password: 'Пароль',
     passwordPlaceholderLogin: 'Ваш пароль',
@@ -784,11 +790,11 @@ const RU: LearnerCopy = {
     privacyPolicy: 'Политикой конфиденциальности',
     legalSuffix: ' GOTCHA.',
     readYourWay: 'Читайте',
-    readYourWayBold: 'к свободному языку.',
+    readYourWayBold: 'и учите язык.',
     authTagline: 'Приложение для изучения языка через чтение.',
     authFeatures: [
       { title: 'Настоящие тексты', desc: 'Книги, статьи и новости на изучаемых языках' },
-      { title: 'Словарь', desc: 'ИИ-перевод и интервальное повторение' },
+      { title: 'Словарь', desc: 'ИИ-пояснение и карточки для повторения' },
       { title: 'Прогресс', desc: 'Серии и статистика чтения' },
       { title: 'В контексте', desc: 'Слова запоминаются из реальных предложений' },
     ],
@@ -1112,8 +1118,10 @@ const UZ: LearnerCopy = {
     signUpSubtitle: 'Oʻqishni boshlash uchun roʻyxatdan oʻting.',
     languageStepSubtitle: 'Tilni qidiring va qoʻshing. Sozlamalarda yana qoʻshishingiz mumkin.',
     payPerImportBadge: 'Import Atmos orqali har bir fayl uchun toʻlanadi',
-    freeForeverBadge: 'Bepul reja',
+    freeForeverBadge: 'Bepul tarif',
     fullName: 'Toʻliq ism',
+    namePlaceholder: 'Aziza Karimova',
+    emailPlaceholder: 'ism@pochta.uz',
     email: 'Email',
     password: 'Parol',
     passwordPlaceholderLogin: 'Parolingiz',
@@ -1141,11 +1149,11 @@ const UZ: LearnerCopy = {
     privacyPolicy: 'Maxfiylik siyosati',
     legalSuffix: 'ga rozilik bildirasiz.',
     readYourWay: 'Oʻqib',
-    readYourWayBold: 'erkin gapiring.',
+    readYourWayBold: 'oʻqigan hikoyalaringizdan.',
     authTagline: 'Har bir sahifa dars boʻladigan oʻqishga asoslangan til ilovasi.',
     authFeatures: [
       { title: 'Haqiqiy kontent', desc: 'Oʻrganmoqchi boʻlgan tillarda kitoblar, maqolalar va yangiliklar' },
-      { title: 'Lugʻat', desc: 'Sunʼiy intellekt tarjimasi va interval takrorlash' },
+      { title: 'Lugʻat', desc: 'Sunʼiy intellekt izohi va kartochkalar' },
       { title: 'Progress', desc: 'Seriyalar va oʻqish statistikasi' },
       { title: 'Kontekstda', desc: 'Soʻzlar haqiqiy jumlalardan yodlanadi' },
     ],
@@ -1291,7 +1299,7 @@ const UZ: LearnerCopy = {
     dailyNewWords: 'Kuniga yangi soʻzlar',
     dailyNewWordsHint: 'Mashq qancha yangi soʻz kiritishi mumkin',
     minutesLabel: (n) => `${n} daqiqa`,
-    mashqLine: (used, quota) => (quota === null ? 'Mashq: kunlik limit yoʻq' : `Mashq: bugun ${used}/${quota}`),
+    mashqLine: (used, quota) => (quota === null ? 'Mashq: kunlik limit yoʻq' : `Mashq: ${used}/${quota} bugun`),
     close: 'Yopish',
   },
   library: {

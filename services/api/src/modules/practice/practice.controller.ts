@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Get, Header, Param, ParseUUIDPipe, Post, Query, Res, StreamableFile } from '@nestjs/common';
+import type { Response } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { ApiTags } from '@nestjs/swagger';
 import { CurrentUser, AuthUserPayload } from '../../common/decorators';
@@ -59,8 +60,14 @@ export class PracticeController {
   }
 
   @Post('sessions')
-  start(@CurrentUser() user: AuthUserPayload, @Body() dto: StartPracticeDto) {
-    return this.practice.startSession(user.sub, dto);
+  async start(
+    @CurrentUser() user: AuthUserPayload,
+    @Body() dto: StartPracticeDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const out = await this.practice.startSession(user.sub, dto);
+    if (out && typeof out === 'object' && (out as { state?: string }).state === 'pending') res.status(202);
+    return out;
   }
 
   @Post('sessions/:id/answers')

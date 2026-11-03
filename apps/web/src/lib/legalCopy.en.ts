@@ -8,7 +8,7 @@ export const LEGAL_EN: LegalCopyBundle = {
     lastUpdatedLabel: 'Last updated:',
     lastUpdated: 'August 6, 2026',
     intro:
-      'Please read these Terms of Service carefully before using GOTCHA. These Terms govern your access to and use of our reading-based language tools, automated spaced repetition algorithms, custom document processing services, and AI assistance modules.',
+      'Please read these Terms of Service carefully before using GOTCHA. These Terms govern your access to and use of our reading-based language tools, flashcard review (FSRS), custom document processing services, and AI assistance modules.',
     tocTitle: 'Table of Contents',
     sections: [
       {
@@ -32,7 +32,7 @@ export const LEGAL_EN: LegalCopyBundle = {
         number: '3',
         title: 'The Service',
         paragraphs: [
-          'GOTCHA provides a reading-first language learning platform including, but not limited to, digitized texts, custom vocabulary practice databases, spaced repetition system (SRS) scheduling, and AI-assisted contextual word lookup interfaces.',
+          'GOTCHA provides a reading-first language learning platform including, but not limited to, digitized texts, custom vocabulary practice databases, flashcard review (FSRS), and AI-assisted contextual word lookup interfaces.',
         ],
       },
       {

@@ -10,7 +10,7 @@ import { MARKETING_URL } from '../lib/links';
 
 type Offer = { enabled: boolean; plans: { days: number; priceUzs: number }[]; active: boolean; expiresAt: string | null; playActive?: boolean;
   /** Admin config (plan aiDailyQuota, platform Free default, plus.benefits.importDiscountPct). */
-  limits?: { plusLookups: number | null; freeLookups: number; plusQuizzes?: number; freeQuizzes?: number; importDiscountPct: number } };
+  limits?: { plusLookups: number | null; freeLookups: number; plusQuizzes?: number; freeQuizzes?: number; freeMashq?: number; plusMashq?: number | null; importDiscountPct: number } };
 type Step = 'offer' | 'card' | 'otp';
 
 /** Extend rule (13:43): new end = max(now, current end) + N days. */
@@ -47,7 +47,7 @@ export default function PlusPage() {
   const p30 = offer?.plans.find((p) => p.days === 30);
   const savePct = p30 && plan && days === 365 ? Math.round((1 - plan.priceUzs / (12 * p30.priceUzs)) * 100) : null;
 
-  const nums = { plus: offer?.limits?.plusLookups ?? 0, free: offer?.limits?.freeLookups ?? 0, pct: offer?.limits?.importDiscountPct ?? 0, plusQ: offer?.limits?.plusQuizzes ?? 0, freeQ: offer?.limits?.freeQuizzes ?? 0 };
+  const nums = { plus: offer?.limits?.plusLookups ?? 0, free: offer?.limits?.freeLookups ?? 0, pct: offer?.limits?.importDiscountPct ?? 0, plusQ: offer?.limits?.plusQuizzes ?? 0, freeQ: typeof offer?.limits?.freeMashq === 'number' ? offer.limits.freeMashq : 20 };
   // plusLookups null = no daily limit (Marketing PLUS-OFFER §4 copy); a configured number uses the {plus} templates.
   const plusCap = offer?.limits ? offer.limits.plusLookups ?? null : null;
   const tf = (k: Parameters<typeof t>[0]) => (plusCap == null && nums.free > 0 && k === 'plus.b1' ? plusLookupsBullet(null, nums.free, locale)

@@ -26,9 +26,20 @@ const AXIS_TICK = { fill: '#99a1af', fontSize: 11, fontWeight: 500 } as const;
 const GRID_STROKE = '#f3f4f6';
 const AXIS_STROKE = '#e5e7eb';
 
+function chartLocale(): string {
+  try {
+    const stored = localStorage.getItem('gotcha.learner.locale');
+    if (stored === 'ru') return 'ru-RU';
+    if (stored === 'uz') return 'uz-Latn-UZ';
+  } catch {
+    /* ignore */
+  }
+  return 'en-GB';
+}
+
 function formatShortDate(iso: string) {
   const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(chartLocale(), { month: 'short', day: 'numeric' });
 }
 
 function niceMax(max: number) {
@@ -75,7 +86,7 @@ function ChartTooltipShell({
     <div className="rounded-xl border border-[#e5e7eb] bg-white px-3 py-2 shadow-lg shadow-violet-500/10">
       <div className="text-[11px] font-medium text-[#99a1af]">{tipDateLabel(String(label ?? ''))}</div>
       <div className="mt-0.5 text-sm font-semibold text-gray-900">
-        {Number.isFinite(value) ? value.toLocaleString('en-US') : '—'}
+        {Number.isFinite(value) ? value.toLocaleString(chartLocale()) : '—'}
         {valueSuffix ? ` ${valueSuffix}` : ''}
         {valueLabel ? (
           <span className="ml-1 text-xs font-medium text-[#99a1af]">{valueLabel}</span>
@@ -346,7 +357,7 @@ export function HeatmapCalendar({
       if (month !== lastMonth) {
         monthLabels.push({
           week: wi,
-          label: new Date(`${first.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' }),
+          label: new Date(`${first.date}T00:00:00`).toLocaleDateString(chartLocale(), { month: 'short' }),
         });
         lastMonth = month;
       }

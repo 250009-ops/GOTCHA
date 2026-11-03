@@ -106,6 +106,7 @@ export interface UserPreferences {
   ttsEnabled: boolean;
   dailyGoalMinutes: number;
   notificationsEnabled: boolean;
+  onboardingDone?: boolean;
 }
 
 export interface ContentItem {

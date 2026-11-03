@@ -85,9 +85,17 @@ export const LIMIT_COPY: Record<LimitLang, LimitCopy> = {
 
 export const limitLang = (l?: string | null): LimitLang => (l === 'ru' || l === 'uz' ? l : 'en');
 
-/** Calendar date of an instant in Asia/Tashkent, e.g. "1 Nov 2026" (locale-formatted). */
+const UZ_MONTHS = ['yanvar', 'fevral', 'mart', 'aprel', 'may', 'iyun', 'iyul', 'avgust', 'sentabr', 'oktabr', 'noyabr', 'dekabr'];
+
+/** Calendar date of an instant in Asia/Tashkent, e.g. "1 Nov 2026" / "1-dekabr 2026". */
 export function tashkentDate(iso: string, lang: LimitLang): string {
-  const loc = lang === 'ru' ? 'ru-RU' : lang === 'uz' ? 'uz-Latn-UZ' : 'en-GB';
+  const off = 5 * 3_600_000;
+  const l = new Date(new Date(iso).getTime() + off);
+  const day = l.getUTCDate();
+  const month = l.getUTCMonth();
+  const year = l.getUTCFullYear();
+  if (lang === 'uz') return `${day}-${UZ_MONTHS[month]} ${year}`;
+  const loc = lang === 'ru' ? 'ru-RU' : 'en-GB';
   return new Intl.DateTimeFormat(loc, { timeZone: LIMIT_TIME_ZONE, day: 'numeric', month: 'long', year: 'numeric' }).format(new Date(iso));
 }
 

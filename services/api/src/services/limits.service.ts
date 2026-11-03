@@ -1,5 +1,5 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
-import { PLUS_FAIR_USE_DEFAULTS, PLUS_FAIR_USE_KEYS, activeSubWhere, fairUseCap } from '../common/plan-active';
+import { activeSubWhere } from '../common/plan-active';
 import { PrismaService } from '../prisma/prisma.service';
 import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, usageDayStart, userCapPlan } from '../common/plan-caps';
 import {

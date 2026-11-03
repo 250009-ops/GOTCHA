@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { useLearnerLocale } from '../../lib/learnerLocaleContext';
@@ -44,9 +43,9 @@ export function AgePrompt() {
       setBusy(false);
     }
   };
-  return createPortal(
+  return (
     <div role="dialog" aria-modal="false" aria-labelledby="age-prompt-title" data-testid="age-prompt"
-      className="fixed bottom-4 right-4 left-4 sm:left-auto z-[60] sm:w-[22rem] pointer-events-none">
+      className="relative z-10 mx-3 mt-3 md:fixed md:bottom-4 md:right-4 md:left-auto md:mx-0 md:mt-0 md:z-[60] md:w-[22rem] pointer-events-none">
       <div className="pointer-events-auto rounded-2xl bg-white p-4 shadow-xl border border-[#e5e7eb] flex flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <h2 id="age-prompt-title" className="text-base font-bold text-[#101828]">{c.promptTitle}</h2>
@@ -63,7 +62,6 @@ export function AgePrompt() {
           <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] text-white text-sm font-bold disabled:opacity-50">{c.save}</button>
         </div>
       </div>
-    </div>,
-    document.body,
+    </div>
   );
 }

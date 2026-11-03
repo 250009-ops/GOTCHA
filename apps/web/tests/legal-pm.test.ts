@@ -66,7 +66,7 @@ test('WLF-07: built bundle serves the PM text for all 6 documents (run after vit
 // Served /terms on this payments-02 line = legal-pm-payments (pending-payments-02), pinned in PENDING_PINNED.
 const PINNED: Record<string, string> = {
   'terms-en': 'a210f70d3f3c', 'terms-ru': '0c5d14a1318e', 'terms-uz': '83bdefb2f0d2',
-  'privacy-en': '6b9ee013ac3c', 'privacy-ru': 'a00adb3fca19', 'privacy-uz': 'cef024962382',
+  'privacy-en': '757ad64de7d3', 'privacy-ru': 'adb0e5794fdf', 'privacy-uz': 'ebf8b39aeeec',
 };
 test('final-3: served legal text hashes match the pinned PM files; no "(Public Offer)" in any title', async () => {
   const { createHash } = await import('node:crypto');
@@ -87,8 +87,8 @@ test('final-3: served legal text hashes match the pinned PM files; no "(Public O
 });
 
 const PENDING_PINNED: Record<string, string> = {
-  'terms-en': 'd5d1b69a2ab2', 'terms-ru': '9634a85dd35f', 'terms-uz': '6146bd79835a',
-  'oferta-en': '3dfc03dd6872', 'oferta-ru': 'ed44973e592d', 'oferta-uz': '6cf90e1b8bb4',
+  'terms-en': 'b89becdbee8c', 'terms-ru': '0203f79d3df9', 'terms-uz': 'dd50d1a9067a',
+  'oferta-en': '2ee40a6f75dc', 'oferta-ru': '01e1fcb0b155', 'oferta-uz': 'aba9c3e3f672',
 };
 test('r3b: served /terms + /oferta (legal-pm-payments) match the pinned pending-payments-02 files; main §8 == pending §8', async () => {
   const { createHash } = await import('node:crypto');

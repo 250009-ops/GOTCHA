@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable, NotFoundException }
 import { ImportPaymentStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ImportCommerceService } from '../billing/import-commerce.service';
+import { adminRefundBlockReason } from '../billing/import-refund';
 
 const envFlagTrue = (v?: string) => ['1', 'true', 'yes', 'on'].includes(String(v ?? '').trim().toLowerCase());
 
@@ -71,19 +72,33 @@ export class AdminOpsService {
         take: pageSize,
         select: {
           id: true, status: true, importType: true, contentFormat: true, estimatedPages: true, amountTiyins: true,
-          currency: true, provider: true, account: true, providerPaymentId: true, needsAttention: true, createdAt: true, paidAt: true,
+          currency: true, provider: true, account: true, providerPaymentId: true, needsAttention: true, refundDue: true,
+          refundState: true, userImportId: true, createdAt: true, paidAt: true,
           user: { select: { id: true, email: true, displayName: true } },
         },
       }),
       this.prisma.importPayment.groupBy({ by: ['status'], _sum: { amountTiyins: true }, _count: { _all: true } }),
     ]);
     const summary = Object.fromEntries(sums.map((s) => [s.status, { count: s._count._all, amountUzs: Math.round((s._sum.amountTiyins ?? 0) / 100) }]));
+    const importIds = rows.map((r) => r.userImportId).filter((id): id is string => Boolean(id));
+    const imports = importIds.length
+      ? await this.prisma.userImport.findMany({ where: { id: { in: importIds } }, select: { id: true, ingestionStatus: true } })
+      : [];
+    const importStatus = new Map(imports.map((row) => [row.id, row.ingestionStatus]));
     return {
       page, pageSize, total,
       gatewayEnabled: envFlagTrue(process.env.PAYMENT_GATEWAY_ENABLED),
       sandbox: this.isSandbox(),
       summary,
-      items: rows.map((r) => ({ ...r, amountUzs: Math.round(r.amountTiyins / 100) })),
+      items: rows.map((r) => {
+        const refundBlock = adminRefundBlockReason({
+          needsAttention: r.needsAttention,
+          refundDue: r.refundDue,
+          refundState: r.refundState,
+          importStatus: r.userImportId ? importStatus.get(r.userImportId) : null,
+        });
+        return { ...r, amountUzs: Math.round(r.amountTiyins / 100), refundBlock };
+      }),
     };
   }
 

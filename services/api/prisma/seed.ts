@@ -907,9 +907,9 @@ async function main() {
           currency: 'UZS',
           basePriceSom: 49000,
           perPageSurchargeSom: 0,
-          volumeDiscountsEnabled: true,
-          buy3PctOff: 10,
-          buy5PctOff: 20,
+          volumeDiscountsEnabled: false,
+          buy3PctOff: 0,
+          buy5PctOff: 0,
         },
       },
     });

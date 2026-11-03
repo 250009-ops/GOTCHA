@@ -22,7 +22,7 @@ test('no copy says unlimited / fair use / 200 (word) lookups', () => {
 test('Plus lookups are uncapped: null quota shows the count only, no denominator', () => {
   const settings = readFileSync('src/pages/SettingsPage.tsx', 'utf8');
   assert.doesNotMatch(settings, /\?\? 50;/);
-  assert.match(settings, /quota === null \? lookupsToday/);
+  assert.match(settings, /aiLookupsLine\(lookupsToday, null\)/);
   // final-5: capped -> "left N of M"; null quota -> count only.
   assert.match(settings, /: copy\.settings\.aiLookupsLine\(lookupsToday, null\)/);
   const copy = readFileSync('../../packages/shared/src/learnerCopy.ts', 'utf8');

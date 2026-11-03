@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { PracticeType, Prisma } from '@prisma/client';
-import { MASHQ_BURST_FALLBACKS, MASHQ_BURST_KEYS } from '@gotcha/shared';
+import { MASHQ_BURST_FALLBACKS, MASHQ_BURST_KEYS, uzOrthography } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { capOf, getPlanCaps, usageDayStart, userCapPlan } from '../../common/plan-caps';
@@ -14,6 +14,9 @@ import { StartPracticeDto } from './dto/practice.dto';
 
 const MIN_WORDS = 60;
 const MAX_PER_SESSION = 20;
+/** How long a start request waits before telling the client to poll. Generation keeps running. */
+const BANK_WAIT_MS = 2_500;
+const GAVE_UP_MS = 60_000;
 
 type Lang = 'en' | 'uz' | 'ru';
 type LangText = Record<Lang, string>;
@@ -21,11 +24,22 @@ type LangOpts = Record<Lang, string[]>;
 
 export function quizEmptyException() {
   const messages = {
-    en: "Couldn't build more questions for this page. Try again.",
-    uz: 'Bu sahifa uchun yana savol tuzib boʻlmadi. Qayta urinib koʻring.',
-    ru: 'Не удалось составить ещё вопросы по этой странице. Попробуйте ещё раз.',
+    en: 'Every question on this page has been used.',
+    uz: 'Bu sahifadagi savollar tugadi.',
+    ru: 'Вопросы по этой странице закончились.',
   };
   return new ServiceUnavailableException({ statusCode: 503, code: 'quiz_empty', message: messages.en, messages });
+}
+
+const PENDING_MESSAGES: LangText = {
+  en: 'Preparing questions…',
+  uz: 'Savollar tayyorlanmoqda…',
+  ru: 'Вопросы готовятся…',
+};
+
+/** Returned while the page bank is still being written. 202, no quota charge. */
+export function quizPendingBody() {
+  return { statusCode: 202, code: 'quiz_pending' as const, state: 'pending' as const, message: PENDING_MESSAGES.en, messages: PENDING_MESSAGES };
 }
 
 function burstException() {
@@ -61,6 +75,11 @@ function shuffle(options: string[]): string[] {
 
 @Injectable()
 export class MashqService {
+  /** One generation per page hash, shared by the start that kicked it off and later polls. */
+  private readonly generating = new Map<string, Promise<number>>();
+  /** Finished with nothing to store. Short-lived so a later start can try again. */
+  private readonly gaveUp = new Map<string, number>();
+
   constructor(
     private prisma: PrismaService,
     private ai: AiService,
@@ -87,14 +106,26 @@ export class MashqService {
       this.prisma.pageQuestion.count({ where: { segmentId: segment.id, status: 'active', segmentHash: hash } }),
       this.remaining(userId),
     ]);
-    const exhausted = bankSize > 0 && unseenCount === 0 && missedToday === 0;
+    const key = `${segment.id}:${hash}`;
+    const state = this.bankState(bankSize, unseenCount, missedToday, key);
     return {
-      state: exhausted ? 'empty' as const : 'ready' as const,
+      state,
       unseenCount,
       missedToday,
       remaining,
       maxPerSession: MAX_PER_SESSION,
     };
+  }
+
+  /** ready only when something can be served. 0 questions is pending (or empty after a finished attempt). */
+  private bankState(bankSize: number, unseenCount: number, missedToday: number, key: string) {
+    if (bankSize > 0) {
+      return unseenCount === 0 && missedToday === 0 ? 'empty' as const : 'ready' as const;
+    }
+    if (this.generating.has(key)) return 'pending' as const;
+    const gave = this.gaveUp.get(key);
+    if (gave && Date.now() - gave < GAVE_UP_MS) return 'empty' as const;
+    return 'pending' as const;
   }
 
   async start(userId: string, dto: StartPracticeDto) {
@@ -114,23 +145,98 @@ export class MashqService {
 
     if (dto.repeatMissed) return this.repeatMissed(userId, segment, dto, count);
 
+    const hash = this.hash(segment.plainText);
+    let picked = await this.unseen(userId, segment.id, hash, count);
+    if (picked.length < Math.min(count, 3)) {
+      const phase = await this.awaitBank(userId, segment, hash);
+      if (phase === 'pending') return quizPendingBody();
+      picked = await this.unseen(userId, segment.id, hash, count);
+    }
+    if (!picked.length) throw quizEmptyException();
+
+    // Count the allowance only for questions we are about to serve.
     let held = 0;
     try {
-      held = await this.limits.reserveMashq(userId, count);
-      const picked = await this.ensureAndPick(userId, segment, held);
-      const extra = held - picked.length;
-      if (extra > 0) {
-        await this.limits.releaseMashq(userId, extra);
-        held = picked.length;
-      }
-      if (!picked.length) throw quizEmptyException();
-      const session = await this.serve(userId, segment, picked, dto, false);
+      held = await this.limits.reserveMashq(userId, picked.length);
+      const slice = picked.slice(0, held);
+      if (!slice.length) throw quizEmptyException();
+      const session = await this.serve(userId, segment, slice, dto, false);
+      const served = session.questions?.length ?? slice.length;
+      if (held > served) await this.limits.releaseMashq(userId, held - served);
       held = 0;
       return session;
     } catch (e) {
       if (held > 0) await this.limits.releaseMashq(userId, held);
       throw e;
     }
+  }
+
+  /** Wait briefly for a bank. A slow model keeps running and the client polls. */
+  private async awaitBank(
+    userId: string,
+    segment: { id: string; contentId: string; plainText: string },
+    hash: string,
+  ): Promise<'ready' | 'empty' | 'pending'> {
+    const key = `${segment.id}:${hash}`;
+    const existing = await this.prisma.pageQuestion.count({
+      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+    });
+    if (existing > 0) return 'ready';
+    const gave = this.gaveUp.get(key);
+    if (gave && Date.now() - gave < GAVE_UP_MS) return 'empty';
+    const job = this.kickGeneration(userId, segment, hash, key);
+    return Promise.race([
+      job.then((n) => (n > 0 ? 'ready' as const : 'empty' as const)),
+      new Promise<'pending'>((resolve) => setTimeout(() => resolve('pending'), BANK_WAIT_MS)),
+    ]);
+  }
+
+  private kickGeneration(
+    userId: string,
+    segment: { id: string; contentId: string; plainText: string },
+    hash: string,
+    key: string,
+  ): Promise<number> {
+    const current = this.generating.get(key);
+    if (current) return current;
+    const job = this.fillBank(userId, segment, hash)
+      .then((n) => {
+        if (n > 0) this.gaveUp.delete(key);
+        else this.gaveUp.set(key, Date.now());
+        return n;
+      })
+      .finally(() => {
+        if (this.generating.get(key) === job) this.generating.delete(key);
+      });
+    this.generating.set(key, job);
+    return job;
+  }
+
+  /** Generate, store, and try once more if the first pass produced nothing. */
+  private async fillBank(userId: string, segment: { id: string; contentId: string; plainText: string }, hash: string): Promise<number> {
+    await this.prisma.pageQuestion.updateMany({
+      where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
+      data: { status: 'retired' },
+    });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const have = await this.prisma.pageQuestion.count({
+        where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+      });
+      if (have > 0) return have;
+      try {
+        const used = await this.prisma.pageQuestion.findMany({
+          where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+          select: { evidenceQuote: true },
+        });
+        const items = await this.ai.generatePageQuiz(segment.plainText, userId, used.map((row) => row.evidenceQuote));
+        if (items.length) await this.storeItems(segment, hash, items);
+      } catch {
+        /* try the second pass; a hard failure still ends as empty rather than a false "used up" */
+      }
+    }
+    return this.prisma.pageQuestion.count({
+      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+    });
   }
 
   private async repeatMissed(
@@ -166,14 +272,15 @@ export class MashqService {
       const optionsBag = q.optionsI18n as LangOpts;
       const promptBag = q.promptI18n as LangText;
       const explanationBag = q.explanationI18n as LangText;
-      const options = pickOpts(optionsBag, lang);
+      const fix = (value: string) => (lang === 'uz' ? uzOrthography(value) : value);
+      const options = pickOpts(optionsBag, lang).map(fix);
       const answer = optionsBag[lang]?.[q.answerIndex] || optionsBag.en?.[q.answerIndex] || '';
       return {
         pageQuestionId: q.id,
-        prompt: pickText(promptBag, lang),
+        prompt: fix(pickText(promptBag, lang)),
         options: shuffle(options),
-        correctAnswer: String(answer).trim(),
-        explanation: pickText(explanationBag, lang),
+        correctAnswer: fix(String(answer).trim()),
+        explanation: fix(pickText(explanationBag, lang)),
       };
     }).filter((q) => q.prompt && q.correctAnswer && q.options.length === 4);
 
@@ -227,26 +334,6 @@ export class MashqService {
     }
   }
 
-  private async ensureAndPick(userId: string, segment: { id: string; contentId: string; plainText: string }, need: number) {
-    const plainText = readingPassage(segment.plainText);
-    segment = { ...segment, plainText };
-    const hash = this.hash(plainText);
-    await this.prisma.pageQuestion.updateMany({
-      where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
-      data: { status: 'retired' },
-    });
-    let picked = await this.unseen(userId, segment.id, hash, need);
-    if (picked.length >= need) return picked;
-    const used = await this.prisma.pageQuestion.findMany({
-      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
-      select: { evidenceQuote: true },
-    });
-    const items = await this.ai.generatePageQuiz(segment.plainText, userId, used.map((row) => row.evidenceQuote));
-    await this.storeItems(segment, hash, items);
-    picked = await this.unseen(userId, segment.id, hash, need);
-    return picked;
-  }
-
   private async storeItems(segment: { id: string; contentId: string; plainText: string }, hash: string, items: PageBankItem[]) {
     const existing = await this.prisma.pageQuestion.findMany({
       where: { segmentId: segment.id, status: 'active', segmentHash: hash },
@@ -263,13 +350,16 @@ export class MashqService {
           segmentId: segment.id,
           contentId: segment.contentId,
           segmentHash: hash,
-          promptI18n: item.prompt,
-          optionsI18n: item.options,
+          promptI18n: { ...item.prompt, uz: uzOrthography(item.prompt.uz) },
+          optionsI18n: {
+            ...item.options,
+            uz: item.options.uz.map((option) => uzOrthography(option)),
+          },
           answerIndex: item.answerIndex,
           evidenceQuote: item.evidenceQuote,
           evidenceStart: Math.max(0, at),
           evidenceEnd: at < 0 ? 0 : at + quote.length,
-          explanationI18n: item.explanation,
+          explanationI18n: { ...item.explanation, uz: uzOrthography(item.explanation.uz) },
           status: 'active',
         },
       });

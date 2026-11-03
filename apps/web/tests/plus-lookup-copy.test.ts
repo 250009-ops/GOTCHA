@@ -14,7 +14,7 @@ test('no shipped web copy says unlimited / fair use / 200 (word) lookups / no da
   const hits: string[] = [];
   for (const f of walk('src').filter((f) => /\.(ts|tsx)$/.test(f) && !f.includes('legalHtml.generated'))) {
     const rel = f.replaceAll('\\', '/');
-    for (const m of readFileSync(f, 'utf8').matchAll(STRING)) if (BANNED.test(rel.endsWith('lib/landingCopy.ts') ? m[2].replace(/no daily limit on word lookups/gi, '') : m[2])) hits.push(`${rel}: ${m[2].slice(0, 80)}`);
+    for (const m of readFileSync(f, 'utf8').matchAll(STRING)) if (BANNED.test(rel.endsWith('lib/landingCopy.ts') ? m[2].replace(/no daily limit on word lookups/gi, '').replace(/no daily limit on mashq/gi, '') : m[2])) hits.push(`${rel}: ${m[2].slice(0, 80)}`);
   }
   assert.deepEqual(hits, []);
 });

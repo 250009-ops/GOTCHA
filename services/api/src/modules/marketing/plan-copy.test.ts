@@ -74,11 +74,11 @@ async function main() {
   assert.ok(!/freeReason[^\n]*unlimited/i.test(ic), 'freeReason must not claim unlimited imports');
   // PLUS-OFFER Defaults #4: Plus copy names the real cap, never "unlimited" / "no daily limit".
   const pe = enrichPlan({ id: 'p', tier: 'premium', name: 'Plus', priceMonthly: 24990, aiDailyQuota: 200, importLimit: 1_000_000, offlineEnabled: true, features: null } as never, 'en');
-  assert.equal(pe.features[0], 'No daily limit on word lookups (20 a day on Free)'); // PLUS-OFFER §4 14:33
+  assert.equal(pe.features[0], 'No fixed daily limit on word lookups (20 a day on Free)'); // U1: Terms phrase
   assert.equal(planCopy('en').plusLookups(200, 20), '200 word lookups a day (20 on Free)', 'a configured Plus cap is named');
-  assert.equal(pe.features[1], '200 chapter quizzes a day (10 on Free)'); // Marketing §4/§7 14:20
-  assert.equal(planCopy('uz').plusQuizzes(200, 10), 'Kuniga 200 ta bob testi (bepul tarifda 10 ta)');
-  assert.equal(planCopy('ru').plusQuizzes(200, 10), '200 тестов по главам в день (в бесплатном плане 10)');
+  assert.equal(pe.features[1], 'No daily limit on Mashq (20 questions a day on Free, across all books)');
+  assert.equal(planCopy('uz').plusQuizzes(200, 10), 'Kuniga 200 ta Mashq savoli (bepul tarifda 10 ta, barcha kitoblar boʻyicha)');
+  assert.equal(planCopy('ru').plusQuizzes(200, 10), '200 вопросов Mashq в день (в бесплатном плане 10, по всем книгам)');
   assert.match(sql, /features - 'ai_lookup_unlimited'/); assert.match(sql, /'plus.ai_lookup_quota', 'null'::jsonb/); assert.doesNotMatch(sql, /ai_daily_quota = (200|1000000)/); assert.match(sql, /quiz_daily_quota = 200/);
   assert.match(sql, /DATABASE_URL%%\\\?\*/, 'backup strips ?schema=');
   assert.equal(pe.offlineEnabled, false);

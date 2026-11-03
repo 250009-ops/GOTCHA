@@ -1,4 +1,4 @@
-import { resolveCoverKey, type CoverMode } from '@gotcha/shared';
+import { resolveCoverKey, uzOrthography, type CoverMode } from '@gotcha/shared';
 import { userImportOwnerWhere } from './user-import-privacy';
 import { ageBand, AgeBand, allowedAgeRatings } from '../../common/safety/age-policy';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
@@ -38,7 +38,10 @@ function serializeContent(item: object, access?: { granted: boolean }) {
     coverImageKey?: string | null;
     coverMode?: string | null;
     originalCoverKey?: string | null;
+    language?: string | null;
+    title?: string | null;
     subtitle?: string | null;
+    description?: string | null;
     author?: string | null;
     isFree?: boolean;
   };
@@ -53,12 +56,16 @@ function serializeContent(item: object, access?: { granted: boolean }) {
   const locked = requiresCatalogPayment(priced);
   const priceUzs = catalogPriceUzs(priced);
   const { originalCoverKey: _orig, ...rest } = row;
+  const uz = (value: unknown) => (row.language === 'uz' && typeof value === 'string' ? uzOrthography(value) : value);
   return {
     ...rest,
+    title: uz(row.title),
+    subtitle: uz(row.subtitle),
+    description: uz(row.description),
     // covers-01: template mode ⇒ null (the learner draws the cover); upload/original ⇒ that image.
     coverImageUrl: resolveCoverKey(row),
     coverMode: (row.coverMode as CoverMode | undefined) ?? 'template',
-    authorName: row.author ?? row.subtitle ?? null,
+    authorName: uz(row.author ?? row.subtitle ?? null),
     isFree: !locked,
     priceUzs,
     accessGranted: access?.granted ?? !locked,

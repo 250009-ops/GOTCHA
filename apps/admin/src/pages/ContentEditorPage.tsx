@@ -67,6 +67,7 @@ export default function ContentEditorPage() {
   const [publishStatus, setPublishStatus] = useState('draft');
   const [showLibraryPreview, setShowLibraryPreview] = useState(false);
   const [enabledLanguages, setEnabledLanguages] = useState<string[]>([...APP_LANGUAGES]);
+  const [langError, setLangError] = useState<string | null>(null);
   const serverLoaded = useRef(false);
   const draftRestored = useRef(false);
 
@@ -147,7 +148,7 @@ export default function ContentEditorPage() {
         const codes = data.languages.filter((l) => l.isEnabled).map((l) => l.code);
         if (codes.length) setEnabledLanguages(codes);
       })
-      .catch(console.error);
+      .catch((e: unknown) => setLangError(e instanceof Error ? e.message : 'Could not load languages'));
   }, []);
 
   const languageOptions = useMemo(() => {
@@ -365,6 +366,7 @@ export default function ContentEditorPage() {
                   <option key={l} value={l}>{LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.flag ?? '🌐'} {LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.label ?? l}</option>
                 ))}
               </Select>
+              {langError && <p className="col-span-full text-sm text-rose-700">{langError}</p>}
               <Select value={cefrLevel} onChange={(e) => setCefrLevel(e.target.value)}>
                 {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
                   <option key={l} value={l}>{l.toUpperCase()}</option>

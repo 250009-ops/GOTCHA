@@ -4,6 +4,7 @@
  */
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -60,6 +61,19 @@ function upload(conn, local, remote) {
   });
 }
 
+function buildSha() {
+  const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout || '';
+  const head = git(['rev-parse', 'HEAD']).trim();
+  const diff = git(['diff', 'HEAD']);
+  const untracked = git(['ls-files', '--others', '--exclude-standard']);
+  if (head && !diff && !untracked.trim()) return head.slice(0, 12);
+  return crypto.createHash('sha256').update(head).update('\n').update(diff).update('\n').update(untracked).digest('hex').slice(0, 12);
+}
+
+const BUILD_SHA = buildSha();
+const BUILD_DATE = new Date().toISOString().slice(0, 10);
+console.log(`==> Build sha ${BUILD_SHA}`);
+
 const tarName = `gotcha-api-${Date.now()}.tgz`;
 const tarPath = path.join(os.tmpdir(), tarName);
 
@@ -110,6 +124,7 @@ try {
       'rm -f services/api/*.tsbuildinfo',
       'npm run build --workspace=services/api',
       'test -f services/api/dist/main.js',
+      `node -e "require('fs').writeFileSync('services/api/dist/build-info.json', JSON.stringify({sha:'${BUILD_SHA}',date:'${BUILD_DATE}'}))"`,
       'cd services/api && npx prisma migrate deploy && cd "$APP"',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',

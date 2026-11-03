@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Globe2, Plus, Trash2 } from 'lucide-react';
-import { Badge, Button, Card, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Button, Card, ErrorBlock, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber } from '../lib/utils';
 
@@ -47,7 +47,7 @@ export default function LanguagesPage() {
   }
 
   useEffect(() => {
-    load().catch(console.error);
+    load().catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load languages'));
   }, []);
 
   async function run(code: string, work: () => Promise<void>) {
@@ -93,6 +93,7 @@ export default function LanguagesPage() {
     setAddCode('');
   }
 
+  if (!data && error) return <ErrorBlock message={error} onRetry={() => void load().catch((e: unknown) => setError(e instanceof Error ? e.message : 'Failed to load languages'))} />;
   if (!data) return <LoadingBlock />;
 
   const available = data.availableToAdd ?? data.languages.filter((l) => !l.isEnabled);

@@ -53,9 +53,9 @@ test('free lookups: 20th lookup (19 used) is allowed', async () => {
 test('free lookups: 21st lookup (20 used) is refused with 429 lookup_limit limit 20 + Marketing copy', async () => {
   const b = await limit429(lookupCheck(db('free', { lookups: 20 })));
   assert.equal(b.code, 'lookup_limit'); assert.equal(b.kind, 'lookups'); assert.equal(b.limit, 20); assert.equal(b.plan, 'free');
-  assert.equal(b.messages.en, "You've used today's 20 word lookups. Get Plus for no daily limit on word lookups, or come back tomorrow.");
-  assert.equal(b.messages.uz, 'Bugungi 20 ta soʻz izohi tugadi. Soʻz izohlarida kunlik cheklov boʻlmasligi uchun Plusʼni oling yoki ertaga qayting.');
-  assert.equal(b.messages.ru, 'Вы использовали 20 пояснений слов за сегодня. С Plus нет дневного лимита на пояснения слов. Или возвращайтесь завтра.');
+  assert.equal(b.messages.en, "You've used today's 20 word lookups. Get Plus for no fixed daily limit on word lookups, or come back tomorrow.");
+  assert.equal(b.messages.uz, 'Bugungi 20 ta soʻz izohi tugadi. Soʻz izohlari uchun belgilangan kunlik limit boʻlmasligi uchun Plusʼni oling yoki ertaga qayting.');
+  assert.equal(b.messages.ru, 'Вы использовали 20 пояснений слов за сегодня. С Plus нет фиксированного дневного лимита на пояснения слов. Или возвращайтесь завтра.');
   for (const m of Object.values<string>(b.messages)) assert.doesNotMatch(m, /unlimited|fair use|безлимит|cheksiz/i);
 });
 // ---- Free quizzes (10)
@@ -180,14 +180,14 @@ test('cost log: each lookup writes model, tokens, estimated cost, plan and cache
 // ---- offer / copy
 test('/billing/plus/offer limits come from config (Plus lookups null by default)', async () => {
   const svc = new ImportCommerceService(db('free', {}) as any, {} as any);
-  assert.deepEqual(await svc.plusLimits(50), { plusLookups: null, freeLookups: 20, plusQuizzes: 200, freeQuizzes: 10, importDiscountPct: 50 });
+  assert.deepEqual(await svc.plusLimits(50), { plusLookups: null, freeLookups: 20, plusQuizzes: 200, freeQuizzes: 10, plusMashq: null, freeMashq: 20, importDiscountPct: 50 });
 });
 test('paywall copy is Marketing §4 while uncapped; never says "unlimited"', async () => {
-  assert.equal(plusHeadline(null, 'en'), 'No daily limit on word lookups with Plus.');
-  assert.equal(plusHeadline(null, 'uz'), 'Plus bilan soʻz izohlarida kunlik cheklov yoʻq.');
-  assert.equal(plusHeadline(null, 'ru'), 'С Plus нет дневного лимита на пояснения слов.');
-  assert.equal(plusLookupsBullet(null, 20, 'en'), 'No daily limit on word lookups (20 a day on Free)');
-  assert.equal(plusLead(null, 20, 'en'), "Free gives you 20 word lookups a day. Plus has no daily limit on word lookups, so a long chapter won't stop you halfway.");
+  assert.equal(plusHeadline(null, 'en'), 'No fixed daily limit on word lookups with Plus.');
+  assert.equal(plusHeadline(null, 'uz'), 'Plus bilan soʻz izohlari uchun belgilangan kunlik limit yoʻq.');
+  assert.equal(plusHeadline(null, 'ru'), 'С Plus нет фиксированного дневного лимита на пояснения слов.');
+  assert.equal(plusLookupsBullet(null, 20, 'en'), 'No fixed daily limit on word lookups (20 a day on Free)');
+  assert.equal(plusLead(null, 20, 'en'), "Free gives you 20 word lookups a day. Plus has no fixed daily limit on word lookups, so a long chapter won't stop you halfway.");
   assert.equal(plusHeadline(200, 'en'), 'Look up 200 words a day with Plus.');
 });
 

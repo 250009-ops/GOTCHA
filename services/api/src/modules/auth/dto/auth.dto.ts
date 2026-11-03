@@ -33,10 +33,15 @@ export class RegisterDto {
   @IsIn(['android', 'web'])
   clientPlatform?: 'android' | 'web';
 
-  /** S3: the single sign-up tick-box (Terms + Privacy + OpenAI transfer). Must be true on web. */
+  /** Terms + Privacy tick. Must be true on web. */
   @IsOptional()
   @IsBoolean()
   acceptTerms?: boolean;
+
+  /** Separate OpenAI / AI-processing tick. Must be true on web. Stored as an audit row, not a user column. */
+  @IsOptional()
+  @IsBoolean()
+  acceptAiConsent?: boolean;
 
   /** S3: the tick-box label version the client showed (PAY2-17: absent = the pre-oferta .3 client; unknown = 400). */
   @IsOptional()

@@ -30,7 +30,7 @@ import { withAppBase } from '../lib/authRoutes';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import type { UiLanguage } from '@gotcha/shared';
-import { DAILY_GOAL_OPTIONS, PAGE_QUIZ_BANKS_LIVE, READING_PREVIEW, payCopyFor, practiceCopyFor, LIMIT_COPY, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
+import { READING_PREVIEW, payCopyFor, plusFill, practiceCopyFor, LIMIT_COPY, languageUiName, limitLang, nextTashkentMonthStart, tashkentDate } from '@gotcha/shared';
 import { usePaymentsEnabled } from '../lib/limits';
 import { applyAppTheme } from '../lib/appTheme';
 import {
@@ -51,7 +51,21 @@ import {
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 const PHOTO_MAX = 2 * 1024 * 1024;
 const MINUTE_CHOICES = [5, 10, 15, 20, 30, 45, 60];
-const NEW_WORD_CHOICES = [0, 5, 10, 15, 20, 30];
+
+function nearestChoice(value: number, choices: readonly number[]): number {
+  return choices.reduce((best, n) => (Math.abs(n - value) < Math.abs(best - value) ? n : best), choices[0]);
+}
+
+function Stepper({ value, min, max, step, onChange, label }: { value: number; min: number; max: number; step: number; onChange: (n: number) => void; label: string }) {
+  const clamp = (n: number) => Math.min(max, Math.max(min, n));
+  return (
+    <div className="inline-flex items-center gap-1" role="group" aria-label={label}>
+      <button type="button" className="min-h-11 min-w-11 rounded-[14px] border border-[#e5e7eb] text-lg font-semibold text-[#364153] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} −`} disabled={value <= min} onClick={() => onChange(clamp(value - step))}>−</button>
+      <span className="min-w-12 text-center text-sm font-semibold tabular-nums text-[#101828]">{value}</span>
+      <button type="button" className="min-h-11 min-w-11 rounded-[14px] border border-[#e5e7eb] text-lg font-semibold text-[#364153] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} +`} disabled={value >= max} onClick={() => onChange(clamp(value + step))}>+</button>
+    </div>
+  );
+}
 const DISPLAY_NAME_RE = /^(?!.*(?:https?:\/\/|www\.))[^\u0000-\u001F\u007F\u2028\u2029]*$/u;
 
 const fieldClass = 'w-full h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700';
@@ -293,6 +307,7 @@ function TargetLanguageModal({
   onSaved: () => Promise<void>;
 }) {
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const available = languageOptions.filter(
     (l) => l.code !== nativeLanguage && (mode === 'edit' || !usedCodes.includes(l.code)),
   );
@@ -354,7 +369,7 @@ function TargetLanguageModal({
             />
           ) : (
             <div id="settings-target-language" className="h-11 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
-              {languageFlag(existing?.targetLanguage)} {languageLabel(existing?.targetLanguage)}
+              {languageFlag(existing?.targetLanguage)} {languageUiName(existing?.targetLanguage, locale)}
             </div>
           )}
         </div>
@@ -535,9 +550,20 @@ export default function SettingsPage() {
     setShowKnownWords(preferences.showKnownWords ?? false);
     setTtsEnabled(preferences.ttsEnabled ?? true);
     setNotificationsEnabled(preferences.notificationsEnabled ?? true);
-    setDailyGoal(preferences.dailyGoalMinutes ?? 15);
-    setDailyGoalXp(preferences.dailyGoalXp ?? 60);
-    setDailyNewWords(preferences.dailyNewWords ?? 10);
+    const minutes = preferences.dailyGoalMinutes ?? 15;
+    const snapped = (MINUTE_CHOICES as readonly number[]).includes(minutes) ? minutes : nearestChoice(minutes, MINUTE_CHOICES);
+    setDailyGoal(snapped);
+    const xp = preferences.dailyGoalXp ?? 60;
+    const xpClamped = Math.min(500, Math.max(10, xp));
+    setDailyGoalXp(xpClamped);
+    const words = preferences.dailyNewWords ?? 10;
+    const wordsClamped = Math.min(50, Math.max(0, words));
+    setDailyNewWords(wordsClamped);
+    const patch: Partial<UserPreferences> = {};
+    if (snapped !== minutes) patch.dailyGoalMinutes = snapped;
+    if (xpClamped !== xp) patch.dailyGoalXp = xpClamped;
+    if (wordsClamped !== words) patch.dailyNewWords = wordsClamped;
+    if (Object.keys(patch).length) queuePref(patch);
   }, [preferences]);
 
   useEffect(() => {
@@ -629,12 +655,8 @@ export default function SettingsPage() {
   const rawQuota = subscription ? subscription.usage.quota : (plan?.aiDailyQuota ?? null);
   const quota = typeof rawQuota === 'number' && rawQuota > 0 && rawQuota < 1_000_000 ? rawQuota : null;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
-  const usagePct = quota !== null ? Math.min(100, Math.round((lookupsToday / quota) * 100)) : 0;
   const importAllowance = subscription?.usage.importAllowance;
   const limitCopy = LIMIT_COPY[limitLang(locale)];
-  const rawQuizQuota = subscription?.usage.quizQuota;
-  const quizQuota = typeof rawQuizQuota === 'number' && rawQuizQuota > 0 && rawQuizQuota < 1_000_000 ? rawQuizQuota : null;
-  const quizzesToday = subscription?.usage.quizzesToday ?? 0;
   const targetLanguages = user?.targetLanguages ?? [];
   const visibleTargetLanguages = useMemo(
     () => targetLanguages.filter((tl) => tl.targetLanguage !== nativeLanguage),
@@ -645,9 +667,7 @@ export default function SettingsPage() {
     ? primaryTarget
     : (locale === 'ru' || locale === 'uz' ? locale : 'en');
   const preview = READING_PREVIEW[previewKey];
-  const minuteChoices = MINUTE_CHOICES.includes(dailyGoal) ? MINUTE_CHOICES : [...MINUTE_CHOICES, dailyGoal];
-  const xpChoices = (DAILY_GOAL_OPTIONS as readonly number[]).includes(dailyGoalXp) ? [...DAILY_GOAL_OPTIONS] : [...DAILY_GOAL_OPTIONS, dailyGoalXp];
-  const wordChoices = NEW_WORD_CHOICES.includes(dailyNewWords) ? NEW_WORD_CHOICES : [...NEW_WORD_CHOICES, dailyNewWords];
+  const minuteChoices = MINUTE_CHOICES;
   const verified = Boolean(user?.emailVerifiedAt);
   const removeName = languageOptions.find((l) => l.code === pendingRemove)?.name ?? (pendingRemove ? languageLabel(pendingRemove) : '');
 
@@ -761,7 +781,7 @@ export default function SettingsPage() {
           existing={langModal.existing}
           usedCodes={visibleTargetLanguages.map((tl) => tl.targetLanguage)}
           nativeLanguage={nativeLanguage}
-          languageOptions={languageOptions}
+          languageOptions={languageOptions.map((l) => ({ ...l, name: languageUiName(l.code, locale) }))}
           onClose={() => setLangModal(null)}
           onSaved={refreshProfile}
         />
@@ -986,15 +1006,16 @@ export default function SettingsPage() {
                     quota !== null
                       ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
                       : copy.settings.aiLookupsLine(lookupsToday, null),
-                    quizQuota !== null ? limitCopy.quizzesLeft(Math.max(0, quizQuota - quizzesToday), quizQuota) : null,
-                    PAGE_QUIZ_BANKS_LIVE && typeof subscription?.usage.mashqToday === 'number'
-                      ? copy.settings.mashqLine(subscription.usage.mashqToday, subscription.usage.mashqQuota ?? null)
-                      : null,
+                    copy.settings.mashqLine(
+                      subscription?.usage.mashqToday ?? 0,
+                      plusActive ? (subscription?.usage.mashqQuota ?? null) : (subscription?.usage.mashqQuota ?? 20),
+                    ),
                     importAllowance
                       ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                       : plan?.importLimit && plan.importLimit < 1_000_000
                         ? copy.settings.importLimitLine(plan.importLimit)
                         : null,
+                    plusActive ? plusFill(payCopyFor(locale)('plus.bImp'), { plus: 0, free: 0, pct: 50 }) : null,
                     importAllowance
                       ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                       : null,
@@ -1030,17 +1051,6 @@ export default function SettingsPage() {
               )}
 
               <div className="space-y-3">
-                <div>
-                  <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                    <span>{copy.settings.aiLookupsToday}</span>
-                    <span>{quota === null ? copy.settings.countToday(lookupsToday) : `${lookupsToday}/${quota}`}</span>
-                  </div>
-                  {quota !== null && (
-                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                      <div className="h-full bg-g-blue-500 transition-all" style={{ width: `${usagePct}%` }} />
-                    </div>
-                  )}
-                </div>
                 {importAllowance ? (
                   <div>
                     <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
@@ -1081,7 +1091,7 @@ export default function SettingsPage() {
               <div key={tl.targetLanguage} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0">
                 <span className="text-xl leading-none">{catalog?.flagEmoji ?? languageFlag(tl.targetLanguage)}</span>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[#1e2939]">{catalog?.name ?? languageLabel(tl.targetLanguage)}</div>
+                  <div className="text-sm font-medium text-[#1e2939] min-w-0 truncate">{languageUiName(tl.targetLanguage, locale)}</div>
                   <div className="text-xs text-[#99a1af] mt-0.5">
                     {copy.common.level(tl.cefrLevel)}
                     {tl.placementScore != null ? ` · ${copy.common.score(tl.placementScore)}` : ''}
@@ -1201,23 +1211,11 @@ export default function SettingsPage() {
             ))}
           </div>
         </Row>
-        <Row label={copy.settings.dailyXpGoal} description={(practiceCopy.goalNames as Record<number, string>)[dailyGoalXp]}>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.dailyXpGoal}>
-            {xpChoices.map((xp) => (
-              <ChoiceButton key={xp} selected={dailyGoalXp === xp} onClick={() => { setDailyGoalXp(xp); queuePref({ dailyGoalXp: xp }); }}>
-                {xp}
-              </ChoiceButton>
-            ))}
-          </div>
+        <Row label={copy.settings.dailyXpGoal} description={(practiceCopy.goalNames as Record<number, string>)[dailyGoalXp] ?? copy.settings.dailyXpGoal}>
+          <Stepper label={copy.settings.dailyXpGoal} value={dailyGoalXp} min={10} max={500} step={10} onChange={(xp) => { setDailyGoalXp(xp); queuePref({ dailyGoalXp: xp }); }} />
         </Row>
         <Row label={copy.settings.dailyNewWords} description={copy.settings.dailyNewWordsHint}>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.dailyNewWords}>
-            {wordChoices.map((n) => (
-              <ChoiceButton key={n} selected={dailyNewWords === n} onClick={() => { setDailyNewWords(n); queuePref({ dailyNewWords: n }); }}>
-                {n}
-              </ChoiceButton>
-            ))}
-          </div>
+          <Stepper label={copy.settings.dailyNewWords} value={dailyNewWords} min={0} max={50} step={1} onChange={(n) => { setDailyNewWords(n); queuePref({ dailyNewWords: n }); }} />
         </Row>
       </Section>
 
@@ -1237,7 +1235,7 @@ export default function SettingsPage() {
             className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center gap-2 disabled:opacity-60"
           >
             {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            {exporting ? copy.settings.downloadingData : copy.settings.downloadData}
+            <span className="sr-only">{exporting ? copy.settings.downloadingData : copy.settings.downloadData}</span>
           </button>
         </Row>
       </Section>

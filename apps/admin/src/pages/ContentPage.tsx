@@ -133,6 +133,7 @@ export default function ContentPage() {
   const [attributionText, setAttributionText] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [opsError, setOpsError] = useState<string | null>(null);
   // Moderator-role admins can only reach /admin/moderation — the catalog endpoints below
   // 403 for them. Track that separately so the moderation queue still renders instead of
   // the whole page getting stuck on a permissions error.
@@ -179,6 +180,7 @@ export default function ContentPage() {
     setModeration(mod.status === 'fulfilled' ? mod.value : []);
     setIngestion(ing.status === 'fulfilled' ? ing.value : []);
     if (mod.status === 'rejected') throw mod.reason;
+    setOpsError(null);
   }
 
   useEffect(() => {
@@ -210,7 +212,9 @@ export default function ContentPage() {
   }, [filtered, safePage]);
 
   useEffect(() => {
-    if (tab === 'user_imports') loadOps().catch(console.error);
+    if (tab === 'user_imports') {
+      loadOps().catch((e: unknown) => setOpsError(e instanceof Error ? e.message : 'Failed to load the moderation queue'));
+    }
   }, [tab]);
 
   function setTab(next: Tab) {
@@ -378,6 +382,9 @@ export default function ContentPage() {
 
         {tab === 'user_imports' ? (
           <div className="p-4 space-y-6">
+            {opsError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{opsError}</div>
+            )}
             <section>
               <div className="font-semibold mb-1">Moderation queue</div>
               <div className="text-sm text-slate-500 mb-3">Review user imports awaiting approval.</div>

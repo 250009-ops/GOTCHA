@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import App from './App';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { AuthProvider } from './lib/auth';
 import { LearnerLocaleProvider } from './lib/learnerLocaleContext';
 import { DocumentTitle } from './components/DocumentTitle';
@@ -16,9 +17,11 @@ createRoot(document.getElementById('root')!).render(
     <BrowserRouter basename={basename}>
       <AuthProvider>
         <LearnerLocaleProvider>
-          <DocumentTitle />
-          <App />
-          <DailyLimitNotice />
+          <AppErrorBoundary>
+            <DocumentTitle />
+            <App />
+            <DailyLimitNotice />
+          </AppErrorBoundary>
         </LearnerLocaleProvider>
         <Toaster
           position="top-right"

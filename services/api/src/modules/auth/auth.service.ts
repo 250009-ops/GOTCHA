@@ -180,11 +180,11 @@ export class AuthService {
   async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string, browserOrigin?: string) {
     const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
     // S3: web sign-ups must tick the single consent box (Terms + Privacy + OpenAI transfer).
-    if (consentRequired(clientPlatform, browserOrigin) && dto.acceptTerms !== true) {
+    if (consentRequired(clientPlatform, browserOrigin) && (dto.acceptTerms !== true || dto.acceptAiConsent !== true)) {
       throw new BadRequestException({
         statusCode: 400,
         error: 'Bad Request',
-        message: 'Please accept the Terms of Use and the Privacy Policy to create an account.',
+        message: 'Please accept the Terms of Use, the Privacy Policy, and AI processing to create an account.',
         code: 'CONSENT_REQUIRED',
       });
     }
@@ -253,6 +253,18 @@ export class AuthService {
       },
       include: { targetLanguages: true },
     });
+
+    if (dto.acceptAiConsent === true) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'consent.ai',
+          entityType: 'user',
+          entityId: user.id,
+          metadata: { version: consentVersion, at: new Date().toISOString() },
+        },
+      });
+    }
 
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
     if (freePlan) {

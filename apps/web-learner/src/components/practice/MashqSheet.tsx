@@ -9,6 +9,8 @@ export function MashqSheet({
   missedToday,
   starting,
   empty,
+  preparing,
+  failed,
   notice,
   onClose,
   onStart,
@@ -18,6 +20,8 @@ export function MashqSheet({
   missedToday: number;
   starting: boolean;
   empty?: boolean;
+  preparing?: boolean;
+  failed?: boolean;
   notice?: string | null;
   onClose: () => void;
   onStart: (count: number, repeatMissed: boolean) => void;
@@ -42,7 +46,7 @@ export function MashqSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold text-[#101828]">{copy.cardTitle}</h2>
-        <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : empty ? copy.noneLeft : copy.cardBody}</p>
+        <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : preparing ? copy.preparing : failed ? copy.gaveUp : empty ? copy.noneLeft : copy.cardBody}</p>
         {notice ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{notice}</p> : null}
         {blocked ? (
           <div className="mt-4">
@@ -51,7 +55,9 @@ export function MashqSheet({
               {copy.seePlus}
             </Link>
           </div>
-        ) : empty ? (
+        ) : preparing ? (
+          <p className="mt-4 text-sm text-[#4a5565]" role="status">{copy.preparing}</p>
+        ) : failed || empty ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"

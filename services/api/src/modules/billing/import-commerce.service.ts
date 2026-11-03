@@ -23,6 +23,7 @@ import { AtmosClient, validateCardForAtmos } from './atmos.client';
 import { isSellableTier } from './page-tiers';
 import { capTotalDiscountTiyins, OFERTA_VERSION, PLUS_ACCOUNT_PREFIX, PLUS_SETTING_KEYS, dueReminder, plusDiscountTiyins, plusPassConfig, plusPassDaysFromFormat, plusPassExpiry, plusPassFormat, type PlusPassDays } from './plus-pass';
 import { projectPlus } from './entitlements.service';
+import { adminRefundBlockReason } from './import-refund';
 import { getPlanCaps, userCapPlan } from '../../common/plan-caps';
 import { AI_SETTING_KEYS, coerceNonNegInt, defaultAiPlatformSettings, resolveLearnerDailyAiQuota } from '../ai/ai-settings';
 import { PricingService, promoDiscountTiyins } from './pricing.service';
@@ -217,7 +218,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       allowedFormats: ['article', 'news'] as string[],
       resetCycle: 'monthly',
       allowRollover: true,
-      // WLF-15: Plus import pool (admin Import & Pricing → importFreeLimits). Unset = same numbers as Free (PM to set).
+      // Stored only. Plus does not get a separate free-import pool; the benefit is 50% off paid imports.
       plusDailyImportsPerUser: null as number | null,
       plusMonthlyPageLimit: null as number | null,
     };
@@ -296,14 +297,13 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   async learnerAllowance(userId: string, excludePaymentId?: string): Promise<LearnerImportAllowance> {
     const freeLimits = await this.getFreeLimits();
     const usage = await this.freeUsage(userId, freeLimits.resetCycle, excludePaymentId);
-    // WLF-15: an active Plus user gets the Plus import pool, never the Free one.
+    // Plus uses the same free-import pool as Free (3 a day, 50 pages a month). The Plus benefit is 50% off paid imports.
     const isPlus =
       (await userCapPlan(this.prisma, userId).catch(() => 'free')) === 'plus' ||
       (await this.plusBenefitsFor(userId).then(Boolean, () => false));
-    const capOf = (plusV: unknown, freeV: unknown) =>
-      Math.max(0, Math.floor(Number(isPlus && plusV != null && plusV !== '' ? plusV : freeV) || 0));
-    const dailyCap = capOf(freeLimits.plusDailyImportsPerUser, freeLimits.dailyFreeImportsPerUser);
-    const pageCap = capOf(freeLimits.plusMonthlyPageLimit, freeLimits.monthlyFreePageLimit);
+    const capOf = (freeV: unknown) => Math.max(0, Math.floor(Number(freeV) || 0));
+    const dailyCap = capOf(freeLimits.dailyFreeImportsPerUser);
+    const pageCap = capOf(freeLimits.monthlyFreePageLimit);
     return {
       tier: isPlus ? 'plus' : 'free',
       gatewayEnabled: this.gatewayEnabled(),
@@ -691,9 +691,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
             return { paymentId, status: 'paid', ofdUrl: result.ofdUrl, step: 'paid' };
           }
           if (now === ImportPaymentStatus.failed || now === ImportPaymentStatus.expired) {
-            // Cancelled/expired while the OTP was in flight: the card was charged but nothing was delivered.
-            await this.reverseOrFlag(payment.id, transactionId, 'Payment was cancelled before confirmation');
-            throw new ConflictException({ message: 'This payment was cancelled; the charge is being reversed.', code: 'payment_not_pending' });
+            // Late Atmos confirm after cancel/expiry: flag for a manual refund. Do not auto-reverse.
+            await this.flagNeedsAttention(payment.id, 'late_confirm_after_cancel');
+            throw new ConflictException({ message: 'This payment was cancelled after the bank confirmed it. It is flagged for a manual refund.', code: 'payment_not_pending' });
           }
           return { paymentId, status: 'pending', step: 'otp' };
         }
@@ -775,8 +775,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       const remote = await this.atmos.getTransaction(tx).catch(() => null);
       // Race case → screen 06b ("refund on the way"); a failed reverse is flagged and points to support.
       if (remote?.confirmed) {
-        const ok = await this.reverseOrFlag(payment.id, tx, 'Cancelled by learner');
-        return { paymentId, status: 'reversing', needsAttention: !ok };
+        // Cancel after Atmos already confirmed: flag for a manual refund. Do not auto-reverse.
+        await this.flagNeedsAttention(payment.id, 'cancel_after_confirm');
+        return { paymentId, status: 'cancelled', needsAttention: true };
       }
     }
     return { paymentId, status: 'cancelled' };
@@ -788,6 +789,16 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
    * and write the AuditLog. A failed reverse rolls the claim back to paid and surfaces the error.
    * Local-only refunds (no transaction to reverse) are allowed only when Atmos is explicitly in test mode (M1).
    */
+  private async importStatusOf(userImportId: string | null | undefined): Promise<string | null> {
+    if (!userImportId) return null;
+    const table = (this.prisma as unknown as {
+      userImport?: { findUnique(args: { where: { id: string }; select: { ingestionStatus: true } }): Promise<{ ingestionStatus?: string } | null> };
+    }).userImport;
+    if (!table?.findUnique) return null;
+    const row = await table.findUnique({ where: { id: userImportId }, select: { ingestionStatus: true } }).catch(() => null);
+    return row?.ingestionStatus ?? null;
+  }
+
   async refundPaidPayment(
     paymentId: string,
     opts: { reason: string; actorId: string | null; action?: string; idempotencyKey?: string },
@@ -800,6 +811,21 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (payment.status !== ImportPaymentStatus.paid) {
       throw new ConflictException({ message: `Only paid payments can be refunded (status: ${payment.status}).`, code: 'payment_not_paid' });
     }
+    const block = adminRefundBlockReason({
+      needsAttention: payment.needsAttention,
+      refundDue: payment.refundDue,
+      refundState: payment.refundState,
+      importStatus: await this.importStatusOf(payment.userImportId),
+    });
+    if (block === 'import_processing') {
+      throw new ConflictException({ message: 'This import is still processing. Refund it after it finishes or fails.', code: 'import_processing' });
+    }
+    if (block === 'needs_attention') {
+      throw new ConflictException({ message: 'This payment is flagged for a manual look. Reverse it in the Atmos cabinet, then record that refund.', code: 'needs_attention' });
+    }
+    if (block) {
+      throw new ConflictException({ message: 'An automatic refund is already running or may have reached Atmos. Do not reverse it again.', code: 'auto_refund_in_progress' });
+    }
     const transactionId = Number(payment.providerPaymentId);
     const hasTx = Number.isFinite(transactionId) && transactionId > 0 && payment.amountTiyins > 0;
     const mode = this.atmos.mode();
@@ -811,10 +837,14 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     }
 
     const claim = await this.prisma.importPayment.updateMany({
-      where: { id: paymentId, status: ImportPaymentStatus.paid },
-      data: { status: ImportPaymentStatus.refunding, refundReason: opts.reason, refundRequestedBy: opts.actorId, refundRequestedAt: new Date() },
+      where: {
+        id: paymentId,
+        status: ImportPaymentStatus.paid,
+        OR: [{ refundState: null }, { refundState: 'due' }],
+      },
+      data: { status: ImportPaymentStatus.refunding, refundState: 'processing', refundReason: opts.reason, refundRequestedBy: opts.actorId, refundRequestedAt: new Date() },
     });
-    if (claim.count === 0) throw new ConflictException({ message: 'A refund for this payment is already in progress.', code: 'refund_in_progress' });
+    if (claim.count === 0) throw new ConflictException({ message: 'An automatic refund is already running for this payment.', code: 'auto_refund_in_progress' });
 
     if (hasTx) {
       try {
@@ -822,7 +852,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       } catch (e) {
         await this.prisma.importPayment.updateMany({
           where: { id: paymentId, status: ImportPaymentStatus.refunding },
-          data: { status: ImportPaymentStatus.paid, needsAttention: true },
+          data: { status: ImportPaymentStatus.paid, needsAttention: true, refundState: 'reverse_failed' },
         });
         throw e;
       }
@@ -845,7 +875,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return this.prisma.$transaction(async (tx) => {
       const done = await tx.importPayment.updateMany({
         where: { id: payment.id, status: ImportPaymentStatus.refunding },
-        data: { status: ImportPaymentStatus.refunded },
+        data: { status: ImportPaymentStatus.refunded, refundState: 'refunded', refundedAt: new Date(), needsAttention: false },
       });
       if (done.count !== 1) throw new ConflictException({ message: 'Refund state changed concurrently.', code: 'refund_conflict' });
       let revoked = 0;
@@ -1129,15 +1159,12 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  private async reverseOrFlag(paymentId: string, transactionId: number, reason: string): Promise<boolean> {
-    try {
-      await this.atmos.reverseTransaction({ transactionId: await this.reverseIdFor(transactionId), reason, idempotencyKey: paymentId });
-      return true;
-    } catch (e) {
-      await this.prisma.importPayment.update({ where: { id: paymentId }, data: { needsAttention: true } }).catch(() => undefined);
-      this.logger.error(`Reverse failed for payment ${paymentId}: ${(e as Error).message}`);
-      return false;
-    }
+  /** Manual-refund flag. Does not call Atmos. Used for a late confirm and a cancel-after-confirm. */
+  private async flagNeedsAttention(paymentId: string, reason: string) {
+    await this.prisma.importPayment.update({
+      where: { id: paymentId },
+      data: { needsAttention: true, cancelReason: reason.slice(0, 500) },
+    }).catch(() => undefined);
   }
 
   // ---------------------------------------------------------------- Web Plus pass (WEB_PLUS_PASS, off by default)
@@ -1207,7 +1234,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
   async plusLimits(importDiscountPct: number) {
     // Same runtime source (≤ 60 s cache) the enforcement uses: platform_settings caps.* (WLF-12), never plan columns.
     const caps = await getPlanCaps(this.prisma);
-    return { plusLookups: caps.plus.lookups, freeLookups: caps.free.lookups, plusQuizzes: caps.plus.quizzes, freeQuizzes: caps.free.quizzes, importDiscountPct };
+    return { plusLookups: caps.plus.lookups, freeLookups: caps.free.lookups, plusQuizzes: caps.plus.quizzes, freeQuizzes: caps.free.quizzes, plusMashq: caps.plus.mashq, freeMashq: caps.free.mashq, importDiscountPct };
   }
 
   async plusCheckout(userId: string, days: number, acceptOferta?: unknown) {
@@ -1215,7 +1242,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (acceptOferta !== true) throw new BadRequestException({ message: 'Please accept the Public Offer to continue.', code: 'oferta_required' });
     const ofertaAcceptedAt = new Date();
     const cfg = await this.plusConfig();
-    if (!cfg.enabled) throw new NotFoundException({ message: 'Plus is not sold on the web yet.', code: 'plus_unavailable' });
+    if (!cfg.enabled) throw new NotFoundException({ message: 'Plus checkout is unavailable right now.', code: 'plus_unavailable' });
     if (!this.gatewayEnabled() || !this.atmos.configured()) throw new ServiceUnavailableException('Payment gateway is not available');
     const play = await this.prisma.entitlement.findFirst({ where: { userId, kind: 'plus', source: 'google_play', status: 'active', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } });
     if (play) throw new ConflictException({ message: 'Your Plus is managed in Google Play.', code: 'plus_via_play' });

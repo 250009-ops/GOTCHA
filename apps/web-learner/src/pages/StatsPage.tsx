@@ -5,7 +5,7 @@ import { AreaLineChart, BarChart, DotLineChart, formatShortDate, HeatmapCalendar
 import { cn } from '../components/ui/utils';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { buildLanguageProgress } from '../lib/languageProgress';
 import type { UserStatsResponse } from '../lib/types';
 import { BrandMark } from '../components/GotchaLogo';
@@ -76,6 +76,7 @@ function formatStreakCount(value: number) {
 export default function StatsPage() {
   const { user, stats, vocabItems } = useAuth();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const [apiStats, setApiStats] = useState<UserStatsResponse | null>(null);
   const [range, setRange] = useState<'7d' | '30d'>('30d');
 
@@ -151,8 +152,8 @@ export default function StatsPage() {
   const masteredPct = totalVocab ? Math.round((mastered / totalVocab) * 100) : 0;
   const learningPct = totalVocab ? 100 - masteredPct : 0;
   const languageProgress = useMemo(
-    () => buildLanguageProgress(user?.targetLanguages, vocabItems),
-    [user?.targetLanguages, vocabItems],
+    () => buildLanguageProgress(user?.targetLanguages, vocabItems, locale),
+    [user?.targetLanguages, vocabItems, locale],
   );
 
   return (

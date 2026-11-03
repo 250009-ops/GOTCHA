@@ -111,6 +111,7 @@ export default function LandingPage() {
               <a className="btn btn-white" href={startHref} data-cta="hero">{C.cta}</a>
               <a className="btn btn-ghost" href="#how"><span>{C.cta2}</span><svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M8 3v10M3 8l5 5 5-5" /></svg></a>
             </div>
+            <p className="data-use" data-testid="data-use">{C.dataUse}</p>
           </div>
           {/* Render mirrors apps/web-learner ReaderPage.tsx. Text: Crime and Punishment (tr. Constance Garnett, public domain), live catalog id b8b9b407; sentence and lookup from QA's real capture (src/data/README.md). */}
           <div className="hero-visual" aria-hidden="true">
@@ -119,9 +120,9 @@ export default function LandingPage() {
               <div className="page">
                 <h3>Chapter IV</h3>
                 <p className="body">He stood still in <span className="w-sel">hesitation</span> at the door, asking himself the strange question: ‘Must he tell her who killed Lizaveta?’</p>
+                {CAPTURED && <Popover d={CAPTURED} lang={L} />}
               </div>
             </div>
-            {CAPTURED && <Popover d={CAPTURED} lang={L} />}
           </div>
         </div></div></section>
 

@@ -1,4 +1,4 @@
-import { LANGUAGE_META, type AppLanguage } from '@gotcha/shared';
+import { languageUiName } from '@gotcha/shared';
 import type { UserTargetLanguage, VocabItem } from './types';
 
 export type LanguageProgress = {
@@ -56,28 +56,26 @@ function cefrBandProgress(words: number, code: string): number {
   return (words - lo) / (hi - lo);
 }
 
-function cefrFullLabel(code: string): string {
+const CEFR_WORD: Record<string, Record<string, string>> = {
+  en: { A1: 'Beginner', A2: 'Elementary', B1: 'Intermediate', B2: 'Upper-Int', C1: 'Advanced', C2: 'Mastery' },
+  ru: { A1: 'Начальный', A2: 'Элементарный', B1: 'Средний', B2: 'Выше среднего', C1: 'Продвинутый', C2: 'Свободный' },
+  uz: { A1: 'Boshlangʻich', A2: 'Oddiy', B1: 'Oʻrta', B2: 'Oʻrtadan yuqori', C1: 'Yuqori', C2: 'Erkin' },
+};
+
+function cefrFullLabel(code: string, ui = 'en'): string {
   const c = cefrCode(code);
-  const name =
-    c === 'A1'
-      ? 'Beginner'
-      : c === 'A2'
-        ? 'Elementary'
-        : c === 'B1'
-          ? 'Intermediate'
-          : c === 'B2'
-            ? 'Upper-Int'
-            : c === 'C1'
-              ? 'Advanced'
-              : c === 'C2'
-                ? 'Mastery'
-                : 'Learner';
-  return `${c} ${name}`;
+  const lang = ui === 'ru' || ui === 'uz' ? ui : 'en';
+  return `${c} ${CEFR_WORD[lang][c] ?? c}`;
 }
 
-function languageName(code: string): string {
-  const key = code.toLowerCase() as AppLanguage;
-  return LANGUAGE_META[key]?.label ?? code.toUpperCase();
+function towardLabel(next: string, ui = 'en'): string {
+  if (ui === 'ru') return `К уровню ${next}`;
+  if (ui === 'uz') return `${next} sari`;
+  return `Toward ${next}`;
+}
+
+function languageName(code: string, ui = 'en'): string {
+  return languageUiName(code, ui) || code.toUpperCase();
 }
 
 /**
@@ -87,6 +85,7 @@ function languageName(code: string): string {
 export function buildLanguageProgress(
   targetLanguages: UserTargetLanguage[] | undefined,
   vocab: VocabItem[],
+  ui = 'en',
 ): LanguageProgress[] {
   const chosen = targetLanguages ?? [];
   const counts = new Map<string, number>();
@@ -111,9 +110,9 @@ export function buildLanguageProgress(
     const next = nextCefr(level);
     return {
       code: raw.toUpperCase(),
-      name: languageName(raw),
-      level: cefrFullLabel(level),
-      towardLabel: next ? `Toward ${next}` : 'Top band',
+      name: languageName(raw, ui),
+      level: cefrFullLabel(level, ui),
+      towardLabel: next ? towardLabel(next, ui) : (ui === 'ru' ? 'Верхний уровень' : ui === 'uz' ? 'Eng yuqori' : 'Top band'),
       pct: next ? cefrBandProgress(words, level) : 1,
       wordCount: words,
     };

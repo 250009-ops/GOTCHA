@@ -1,8 +1,7 @@
 /**
- * round-3b WLF-15: an active Plus user gets the Plus import pool (importFreeLimits.plusDailyImportsPerUser /
- * plusMonthlyPageLimit) and never sees "Free import limit reached". WLF-17: admin billingTier shows Plus.
+ * Plus uses the same free-import pool as Free and never sees "Free import limit reached". WLF-17: admin billingTier shows Plus.
  */
-import assert from 'node:assert/strict';
+import * as assert from 'node:assert/strict';
 import { ImportCommerceService } from './import-commerce.service';
 import { AdminService } from '../admin/admin.service';
 
@@ -23,8 +22,8 @@ function svc(plus: boolean, limits: Record<string, unknown>, usedToday: number) 
   const free = await svc(false, limits, 3).learnerAllowance('u');
   assert.equal(free.tier, 'free'); assert.equal(free.dailyFreeImportsPerUser, 3); assert.equal(free.dailyFreeRemaining, 0);
   const plus = await svc(true, limits, 3).learnerAllowance('u');
-  assert.equal(plus.tier, 'plus'); assert.equal(plus.dailyFreeImportsPerUser, 20); assert.equal(plus.monthlyFreePageLimit, 1000);
-  assert.equal(plus.dailyFreeRemaining, 17, 'QA repro: the 4th import of a Plus user is allowed');
+  assert.equal(plus.tier, 'plus'); assert.equal(plus.dailyFreeImportsPerUser, 3); assert.equal(plus.monthlyFreePageLimit, 50);
+  assert.equal(plus.dailyFreeRemaining, 0, 'Plus shares the Free pool; a stored plus pool of 20 is ignored');
   // Plus caps unset → same numbers as Free, but the message never calls a Plus user Free.
   const s = svc(true, { dailyFreeImportsPerUser: 3, monthlyFreePageLimit: 50 }, 3);
   const err: any = await s.grantFreeImportCredit('u', 'article', 1).catch((e: any) => e);

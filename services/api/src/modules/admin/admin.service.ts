@@ -7,7 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig } from '../billing/plus-pass';
-import { PLUS_FAIR_USE_KEYS, fairUseCap } from '../../common/plan-active';
+import { fairUseCap } from '../../common/plan-active';
 import { UsersService } from '../users/users.service';
 import { getPlanCaps, resetPlanCapsCache, usageDayOffset, usageDayStart } from '../../common/plan-caps';
 import {
@@ -466,7 +466,7 @@ export class AdminService {
       const isSuspended = Boolean(u.deletedAt);
       return {
         ...mapped,
-        planLabel: payAsYouGo ? 'Pay as you go' : 'Free',
+        planLabel: mapped.billingTier,
         isAdmin: Boolean(u.adminProfile),
         adminRole: u.adminProfile?.role ?? null,
         vocabCount: u._count.vocabulary,
@@ -609,7 +609,7 @@ export class AdminService {
 
     return {
       ...mapped,
-      planLabel: payAsYouGo ? 'Pay as you go' : 'Free',
+      planLabel: mapped.billingTier,
       isAdmin: Boolean(u.adminProfile),
       adminRole: u.adminProfile?.role ?? null,
       vocabCount: u._count.vocabulary,
@@ -655,7 +655,7 @@ export class AdminService {
 
   /** Plus admin settings: pass prices (soʻm) + hidden fair-use caps. Defaults = relayed option C / PLUS-OFFER.md. */
   async plusSettings() {
-    const keys = [PLUS_SETTING_KEYS.price30, PLUS_SETTING_KEYS.price365, PLUS_SETTING_KEYS.benefits, PLUS_FAIR_USE_KEYS.lookups, PLUS_FAIR_USE_KEYS.quizzes, LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_KEYS.perHour];
+    const keys = [PLUS_SETTING_KEYS.price30, PLUS_SETTING_KEYS.price365, PLUS_SETTING_KEYS.benefits, LOOKUP_BURST_KEYS.perMinute, LOOKUP_BURST_KEYS.perHour];
     const rows = await this.prisma.platformSetting.findMany({ where: { key: { in: keys } } });
     const v = (k: string) => rows.find((r) => r.key === k)?.value;
     resetPlanCapsCache();
@@ -669,6 +669,7 @@ export class AdminService {
       plusLookupHardCap: caps.plusLookupHardCap,
       lookupBurstPerMinute: fairUseCap(v(LOOKUP_BURST_KEYS.perMinute), LOOKUP_BURST_FALLBACKS.perMinute),
       lookupBurstPerHour: fairUseCap(v(LOOKUP_BURST_KEYS.perHour), LOOKUP_BURST_FALLBACKS.perHour),
+      chapterQuizzesPerDay: caps.plus.quizzes,
       fairUseQuizzesPerDay: caps.plus.quizzes,
       freeLookupsPerDay: caps.free.lookups,
       freeQuizzesPerDay: caps.free.quizzes,
@@ -680,7 +681,7 @@ export class AdminService {
     };
   }
 
-  async updatePlusSettings(body: { price30Uzs?: unknown; price365Uzs?: unknown; plusAiLookupQuota?: unknown; plusLookupHardCap?: unknown; lookupBurstPerMinute?: unknown; lookupBurstPerHour?: unknown; fairUseQuizzesPerDay?: unknown; freeLookupsPerDay?: unknown; freeQuizzesPerDay?: unknown; freeMashqPerDay?: unknown; plusMashqPerDay?: unknown; importDiscountPct?: unknown }) {
+  async updatePlusSettings(body: { price30Uzs?: unknown; price365Uzs?: unknown; plusAiLookupQuota?: unknown; plusLookupHardCap?: unknown; lookupBurstPerMinute?: unknown; lookupBurstPerHour?: unknown; chapterQuizzesPerDay?: unknown; fairUseQuizzesPerDay?: unknown; freeLookupsPerDay?: unknown; freeQuizzesPerDay?: unknown; freeMashqPerDay?: unknown; plusMashqPerDay?: unknown; importDiscountPct?: unknown }) {
     const minSom = Math.max(1, Math.round(Number(process.env.ATMOS_MIN_AMOUNT_SOM) || 500));
     const writes: Array<[string, number]> = [];
     const int = (x: unknown, name: string, min: number, max: number) => {
@@ -696,7 +697,8 @@ export class AdminService {
     for (const [key, raw, name] of nullable) if (raw !== undefined) nullWrites.push([key, raw === null || raw === '' ? null : int(raw, name, 1, 1_000_000)]);
     if (body.lookupBurstPerMinute !== undefined) writes.push([LOOKUP_BURST_KEYS.perMinute, int(body.lookupBurstPerMinute, 'lookupBurstPerMinute', 1, 10_000)]);
     if (body.lookupBurstPerHour !== undefined) writes.push([LOOKUP_BURST_KEYS.perHour, int(body.lookupBurstPerHour, 'lookupBurstPerHour', 1, 100_000)]);
-    if (body.fairUseQuizzesPerDay !== undefined) planWrites.push(['premium', 'quizDailyQuota', int(body.fairUseQuizzesPerDay, 'fairUseQuizzesPerDay', 1, 10_000)]);
+    const chapterQuizzes = body.chapterQuizzesPerDay !== undefined ? body.chapterQuizzesPerDay : body.fairUseQuizzesPerDay;
+    if (chapterQuizzes !== undefined) planWrites.push(['premium', 'quizDailyQuota', int(chapterQuizzes, 'chapterQuizzesPerDay', 1, 10_000)]);
     if (body.freeLookupsPerDay !== undefined) planWrites.push(['free', 'aiDailyQuota', int(body.freeLookupsPerDay, 'freeLookupsPerDay', 0, 100_000)]);
     if (body.freeQuizzesPerDay !== undefined) planWrites.push(['free', 'quizDailyQuota', int(body.freeQuizzesPerDay, 'freeQuizzesPerDay', 0, 10_000)]);
     for (const [tier, field, value] of planWrites) {
@@ -762,9 +764,9 @@ export class AdminService {
   }
 
   async adjustUserTier(id: string, tierRaw: string, grant: { days?: number | string | null; until?: string | null } = {}) {
-    const tierKey = tierRaw.trim().toLowerCase();
+    const tierKey = tierRaw.trim().toLowerCase() === 'plus' ? 'premium' : tierRaw.trim().toLowerCase();
     if (tierKey !== 'free' && tierKey !== 'premium') {
-      throw new BadRequestException('tier must be "free" or "premium"');
+      throw new BadRequestException('tier must be "free" or "plus"');
     }
     const user = await this.prisma.user.findUnique({
       where: { id },
@@ -785,15 +787,43 @@ export class AdminService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Admin grant: 7 / 30 / 365 days or a custom date (PLUS-OFFER.md §5.11). Free = no end.
+    // Admin grant: 7 / 30 / 365 days or a custom date. Days stack on an active Plus end. Free clears it.
     let periodEnd: Date | null = null;
     if (tierKey === 'premium') {
-      try { periodEnd = adminGrantEnd(grant); } catch (e) { throw new BadRequestException((e as Error).message); }
+      try {
+        if (grant.until) {
+          periodEnd = adminGrantEnd({ until: grant.until });
+        } else {
+          const days = Number(grant.days ?? 30);
+          if (![7, 30, 365].includes(days)) throw new Error('Grant must be 7, 30 or 365 days, or a custom date.');
+          const activeEnd = existing?.status === 'active' && existing.currentPeriodEnd && existing.currentPeriodEnd > new Date()
+            ? existing.currentPeriodEnd
+            : new Date();
+          periodEnd = new Date(activeEnd.getTime() + days * 86_400_000);
+        }
+        if (periodEnd.getTime() - Date.now() > 3 * 366 * 86_400_000) {
+          throw new Error('Plus end date is too far ahead.');
+        }
+      } catch (e) { throw new BadRequestException((e as Error).message); }
     }
-    if (existing) {
+    if (tierKey === 'free') {
+      await this.prisma.entitlement.updateMany({
+        where: { userId: id, kind: 'plus', source: 'admin', status: 'active' },
+        data: { status: 'expired', expiresAt: new Date() },
+      });
+      const paidPass = existing?.provider === 'atmos' || existing?.provider === 'google_play';
+      if (existing && !paidPass) {
+        await this.prisma.userSubscription.update({
+          where: { id: existing.id },
+          data: { planId: plan.id, status: 'active', currentPeriodEnd: null },
+        });
+      }
+      return this.getUser(id);
+    }
+    if (existing && (existing.provider === 'admin' || !existing.provider)) {
       await this.prisma.userSubscription.update({
         where: { id: existing.id },
-        data: { planId: plan.id, status: 'active', currentPeriodEnd: periodEnd },
+        data: { planId: plan.id, status: 'active', currentPeriodEnd: periodEnd, provider: 'admin' },
       });
     } else {
       await this.prisma.userSubscription.create({
@@ -1468,13 +1498,13 @@ export class AdminService {
       currency: 'UZS',
       basePriceSom: 49000,
       perPageSurchargeSom: 0,
-      volumeDiscountsEnabled: true,
-      buy3PctOff: 10,
-      buy5PctOff: 20,
+      volumeDiscountsEnabled: false,
+      buy3PctOff: 0,
+      buy5PctOff: 0,
     };
     if (!row?.value || typeof row.value !== 'object') return defaults;
     const { basePriceUsd, perPageSurchargeUsd: _p, ...rest } = row.value as Record<string, unknown>;
-    return { ...defaults, ...rest, basePriceSom: catalogBaseSom(row.value), perPageSurchargeSom: 0, currency: 'UZS' } as typeof defaults;
+    return { ...defaults, ...rest, basePriceSom: catalogBaseSom(row.value), perPageSurchargeSom: 0, volumeDiscountsEnabled: false, buy3PctOff: 0, buy5PctOff: 0, currency: 'UZS' } as typeof defaults;
   }
 
   async updateCatalogPricingRules(body: Record<string, unknown>) {
@@ -1490,13 +1520,10 @@ export class AdminService {
       contentType: body.contentType !== undefined ? String(body.contentType) : current.contentType,
       currency: 'UZS',
       basePriceSom: som(body.basePriceSom, current.basePriceSom, 1),
-      perPageSurchargeSom: som(body.perPageSurchargeSom, current.perPageSurchargeSom, 0),
-      volumeDiscountsEnabled:
-        body.volumeDiscountsEnabled !== undefined
-          ? Boolean(body.volumeDiscountsEnabled)
-          : current.volumeDiscountsEnabled,
-      buy3PctOff: body.buy3PctOff !== undefined ? Number(body.buy3PctOff) : current.buy3PctOff,
-      buy5PctOff: body.buy5PctOff !== undefined ? Number(body.buy5PctOff) : current.buy5PctOff,
+      perPageSurchargeSom: 0,
+      volumeDiscountsEnabled: false,
+      buy3PctOff: 0,
+      buy5PctOff: 0,
     };
     // basePriceUsd is the legacy (misnamed, soʻm) key; mirrored so a final-4 rollback still reads the right price.
     const stored = { ...next, perPageSurchargeSom: 0, basePriceUsd: next.basePriceSom };
@@ -3210,6 +3237,7 @@ export class AdminService {
       cefrLevel: primary?.cefrLevel ?? null,
       billingTier: plus ? 'Plus' : payAsYouGo ? 'Pay as you go' : 'Free',
       subscriptionStatus: u.subscriptions[0]?.status ?? 'none',
+      plusExpiresAt: plus && sub?.currentPeriodEnd ? sub.currentPeriodEnd.toISOString() : null,
     };
   }
 

@@ -8,7 +8,6 @@ import {
   Logger,
   ServiceUnavailableException,
 } from '@nestjs/common';
-import { PLUS_FAIR_USE_DEFAULTS, PLUS_FAIR_USE_KEYS, activeSubWhere, fairUseCap } from '../../common/plan-active';
 import { createHash } from 'crypto';
 import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, lookupMode, usageDayStart, userCapPlan, type PlanCaps } from '../../common/plan-caps';
 

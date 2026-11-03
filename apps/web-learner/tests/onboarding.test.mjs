@@ -13,6 +13,13 @@ test('onboarding finishes with a localStorage done flag', () => {
   assert.match(flow, /markOnboardingDone/);
 });
 
+test('level and language are single-choice selects, and the book follows the chosen level', () => {
+  assert.match(flow, /<select[\s\S]*id="onboarding-level"/);
+  assert.match(flow, /<select[\s\S]*id="onboarding-language"/);
+  assert.match(flow, /bookLevels\(level\)/);
+  assert.doesNotMatch(flow, /\['a1', 'a2'\]\.map/);
+});
+
 test('the tour is level, tap-word demo, first book, then Practice', () => {
   assert.match(lib, /'level', 'demo', 'book', 'practice'/);
   assert.match(flow, /hesitation/);

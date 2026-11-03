@@ -10,6 +10,7 @@ interface PaymentRow {
   id: string;
   status: Status;
   needsAttention?: boolean;
+  refundBlock?: 'import_processing' | 'needs_attention' | 'auto_refund_in_progress' | null;
   importType: string;
   contentFormat: string;
   estimatedPages: number;
@@ -173,10 +174,19 @@ export default function PaymentsPage() {
                       Mark refunded
                     </Button>
                   )}
-                  {p.status === 'paid' && (
+                  {p.status === 'paid' && !p.refundBlock && (
                     <Button variant="secondary" onClick={() => { setFinalizeMode(false); setRefund(p); setReason(''); setIdemKey(crypto.randomUUID()); setConfirmText(''); setMsg(null); }}>
                       <RotateCcw className="size-4" /> Refund
                     </Button>
+                  )}
+                  {p.status === 'paid' && p.refundBlock === 'import_processing' && (
+                    <span className="text-xs text-amber-700">Import still running</span>
+                  )}
+                  {p.status === 'paid' && p.refundBlock === 'needs_attention' && (
+                    <span className="text-xs text-rose-700">Check Atmos first</span>
+                  )}
+                  {p.status === 'paid' && p.refundBlock === 'auto_refund_in_progress' && (
+                    <span className="text-xs text-rose-700">Refund already running</span>
                   )}
                 </td>
               </tr>

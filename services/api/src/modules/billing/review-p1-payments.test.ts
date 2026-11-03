@@ -67,7 +67,7 @@ function fakeDb(payment: Row) {
   return { svc, db, payments, purchases, audit, atmos, atmosCalls, setFailAudit: (v: boolean) => (failAudit = v) };
 }
 const CAT = 'catalog:11111111-1111-4111-8111-111111111111';
-const pay = (o: Row = {}): Row => ({ id: 'p1', userId: 'u1', status: S.paid, providerPaymentId: '42', contentFormat: CAT, amountTiyins: 100_00, account: 'acc1', ...o });
+const pay = (o: Row = {}): Row => ({ id: 'p1', userId: 'u1', status: S.paid, providerPaymentId: '42', contentFormat: CAT, amountTiyins: 100_00, account: 'acc1', refundState: null, needsAttention: false, refundDue: false, userImportId: null, ...o });
 
 async function main() {
   // BUG-06/07: learner cancel only for pending; never rewrites history
@@ -77,13 +77,14 @@ async function main() {
     assert.equal(f.payments[0].status, status);
   }
 
-  // Race (06b): pending cancel while Atmos already confirmed → reverse + status 'reversing'
+  // Cancel after Atmos already confirmed: no auto-reverse. Flag it for a manual refund.
   {
     const f = fakeDb(pay({ status: S.pending }));
     f.atmos.confirmed = true;
     const r = await f.svc.cancelPayment('u1', 'p1');
-    assert.equal(r.status, 'reversing');
-    assert.equal(r.needsAttention, false);
+    assert.equal(r.status, 'cancelled');
+    assert.equal(r.needsAttention, true);
+    assert.equal(f.atmosCalls.includes('reverse'), false);
   }
   // 13:43 decision: no self-serve reversal of a PAID payment (Plus or import) — 409 refund_requires_support, no Atmos call.
   for (const contentFormat of ['plus_pass:30', 'pdf']) {
@@ -111,6 +112,18 @@ async function main() {
     const again = await f.svc.refundPaidPayment('p1', { reason: 'dup', actorId: 'admin' });
     assert.equal(again.alreadyRefunded, true, 'retry returns existing result');
     assert.deepEqual(f.atmosCalls, ['reverse']);
+  }
+  // A flagged payment and an in-flight import are not reversed from admin.
+  {
+    const flagged = fakeDb(pay({ needsAttention: true }));
+    await assert.rejects(flagged.svc.refundPaidPayment('p1', { reason: 'dup', actorId: 'admin' }), (e: any) => e.getStatus() === 409 && JSON.stringify(e.getResponse()).includes('needs_attention'));
+    assert.equal(flagged.atmosCalls.length, 0);
+    const busy = fakeDb(pay({ userImportId: 'imp1' }));
+    busy.db.userImport = { findUnique: async () => ({ ingestionStatus: 'processing' }) };
+    await assert.rejects(busy.svc.refundPaidPayment('p1', { reason: 'dup', actorId: 'admin' }), (e: any) => e.getStatus() === 409 && JSON.stringify(e.getResponse()).includes('import_processing'));
+    const due = fakeDb(pay({ needsAttention: true, refundDue: true }));
+    await due.svc.refundPaidPayment('p1', { reason: 'dup', actorId: 'admin' });
+    assert.equal(due.payments[0].status, S.refunded);
   }
   // B2: Atmos failure rolls the claim back to paid (+ flagged), nothing revoked, no audit
   {
@@ -165,7 +178,8 @@ async function main() {
     f.atmos.applyTransaction = async () => { f.payments[0].status = S.failed; return { confirmed: true, raw: {} }; };
     await assert.rejects(f.svc.apply('u1', 'p1', '123456'), (e: any) => e.getStatus() === 409);
     assert.equal(f.payments[0].status, S.failed);
-    assert.ok(f.atmosCalls.includes('reverse'));
+    assert.equal(f.payments[0].needsAttention, true);
+    assert.equal(f.atmosCalls.includes('reverse'), false);
   }
   // M3: concurrent webhook + poll + apply ⇒ one paid transition, one purchase
   {
@@ -199,12 +213,13 @@ async function main() {
     assert.ok(!f.atmosCalls.includes('reverse'), 'never reverse a delivered payment');
     assert.equal(f.payments[0].status, S.paid);
   }
-  // PAY1-01: cancelled (failed) while the OTP was in flight → reverse once, 409.
+  // Late confirm after cancel: flag for a manual refund, do not auto-reverse.
   {
     const f = fakeDb(pay({ status: S.pending, expiresAt: new Date(Date.now() + 3_600_000) }));
     f.atmos.onApply = () => { f.payments[0].status = S.failed; };
     await assert.rejects(f.svc.apply('u1', 'p1', '111111'), (e: any) => e.getStatus() === 409);
-    assert.equal(f.atmosCalls.filter((c) => c === 'reverse').length, 1);
+    assert.equal(f.atmosCalls.filter((c) => c === 'reverse').length, 0);
+    assert.equal(f.payments[0].needsAttention, true);
   }
   // PAY1-04: callback must carry OUR transaction id; providerPaymentId is never overwritten.
   {

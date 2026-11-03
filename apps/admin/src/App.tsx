@@ -12,6 +12,7 @@ import NotificationsPage from './pages/NotificationsPage';
 import ProtectedRoute from './pages/ProtectedRoute';
 import SettingsPage from './pages/SettingsPage';
 import UsersPage from './pages/UsersPage';
+import { AchievementsPage, AdminNotFoundPage, DeletionRequestsPage, SafetyReportsPage } from './pages/TrustPages';
 import { useAuth } from './lib/auth';
 
 /** Dashboard is superadmin/analyst/editor only — moderators would otherwise land
@@ -43,6 +44,10 @@ export default function App() {
           {/* Analytics merged into Overview */}
           <Route path="analytics" element={<Navigate to="/" replace />} />
           <Route path="settings" element={<SettingsPage />} />
+          <Route path="deletions" element={<DeletionRequestsPage />} />
+          <Route path="safety" element={<SafetyReportsPage />} />
+          <Route path="achievements" element={<AchievementsPage />} />
+          <Route path="*" element={<AdminNotFoundPage />} />
         </Route>
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

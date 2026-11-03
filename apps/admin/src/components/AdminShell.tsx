@@ -10,6 +10,9 @@ import {
   Menu,
   Settings,
   ShieldCheck,
+  Flag,
+  Trash2,
+  Award,
   Receipt,
   Tags,
   Users,
@@ -37,6 +40,9 @@ interface NavItem {
 const nav: NavItem[] = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, end: true, roles: ['superadmin', 'analyst', 'editor'] },
   { to: '/users', label: 'Learners', icon: Users, roles: ['superadmin', 'analyst', 'moderator'] },
+  { to: '/deletions', label: 'Deletion requests', icon: Trash2, roles: ['superadmin', 'moderator'] },
+  { to: '/safety', label: 'Safety reports', icon: Flag, roles: ['superadmin', 'moderator'] },
+  { to: '/achievements', label: 'Achievements', icon: Award, roles: ['superadmin', 'editor', 'analyst'] },
   { to: '/content', label: 'Content Library', icon: BookOpen, roles: ['superadmin', 'editor'] },
   // Moderators only have API access to the moderation queue (not the full curriculum/licensing
   // catalog), so they get a dedicated link straight to that tab instead of "Content Library".

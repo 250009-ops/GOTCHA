@@ -9,7 +9,7 @@ type T3 = { en: string; ru: string; uz: string };
 const BY_CODE: Record<string, T3> = {
   EMAIL_NOT_VERIFIED: { en: 'Please verify your email before signing in.', ru: 'Подтвердите email, прежде чем войти.', uz: 'Kirishdan oldin emailingizni tasdiqlang.' },
   use_daily_practice: { en: 'Word review now lives in Daily practice.', ru: 'Повторение слов теперь в ежедневной практике.', uz: 'Soʻzlarni takrorlash endi kundalik mashqda.' },
-  refund_requires_support: { en: 'This payment is complete. Contact support for a refund.', ru: 'Платёж уже проведён. Для возврата обратитесь в поддержку.', uz: 'Toʻlov amalga oshirilgan. Pulni qaytarish uchun qoʻllab-quvvatlash xizmatiga yozing.' },
+  refund_requires_support: { en: 'This payment is complete. If something is wrong with it, contact support@gotchaa.uz.', ru: 'Платёж уже проведён. Если с ним что-то не так, напишите на support@gotchaa.uz.', uz: 'Toʻlov amalga oshirilgan. Unda xato boʻlsa, support@gotchaa.uz ga yozing.' },
   payment_not_pending: { en: 'This payment can no longer be cancelled.', ru: 'Этот платёж уже нельзя отменить.', uz: 'Bu toʻlovni endi bekor qilib boʻlmaydi.' },
 };
 
@@ -63,6 +63,8 @@ const BY_MESSAGE: Record<string, T3> = {
   'Practice session not found': { en: 'Practice session not found.', ru: 'Сессия практики не найдена.', uz: 'Mashq sessiyasi topilmadi.' },
   'Session already completed': { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
   'Request failed': { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.', uz: 'Nimadir xato ketdi. Qayta urinib koʻring.' },
+  'fetch failed': { en: 'Could not reach the server. Check your connection and try again.', ru: 'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.', uz: 'Serverga ulanib boʻlmadi. Aloqani tekshirib, qayta urinib koʻring.' },
+  'Import timed out while processing the file. Try again, or use a smaller PDF.': { en: 'Import timed out while processing the file. Try again, or use a smaller PDF.', ru: 'Импорт не успел обработать файл. Попробуйте ещё раз или возьмите PDF поменьше.', uz: 'Import faylni qayta ishlashga ulgurmadi. Qayta urinib koʻring yoki kichikroq PDF oling.' },
   'Target language cannot be the same as your native language.': BY_CODE.TARGET_SAME_AS_NATIVE,
   'You must keep at least one target language.': BY_CODE.KEEP_ONE_TARGET,
   'Display name cannot contain links or control characters.': BY_CODE.DISPLAY_NAME_INVALID,
@@ -88,6 +90,8 @@ export function localizeApiError(
   const hit = (err.code && BY_CODE[err.code]) || BY_MESSAGE[raw] || BY_MESSAGE[raw.replace(/\.$/, '')];
   if (hit) return hit[l];
   // class-validator / whitelist noise ("property dailyGoalXp should not exist", "must not be greater than 500").
+  if (/fetch failed|failed to fetch|networkerror|network request failed/i.test(raw)) return BY_MESSAGE['fetch failed'][l];
+  if (/timed out|timeout/i.test(raw)) return BY_MESSAGE['Import timed out while processing the file. Try again, or use a smaller PDF.'][l];
   if (/should not exist|must not be|must be an |must be shorter|must be longer|must be a /i.test(raw)) {
     return BY_STATUS['400'][l];
   }

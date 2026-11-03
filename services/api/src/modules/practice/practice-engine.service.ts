@@ -6,7 +6,6 @@ import {
   buildCloze,
   damerauLevenshtein,
   chooseExerciseType,
-  displayStreak,
   gradeAnswer,
   hashString,
   normalize,
@@ -22,7 +21,7 @@ import {
 import { PrismaService } from '../../prisma/prisma.service';
 import { VocabularyService } from '../vocabulary/vocabulary.service';
 import { AiService } from '../ai/ai.service';
-import { calendarDateKey, dateFromCalendarKey, diffCalendarDays, startOfLocalDay } from '../../services/streak.service';
+import { calendarDateKey, dateFromCalendarKey, diffCalendarDays, effectiveStreakCount, startOfLocalDay } from '../../services/streak.service';
 import { buildPracticeItem, type PracticeItem } from './practice-items';
 export type { PracticeItem } from './practice-items';
 import type { AnswerExerciseDto, DailySessionQueryDto } from './dto/practice-engine.dto';
@@ -79,7 +78,7 @@ export class PracticeEngineService {
       xpTotal: user?.xpTotal ?? 0,
       dailyGoalXp: prefs?.dailyGoalXp ?? DEFAULT_DAILY_GOAL_XP,
       dailyNewWords: prefs?.dailyNewWords ?? 10,
-      streakCount: displayStreak(user?.streakCount ?? 0, user?.streakFreezes ?? 0, gap),
+      streakCount: effectiveStreakCount(user?.streakCount ?? 0, user?.streakLastDate, now),
       bestStreak: user?.bestStreak ?? 0,
       streakFreezes: user?.streakFreezes ?? 0,
       practicedToday: gap === 0,
@@ -93,10 +92,10 @@ export class PracticeEngineService {
       where: { userId, ...(lang ? { sourceLang: lang as UserVocabulary['sourceLang'] } : {}), dueAt: { gt: now, lte: end }, fsrsState: { not: 0 } },
       select: { dueAt: true },
     });
-    const today = calendarDateKey(now);
+    const start = startOfLocalDay(now);
     return Array.from({ length: 7 }, (_, i) => {
-      const key = calendarDateKey(new Date(now.getTime() + (i + 1) * 86_400_000));
-      return { date: key, count: rows.filter((r) => calendarDateKey(r.dueAt) === key || (i === 0 && calendarDateKey(r.dueAt) === today)).length };
+      const key = calendarDateKey(new Date(start.getTime() + i * 86_400_000));
+      return { date: key, count: rows.filter((r) => calendarDateKey(r.dueAt) === key).length };
     });
   }
 
