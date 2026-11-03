@@ -1015,7 +1015,7 @@ export default function SettingsPage() {
                       : plan?.importLimit && plan.importLimit < 1_000_000
                         ? copy.settings.importLimitLine(plan.importLimit)
                         : null,
-                    plusActive ? plusFill(payCopyFor(locale)('plus.bImp'), { plus: 0, free: 0, pct: 50 }) : null,
+                    plusActive ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: 50 }) : null,
                     importAllowance
                       ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                       : null,
