@@ -277,7 +277,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               <div className="flex flex-col gap-2">
                 <label id="auth-target-label" className="text-xs font-semibold text-[#4a5565]">
                   {copy.auth.targetLanguages}{' '}
-                  <span className="text-[#9ca3af] font-normal">{copy.auth.targetLanguagesHint}</span>
+                  <span className="text-[#4a5565] font-normal">{copy.auth.targetLanguagesHint}</span>
                 </label>
                 <LanguageSearchInput
                   options={catalogLangs}
@@ -336,7 +336,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={copy.auth.namePlaceholder}
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
+                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                   />
                 </div>
               )}
@@ -353,7 +353,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={copy.auth.emailPlaceholder}
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
+                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -367,12 +367,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={isLogin ? copy.auth.passwordPlaceholderLogin : copy.auth.passwordPlaceholderRegister}
-                    className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
+                    className="w-full h-11 pl-3.5 pr-12 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                   />
                   <button
                     type="button"
                     onClick={() => setShowPass((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#9ca3af] hover:text-[#4a5565]"
+                    className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-xl text-[#4a5565] hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
                     aria-label={showPass ? copy.auth.hidePassword : copy.auth.showPassword}
                   >
                     {showPass ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
@@ -383,7 +383,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 <div className="flex items-center justify-end">
                   <Link
                     to={forgotPasswordTo}
-                    className="text-[13px] font-semibold text-g-blue-700 hover:text-g-blue-800"
+                    className="inline-flex min-h-11 items-center rounded-lg text-[13px] font-semibold text-g-blue-700 hover:text-g-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
                   >
                     {copy.auth.forgotPassword}
                   </Link>
@@ -412,7 +412,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
 
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-[#e5e7eb]" />
-            <span className="text-xs text-[#9ca3af]">{copy.common.or}</span>
+            <span className="text-xs font-medium text-[#4a5565]">{copy.common.or}</span>
             <div className="flex-1 h-px bg-[#e5e7eb]" />
           </div>
 
@@ -426,7 +426,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               replace
               to={switchTo}
               state={{ email, name }}
-              className="text-g-blue-700 font-bold hover:text-g-blue-800"
+              className="inline-flex min-h-11 items-center rounded-lg text-g-blue-700 font-bold hover:text-g-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
             >
               {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>
@@ -437,7 +437,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         <button
           type="button"
           onClick={goHome}
-          className="mt-5 flex items-center gap-1.5 text-sm font-medium text-[#99a1af] hover:text-[#4a5565] mx-auto"
+          className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-[#4a5565] hover:text-[#101828] mx-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
         >
           <ArrowLeft className="w-3.5 h-3.5" />
           {copy.auth.backToHomepage}

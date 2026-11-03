@@ -63,6 +63,8 @@ const BY_MESSAGE: Record<string, T3> = {
   'Practice session not found': { en: 'Practice session not found.', ru: 'Сессия практики не найдена.', uz: 'Mashq sessiyasi topilmadi.' },
   'Session already completed': { en: 'This session is already finished.', ru: 'Эта сессия уже завершена.', uz: 'Bu sessiya allaqachon yakunlangan.' },
   'Request failed': { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.', uz: 'Nimadir xato ketdi. Qayta urinib koʻring.' },
+  'Internal error': { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.', uz: 'Nimadir xato ketdi. Qayta urinib koʻring.' },
+  'Internal server error': { en: 'Something went wrong. Please try again.', ru: 'Что-то пошло не так. Попробуйте ещё раз.', uz: 'Nimadir xato ketdi. Qayta urinib koʻring.' },
   'fetch failed': { en: 'Could not reach the server. Check your connection and try again.', ru: 'Не удалось связаться с сервером. Проверьте соединение и попробуйте ещё раз.', uz: 'Serverga ulanib boʻlmadi. Aloqani tekshirib, qayta urinib koʻring.' },
   'Import timed out while processing the file. Try again, or use a smaller PDF.': { en: 'Import timed out while processing the file. Try again, or use a smaller PDF.', ru: 'Импорт не успел обработать файл. Попробуйте ещё раз или возьмите PDF поменьше.', uz: 'Import faylni qayta ishlashga ulgurmadi. Qayta urinib koʻring yoki kichikroq PDF oling.' },
   'Target language cannot be the same as your native language.': BY_CODE.TARGET_SAME_AS_NATIVE,
@@ -91,6 +93,7 @@ export function localizeApiError(
   if (hit) return hit[l];
   // class-validator / whitelist noise ("property dailyGoalXp should not exist", "must not be greater than 500").
   if (/fetch failed|failed to fetch|networkerror|network request failed/i.test(raw)) return BY_MESSAGE['fetch failed'][l];
+  if (/^internal( server)? error\.?$/i.test(raw)) return BY_MESSAGE['Internal error'][l];
   if (/timed out|timeout/i.test(raw)) return BY_MESSAGE['Import timed out while processing the file. Try again, or use a smaller PDF.'][l];
   if (/should not exist|must not be|must be an |must be shorter|must be longer|must be a /i.test(raw)) {
     return BY_STATUS['400'][l];

@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import { LanguagePicker } from './LanguagePicker';
-import { GotchaLogo } from './GotchaLogo';
+import { BrandMark } from './GotchaLogo';
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000/api/v1' : '/api/v1')).replace(/\/$/, '');
 
@@ -69,8 +69,24 @@ function useAuthMarketing(): AuthMarketing {
   return data;
 }
 
+/** Navy mark on a white tile so the logo stays visible on the blue auth panel. */
 export function AuthBrandMark({ light }: { light?: boolean }) {
-  return <GotchaLogo size={40} tone={light ? 'light' : 'ink'} />;
+  const size = 36;
+  const wordmark = `${import.meta.env.BASE_URL ?? '/'}brand/gotcha-wordmark-${light ? 'dark' : 'light'}.svg`;
+  return (
+    <span className="inline-flex items-center" style={{ gap: Math.round(size * 0.375) }}>
+      <span className="inline-flex rounded-[14px] bg-white p-1 shadow-[0_8px_18px_rgba(0,0,0,0.18)]">
+        <BrandMark size={size} elevated={false} />
+      </span>
+      <img
+        src={wordmark}
+        alt="GOTCHA"
+        draggable={false}
+        className="select-none block"
+        style={{ height: size * 0.5625, width: 'auto' }}
+      />
+    </span>
+  );
 }
 
 function MarketingPanel() {
@@ -157,15 +173,18 @@ export function AuthShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="min-h-screen flex flex-col lg:flex-row bg-[#f9fafb] overflow-x-hidden">
-      <div className="fixed top-4 right-4 z-[60] sm:top-6 sm:right-6">
-        <LanguagePicker compact />
+      <div className="hidden lg:block fixed top-6 right-6 z-[60]">
+        <LanguagePicker />
       </div>
 
       <MarketingPanel />
 
-      <div className="lg:hidden flex flex-col gap-3 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-g-blue-700 via-g-blue-900 via-[55%] to-g-blue-900">
-        <AuthBrandMark light />
-        <p className="text-g-blue-200 text-sm leading-5 pr-24">
+      <div className="lg:hidden flex flex-col gap-4 px-5 sm:px-6 pt-6 pb-5 bg-gradient-to-r from-g-blue-700 via-g-blue-900 via-[55%] to-g-blue-900">
+        <div className="flex items-center justify-between gap-4">
+          <AuthBrandMark light />
+          <LanguagePicker compact variant="light" />
+        </div>
+        <p className="text-g-blue-100 text-sm leading-5">
           {copy.auth.readYourWay} {copy.auth.readYourWayBold}
         </p>
       </div>

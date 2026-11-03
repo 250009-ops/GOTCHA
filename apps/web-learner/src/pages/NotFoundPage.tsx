@@ -19,10 +19,10 @@ export default function NotFoundPage() {
   const t = notFoundText(locale);
   return (
     <main role="main" data-testid="not-found" className="min-h-[60vh] flex flex-col items-center justify-center gap-3 p-6 text-center">
-      <p className="text-5xl font-bold text-[#7f22fe]">404</p>
+      <p className="text-5xl font-bold text-[#2107AA]">404</p>
       <h1 className="text-xl font-bold text-[#101828]">{t.title}</h1>
       <p className="text-sm text-[#4a5565]">{t.body}</p>
-      <Link to="/app" className="mt-2 h-11 px-5 inline-flex items-center rounded-[14px] bg-[#7f22fe] text-white text-sm font-bold">{t.home}</Link>
+      <Link to="/app" className="mt-2 h-11 px-5 inline-flex items-center rounded-[14px] bg-[#2107AA] text-white text-sm font-bold">{t.home}</Link>
     </main>
   );
 }

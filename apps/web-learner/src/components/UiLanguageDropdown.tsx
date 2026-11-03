@@ -120,8 +120,8 @@ export function UiLanguageDropdown({
             setOpen(false);
           }}
           className={cn(
-            'flex w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors',
-            selected ? 'bg-[#155dfc] text-white' : 'text-[#101828] hover:bg-g-learning-bg',
+            'flex min-h-11 w-full items-center gap-2.5 px-3 py-2 text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#2107AA]',
+            selected ? 'bg-[#2107AA] text-white' : 'text-[#101828] hover:bg-g-learning-bg',
           )}
         >
           <UiLanguageFlag lang={code} />
@@ -142,13 +142,13 @@ export function UiLanguageDropdown({
         aria-haspopup="listbox"
         onClick={() => setOpen((v) => !v)}
         className={cn(
-          'inline-flex items-center rounded-full border font-semibold transition-colors touch-manipulation',
+          'inline-flex min-h-11 min-w-11 items-center rounded-full border font-semibold transition-colors touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2',
           compact
-            ? 'h-8 gap-1.5 px-2 text-xs'
-            : 'h-8 gap-1.5 px-2 text-xs lg:h-9 lg:gap-2 lg:px-3 lg:text-sm',
+            ? 'gap-1.5 px-3 text-xs'
+            : 'gap-1.5 px-3 text-xs lg:gap-2 lg:px-3.5 lg:text-sm',
           isLight
-            ? 'border-white/25 bg-white/10 text-white hover:bg-white/15'
-            : 'border-[#c7d2fe] bg-white text-[#364153] hover:border-[#a5b4fc] hover:bg-[#fafaff]',
+            ? 'border-white/40 bg-white/10 text-white hover:bg-white/15 focus-visible:ring-white focus-visible:ring-offset-[#2107AA]'
+            : 'border-[#c7d2fe] bg-white text-[#364153] hover:border-[#a5b4fc] hover:bg-[#fafaff] focus-visible:ring-[#2107AA] focus-visible:ring-offset-white',
         )}
       >
         <UiLanguageFlag lang={value} />

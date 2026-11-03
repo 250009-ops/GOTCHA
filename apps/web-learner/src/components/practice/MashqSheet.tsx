@@ -46,7 +46,9 @@ export function MashqSheet({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-lg font-bold text-[#101828]">{copy.cardTitle}</h2>
-        <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : preparing ? copy.preparing : failed ? copy.gaveUp : empty ? copy.noneLeft : copy.cardBody}</p>
+        {!preparing ? (
+          <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : failed ? copy.gaveUp : empty ? copy.noneLeft : copy.cardBody}</p>
+        ) : null}
         {notice && !preparing && !failed ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{notice}</p> : null}
         {blocked ? (
           <div className="mt-4">
@@ -55,7 +57,12 @@ export function MashqSheet({
               {copy.seePlus}
             </Link>
           </div>
-        ) : preparing ? null : failed || empty ? (
+        ) : preparing ? (
+          <div className="mt-4 flex items-center gap-3 text-sm font-medium text-[#374151]" role="status">
+            <span className="size-5 shrink-0 rounded-full border-2 border-[#2107AA]/25 border-t-[#2107AA] animate-spin" aria-hidden />
+            <span>{copy.preparing}</span>
+          </div>
+        ) : failed || empty ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"

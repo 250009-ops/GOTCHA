@@ -390,6 +390,9 @@ export default function LibraryPage() {
   const copy = useLearnerCopy();
   const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [feedError, setFeedError] = useState(false);
+  const [catalogError, setCatalogError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [catalogItems, setCatalogItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -435,18 +438,22 @@ export default function LibraryPage() {
     if (!user || !getAccessToken()) return;
     let cancelled = false;
     setLoading(true);
+    setFeedError(false);
     api<FeedResponse>('/content/feed')
       .then((data) => {
         if (!cancelled) setFeed(data);
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setFeedError(true);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [user, nativeCode, targetScopeKey]);
+  }, [user, nativeCode, targetScopeKey, reloadKey]);
 
   const initialFilter = useMemo(
     () => parseFilterParam(searchParams.get('filter') ?? searchParams.get('genre'), languageTabs, nativeCode),
@@ -497,6 +504,7 @@ export default function LibraryPage() {
     }
     let cancelled = false;
     setCatalogLoading(true);
+    setCatalogError(false);
     (async () => {
       const all: ContentItem[] = [];
       let page = 1;
@@ -513,14 +521,17 @@ export default function LibraryPage() {
       }
       if (!cancelled) setCatalogItems(dedupeItems(all));
     })()
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setCatalogError(true);
+      })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery]);
+  }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery, reloadKey]);
 
   const uniqueItems = useMemo(() => {
     if (!feed) return [];
@@ -579,10 +590,11 @@ export default function LibraryPage() {
   const greetingText =
     hour < 12 ? copy.libraryPage.goodMorning : hour < 18 ? copy.libraryPage.goodAfternoon : copy.libraryPage.goodEvening;
   const firstName = (user?.displayName ?? copy.libraryPage.learnerFallback).split(' ')[0];
+  const retryLibrary = () => setReloadKey((n) => n + 1);
   const libraryEmpty =
     isBrowse
-      ? !loading && !catalogLoading && browseBaseItems.length === 0
-      : !loading && uniqueItems.length === 0;
+      ? !loading && !catalogLoading && !catalogError && browseBaseItems.length === 0
+      : !loading && !feedError && uniqueItems.length === 0;
 
   const setFilter = (next: FilterTab) => {
     setActiveFilter(next);
@@ -681,7 +693,15 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {libraryEmpty ? (
+        {catalogError && catalogItems.length === 0 ? (
+          <EmptyState
+            icon={BookOpen}
+            title={copy.libraryPage.loadErrorTitle}
+            description={copy.libraryPage.loadErrorBody}
+            actionLabel={copy.commonExt.retry}
+            onAction={retryLibrary}
+          />
+        ) : libraryEmpty ? (
           <EmptyState
             icon={BookOpen}
             title={copy.libraryPage.yourLibraryEmpty}
@@ -843,6 +863,16 @@ export default function LibraryPage() {
         );
       })}
 
+      {feedError && (
+        <EmptyState
+          icon={BookOpen}
+          title={copy.libraryPage.loadErrorTitle}
+          description={copy.libraryPage.loadErrorBody}
+          actionLabel={copy.commonExt.retry}
+          onAction={retryLibrary}
+        />
+      )}
+
       {libraryEmpty && (
         <div className="space-y-4">
           <EmptyState
@@ -865,7 +895,7 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
+      {!feedError && !libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
         <section>
           <SectionHeading
             title={copy.libraryPage.browseTitle}

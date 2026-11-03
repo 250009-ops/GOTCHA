@@ -112,6 +112,8 @@ export interface LearnerCopyExt {
     percentKnown: (n: number) => string;
     resume: string;
     yourLibraryEmpty: string;
+    loadErrorTitle: string;
+    loadErrorBody: string;
     noContentFound: string;
     newInLibrary: string;
     yourImports: string;
@@ -491,6 +493,8 @@ const EXT_EN: LearnerCopyExt = {
     percentKnown: (n) => `${n}% known`,
     resume: 'Resume',
     yourLibraryEmpty: 'Your library is empty',
+    loadErrorTitle: 'Couldn’t load the library',
+    loadErrorBody: 'Check your connection and try again.',
     noContentFound: 'No content found',
     newInLibrary: 'New in the library',
     yourImports: 'Your imports',
@@ -874,6 +878,8 @@ const EXT_RU: LearnerCopyExt = {
     percentKnown: (n) => `${n}% известно`,
     resume: 'Продолжить',
     yourLibraryEmpty: 'Библиотека пуста',
+    loadErrorTitle: 'Не удалось загрузить библиотеку',
+    loadErrorBody: 'Проверьте соединение и попробуйте ещё раз.',
     noContentFound: 'Контент не найден',
     newInLibrary: 'Новое в библиотеке',
     yourImports: 'Ваши импорты',
@@ -1257,6 +1263,8 @@ const EXT_UZ: LearnerCopyExt = {
     percentKnown: (n) => `${n}% maʼlum`,
     resume: 'Davom etish',
     yourLibraryEmpty: 'Kutubxona boʻsh',
+    loadErrorTitle: 'Kutubxonani yuklab boʻlmadi',
+    loadErrorBody: 'Aloqani tekshirib, qayta urinib koʻring.',
     noContentFound: 'Kontent topilmadi',
     newInLibrary: 'Kutubxonada yangi',
     yourImports: 'Importlaringiz',

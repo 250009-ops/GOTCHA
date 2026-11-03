@@ -59,7 +59,7 @@ export function AgePrompt() {
         </select>
         <div className="flex gap-2">
           <button type="button" disabled={busy} onClick={() => void send(null)} className="flex-1 h-11 rounded-[14px] border border-[#e5e7eb] text-sm font-medium text-[#101828]">{c.skip}</button>
-          <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] text-white text-sm font-bold disabled:opacity-50">{c.save}</button>
+          <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#2107AA] text-white text-sm font-bold disabled:opacity-50">{c.save}</button>
         </div>
       </div>
     </div>

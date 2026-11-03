@@ -40,6 +40,14 @@ if (!VITE_API_URL || /localhost|127\.0\.0\.1/i.test(VITE_API_URL)) {
   process.exit(1);
 }
 
+function gitOut(args) {
+  return (spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout || '').trim();
+}
+const head = gitOut(['rev-parse', 'HEAD']);
+const dirty = gitOut(['diff', 'HEAD']) || gitOut(['ls-files', '--others', '--exclude-standard']);
+const VITE_BUILD_SHA = head && !dirty ? head.slice(0, 12) : 'dev';
+const VITE_BUILD_DATE = new Date().toISOString().slice(0, 10);
+
 const viteEnv = {
   ...process.env,
   VITE_API_URL,
@@ -47,6 +55,8 @@ const viteEnv = {
   VITE_MARKETING_URL,
   VITE_LEARNER_APP_URL,
   VITE_ADMIN_APP_URL,
+  VITE_BUILD_SHA,
+  VITE_BUILD_DATE,
 };
 
 function runLocal(cmd, args, envExtra = {}) {
@@ -90,6 +100,7 @@ function sshExec(conn, cmd, timeoutMs = 120_000) {
 
 console.log(`==> Building frontends for ${DOMAIN}`);
 console.log(`    VITE_API_URL=${VITE_API_URL}`);
+console.log(`    VITE_BUILD_SHA=${VITE_BUILD_SHA}`);
 
 runLocal(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build', '--workspace=apps/web'], {
   VITE_BASE: '/',

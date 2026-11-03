@@ -29,7 +29,7 @@ export function SignupSafetyFields(props: {
           id="signup-birth-year"
           value={props.birthYear ?? ''}
           onChange={(e) => props.onBirthYear(e.target.value ? Number(e.target.value) : null)}
-          className="h-11 rounded-[14px] border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm text-[#101828]"
+          className="h-11 rounded-[14px] border border-[#e5e7eb] bg-[#f9fafb] px-3 text-sm text-[#101828] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
         >
           <option value="">{age.preferNot}</option>
           {birthYearOptions().map((y) => (
@@ -39,12 +39,12 @@ export function SignupSafetyFields(props: {
           ))}
         </select>
       </div>
-      <label className="flex items-start gap-2.5 text-[12px] leading-[18px] text-[#4a5565]">
+      <label className="flex min-h-11 items-center gap-3 text-sm leading-5 text-[#374151]">
         <input
           type="checkbox"
           checked={props.accepted}
           onChange={(e) => props.onAccepted(e.target.checked)}
-          className="mt-0.5 size-4 shrink-0 accent-[#7f22fe]"
+          className="size-5 shrink-0 accent-[#2107AA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
           data-testid="signup-consent"
         />
         <span>
@@ -65,12 +65,12 @@ export function SignupSafetyFields(props: {
           )}
         </span>
       </label>
-      <label className="flex items-start gap-2.5 text-[12px] leading-[18px] text-[#4a5565]">
+      <label className="flex min-h-11 items-center gap-3 text-sm leading-5 text-[#374151]">
         <input
           type="checkbox"
           checked={props.aiAccepted}
           onChange={(e) => props.onAiAccepted(e.target.checked)}
-          className="mt-0.5 size-4 shrink-0 accent-[#7f22fe]"
+          className="size-5 shrink-0 accent-[#2107AA] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
           data-testid="signup-ai-consent"
           required
         />
