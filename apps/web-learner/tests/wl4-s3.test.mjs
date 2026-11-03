@@ -11,7 +11,7 @@ const copy = r('../../packages/shared/src/learnerCopy.ts');
 const ext = r('../../packages/shared/src/learnerCopyExt.ts');
 
 test('WL4-05: Settings App language, Delete, AI switch and reader Report follow the active UI locale', () => {
-  assert.match(settings, /useState<AppLanguage>\(locale as AppLanguage\)/);
+  assert.match(settings, /value=\{locale\}/);
   assert.match(settings, /<DeleteAccount lang=\{locale\}/);
   assert.match(reader, /<ReportButton lang=\{locale\}/);
   assert.doesNotMatch(settings + reader, /lang=\{user\?\.uiLanguage\}/);

@@ -138,11 +138,13 @@ export class BillingService {
     const ui = await this.prisma.user.findUnique({ where: { id: userId }, select: { uiLanguage: true } });
     const lang: PlanLang = ui?.uiLanguage === 'ru' || ui?.uiLanguage === 'uz' ? ui.uiLanguage : 'en';
     const sub = await this.prisma.userSubscription.findFirst({
-      where: { userId, ...activeSubWhere() },
+      where: { userId, ...activeSubWhere(), plan: { tier: 'premium' } },
       include: { plan: true },
-      orderBy: { createdAt: 'desc' },
+      orderBy: { currentPeriodEnd: 'desc' },
     });
 
+    const benefits = await this.prisma.platformSetting.findUnique({ where: { key: PLUS_SETTING_KEYS.benefits } }).catch(() => null);
+    const importDiscountPct = plusPassConfig(process.env, 500, { [PLUS_SETTING_KEYS.benefits]: benefits?.value }).benefits.importDiscountPct;
     const [usage, caps, plan, importAllowance] = await Promise.all([
       this.prisma.aiUsageDaily.findUnique({
         where: { userId_usageDate: { userId, usageDate: usageDayStart() } },
@@ -164,6 +166,7 @@ export class BillingService {
         mashqQuota: caps[plan].mashq,
         resetAt: usageResetAt().toISOString(),
         importAllowance,
+        importDiscountPct,
       },
     };
   }

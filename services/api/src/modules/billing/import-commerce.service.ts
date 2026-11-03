@@ -128,6 +128,15 @@ export const LATE_UNATTACHED_REFUND_MS = 7 * 24 * 3600_000;
 
 /** PAY2-23: needsAttention is only the manual-review flag (payment_under_review / 24 h expired_unverified), not a refund-due
  * or failed-reverse flag, so a definitive Atmos answer may clear it. */
+/** Explicit Atmos status only. `confirmed === false` is not proof that money moved back. */
+export function atmosRefundVerdict(remote: { confirmed?: boolean; statusCode?: string | null; statusMessage?: string | null }): 'reversed' | 'captured' | 'unknown' {
+  const code = String(remote.statusCode ?? '').trim().toUpperCase();
+  const msg = String(remote.statusMessage ?? '').toLowerCase();
+  if (['REVERSED', 'CANCELLED', 'CANCELED', 'REFUNDED'].includes(code) || /revers|refund|cancel/.test(msg)) return 'reversed';
+  if (remote.confirmed === true || code === 'CONFIRMED' || code === 'OK') return 'captured';
+  return 'unknown';
+}
+
 export function reviewFlagOnly(p: { status: string; cancelReason: string | null; refundDue?: boolean | null }): boolean {
   if (p.refundDue) return false;
   if (p.status === 'pending') return p.cancelReason == null;
@@ -852,7 +861,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       } catch (e) {
         await this.prisma.importPayment.updateMany({
           where: { id: paymentId, status: ImportPaymentStatus.refunding },
-          data: { status: ImportPaymentStatus.paid, needsAttention: true, refundState: 'reverse_failed' },
+          data: { needsAttention: true, refundState: 'reverse_unknown', refundAttempts: { increment: 1 } },
         });
         throw e;
       }
@@ -901,31 +910,95 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
+  /** Close a refunding row: revoke access, shift Plus, and write the audit in one transaction, then project Plus. */
+  async finalizeManualRefund(actorId: string | null, paymentId: string, reason: string, action = 'payment.refund.finalize') {
+    const payment = await this.prisma.importPayment.findUnique({ where: { id: paymentId } });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === ImportPaymentStatus.refunded) return { id: paymentId, status: 'refunded' as const, already: true, accessRevoked: 0 };
+    if (payment.status !== ImportPaymentStatus.refunding) {
+      throw new BadRequestException('Only a refund that is still processing can be marked completed.');
+    }
+    const accessRevoked = await this.finalizeRefund(payment, {
+      actorId,
+      action,
+      metadata: { reason, userId: payment.userId, amountUzs: Math.round(payment.amountTiyins / 100) },
+    });
+    await projectPlus(this.prisma, payment.userId).catch(() => undefined);
+    return { id: paymentId, status: 'refunded' as const, already: false, accessRevoked };
+  }
+
   /**
-   * B2 reconciler: refunds stuck in `refunding` (process died between reverse and finalize). If Atmos shows the
-   * transaction reversed/cancelled, finalize; otherwise roll back to paid and flag for support.
+   * B2 reconciler: refunds stuck in `refunding`. Claim the row, skip when Atmos cannot be read, finalize only on an
+   * explicit reversed status, and stop after 5 attempts. Never move the row back to paid.
    */
   async reconcileStaleRefunds(olderThanMs = 10 * 60_000) {
+    const now = new Date();
     const stale = await this.prisma.importPayment.findMany({
-      where: { status: ImportPaymentStatus.refunding, refundRequestedAt: { lt: new Date(Date.now() - olderThanMs) } },
+      where: {
+        status: ImportPaymentStatus.refunding,
+        refundAttempts: { lt: 5 },
+        refundRequestedAt: { lt: new Date(now.getTime() - olderThanMs) },
+        OR: [{ reconcileLockedUntil: null }, { reconcileLockedUntil: { lt: now } }],
+      },
       take: 50,
     });
     let finalized = 0;
-    let rolledBack = 0;
+    let skipped = 0;
+    let flagged = 0;
     for (const p of stale) {
+      const claim = await this.prisma.importPayment.updateMany({
+        where: {
+          id: p.id,
+          status: ImportPaymentStatus.refunding,
+          OR: [{ reconcileLockedUntil: null }, { reconcileLockedUntil: { lt: now } }],
+        },
+        data: { reconcileLockedUntil: new Date(Date.now() + 5 * 60_000), refundAttempts: { increment: 1 } },
+      });
+      if (claim.count !== 1) {
+        skipped++;
+        continue;
+      }
+      const attempts = (p.refundAttempts ?? 0) + 1;
+      if (attempts >= 5) {
+        await this.prisma.importPayment.updateMany({
+          where: { id: p.id, status: ImportPaymentStatus.refunding },
+          data: { needsAttention: true },
+        });
+        flagged++;
+        continue;
+      }
       const tx = Number(p.providerPaymentId);
-      const remote = Number.isFinite(tx) && tx > 0 && this.atmos.configured() ? await this.atmos.getTransaction(tx).catch(() => null) : null;
-      const reversed = !!remote && (remote.confirmed === false || /cancel|revers|refund/i.test(String(remote.statusMessage ?? '')));
-      if (reversed) {
-        await this.finalizeRefund(p, { actorId: p.refundRequestedBy, action: 'payment.refund.reconciled', metadata: { reason: p.refundReason, statusCode: remote?.statusCode ?? null } })
-          .then(() => finalized++)
+      if (!(Number.isFinite(tx) && tx > 0 && this.atmos.configured())) {
+        skipped++;
+        continue;
+      }
+      let remote: { confirmed?: boolean; statusCode?: string; statusMessage?: string } | null = null;
+      try {
+        remote = await this.atmos.getTransaction(tx);
+      } catch {
+        skipped++;
+        continue;
+      }
+      if (remote == null) {
+        skipped++;
+        continue;
+      }
+      const verdict = atmosRefundVerdict(remote);
+      if (verdict === 'reversed') {
+        await this.finalizeRefund(p, { actorId: p.refundRequestedBy, action: 'payment.refund.reconciled', metadata: { reason: p.refundReason, statusCode: remote.statusCode ?? null } })
+          .then(async () => { finalized++; await projectPlus(this.prisma, p.userId).catch(() => undefined); })
           .catch(() => undefined);
+      } else if (verdict === 'captured') {
+        await this.prisma.importPayment.updateMany({
+          where: { id: p.id, status: ImportPaymentStatus.refunding },
+          data: { needsAttention: true, refundState: 'reverse_unknown' },
+        });
+        flagged++;
       } else {
-        await this.prisma.importPayment.updateMany({ where: { id: p.id, status: ImportPaymentStatus.refunding }, data: { status: ImportPaymentStatus.paid, needsAttention: true } });
-        rolledBack++;
+        skipped++;
       }
     }
-    return { checked: stale.length, finalized, rolledBack };
+    return { checked: stale.length, finalized, skipped, flagged, rolledBack: 0 };
   }
 
   /**

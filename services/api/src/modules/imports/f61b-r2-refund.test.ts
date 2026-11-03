@@ -27,6 +27,12 @@ function setup(opts: { configured?: boolean; reverseThrows?: boolean; successTra
   };
   const commerce = Object.create(ImportCommerceService.prototype) as any;
   commerce.atmos = atmos; commerce.prisma = prisma;
+  commerce.finalizeManualRefund = async () => {
+    payment.status = 'refunded';
+    payment.refundState = 'refunded';
+    payment.needsAttention = false;
+    return { id: payment.id, status: 'refunded', already: false, accessRevoked: 0 };
+  };
   const svc = Object.create(ImportsService.prototype) as any;
   svc.prisma = prisma; svc.atmos = atmos; svc.importCommerce = commerce;
   svc.logger = { warn() {}, log() {}, error() {} };
@@ -56,14 +62,14 @@ function setup(opts: { configured?: boolean; reverseThrows?: boolean; successTra
       await svc.finalizeFailure('ui1', new Error('x'));
       assert.equal(calls[0].transactionId, 777);
     }
-    // 3. Atmos error → reverse_failed + needsAttention, not retried
+    // 3. Atmos error stays refunding + reverse_unknown, and is not reversed again
     {
       const { svc, payment, calls } = setup({ reverseThrows: true });
       assert.equal((await svc.finalizeFailure('ui1', new Error('x'))).action, 'reverse_failed');
-      assert.equal(payment.refundState, 'reverse_failed');
+      assert.equal(payment.refundState, 'reverse_unknown');
       assert.equal(payment.needsAttention, true);
-      assert.equal(payment.status, 'paid');
-      await svc.finalizeFailure('ui1', new Error('x'));
+      assert.equal(payment.status, 'refunding');
+      assert.equal((await svc.finalizeFailure('ui1', new Error('x'))).action, 'none');
       assert.equal(calls.length, 1);
     }
     // 4. Atmos not configured → no call, due + needsAttention

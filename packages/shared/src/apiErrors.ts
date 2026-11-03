@@ -11,6 +11,7 @@ const BY_CODE: Record<string, T3> = {
   use_daily_practice: { en: 'Word review now lives in Daily practice.', ru: 'Повторение слов теперь в ежедневной практике.', uz: 'Soʻzlarni takrorlash endi kundalik mashqda.' },
   refund_requires_support: { en: 'This payment is complete. If something is wrong with it, contact support@gotchaa.uz.', ru: 'Платёж уже проведён. Если с ним что-то не так, напишите на support@gotchaa.uz.', uz: 'Toʻlov amalga oshirilgan. Unda xato boʻlsa, support@gotchaa.uz ga yozing.' },
   payment_not_pending: { en: 'This payment can no longer be cancelled.', ru: 'Этот платёж уже нельзя отменить.', uz: 'Bu toʻlovni endi bekor qilib boʻlmaydi.' },
+  rate_limited: { en: 'Too many requests. Please wait a moment and try again.', ru: 'Слишком много запросов. Подождите немного и попробуйте снова.', uz: 'Soʻrovlar juda koʻp. Biroz kuting va qayta urinib koʻring.' },
 };
 
 Object.assign(BY_CODE, {
@@ -94,6 +95,7 @@ export function localizeApiError(
   // class-validator / whitelist noise ("property dailyGoalXp should not exist", "must not be greater than 500").
   if (/fetch failed|failed to fetch|networkerror|network request failed/i.test(raw)) return BY_MESSAGE['fetch failed'][l];
   if (/^internal( server)? error\.?$/i.test(raw)) return BY_MESSAGE['Internal error'][l];
+  if (/throttlerexception|too many requests/i.test(raw)) return BY_CODE.rate_limited[l];
   if (/timed out|timeout/i.test(raw)) return BY_MESSAGE['Import timed out while processing the file. Try again, or use a smaller PDF.'][l];
   if (/should not exist|must not be|must be an |must be shorter|must be longer|must be a /i.test(raw)) {
     return BY_STATUS['400'][l];

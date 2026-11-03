@@ -611,6 +611,10 @@ model ImportPayment {
   expiryCheckAttempts Int     @default(0) @map("expiry_check_attempts")
   ofertaVersion     String?   @map("oferta_version")
   ofertaAcceptedAt  DateTime? @map("oferta_accepted_at")
+  /// How many times a refund reverse or reconcile has been attempted. Auto-processing stops at 5.
+  refundAttempts    Int       @default(0) @map("refund_attempts")
+  /// Set while one worker owns the row, so two reconcilers cannot finalize it.
+  reconcileLockedUntil DateTime? @map("reconcile_locked_until") @db.Timestamptz(6)
 
   @@index([userId, status])
   @@index([providerPaymentId])
@@ -791,7 +795,9 @@ model PracticeSession {
   correctCount  Int?         @map("correct_count")
   startedAt      DateTime  @default(now()) @map("started_at")
   completedAt    DateTime? @map("completed_at")
-  idempotencyKey String?   @unique @map("idempotency_key")
+  idempotencyKey String?   @map("idempotency_key")
+  /// sha256 of segmentId|count|repeatMissed. A replay with a different hash is rejected.
+  requestHash    String?   @map("request_hash")
 
   user      User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
   content   ContentItem?          @relation(fields: [contentId], references: [id])
@@ -800,6 +806,7 @@ model PracticeSession {
   answers   PracticeAnswer[]
   items     PracticeSessionItem[]
 
+  @@unique([userId, idempotencyKey])
   @@map("practice_sessions")
 }
 

@@ -22,7 +22,7 @@ import { purgeOldTts } from '../../modules/ai/tts-retention';
   await runTrackedJob('y', async () => 1);
   assert.equal(jobHealth().ok, true);
   // TTS: unreadable dir surfaces instead of silently returning 0
-  if (process.getuid?.() !== 0) {
+  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
     const d = await mkdtemp(join(tmpdir(), 'tts-'));
     const f = join(d, 'a.mp3'); await writeFile(f, 'x'); const old = new Date(Date.now() - 40 * 86400000); await utimes(f, old, old);
     await chmod(d, 0o500); // can't unlink

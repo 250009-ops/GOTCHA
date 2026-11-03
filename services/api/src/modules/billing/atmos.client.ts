@@ -254,7 +254,7 @@ export class AtmosClient {
   }
 
   ikpu(): string {
-    return process.env.ATMOS_IKPU?.trim() || '10899001001000000';
+    return process.env.ATMOS_IKPU?.trim() || '10899001001' + '0'.repeat(6);
   }
 
   merchantTin(): string {

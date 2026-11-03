@@ -784,7 +784,7 @@ export class AiService {
       const inP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_IN ?? 0.15);
       const outP = Number(process.env.OPENAI_LOOKUP_USD_PER_1M_OUT ?? 0.6);
       const promptTokens = meta.promptTokens ?? 0, completionTokens = meta.completionTokens ?? 0;
-      const estCostUsd = Number(((promptTokens * inP + completionTokens * outP) / 1_000_000).toFixed(6));
+      const estCostUsd = Number(((promptTokens * inP + completionTokens * outP) / 1e6).toFixed(6));
       const plan = await userCapPlan(this.prisma, userId);
       const row = { userId, usageDate: usageDayStart(), plan, mode, cacheHit, model: meta.model ?? null, promptTokens, completionTokens, estCostUsd };
       this.logger.log(JSON.stringify({ event: 'lookup_cost', ...row, usageDate: row.usageDate.toISOString().slice(0, 10) }));

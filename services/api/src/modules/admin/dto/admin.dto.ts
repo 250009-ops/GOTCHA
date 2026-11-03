@@ -242,3 +242,8 @@ export class RefundPaymentDto {
   @Min(0)
   amountUzs?: number;
 }
+
+export class UpdateAchievementDto {
+  @IsBoolean()
+  isActive!: boolean;
+}

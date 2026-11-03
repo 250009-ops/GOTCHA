@@ -1,5 +1,5 @@
 import { readFileSync as r3bRead } from 'node:fs';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import * as assert from 'node:assert/strict';
 import { PAY_COPY, PAY_OFERTA_URL, PAY_SELLER, cancelScreen, plusOfertaConsent, plusOfertaHref, plusLegalHref, plusPayGate, plusBullets, plusFill, plusHeadline, plusLead, plusLookupsBullet, plusPaywallVariant, plusReminderKey, plusSmallPrint, slowDownMessage, UI_LANGUAGE_PICKER } from '@gotcha/shared';
 import { dailyLimitText, isDailyLimitError, isSlowDownError, limitTitle } from './dailyLimit';
@@ -158,13 +158,17 @@ console.log('payments.test: ok');
 
 // G1: Plus checkout Public Offer tick-box, PM README 'Plus checkout tick-box' word for word (decision A, 16:30) (brackets = the /oferta link).
 {
-  const R = (() => { const r = readFileSync('/workspace/gotcha-handoff/team/pm/legal/web/README.md', 'utf8'); const sec = r.split('## Plus checkout tick-box')[1].split('\n## ')[0]; return Object.fromEntries([...sec.matchAll(/^- \*\*(en|ru|uz):\*\* (.+)$/gm)].map((m) => [m[1], m[2].trim()])); })() as Record<string, string>;
+  const readmePath = process.env.LEGAL_DRAFTS_DIR ? `${process.env.LEGAL_DRAFTS_DIR}/README.md` : '';
+  const R = readmePath && existsSync(readmePath)
+    ? (() => { const r = readFileSync(readmePath, 'utf8'); const sec = r.split('## Plus checkout tick-box')[1].split('\n## ')[0]; return Object.fromEntries([...sec.matchAll(/^- \*\*(en|ru|uz):\*\* (.+)$/gm)].map((m) => [m[1], m[2].trim()])); })() as Record<string, string>
+    : null;
+  if (!R) console.log('oferta README compare SKIP (no LEGAL_DRAFTS_DIR)');
   assert.equal(plusOfertaConsent('en').text, "I accept the [Public Offer](/oferta) and the [Terms of Use](/terms), and I have read the [Privacy Policy](/privacy). I understand Plus starts right after payment and does not renew automatically. If a purchase is faulty, I can choose a fix, a price reduction or a refund; duplicate or failed charges are always refunded.");
-  assert.equal(plusOfertaConsent('en').text, R.en, 'en = README now');
+  if (R) assert.equal(plusOfertaConsent('en').text, R.en, 'en = README now');
   assert.equal(plusOfertaConsent('ru').text, "Я принимаю [Публичную оферту](/oferta) и [Пользовательское соглашение](/terms) и ознакомился(-ась) с [Политикой конфиденциальности](/privacy). Я понимаю, что Plus начинает действовать сразу после оплаты и не продлевается автоматически. Если с покупкой что-то не так, я могу выбрать исправление, снижение цены или возврат денег; при двойном или неудавшемся списании деньги возвращаются всегда.");
-  assert.equal(plusOfertaConsent('ru').text, R.ru, 'ru = README now');
+  if (R) assert.equal(plusOfertaConsent('ru').text, R.ru, 'ru = README now');
   assert.equal(plusOfertaConsent('uz').text, "[Ommaviy oferta](/oferta) va [Foydalanish shartlari](/terms)ni qabul qilaman hamda [Maxfiylik siyosati](/privacy) bilan tanishib chiqdim. Plus toʻlovdan soʻng darhol boshlanishini va avtomatik uzaytirilmasligini tushunaman. Xaridda muammo boʻlsa, tuzatish, narxni pasaytirish yoki pulni qaytarishni tanlashim mumkin; ikki marta yechilgan yoki muvaffaqiyatsiz toʻlov uchun pul har doim qaytariladi.");
-  assert.equal(plusOfertaConsent('uz').text, R.uz, 'uz = README now');
+  if (R) assert.equal(plusOfertaConsent('uz').text, R.uz, 'uz = README now');
   for (const l of ['en', 'ru', 'uz']) assert.deepEqual(plusOfertaConsent(l).parts.filter((p) => p.href).map((p) => p.href), ['/oferta', '/terms', '/privacy'], l + ' three links (LG4-20)');
   assert.equal(plusOfertaConsent('uz').parts[0].text, 'Ommaviy oferta');
   assert.equal(plusLegalHref('https://gotchaa.uz/', '/terms', 'ru'), 'https://gotchaa.uz/terms?lang=ru');

@@ -149,11 +149,19 @@ export default function UsersPage() {
     setActionMsg(null);
     setActionErr(null);
     try {
-      await api(`/admin/users/${id}/adjust-tier`, {
+      const res = await api<{ paidPassActive?: boolean; provider?: string | null; endsAt?: string | null }>(`/admin/users/${id}/adjust-tier`, {
         method: 'POST',
         body: JSON.stringify({ tier, ...(extra?.until ? { until: extra.until } : {}), ...(extra?.days ? { days: extra.days } : {}) }),
       });
-      setActionMsg(tier === 'free' ? 'Plus ended.' : extra?.until ? 'Plus end date set.' : `Plus extended by ${extra?.days ?? 30} days.`);
+      const ends = res.endsAt ? new Date(res.endsAt).toLocaleDateString() : 'its end date';
+      const where = res.provider === 'google_play' ? 'Play Console' : 'Payments';
+      setActionMsg(
+        tier === 'free'
+          ? res.paidPassActive
+            ? `Paid pass stays active until ${ends} (cancel in ${where} / refund via Payments).`
+            : 'Plus ended.'
+          : extra?.until ? 'Plus end date set.' : `Plus extended by ${extra?.days ?? 30} days.`,
+      );
       await load();
       setSelected(await api<UserRow>(`/admin/users/${id}`));
     } catch (e: unknown) {

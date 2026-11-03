@@ -7,6 +7,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig } from '../billing/plus-pass';
+import { projectPlus } from '../billing/entitlements.service';
 import { fairUseCap } from '../../common/plan-active';
 import { UsersService } from '../users/users.service';
 import { getPlanCaps, resetPlanCapsCache, usageDayOffset, usageDayStart } from '../../common/plan-caps';
@@ -202,7 +203,7 @@ export class AdminService {
         take: 8,
         include: {
           targetLanguages: true,
-          subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+          subscriptions: { where: { status: 'active', plan: { tier: 'premium' }, OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }] }, include: { plan: true }, orderBy: { currentPeriodEnd: 'desc' }, take: 1 },
         },
       }),
       this.prisma.contentItem.findMany({
@@ -454,7 +455,7 @@ export class AdminService {
       take: 100,
       include: {
         targetLanguages: true,
-        subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+        subscriptions: { where: { status: 'active', plan: { tier: 'premium' }, OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }] }, include: { plan: true }, orderBy: { currentPeriodEnd: 'desc' }, take: 1 },
         adminProfile: true,
         _count: { select: { vocabulary: true, readingSessions: true } },
       },
@@ -513,7 +514,7 @@ export class AdminService {
       where: { id },
       include: {
         targetLanguages: true,
-        subscriptions: { include: { plan: true }, orderBy: { createdAt: 'desc' }, take: 1 },
+        subscriptions: { where: { status: 'active', plan: { tier: 'premium' }, OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: new Date() } }] }, include: { plan: true }, orderBy: { currentPeriodEnd: 'desc' }, take: 1 },
         adminProfile: true,
         _count: { select: { vocabulary: true, readingSessions: true } },
       },
@@ -692,9 +693,18 @@ export class AdminService {
     if (body.price30Uzs !== undefined) writes.push([PLUS_SETTING_KEYS.price30, int(body.price30Uzs, 'price30Uzs', minSom, 10_000_000)]);
     if (body.price365Uzs !== undefined) writes.push([PLUS_SETTING_KEYS.price365, int(body.price365Uzs, 'price365Uzs', minSom, 50_000_000)]);
     const planWrites: Array<[tier: 'premium' | 'free', field: 'aiDailyQuota' | 'quizDailyQuota', value: number]> = [];
-    const nullable: Array<[string, unknown, string]> = [[PLUS_AI_LOOKUP_QUOTA_KEY, body.plusAiLookupQuota, 'plusAiLookupQuota'], [PLUS_LOOKUP_HARD_CAP_KEY, body.plusLookupHardCap, 'plusLookupHardCap']];
-    const nullWrites: Array<[string, number | null]> = [];
-    for (const [key, raw, name] of nullable) if (raw !== undefined) nullWrites.push([key, raw === null || raw === '' ? null : int(raw, name, 1, 1_000_000)]);
+    const plusCapsAllowed = process.env.ALLOW_PLUS_CAPS === '1';
+    for (const name of ['plusAiLookupQuota', 'plusLookupHardCap', 'plusMashqPerDay'] as const) {
+      const raw = body[name];
+      if (raw !== undefined && raw !== null && raw !== '' && !plusCapsAllowed) {
+        throw new BadRequestException(`${name} cannot be set.`);
+      }
+    }
+    const nullable: Array<[string, unknown, string]> = plusCapsAllowed
+      ? [[PLUS_AI_LOOKUP_QUOTA_KEY, body.plusAiLookupQuota, 'plusAiLookupQuota'], [PLUS_LOOKUP_HARD_CAP_KEY, body.plusLookupHardCap, 'plusLookupHardCap']]
+      : [];
+    const nullWrites: Array<[string, number | null]> = plusCapsAllowed ? [] : [[PLUS_AI_LOOKUP_QUOTA_KEY, null], [PLUS_LOOKUP_HARD_CAP_KEY, null]];
+    for (const [key, raw, name] of nullable) if (raw !== undefined) nullWrites.push([key, raw === null || raw === '' ? null : int(raw, name, 1, 1e6)]);
     if (body.lookupBurstPerMinute !== undefined) writes.push([LOOKUP_BURST_KEYS.perMinute, int(body.lookupBurstPerMinute, 'lookupBurstPerMinute', 1, 10_000)]);
     if (body.lookupBurstPerHour !== undefined) writes.push([LOOKUP_BURST_KEYS.perHour, int(body.lookupBurstPerHour, 'lookupBurstPerHour', 1, 100_000)]);
     const chapterQuizzes = body.chapterQuizzesPerDay !== undefined ? body.chapterQuizzesPerDay : body.fairUseQuizzesPerDay;
@@ -784,6 +794,7 @@ export class AdminService {
 
     // Admin grant: 7 / 30 / 365 days or a custom date. Days stack on an active Plus end. Free clears it.
     let periodEnd: Date | null = null;
+    let grantStart = new Date();
     if (tierKey === 'premium') {
       try {
         if (grant.until) {
@@ -791,10 +802,13 @@ export class AdminService {
         } else {
           const days = Number(grant.days ?? 30);
           if (![7, 30, 365].includes(days)) throw new Error('Grant must be 7, 30 or 365 days, or a custom date.');
-          const activeEnd = existing?.status === 'active' && existing.currentPeriodEnd && existing.currentPeriodEnd > new Date()
-            ? existing.currentPeriodEnd
-            : new Date();
-          periodEnd = new Date(activeEnd.getTime() + days * 86_400_000);
+          const activePasses = await this.prisma.entitlement.findMany({
+            where: { userId: id, kind: 'plus', status: 'active', expiresAt: { gt: new Date() } },
+            select: { expiresAt: true },
+          });
+          const baseMs = activePasses.reduce((max, row) => Math.max(max, row.expiresAt?.getTime() ?? 0), Date.now());
+          grantStart = new Date(baseMs);
+          periodEnd = new Date(baseMs + days * 86_400_000);
         }
         if (periodEnd.getTime() - Date.now() > 3 * 366 * 86_400_000) {
           throw new Error('Plus end date is too far ahead.');
@@ -802,18 +816,25 @@ export class AdminService {
       } catch (e) { throw new BadRequestException((e as Error).message); }
     }
     if (tierKey === 'free') {
+      const now = new Date();
       await this.prisma.entitlement.updateMany({
         where: { userId: id, kind: 'plus', source: 'admin', status: 'active' },
-        data: { status: 'expired', expiresAt: new Date() },
+        data: { status: 'expired', expiresAt: now },
       });
-      const paidPass = existing?.provider === 'atmos' || existing?.provider === 'google_play';
-      if (existing && !paidPass) {
-        await this.prisma.userSubscription.update({
-          where: { id: existing.id },
-          data: { planId: plan.id, status: 'active', currentPeriodEnd: null },
-        });
+      await this.prisma.userSubscription.updateMany({
+        where: { userId: id, provider: 'admin', status: 'active' },
+        data: { status: 'canceled', currentPeriodEnd: now },
+      });
+      await projectPlus(this.prisma, id);
+      const paid = await this.prisma.userSubscription.findFirst({
+        where: { userId: id, provider: { in: ['atmos', 'google_play'] }, status: 'active', plan: { tier: 'premium' }, OR: [{ currentPeriodEnd: null }, { currentPeriodEnd: { gt: now } }] },
+        orderBy: { currentPeriodEnd: 'desc' },
+      });
+      const user = await this.getUser(id);
+      if (paid) {
+        return { ...user, paidPassActive: true, provider: paid.provider, endsAt: paid.currentPeriodEnd };
       }
-      return this.getUser(id);
+      return { ...user, paidPassActive: false, provider: null, endsAt: null };
     }
     if (existing && (existing.provider === 'admin' || !existing.provider)) {
       await this.prisma.userSubscription.update({
@@ -828,7 +849,7 @@ export class AdminService {
     if (periodEnd) {
       // Ledger row so the learner's payment history shows the grant (no price).
       await this.prisma.entitlement.create({
-        data: { userId: id, kind: 'plus', source: 'admin', sourceRef: `admin_grant:${Date.now()}`, sku: 'plus_admin_grant', status: 'active', expiresAt: periodEnd },
+        data: { userId: id, kind: 'plus', source: 'admin', sourceRef: `admin_grant:${Date.now()}`, sku: 'plus_admin_grant', status: 'active', startsAt: grantStart, expiresAt: periodEnd },
       }).catch(() => undefined);
     }
 
@@ -2344,7 +2365,7 @@ export class AdminService {
     const todayPlatformUsed = todayLookups + todayQuizzes;
     const userQuota = await this.freeLookupCap();
     const usersAtQuota =
-      userQuota > 0 && userQuota < 1_000_000
+      userQuota > 0
         ? todayRows.filter((r) => r.lookupCount >= userQuota).length
         : 0;
 
@@ -2912,14 +2933,15 @@ export class AdminService {
     );
   }
 
-  async updateAchievement(id: string, body: Record<string, unknown>) {
-    const existing = await this.prisma.achievement.findUnique({ where: { id } });
-    if (!existing) throw new NotFoundException('Achievement not found');
-    return this.prisma.achievement.update({
-      where: { id },
-      data: {
-        isActive: typeof body.isActive === 'boolean' ? body.isActive : undefined,
-      },
+  async updateAchievement(id: string, body: { isActive: boolean }, actorId: string | null) {
+    return this.prisma.$transaction(async (tx) => {
+      const existing = await tx.achievement.findUnique({ where: { id } });
+      if (!existing) throw new NotFoundException('Achievement not found');
+      const updated = await tx.achievement.update({ where: { id }, data: { isActive: body.isActive } });
+      await tx.auditLog.create({
+        data: { actorId, action: 'gamification.achievement.update', entityType: 'achievement', entityId: id, metadata: { isActive: body.isActive, before: existing.isActive } },
+      });
+      return updated;
     });
   }
 

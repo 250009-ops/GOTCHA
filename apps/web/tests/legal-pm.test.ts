@@ -87,7 +87,7 @@ test('final-3: served legal text hashes match the pinned PM files; no "(Public O
 });
 
 const PENDING_PINNED: Record<string, string> = {
-  'terms-en': 'b89becdbee8c', 'terms-ru': '0203f79d3df9', 'terms-uz': 'dd50d1a9067a',
+  'terms-en': '7955225d5aed', 'terms-ru': '79a2ea12346b', 'terms-uz': '17f5d0e1be82',
   'oferta-en': '2ee40a6f75dc', 'oferta-ru': '01e1fcb0b155', 'oferta-uz': 'aba9c3e3f672',
 };
 test('r3b: served /terms + /oferta (legal-pm-payments) match the pinned pending-payments-02 files; main §8 == pending §8', async () => {

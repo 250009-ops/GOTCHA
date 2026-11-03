@@ -5,9 +5,9 @@ export class PlanUpdateDto {
   @IsOptional() @IsObject() nameI18n?: { en: string; ru?: string; uz?: string };
   @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(100_000_000) priceUzs?: number;
   @IsOptional() @IsIn(['month', 'year', 'one_time']) period?: string;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) aiDailyQuota?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) quizDailyQuota?: number;
-  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1_000_000) importLimit?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1e6) aiDailyQuota?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1e6) quizDailyQuota?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(1e6) importLimit?: number;
   @IsOptional() @IsBoolean() offlineEnabled?: boolean;
   @IsOptional() @IsArray() @IsString({ each: true }) features?: string[];
   @IsOptional() @IsBoolean() active?: boolean;

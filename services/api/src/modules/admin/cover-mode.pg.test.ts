@@ -15,7 +15,11 @@ const jpeg = (n: number) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0])
 const file = (n: number) => ({ mimetype: 'image/jpeg', size: 70, buffer: jpeg(n), originalname: 'c.jpg' }) as unknown as Express.Multer.File;
 
 async function main() {
-  if (!/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')) throw new Error('Refusing to run against a non-local DATABASE_URL');
+  if (!/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')) {
+    console.log('cover-mode.pg: SKIP (set DATABASE_URL to a local disposable database)');
+    await prisma.$disconnect();
+    return;
+  }
   const uploads = mkdtempSync(join(tmpdir(), 'covers01-up-'));
   process.env.UPLOADS_DIR = uploads;
   mkdirSync(join(uploads, 'covers'));

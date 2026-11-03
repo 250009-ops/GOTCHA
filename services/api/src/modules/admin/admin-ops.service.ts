@@ -149,18 +149,26 @@ export class AdminOpsService {
     if (payment.status !== ImportPaymentStatus.refunding) {
       throw new BadRequestException('Only a refund that is still processing can be marked completed.');
     }
-    const moved = await this.prisma.importPayment.updateMany({
-      where: { id, status: ImportPaymentStatus.refunding },
-      data: {
-        status: ImportPaymentStatus.refunded,
-        refundState: 'refunded',
-        refundedAt: new Date(),
-        refundReason: reason,
-        needsAttention: false,
-      },
+    const closed = await this.commerce.finalizeManualRefund(actorId, id, reason);
+    return { ...closed, note: closed.already ? 'Already refunded.' : 'Refund closed as completed.' };
+  }
+
+  /** Superadmin only: Atmos definitively says the charge was not reversed, so the row may return to paid. */
+  async markRefundNotReversed(actorId: string, id: string, body: { reason?: string }) {
+    const reason = String(body.reason ?? '').trim();
+    if (reason.length < 3) throw new BadRequestException('A reason is required.');
+    const moved = await this.prisma.$transaction(async (tx) => {
+      const hit = await tx.importPayment.updateMany({
+        where: { id, status: ImportPaymentStatus.refunding },
+        data: { status: ImportPaymentStatus.paid, refundState: null, needsAttention: false, reconcileLockedUntil: null },
+      });
+      if (hit.count !== 1) return 0;
+      await tx.auditLog.create({
+        data: { actorId, action: 'payment.refund.not_reversed', entityType: 'import_payment', entityId: id, metadata: { reason } },
+      });
+      return hit.count;
     });
-    if (!moved.count) throw new ConflictException('This refund was already closed.');
-    await this.auditStrict(actorId, 'payment.refund.finalize', 'import_payment', id, { reason });
-    return { id, status: 'refunded', note: 'Refund closed as completed.' };
+    if (!moved) throw new ConflictException('Only a refund that is still processing can be marked not reversed.');
+    return { id, status: 'paid', note: 'Marked not reversed. The charge stays paid.' };
   }
 }

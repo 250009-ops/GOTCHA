@@ -32,7 +32,11 @@ async function drain() {
 }
 
 async function main() {
-  if (!/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')) throw new Error('Refusing to run against a non-local DATABASE_URL');
+  if (!/localhost|127\.0\.0\.1/.test(process.env.DATABASE_URL ?? '')) {
+    console.log('import-queue.pg: SKIP (set DATABASE_URL to a local disposable database)');
+    await prisma.$disconnect();
+    return;
+  }
   await drain();
   const user = await prisma.user.create({ data: { email: `q-${Date.now()}@test.local`, nativeLanguage: 'en' } });
   try {

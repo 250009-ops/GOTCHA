@@ -2,7 +2,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
-const roots = [new URL('../src', import.meta.url).pathname, new URL('../../../packages/shared/src', import.meta.url).pathname];
+import { fileURLToPath } from 'node:url';
+const roots = [fileURLToPath(new URL('../src', import.meta.url)), fileURLToPath(new URL('../../../packages/shared/src', import.meta.url))];
 // chatLang.ts: language-detection keywords for user input, intentionally accepts ASCII spellings.
 const SKIP = /chatLang\.ts$|\.test\./;
 const walk = (d) => readdirSync(d).flatMap((f) => { const p = join(d, f); return statSync(p).isDirectory() ? walk(p) : [p]; });

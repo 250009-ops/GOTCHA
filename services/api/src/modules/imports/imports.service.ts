@@ -658,7 +658,10 @@ export class ImportsService {
       this.importCommerce.importRefundReverser(),
       userImportId,
       `Import failed: ${message}`,
-      { liveReverse: liveReverseEnabled() && this.atmos.configured() },
+      {
+        liveReverse: liveReverseEnabled() && this.atmos.configured(),
+        onReversed: (paymentId) => this.importCommerce.finalizeManualRefund(null, paymentId, `Import failed: ${message}`, 'payment.refund.auto').then(() => undefined),
+      },
     );
     this.logger.warn(`Import ${userImportId} failed permanently (${message}); payment: ${JSON.stringify(settle)}`);
     return settle;

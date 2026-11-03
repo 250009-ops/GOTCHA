@@ -21,7 +21,7 @@ const login = await api('/auth/login', {
   method: 'POST',
   body: {
     email: process.env.ADMIN_EMAIL ?? 'admin@gotcha.app',
-    password: process.env.ADMIN_PASSWORD ?? '<REDACTED-admin-pw>',
+    password: (process.env.ADMIN_PASSWORD ?? (() => { console.error("ADMIN_PASSWORD is required"); process.exit(1); })()),
   },
 });
 const token = login.accessToken;

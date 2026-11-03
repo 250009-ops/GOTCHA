@@ -246,6 +246,7 @@ export interface SubscriptionInfo {
       monthlyPagesUsed: number;
       monthlyPagesRemaining: number;
     };
+    importDiscountPct?: number;
   };
 }
 

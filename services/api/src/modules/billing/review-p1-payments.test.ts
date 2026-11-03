@@ -5,8 +5,27 @@ import { ImportPaymentStatus as S, PurchaseStatus, Prisma } from '@prisma/client
 import { ImportCommerceService } from './import-commerce.service';
 
 type Row = Record<string, any>;
+const time = (v: unknown) => (v instanceof Date ? v.getTime() : new Date(v as string).getTime());
 const match = (r: Row, w: Row = {}) =>
-  Object.entries(w).every(([k, v]) => (k === 'OR' ? (v as Row[]).some((x) => match(r, x)) : v && typeof v === 'object' && Array.isArray((v as Row).in) ? (v as Row).in.includes(r[k]) : v && typeof v === 'object' && !(v instanceof Date) ? true : r[k] === v));
+  Object.entries(w).every(([k, v]) => {
+    if (k === 'OR') return (v as Row[]).some((x) => match(r, x));
+    if (v && typeof v === 'object' && !(v instanceof Date)) {
+      const op = v as Row;
+      if (Array.isArray(op.in)) return op.in.includes(r[k]);
+      if ('lt' in op || 'lte' in op || 'gt' in op || 'gte' in op) {
+        if (r[k] == null) return false;
+        const a = time(r[k]);
+        if (Number.isNaN(a)) return false;
+        if ('lt' in op && !(a < time(op.lt))) return false;
+        if ('lte' in op && !(a <= time(op.lte))) return false;
+        if ('gt' in op && !(a > time(op.gt))) return false;
+        if ('gte' in op && !(a >= time(op.gte))) return false;
+        return true;
+      }
+      return true;
+    }
+    return r[k] === v;
+  });
 
 function fakeDb(payment: Row) {
   const payments: Row[] = [payment];
@@ -22,7 +41,11 @@ function fakeDb(payment: Row) {
     findMany: async ({ where }: any) => rows.filter((r) => match(r, where)),
     updateMany: async ({ where, data }: any) => {
       const hit = rows.filter((r) => match(r, where));
-      hit.forEach((r) => Object.assign(r, data));
+      hit.forEach((r) => {
+        for (const [k, v] of Object.entries(data)) {
+          r[k] = v && typeof v === 'object' && 'increment' in (v as Row) ? (Number(r[k]) || 0) + Number((v as Row).increment) : v;
+        }
+      });
       return { count: hit.length };
     },
     update: async ({ where, data }: any) => Object.assign(rows.find((r) => match(r, where))!, data),
@@ -58,7 +81,10 @@ function fakeDb(payment: Row) {
     confirmed: true,
     reverseTransaction: async () => { atmosCalls.push('reverse'); if (atmos.reverseFails) throw new Error('atmos down'); return {}; },
     applyTransaction: async () => { atmosCalls.push('apply'); atmos.onApply?.(); return { confirmed: atmos.confirmed, raw: {} }; },
-    getTransaction: async () => { if (atmos.down) throw new Error('atmos down'); return { confirmed: atmos.confirmed, raw: { store_transaction: { confirmed: atmos.confirmed } } }; },
+    getTransaction: async () => { if (atmos.down) throw new Error('atmos down'); if (atmos.missing) return null; return { confirmed: atmos.confirmed, statusCode: atmos.statusCode, statusMessage: atmos.statusMessage, raw: { store_transaction: { confirmed: atmos.confirmed } } }; },
+    statusCode: undefined as string | undefined,
+    statusMessage: undefined as string | undefined,
+    missing: false,
     down: false,
     validateCallbackSignature: () => true,
     onApply: null as null | (() => void),
@@ -67,7 +93,7 @@ function fakeDb(payment: Row) {
   return { svc, db, payments, purchases, audit, atmos, atmosCalls, setFailAudit: (v: boolean) => (failAudit = v) };
 }
 const CAT = 'catalog:11111111-1111-4111-8111-111111111111';
-const pay = (o: Row = {}): Row => ({ id: 'p1', userId: 'u1', status: S.paid, providerPaymentId: '42', contentFormat: CAT, amountTiyins: 100_00, account: 'acc1', refundState: null, needsAttention: false, refundDue: false, userImportId: null, ...o });
+const pay = (o: Row = {}): Row => ({ id: 'p1', userId: 'u1', status: S.paid, providerPaymentId: '42', contentFormat: CAT, amountTiyins: 100_00, account: 'acc1', refundState: null, needsAttention: false, refundDue: false, userImportId: null, refundAttempts: 0, reconcileLockedUntil: null, ...o });
 
 async function main() {
   // BUG-06/07: learner cancel only for pending; never rewrites history
@@ -125,12 +151,13 @@ async function main() {
     await due.svc.refundPaidPayment('p1', { reason: 'dup', actorId: 'admin' });
     assert.equal(due.payments[0].status, S.refunded);
   }
-  // B2: Atmos failure rolls the claim back to paid (+ flagged), nothing revoked, no audit
+  // B2: Atmos failure stays refunding and flagged. It never returns to paid, and nothing is revoked.
   {
     const f = fakeDb(pay());
     f.atmos.reverseFails = true;
     await assert.rejects(f.svc.refundPaidPayment('p1', { reason: 'x1x', actorId: 'a' }), /atmos down/);
-    assert.equal(f.payments[0].status, S.paid);
+    assert.equal(f.payments[0].status, S.refunding);
+    assert.equal(f.payments[0].refundState, 'reverse_unknown');
     assert.equal(f.payments[0].needsAttention, true);
     assert.equal(f.audit.length, 0);
   }
@@ -187,22 +214,60 @@ async function main() {
     await Promise.all([f.svc.markPaid('acc1', {}), f.svc.markPaid('acc1', {}), f.svc.getPayment('u1', 'p1')]);
     assert.equal(f.purchases.length, 1);
   }
-  // M2: page-count void with a failed reverse stays paid + flagged
+  // M2: page-count void with a failed reverse stays refunding + flagged, never paid
   {
     const f = fakeDb(pay());
     f.atmos.reverseFails = true;
     await (f.svc as any).voidUnusedPayment('p1');
-    assert.equal(f.payments[0].status, S.paid);
+    assert.equal(f.payments[0].status, S.refunding);
     assert.equal(f.payments[0].needsAttention, true);
   }
   // B2 reconciler: stale refunding row; Atmos shows reversed ⇒ finalized
   {
     const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundReason: 'x' }));
-    f.atmos.confirmed = false;
+    f.atmos.statusCode = 'REVERSED';
     f.db.importPayment.findMany = async () => [f.payments[0]];
     const r = await f.svc.reconcileStaleRefunds(0);
     assert.equal(r.finalized, 1);
     assert.equal(f.payments[0].status, S.refunded);
+    assert.equal(f.audit.length, 1);
+  }
+  // B2: a reverse timeout stays refunding. A thrown or missing getTransaction does not change the row.
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundAttempts: 0 }));
+    f.atmos.down = true;
+    f.db.importPayment.findMany = async () => [f.payments[0]];
+    const r = await f.svc.reconcileStaleRefunds(0);
+    assert.equal(r.finalized, 0);
+    assert.equal(f.payments[0].status, S.refunding);
+    f.atmos.down = false;
+    f.atmos.missing = true;
+    const r2 = await f.svc.reconcileStaleRefunds(0);
+    assert.equal(r2.finalized, 0);
+    assert.equal(f.payments[0].status, S.refunding);
+  }
+  // B2: two concurrent reconcile runs finalize once.
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundAttempts: 0 }));
+    f.atmos.statusCode = 'REVERSED';
+    f.db.importPayment.findMany = async () => f.payments.filter((p) => p.status === S.refunding);
+    const [a, b] = await Promise.all([f.svc.reconcileStaleRefunds(0), f.svc.reconcileStaleRefunds(0)]);
+    assert.equal(a.finalized + b.finalized, 1);
+    assert.equal(f.audit.length, 1);
+    assert.equal(f.payments[0].status, S.refunded);
+  }
+  // B2: the 5th attempt is recorded and then left alone.
+  {
+    const f = fakeDb(pay({ status: S.refunding, refundRequestedAt: new Date(0), refundAttempts: 4 }));
+    f.atmos.statusCode = 'REVERSED';
+    const r = await f.svc.reconcileStaleRefunds(0);
+    assert.equal(r.finalized, 0);
+    assert.equal(r.flagged, 1);
+    assert.equal(f.payments[0].status, S.refunding);
+    assert.equal(f.payments[0].refundAttempts, 5);
+    const again = await f.svc.reconcileStaleRefunds(0);
+    assert.equal(again.checked, 0);
+    assert.equal(f.payments[0].refundAttempts, 5);
   }
   // PAY1-01 (S1): webhook pays + delivers while apply() is in flight → apply reports paid, NO reverse.
   {

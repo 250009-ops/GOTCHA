@@ -12,7 +12,7 @@ import { ImportPaymentStatus } from '@prisma/client';
  * is a kill switch that falls back to refund_state = 'due' + needsAttention for a manual refund.
  * A reverse error parks the row as 'reverse_failed' + needsAttention (never auto-retried).
  */
-export type RefundState = 'due' | 'processing' | 'refunded' | 'reverse_failed';
+export type RefundState = 'due' | 'processing' | 'refunded' | 'reverse_failed' | 'reverse_unknown';
 
 export interface RefundDb {
   importPayment: {
@@ -46,7 +46,7 @@ export function adminRefundBlockReason(p: {
   importStatus?: string | null;
 }): 'import_processing' | 'needs_attention' | 'auto_refund_in_progress' | null {
   if (p.importStatus && BUSY_IMPORT.has(p.importStatus)) return 'import_processing';
-  if (p.refundState === 'processing' || p.refundState === 'reverse_failed') return 'auto_refund_in_progress';
+  if (p.refundState === 'processing' || p.refundState === 'reverse_failed' || p.refundState === 'reverse_unknown') return 'auto_refund_in_progress';
   if (p.needsAttention && !p.refundDue && p.refundState !== 'due') return 'needs_attention';
   return null;
 }
@@ -67,7 +67,7 @@ export async function settleFailedImportPayment(
   atmos: Reverser | null,
   userImportId: string,
   reason: string,
-  opts: { liveReverse?: boolean; now?: Date } = {},
+  opts: { liveReverse?: boolean; now?: Date; onReversed?: (paymentId: string) => Promise<void> } = {},
 ): Promise<SettleResult> {
   const now = opts.now ?? new Date();
   const payment = await db.importPayment.findFirst({ where: { userImportId } });
@@ -78,24 +78,34 @@ export async function settleFailedImportPayment(
   const live = Boolean(opts.liveReverse && atmos && payment.providerPaymentId && Number(payment.providerPaymentId) > 0);
   const claim = await db.importPayment.updateMany({
     where: { id: payment.id, status: ImportPaymentStatus.paid, refundState: null },
-    data: { refundState: live ? 'processing' : 'due', ...(live ? {} : { needsAttention: true }), refundReason: reason.slice(0, 500), refundRequestedAt: now },
+    data: {
+      ...(live ? { status: ImportPaymentStatus.refunding } : {}),
+      refundState: live ? 'processing' : 'due',
+      ...(live ? {} : { needsAttention: true }),
+      refundReason: reason.slice(0, 500),
+      refundRequestedAt: now,
+    },
   });
   if (claim.count !== 1) return { action: 'none', reason: 'already_claimed' };
   if (!live) return { action: 'refund_due', paymentId: payment.id };
 
   try {
     await atmos!.reverseTransaction({ transactionId: Number(payment.providerPaymentId), reason: 'Import failed', idempotencyKey: payment.id });
-    await db.importPayment.updateMany({
-      where: { id: payment.id, refundState: 'processing', status: ImportPaymentStatus.paid },
-      data: { status: ImportPaymentStatus.refunded, refundState: 'refunded', refundedAt: new Date(), needsAttention: false },
-    });
+    if (opts.onReversed) {
+      await opts.onReversed(payment.id);
+    } else {
+      await db.importPayment.updateMany({
+        where: { id: payment.id, status: ImportPaymentStatus.refunding },
+        data: { status: ImportPaymentStatus.refunded, refundState: 'refunded', refundedAt: new Date(), needsAttention: false },
+      });
+    }
     return { action: 'refunded', paymentId: payment.id };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    // Stays claimed (never auto-retried) so an ambiguous provider error can't cause a 2nd reversal.
+    // Stay refunding. A timeout may already have reversed the money, so the row must not return to paid.
     await db.importPayment.updateMany({
-      where: { id: payment.id, refundState: 'processing' },
-      data: { refundState: 'reverse_failed', needsAttention: true, refundReason: `${reason.slice(0, 300)} | reverse error: ${msg.slice(0, 180)}` },
+      where: { id: payment.id, status: ImportPaymentStatus.refunding },
+      data: { refundState: 'reverse_unknown', needsAttention: true, refundReason: `${reason.slice(0, 300)} | reverse error: ${msg.slice(0, 180)}` },
     });
     return { action: 'reverse_failed', paymentId: payment.id, error: msg };
   }

@@ -1,10 +1,15 @@
 // S3 sign-up tick-box, payments-02 (G1) version: the label is VERBATIM the README section 'Sign-up tick-box labels'
 // that matches the shipped state (.3 → CURRENT, anything newer → PENDING); API CONSENT_VERSION web-2026-10-31.4.
 // Run: node tests/consent-labels.test.mjs   (LEGAL_DRAFTS_DIR / API_CONSENT_TS override the default paths)
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 const SHIPPED_VERSION = 'web-2026-10-31.4';
-const readme = readFileSync(`${process.env.LEGAL_DRAFTS_DIR ?? '/workspace/gotcha-handoff/team/pm/legal/web'}/README.md`, 'utf8');
+const readmePath = `${process.env.LEGAL_DRAFTS_DIR ?? ''}/README.md`;
+if (!process.env.LEGAL_DRAFTS_DIR || !existsSync(readmePath)) {
+  console.log('consent-labels: SKIP (set LEGAL_DRAFTS_DIR to the PM legal README)');
+  process.exit(0);
+}
+const readme = readFileSync(readmePath, 'utf8');
 const secStart = readme.indexOf('## Sign-up tick-box labels');
 const sec = readme.slice(secStart, readme.indexOf('\n## ', secStart + 3)); // ends at the next section (PM added 'Plus checkout tick-box' after it)
 const part = SHIPPED_VERSION.endsWith('.3') ? sec.slice(sec.indexOf('**CURRENT'), sec.indexOf('**PENDING')) : sec.slice(sec.indexOf('**PENDING'));

@@ -1,6 +1,6 @@
 // payments-02 daily caps, read from the DB at runtime (cached ≤ 60 s, no deploy needed).
 // WLF-12: caps come from platform_settings only; subscription_plans.ai_daily_quota / import_limit / quiz_daily_quota are NOT read
-// (prod rows hold legacy values: Free 5000 lookups / 100 imports, Premium 1000000).
+// (prod rows hold legacy values: Free 5000 lookups / 100 imports, Premium one million).
 //   Free  lookups  = platform_settings 'caps.free.lookups'  (20)
 //   Free  quizzes  = platform_settings 'caps.free.quizzes'  (10)
 //   Plus  quizzes  = platform_settings 'caps.plus.quizzes'  (200)
@@ -69,8 +69,13 @@ export async function getPlanCaps(prisma: unknown, now = Date.now()): Promise<Pl
 
 export async function userCapPlan(prisma: unknown, userId: string): Promise<CapPlan> {
   const db = prisma as Db;
+  // Any active premium row counts. A newer canceled admin grant must not hide a paid pass.
   const sub = await Promise.resolve()
-    .then(() => db.userSubscription?.findFirst?.({ where: { userId, ...activeSubWhere() }, include: { plan: true }, orderBy: { createdAt: 'desc' } }) ?? null)
+    .then(() => db.userSubscription?.findFirst?.({
+      where: { userId, ...activeSubWhere(), plan: { tier: 'premium' } },
+      include: { plan: true },
+      orderBy: { currentPeriodEnd: 'desc' },
+    }) ?? null)
     .catch(() => null);
   return sub?.plan?.tier === 'premium' ? 'plus' : 'free';
 }

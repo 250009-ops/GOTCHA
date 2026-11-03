@@ -78,18 +78,31 @@ export class SafetyService {
 
   async resolve(adminId: string, kind: 'user' | 'content', id: string, status: 'reviewed' | 'actioned' | 'dismissed') {
     const data = { status, reviewedAt: new Date() } as never;
-    const res =
-      kind === 'content'
-        ? await this.prisma.contentReport.updateMany({ where: { id }, data })
-        : await this.prisma.userReport.updateMany({ where: { id }, data });
-    if (!res.count) throw new NotFoundException('Report not found');
+    await this.prisma.$transaction(async (tx) => {
+      const before = kind === 'content'
+        ? await tx.contentReport.findUnique({ where: { id }, select: { status: true } })
+        : await tx.userReport.findUnique({ where: { id }, select: { status: true } });
+      const res = kind === 'content'
+        ? await tx.contentReport.updateMany({ where: { id }, data })
+        : await tx.userReport.updateMany({ where: { id }, data });
+      if (!res.count) throw new NotFoundException('Report not found');
+      await tx.auditLog.create({
+        data: { actorId: adminId, action: 'safety.report.resolve', entityType: `${kind}_report`, entityId: id, metadata: { status, before: before?.status ?? null } },
+      });
+    });
     this.log.log(`report ${kind}/${id} -> ${status} by ${adminId}`);
     return { id, status };
   }
 
   async setAiDisabled(adminId: string, userId: string, aiDisabled: boolean) {
-    const res = await this.prisma.user.updateMany({ where: { id: userId }, data: { aiDisabled, aiDisabledBy: aiDisabled ? 'admin' : null } });
-    if (!res.count) throw new NotFoundException('User not found');
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.user.findUnique({ where: { id: userId }, select: { aiDisabled: true } });
+      const res = await tx.user.updateMany({ where: { id: userId }, data: { aiDisabled, aiDisabledBy: aiDisabled ? 'admin' : null } });
+      if (!res.count) throw new NotFoundException('User not found');
+      await tx.auditLog.create({
+        data: { actorId: adminId, action: 'user.ai_disabled', entityType: 'user', entityId: userId, metadata: { aiDisabled, before: before?.aiDisabled ?? null } },
+      });
+    });
     this.log.log(`aiDisabled=${aiDisabled} for ${userId} by ${adminId}`);
     return { userId, aiDisabled };
   }

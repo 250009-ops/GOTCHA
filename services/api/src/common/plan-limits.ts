@@ -20,8 +20,8 @@ export function freeLimits(env: NodeJS.ProcessEnv = process.env): { lookupsPerDa
 export function planLimits(tier: string | null | undefined, env: NodeJS.ProcessEnv = process.env): PlanLimits {
   return tier === 'premium' ? { lookupsPerDay: null, quizzesPerDay: configured.plusQuizzes ?? int(env.PLUS_DAILY_QUIZZES, 200) } : freeLimits(env);
 }
-/** True when a daily lookup quota actually caps (null / 0 / >= 1e6 = no cap). */
-export const lookupCapped = (q: number | null | undefined): q is number => typeof q === 'number' && q > 0 && q < 1_000_000;
+/** True when a daily lookup quota actually caps. null or 0 means no cap. */
+export const lookupCapped = (q: number | null | undefined): q is number => typeof q === 'number' && q > 0;
 
 /**
  * final-5 (A4/B1): admin-editable caps live in platform_settings (never subscription_plans.ai_daily_quota /

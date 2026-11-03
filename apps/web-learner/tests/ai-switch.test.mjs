@@ -6,7 +6,9 @@ const sw = readFileSync('src/components/safety/AiSwitch.tsx', 'utf8');
 const settings = readFileSync('src/pages/SettingsPage.tsx', 'utf8');
 test('AI switch is rendered in Settings', () => {
   assert.match(settings, /<AiSwitch\b[^>]*aiDisabled=/);
-  assert.match(settings, /aiSwitchText\(locale\)\.title/); // WL4-05: follows the active UI language
+  assert.match(settings, /<AiSwitch\b[^>]*lang=\{locale\}/); // follows the active UI language
+  assert.match(sw, /aiSwitchText\(lang\)/);
+  assert.match(sw, /\{t\.title\}/);
 });
 test('AI switch calls the per-account endpoint, is a11y switch, and respects the support lock', () => {
   assert.match(sw, /'\/users\/me\/ai', \{ method: 'PATCH'/);

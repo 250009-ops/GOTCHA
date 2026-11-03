@@ -17,7 +17,7 @@ import {
 
 const API = (process.env.API_URL ?? 'https://gotchaa.uz/api/v1').replace(/\/$/, '');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? '<REDACTED-admin-pw>';
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD ?? (() => { console.error("ADMIN_PASSWORD is required"); process.exit(1); })());
 const UA =
   'GotchaImporter/2.1 (+https://gotcha.app) Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36';
 

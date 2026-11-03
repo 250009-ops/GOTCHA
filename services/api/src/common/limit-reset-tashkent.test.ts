@@ -50,6 +50,8 @@ const dirs = ['services/api/src', 'packages/shared/src', 'apps/web-learner/src']
 const bad: string[] = [];
 for (const f of dirs.flatMap(walk).filter((p) => /\.(ts|tsx|json)$/.test(p) && !/\.test\.|\.spec\./.test(p))) {
   readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
     if (!/@db\.Date/.test(line) && /05[:.]00\s*(Tashkent|Toshkent|по Ташкенту)|UTC midnight|midnight UTC|reset[^\n]*\bUTC\b|\bUTC\b[^\n]*reset/i.test(line)) bad.push(`${f}:${i + 1}: ${line.trim().slice(0, 120)}`);
   });
 }

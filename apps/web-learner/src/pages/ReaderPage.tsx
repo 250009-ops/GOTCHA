@@ -327,6 +327,7 @@ export default function ReaderPage() {
   const [mashqPhase, setMashqPhase] = useState<'form' | 'preparing' | 'failed' | 'empty'>('form');
   const [mashqCardHidden, setMashqCardHidden] = useState(false);
   const mashqRetry = useRef<number | null>(null);
+  const mashqGen = useRef(0);
   const mashqOpenRef = useRef(false);
   const mashqStartRef = useRef<(count: number, repeatMissed: boolean) => void>(() => {});
   const mashqArmed = useRef<string | null>(null);
@@ -344,7 +345,11 @@ export default function ReaderPage() {
     api<{ state?: string; unseenCount: number; missedToday: number; remaining: number | null }>(`/practice/pages/${sid}/bank-status`)
       .then((status) => { if (!cancel) setMashqStatus(status); })
       .catch(() => { if (!cancel) setMashqStatus(null); });
-    return () => { cancel = true; };
+    return () => {
+      cancel = true;
+      mashqGen.current += 1;
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+    };
   }, [segment?.id, segment?.wordCount]);
   useEffect(() => {
     if (!mashqOpen || !segment?.id) return;
@@ -825,15 +830,25 @@ export default function ReaderPage() {
   }
 
   const startMashq = async (count: number, repeatMissed: boolean, attempt = 0, idempotencyKey = crypto.randomUUID(), startedAt = Date.now()) => {
-    if (!segment?.id || mashqStatus?.remaining === 0) return;
+    const segmentId = segment?.id;
+    const gen = mashqGen.current;
+    const stale = () => mashqGen.current !== gen || !segmentId;
+    if (!segmentId || mashqStatus?.remaining === 0) return;
     if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
     const giveUp = () => {
       if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
       setMashqNotice(null);
       setMashqPhase('failed');
     };
+    const again = () => {
+      const gap = Math.min(3000 * 1.5 ** attempt, 15000);
+      const wait = Math.round(gap * (0.8 + Math.random() * 0.4));
+      mashqRetry.current = window.setTimeout(() => {
+        if (!stale()) void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt);
+      }, wait);
+    };
     if (attempt > 0 && !mashqOpenRef.current) return;
-    if (Date.now() - startedAt >= 60_000) {
+    if (Date.now() - startedAt >= 120_000) {
       giveUp();
       return;
     }
@@ -847,7 +862,7 @@ export default function ReaderPage() {
         method: 'POST',
         body: JSON.stringify({
           contentId: id,
-          segmentId: segment.id,
+          segmentId,
           practiceType: 'comprehension',
           source: 'page_bank',
           page,
@@ -857,28 +872,33 @@ export default function ReaderPage() {
           idempotencyKey,
         }),
       });
+      if (stale()) return;
       if (started.state === 'pending' || !started.id) {
-        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
+        if (Date.now() - startedAt >= 120_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }
-        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt); }, 3000);
+        again();
         return;
       }
       if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
-      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}&segmentId=${segment.id}`);
+      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}&segmentId=${segmentId}`);
     } catch (e) {
+      if (stale()) return;
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
       const message = e instanceof Error ? e.message : copy.commonExt.error;
       if (code === 'quiz_pending') {
-        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
+        if (Date.now() - startedAt >= 120_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }
-        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt); }, 3000);
+        again();
       } else if (code === 'quiz_empty') {
         setMashqNotice(null);
         setMashqPhase('empty');
+      } else if (attempt > 0) {
+        setMashqNotice(null);
+        setMashqPhase('failed');
       } else if (code === 'mashq_burst') toast.message(message);
       else if (!isDailyLimitError(e) && !handleLimitError(e)) {
         setMashqNotice(message);

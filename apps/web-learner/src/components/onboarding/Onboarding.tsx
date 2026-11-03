@@ -71,7 +71,7 @@ export function Onboarding({ onStep }: { onStep?: (step: OnboardingStep | 'done'
       if (cancel) return;
       for (const items of groups) {
         const short = items
-          .filter((item) => item.id && item.title && (item.wordCount ?? 0) >= 80 && (item.wordCount ?? 1_000_000) < 8_000)
+          .filter((item) => item.id && item.title && (item.wordCount ?? 0) >= 80 && (item.wordCount ?? 0) < 8_000)
           .sort((a, b) => (a.wordCount ?? 0) - (b.wordCount ?? 0))[0];
         if (short) {
           setBook({ id: short.id, title: short.title, author: short.author || '' });

@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, HttpException, HttpStatus, Injectable, NotFoundException, ServiceUnavailableException, UnprocessableEntityException } from '@nestjs/common';
 import { PracticeType, Prisma } from '@prisma/client';
 import { MASHQ_BURST_FALLBACKS, MASHQ_BURST_KEYS, uzOrthography } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -17,6 +17,7 @@ const MAX_PER_SESSION = 20;
 /** How long a start request waits before telling the client to poll. Generation keeps running. */
 const BANK_WAIT_MS = 2_500;
 const GAVE_UP_MS = 60_000;
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 
 type Lang = 'en' | 'uz' | 'ru';
 type LangText = Record<Lang, string>;
@@ -134,7 +135,8 @@ export class MashqService {
     const segment = { ...loaded, plainText: readingPassage(loaded.plainText) };
 
     if (dto.idempotencyKey) {
-      const existing = await this.findIdempotent(userId, dto.idempotencyKey);
+      await this.sweepIdempotencyKeys();
+      const existing = await this.findIdempotent(userId, dto);
       if (existing) return existing;
     }
 
@@ -295,6 +297,7 @@ export class MashqService {
             practiceType: PracticeType.comprehension,
             questionCount: built.length,
             idempotencyKey: dto.idempotencyKey,
+            requestHash: dto.idempotencyKey ? this.requestHash(segment.id, dto.count ?? 5, Boolean(dto.repeatMissed)) : null,
             questions: {
               create: built.map((q, idx) => ({
                 questionIndex: idx,
@@ -326,7 +329,7 @@ export class MashqService {
       return redactSession(session);
     } catch (e) {
       if (dto.idempotencyKey && e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
-        const existing = await this.findIdempotent(userId, dto.idempotencyKey);
+        const existing = await this.findIdempotent(userId, dto);
         if (existing) return existing;
       }
       throw e;
@@ -459,11 +462,37 @@ export class MashqService {
     return asLang(chosen);
   }
 
-  private findIdempotent(userId: string, key: string) {
-    return this.prisma.practiceSession.findFirst({
+  private requestHash(segmentId: string, count: number, repeatMissed: boolean) {
+    return createHash('sha256').update(`${segmentId}|${count}|${repeatMissed ? 1 : 0}`).digest('hex');
+  }
+
+  private sweptKeysAt = 0;
+  private async sweepIdempotencyKeys() {
+    if (Date.now() - this.sweptKeysAt < IDEMPOTENCY_TTL_MS) return;
+    this.sweptKeysAt = Date.now();
+    await this.prisma.practiceSession.updateMany({
+      where: { idempotencyKey: { not: null }, startedAt: { lt: new Date(Date.now() - IDEMPOTENCY_TTL_MS) } },
+      data: { idempotencyKey: null },
+    }).catch(() => undefined);
+  }
+
+  private async findIdempotent(userId: string, dto: StartPracticeDto) {
+    const key = dto.idempotencyKey;
+    if (!key) return null;
+    const session = await this.prisma.practiceSession.findFirst({
       where: { userId, idempotencyKey: key },
       include: { questions: { orderBy: { questionIndex: 'asc' } } },
-    }).then((session) => (session ? redactSession(session) : null));
+    });
+    if (!session) return null;
+    if (session.startedAt.getTime() <= Date.now() - IDEMPOTENCY_TTL_MS) {
+      await this.prisma.practiceSession.update({ where: { id: session.id }, data: { idempotencyKey: null } });
+      return null;
+    }
+    const hash = this.requestHash(session.segmentId ?? dto.segmentId ?? '', dto.count ?? 5, Boolean(dto.repeatMissed));
+    if (session.requestHash && session.requestHash !== hash) {
+      throw new UnprocessableEntityException({ message: 'This idempotency key was already used for a different request.', code: 'idempotency_mismatch' });
+    }
+    return redactSession(session);
   }
 
   private hash(text: string) {

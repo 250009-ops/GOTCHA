@@ -8,8 +8,8 @@ export const AI_SETTING_KEYS = {
   defaultUserQuota: 'aiDefaultUserQuota',
 } as const;
 
-/** Paid Premium plans use this threshold for “unlimited” lookups. */
-export const UNLIMITED_AI_QUOTA = 1_000_000;
+/** Unlimited lookups are null, not a large sentinel. */
+export const UNLIMITED_AI_QUOTA = null;
 
 export function coerceNonNegInt(raw: unknown, fallback: number): number {
   const n =

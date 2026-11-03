@@ -653,7 +653,7 @@ export default function SettingsPage() {
   const plusLabel = plan?.name || copy.settings.plusName;
   const periodEnd = sub?.currentPeriodEnd ?? null;
   const rawQuota = subscription ? subscription.usage.quota : (plan?.aiDailyQuota ?? null);
-  const quota = typeof rawQuota === 'number' && rawQuota > 0 && rawQuota < 1_000_000 ? rawQuota : null;
+  const quota = typeof rawQuota === 'number' && rawQuota > 0 ? rawQuota : null;
   const lookupsToday = subscription?.usage.lookupsToday ?? 0;
   const importAllowance = subscription?.usage.importAllowance;
   const limitCopy = LIMIT_COPY[limitLang(locale)];
@@ -1012,10 +1012,8 @@ export default function SettingsPage() {
                     ),
                     importAllowance
                       ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
-                      : plan?.importLimit && plan.importLimit < 1_000_000
-                        ? copy.settings.importLimitLine(plan.importLimit)
-                        : null,
-                    plusActive ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: 50 }) : null,
+                      : null,
+                    plusActive ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: subscription?.usage.importDiscountPct ?? 50 }) : null,
                     importAllowance
                       ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                       : null,

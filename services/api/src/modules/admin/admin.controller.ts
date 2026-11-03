@@ -27,7 +27,7 @@ import { PricingService } from '../billing/pricing.service';
 import { PlanUpdateDto, PromoDto, StoreProductDto } from './dto/pricing.dto';
 
 const jsonSafe = (v: unknown) => JSON.parse(JSON.stringify(v));
-import { CreateContentDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto, RefundPaymentDto } from './dto/admin.dto';
+import { CreateContentDto, UpdateAchievementDto, UpdateAdminProfileDto, UpdateAiLimitsDto, UpdateContentDto, UpdateSettingsDto, RefundPaymentDto } from './dto/admin.dto';
 import { MAX_FILE_BYTES } from '../imports/extract-text';
 
 const actorIdOf = (u?: AuthUserPayload): string | null => ((u as { sub?: string; id?: string } | undefined)?.sub ?? (u as { id?: string } | undefined)?.id ?? null);
@@ -160,6 +160,17 @@ export class AdminController {
     @Body() body: RefundPaymentDto,
   ) {
     return this.ops.finalizeRefund(actor.sub, id, body);
+  }
+
+  /** Atmos said the charge was not reversed. This is the only path that moves refunding back to paid. */
+  @Post('payments/:id/refund/not-reversed')
+  @Roles(AdminRole.superadmin)
+  markRefundNotReversed(
+    @CurrentUser() actor: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() body: RefundPaymentDto,
+  ) {
+    return this.ops.markRefundNotReversed(actor.sub, id, body);
   }
 
   /** Resolve refunds stuck in `refunding` (also runs every 10 minutes). */
@@ -506,17 +517,20 @@ export class AdminController {
   /** final-5 A10: self-service deletion requests (anonymised, data purged) and their 1-year hard-purge date. */
   @Get('users-deletion-requests')
   @Roles(AdminRole.superadmin, AdminRole.moderator)
-  deletionRequests() {
+  async deletionRequests(@CurrentUser() user?: AuthUserPayload) {
+    await this.ops.audit(actorIdOf(user), 'user.deletion_requests.view', 'user', null);
     return this.admin.listDeletionRequests();
   }
 
   @Patch('ai-usage/limits')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateAiUsageLimits(@Body() body: UpdateAiLimitsDto) {
-    return this.admin.updateSettings({
+  async updateAiUsageLimits(@Body() body: UpdateAiLimitsDto, @CurrentUser() user?: AuthUserPayload) {
+    const res = await this.admin.updateSettings({
       aiDefaultUserQuota: body.aiDefaultUserQuota,
       aiDailyLimit: body.aiDailyLimit,
     });
+    await this.ops.auditStrict(actorIdOf(user), 'ai.limits.update', 'platform_setting', null, { scope: 'ai', ...(body as object) } as never);
+    return res;
   }
 
   @Get('analytics')
@@ -563,8 +577,8 @@ export class AdminController {
 
   @Patch('gamification/achievements/:id')
   @Roles(AdminRole.superadmin, AdminRole.editor)
-  updateAchievement(@Param('id') id: string, @Body() body: Record<string, unknown>) {
-    return this.admin.updateAchievement(id, body);
+  updateAchievement(@Param('id') id: string, @Body() body: UpdateAchievementDto, @CurrentUser() user?: AuthUserPayload) {
+    return this.admin.updateAchievement(id, body, actorIdOf(user));
   }
 
   @Get('notifications/feed')
@@ -637,7 +651,9 @@ export class AdminController {
 
   @Patch('settings')
   @Roles(AdminRole.superadmin)
-  updateSettings(@Body() body: UpdateSettingsDto) {
-    return this.admin.updateSettings(body as unknown as Record<string, unknown>);
+  async updateSettings(@Body() body: UpdateSettingsDto, @CurrentUser() user?: AuthUserPayload) {
+    const res = await this.admin.updateSettings(body as unknown as Record<string, unknown>);
+    await this.ops.auditStrict(actorIdOf(user), 'settings.update', 'platform_setting', null, body as never);
+    return res;
   }
 }

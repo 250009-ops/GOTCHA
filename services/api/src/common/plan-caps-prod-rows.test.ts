@@ -21,8 +21,9 @@ function prisma(settings: Record<string, unknown> = {}): any {
 (async () => {
   resetPlanCapsCache();
   const caps = await getPlanCaps(prisma());
-  assert.deepEqual(caps.free, { lookups: 20, quizzes: 10 }, 'enforced Free caps ignore ai_daily_quota 5000');
+  assert.deepEqual(caps.free, { lookups: 20, quizzes: 10, mashq: 20 }, 'enforced Free caps ignore ai_daily_quota 5000');
   assert.equal(caps.plus.lookups, null, 'Plus: no daily lookup cap');
+  assert.equal(caps.plus.mashq, null, 'Plus Mashq is never capped');
   assert.equal(caps.plus.quizzes, 200);
   resetPlanCapsCache();
   const c2 = await getPlanCaps(prisma({ 'caps.free.lookups': 25, 'caps.free.quizzes': 12, 'caps.plus.quizzes': 150 }));

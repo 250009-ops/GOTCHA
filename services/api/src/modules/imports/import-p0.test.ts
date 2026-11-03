@@ -59,9 +59,12 @@ async function main() {
     let calls = 0;
     const atmos = { async reverseTransaction() { calls++; throw new Error('timeout'); } };
     assert.equal((await settleFailedImportPayment(db, atmos, 'u1', 'x', { liveReverse: true })).action, 'reverse_failed');
-    assert.equal((await settleFailedImportPayment(db, atmos, 'u1', 'x', { liveReverse: true })).action, 'none');
+    const again = await settleFailedImportPayment(db, atmos, 'u1', 'x', { liveReverse: true });
+    assert.equal(again.action, 'none');
+    assert.equal((again as { reason?: string }).reason, 'not_paid');
     assert.equal(calls, 1);
-    assert.equal(db.rows[0].refundState, 'reverse_failed');
+    assert.equal(db.rows[0].status, 'refunding');
+    assert.equal(db.rows[0].refundState, 'reverse_unknown');
   }
   // --- refund: free / unpaid / missing
   assert.deepEqual(await settleFailedImportPayment(fakeDb([]), null, 'u1', 'x'), { action: 'none', reason: 'no_payment' });
