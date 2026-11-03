@@ -1235,7 +1235,6 @@ export default function SettingsPage() {
             className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center gap-2 disabled:opacity-60"
           >
             {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-            <span className="sr-only">{exporting ? copy.settings.downloadingData : copy.settings.downloadData}</span>
           </button>
         </Row>
       </Section>

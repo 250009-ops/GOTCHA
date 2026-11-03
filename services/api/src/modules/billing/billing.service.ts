@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DAILY_CAP_FALLBACKS } from '@gotcha/shared';
+import { DAILY_CAP_FALLBACKS, DAILY_CAP_KEYS } from '@gotcha/shared';
 import { activeSubWhere } from '../../common/plan-active';
 import { getPlanCaps, usageDayStart, usageResetAt, userCapPlan } from '../../common/plan-caps';
 import { SubscriptionPlan } from '@prisma/client';
@@ -30,6 +30,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
       // PAY2-18: the import allowance import-commerce enforces (platform setting importFreeLimits, default 3/day), not the seed row (15).
       importLimit: freeImportsDay ?? plan.importLimit,
       monthlyFreePageLimit: freePages.pages, // final-5 B1 field kept for clients
+      mashqPerDay: freeMashq,
       features: [t.lookupsDay(freeQuota), t.quizzesDay(freeMashq), t.importsDay(freeImportsDay ?? plan.importLimit), t.importPages(freePages.pages, freePages.cycle), t.library],
     };
   }
@@ -37,6 +38,7 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
   // priceMonthly now means "price of the 30-day pass". A price < 1000 soʻm (e.g. the live USD "9") is hidden.
   // Kai 6.1a: Plus shows the price checkout charges (plusPassConfig: admin setting > env > 24990/199990), never the stale row (USD "9").
   void plusImports;
+  void plusMashq;
   const priceUzs = publicPlanPriceUzs(passPrices?.p30 ?? plan.priceMonthly);
   const priceYearUzs = publicPlanPriceUzs(passPrices?.p365 ?? yearRaw);
   return {
@@ -58,9 +60,10 @@ export function enrichPlan(plan: SubscriptionPlan, lang: PlanLang = 'en', yearRa
     popular: true,
     aiDailyQuota: plusLookups, // null = no daily lookup cap for Plus (wlive 14:40 API shape)
     quizDailyQuota: plusQuizzes, // WLF-12: enforced cap (platform_settings caps.plus.quizzes), not the plan column
+    mashqPerDay: null, // Plus Mashq is never capped
     // Lookups from config (plus.ai_lookup_quota, null = no daily limit); never "unlimited" in copy.
     // Marketing §4/§7 (14:20): quiz bullet added; quiz cap = plan.quizDailyQuota.
-    features: [t.plusLookups(plusLookups, freeQuota), t.plusQuizzes(plusMashq, freeMashq), t.plusChapters(plusQuizzes, freeQuizzes), t.plusImportOff, t.plusFree],
+    features: [t.plusLookups(plusLookups, freeQuota), t.plusQuizzes(null, freeMashq), t.plusChapters(plusQuizzes, freeQuizzes), t.plusImportOff, t.plusFree],
   };
 }
 
@@ -96,7 +99,12 @@ export async function plusPassPrices(prisma: SettingsReader): Promise<PlusPassPr
   return { p30: of(30), p365: of(365) };
 }
 /** Plan cards for /billing/plans (and the Plus card on /marketing/plans). */
+let plusMashqCapCleared = false;
 export async function buildPlanCards(prisma: PrismaService, lang: PlanLang = 'en') {
+  if (!plusMashqCapCleared) {
+    plusMashqCapCleared = true;
+    await prisma.platformSetting.deleteMany?.({ where: { key: DAILY_CAP_KEYS.plusMashq } })?.catch(() => { plusMashqCapCleared = false; });
+  }
   const [plans, caps, freeImports, freePages, plusImports, passPrices] = await Promise.all([
     prisma.subscriptionPlan.findMany({ orderBy: { tier: 'asc' } }),
     getPlanCaps(prisma),

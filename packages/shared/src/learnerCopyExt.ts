@@ -1311,7 +1311,7 @@ const EXT_UZ: LearnerCopyExt = {
     allowanceReachedPaid: 'Import limiti tugadi. Eski importni oʻchiring yoki Atmos orqali toʻlang.',
     allowanceReachedFree: 'Import limiti tugadi. Eski importni oʻchiring — pullik import hozir yoʻq.',
     paidImportsHint: 'Pullik import sahifalar soniga qarab soʻmda Atmos orqali toʻlanadi. Avval bepul limit ishlatiladi.',
-    freeImportsHint: 'Free tarifi: kuniga 3 ta import va oyiga 50 sahifa. Kunlik limitlar Toshkent vaqti bilan 00:00 da, sahifalar har oyning 1-sanasida yangilanadi.',
+    freeImportsHint: 'Bepul tarif: kuniga 3 ta import va oyiga 50 sahifa. Kunlik limitlar Toshkent vaqti bilan 00:00 da, sahifalar har oyning 1-sanasida yangilanadi.',
     importRemoved: 'Import tarixdan olib tashlandi',
     pageTier: (label) => `Sahifa tarifi (${label})`,
     estimatedPages: 'Taxminiy sahifalar',

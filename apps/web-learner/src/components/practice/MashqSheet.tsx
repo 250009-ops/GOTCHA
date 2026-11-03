@@ -47,7 +47,7 @@ export function MashqSheet({
       >
         <h2 className="text-lg font-bold text-[#101828]">{copy.cardTitle}</h2>
         <p className="text-sm text-[#4a5565] mt-1">{blocked ? copy.limitBody : preparing ? copy.preparing : failed ? copy.gaveUp : empty ? copy.noneLeft : copy.cardBody}</p>
-        {notice ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{notice}</p> : null}
+        {notice && !preparing && !failed ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-sm text-amber-900" role="alert">{notice}</p> : null}
         {blocked ? (
           <div className="mt-4">
             <div className="text-sm font-semibold text-[#101828] mb-3">{copy.limitTitle}</div>
@@ -55,9 +55,7 @@ export function MashqSheet({
               {copy.seePlus}
             </Link>
           </div>
-        ) : preparing ? (
-          <p className="mt-4 text-sm text-[#4a5565]" role="status">{copy.preparing}</p>
-        ) : failed || empty ? (
+        ) : preparing ? null : failed || empty ? (
           <div className="mt-4 flex flex-wrap gap-2">
             <button
               type="button"

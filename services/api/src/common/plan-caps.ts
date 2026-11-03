@@ -59,7 +59,7 @@ export async function getPlanCaps(prisma: unknown, now = Date.now()): Promise<Pl
     plus: {
       lookups: plusLookups,
       quizzes: int(setting(DAILY_CAP_KEYS.plusQuizzes), DAILY_CAP_FALLBACKS.plus.quizzes),
-      mashq: optionalCap(setting(DAILY_CAP_KEYS.plusMashq)),
+      mashq: null, // Plus Mashq is never capped. A stored caps.plus.mashq value is ignored.
     },
     plusLookupHardCap: plusLookups == null ? null : hard == null ? null : Math.max(hard, plusLookups),
   };

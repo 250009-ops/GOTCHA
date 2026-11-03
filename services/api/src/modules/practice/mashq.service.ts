@@ -129,8 +129,7 @@ export class MashqService {
   }
 
   async start(userId: string, dto: StartPracticeDto) {
-    if (!dto.segmentId) throw new BadRequestException('segmentId required');
-    const loaded = await this.loadSegment(userId, dto.segmentId);
+    const loaded = await this.segmentForStart(userId, dto);
     if (loaded.wordCount < MIN_WORDS) throw new BadRequestException('This page is too short for Mashq');
     const segment = { ...loaded, plainText: readingPassage(loaded.plainText) };
 
@@ -469,6 +468,27 @@ export class MashqService {
 
   private hash(text: string) {
     return createHash('sha256').update(text).digest('hex');
+  }
+
+  /** Page-bank questions are written from this page's own text, not the chapter around it. */
+  private async segmentForStart(userId: string, dto: StartPracticeDto) {
+    if (dto.source === 'page_bank' && (dto.page == null || dto.page < 1)) {
+      throw new BadRequestException('page required');
+    }
+    if (dto.page != null && dto.contentId) {
+      const row = await this.prisma.contentSegment.findFirst({
+        where: {
+          contentId: dto.contentId,
+          pageIndex: dto.page - 1,
+          ...(dto.chapterIndex != null ? { chapterIndex: dto.chapterIndex } : {}),
+        },
+        orderBy: { segmentIndex: 'asc' },
+      });
+      if (!row) throw new BadRequestException('Page not found');
+      return this.loadSegment(userId, row.id);
+    }
+    if (!dto.segmentId) throw new BadRequestException('segmentId required');
+    return this.loadSegment(userId, dto.segmentId);
   }
 
   private async loadSegment(userId: string, segmentId: string) {

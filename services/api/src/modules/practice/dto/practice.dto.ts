@@ -26,6 +26,20 @@ export class StartPracticeDto {
   @Max(20)
   count?: number;
 
+  /** 1-based page inside the chapter. Page-bank questions are generated from this page only. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(10000)
+  page?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  chapterIndex?: number;
+
   @IsOptional()
   @IsUUID()
   idempotencyKey?: string;

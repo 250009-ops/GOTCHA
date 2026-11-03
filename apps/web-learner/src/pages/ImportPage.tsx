@@ -26,7 +26,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { CatalogLanguageDropdown } from '../components/CatalogLanguageDropdown';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
-import { surfaceCopy } from '@gotcha/shared';
+import { localizeApiError, surfaceCopy } from '@gotcha/shared';
 import { CardForm, OtpForm, PayTrust, CancelConfirm, CancelOutcome, runCancel, usePay } from '../components/payments';
 import { refundRequestHref } from '@gotcha/shared';
 import { cancelScreen } from '@gotcha/shared';
@@ -807,7 +807,7 @@ export default function ImportPage() {
       return;
     }
     if (item.ingestionStatus === 'failed') {
-      toast.error(item.errorMessage || copy.importPage.statusFailed);
+      toast.error(item.errorMessage ? localizeApiError(locale, { message: item.errorMessage }) : copy.importPage.statusFailed);
       return;
     }
     toast.success(copy.import.importButton);
@@ -1151,10 +1151,10 @@ export default function ImportPage() {
                             </span>
                           )}
                           {item.ingestionStatus === 'failed' && item.errorMessage && (
-                            <span className="text-xs text-[#fb2c36] truncate max-w-full">{item.errorMessage}</span>
+                            <span className="text-xs text-[#fb2c36] truncate max-w-full">{localizeApiError(locale, { message: item.errorMessage })}</span>
                           )}
                           {item.ingestionStatus === 'ready' && item.errorMessage && (
-                            <span className="text-xs text-amber-600 truncate max-w-full">{item.errorMessage}</span>
+                            <span className="text-xs text-amber-600 truncate max-w-full">{localizeApiError(locale, { message: item.errorMessage })}</span>
                           )}
                         </div>
                       </div>

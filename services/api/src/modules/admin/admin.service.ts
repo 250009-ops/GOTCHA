@@ -674,7 +674,7 @@ export class AdminService {
       freeLookupsPerDay: caps.free.lookups,
       freeQuizzesPerDay: caps.free.quizzes,
       freeMashqPerDay: caps.free.mashq,
-      plusMashqPerDay: caps.plus.mashq,
+      plusMashqPerDay: null,
       // Sarvarbek 13:57: Plus import discount default 50% (combined with promo capped at 70%).
       importDiscountPct: plusPassConfig(process.env, 500, { [PLUS_SETTING_KEYS.benefits]: v(PLUS_SETTING_KEYS.benefits) }).benefits.importDiscountPct,
       webPlusPassEnabled: ['1', 'true', 'yes', 'on'].includes(String(process.env.WEB_PLUS_PASS ?? '').toLowerCase()),
@@ -729,13 +729,8 @@ export class AdminService {
       await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.freeMashq }, update: { value: n }, create: { key: DAILY_CAP_KEYS.freeMashq, value: n } });
       resetPlanCapsCache();
     }
-    if (body.plusMashqPerDay !== undefined) {
-      const raw = body.plusMashqPerDay;
-      const value = raw === null || raw === '' ? null : int(raw, 'plusMashqPerDay', 1, 10_000);
-      const json = value === null ? Prisma.JsonNull : value;
-      await this.prisma.platformSetting.upsert({ where: { key: DAILY_CAP_KEYS.plusMashq }, update: { value: json }, create: { key: DAILY_CAP_KEYS.plusMashq, value: json } });
-      resetPlanCapsCache();
-    }
+    await this.prisma.platformSetting.deleteMany({ where: { key: DAILY_CAP_KEYS.plusMashq } });
+    resetPlanCapsCache();
     return this.plusSettings();
   }
 

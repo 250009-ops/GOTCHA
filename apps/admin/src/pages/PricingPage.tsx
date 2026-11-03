@@ -50,7 +50,6 @@ type PlusSettings = {
   importDiscountPct: number;
   webPlusPassEnabled: boolean;
   freeMashqPerDay: number;
-  plusMashqPerDay: number | null;
 };
 
 function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
@@ -59,7 +58,6 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
   const [price365, setPrice365] = useState('');
   const [discount, setDiscount] = useState('');
   const [freeMashq, setFreeMashq] = useState('');
-  const [plusMashq, setPlusMashq] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
@@ -70,7 +68,6 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
     setPrice365(String(row.price365Uzs));
     setDiscount(String(row.importDiscountPct));
     setFreeMashq(String(row.freeMashqPerDay));
-    setPlusMashq(row.plusMashqPerDay == null ? '' : String(row.plusMashqPerDay));
   }, []);
   useEffect(() => { void load().catch((e) => setErr(e instanceof Error ? e.message : 'Could not load Plus settings')); }, [load]);
 
@@ -85,11 +82,10 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
           price365Uzs: Number(price365),
           importDiscountPct: Number(discount),
           freeMashqPerDay: Number(freeMashq),
-          plusMashqPerDay: plusMashq.trim() === '' ? null : Number(plusMashq),
         }),
       });
       await load();
-      onSaved('Plus pass and Mashq caps saved.');
+      onSaved('Plus pass saved.');
     } catch (e) {
       setErr(e instanceof Error ? e.message : 'Save failed');
     } finally {
@@ -103,7 +99,7 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
       <h2 className="text-base font-bold text-slate-900">Plus pass</h2>
       <p className="mt-1 mb-3 text-xs text-slate-500">
         These are the prices learners pay. Web checkout is {plus?.webPlusPassEnabled ? 'on' : 'off'} (read-only).
-        Mashq is questions per day and resets at 00:00 Tashkent. Leave Plus empty for unlimited.
+        Free Mashq is questions per day and resets at 00:00 Tashkent. Plus Mashq has no daily cap.
       </p>
       {err ? <p className="mb-2 text-sm text-rose-700">{err}</p> : null}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -118,9 +114,6 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
         </label>
         <label className="text-xs font-semibold text-slate-600">Free Mashq questions / day
           <Input inputMode="numeric" value={freeMashq} onChange={(e) => setFreeMashq(e.target.value.replace(/\D/g, ''))} />
-        </label>
-        <label className="text-xs font-semibold text-slate-600">Plus Mashq / day (empty = unlimited)
-          <Input inputMode="numeric" value={plusMashq} placeholder="Unlimited" onChange={(e) => setPlusMashq(e.target.value.replace(/\D/g, ''))} />
         </label>
       </div>
       <div className="mt-3">

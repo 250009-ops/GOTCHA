@@ -324,9 +324,12 @@ export default function ReaderPage() {
   const [mashqOpen, setMashqOpen] = useState(false);
   const [mashqStarting, setMashqStarting] = useState(false);
   const [mashqNotice, setMashqNotice] = useState<string | null>(null);
+  const [mashqPhase, setMashqPhase] = useState<'form' | 'preparing' | 'failed' | 'empty'>('form');
   const [mashqCardHidden, setMashqCardHidden] = useState(false);
   const mashqRetry = useRef<number | null>(null);
   const mashqOpenRef = useRef(false);
+  const mashqStartRef = useRef<(count: number, repeatMissed: boolean) => void>(() => {});
+  const mashqArmed = useRef<string | null>(null);
   mashqOpenRef.current = mashqOpen;
   useEffect(() => {
     setMashqOpen(false);
@@ -343,6 +346,15 @@ export default function ReaderPage() {
       .catch(() => { if (!cancel) setMashqStatus(null); });
     return () => { cancel = true; };
   }, [segment?.id, segment?.wordCount]);
+  useEffect(() => {
+    if (!mashqOpen || !segment?.id) return;
+    if (mashqStatus?.remaining === 0) return;
+    if (mashqStatus?.remaining != null && mashqStatus.remaining < 3) return;
+    if (mashqArmed.current === segment.id) return;
+    mashqArmed.current = segment.id;
+    const count = Math.min(5, mashqStatus?.remaining ?? 5);
+    mashqStartRef.current(count, false);
+  }, [mashqOpen, segment?.id, mashqStatus?.remaining]);
   const tokens = segment?.tokenMap ?? [];
   const stanzaBreaks = useReaderStanzaBreaks(
     readerBodyRef,
@@ -812,18 +824,24 @@ export default function ReaderPage() {
     );
   }
 
-  const startMashq = async (count: number, repeatMissed: boolean, attempt = 0, idempotencyKey = crypto.randomUUID()) => {
+  const startMashq = async (count: number, repeatMissed: boolean, attempt = 0, idempotencyKey = crypto.randomUUID(), startedAt = Date.now()) => {
     if (!segment?.id || mashqStatus?.remaining === 0) return;
     if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
     const giveUp = () => {
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
       setMashqNotice(null);
-      setMashqStatus((prev) => prev
-        ? { ...prev, state: 'failed' }
-        : { state: 'failed', unseenCount: 0, missedToday: 0, remaining: mashqStatus?.remaining ?? null });
+      setMashqPhase('failed');
     };
+    if (attempt > 0 && !mashqOpenRef.current) return;
+    if (Date.now() - startedAt >= 60_000) {
+      giveUp();
+      return;
+    }
+    setMashqPhase('preparing');
+    setMashqNotice(null);
     setMashqStarting(true);
-    const preparing = mashqCopy(locale).preparing;
-    const pollsLeft = attempt < 20 && mashqOpenRef.current;
+    const page = pageInChapter.current;
+    const chapterIndex = segment.chapterIndex ?? outline[segmentIndex]?.chapterIndex ?? 0;
     try {
       const started = await api<{ id?: string; state?: string }>('/practice/sessions', {
         method: 'POST',
@@ -832,19 +850,19 @@ export default function ReaderPage() {
           segmentId: segment.id,
           practiceType: 'comprehension',
           source: 'page_bank',
+          page,
+          chapterIndex,
           count,
           repeatMissed,
           idempotencyKey,
         }),
       });
       if (started.state === 'pending' || !started.id) {
-        if (!pollsLeft) {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }
-        setMashqNotice(preparing);
-        setMashqStatus((prev) => prev ? { ...prev, state: 'pending' } : { state: 'pending', unseenCount: 0, missedToday: 0, remaining: mashqStatus?.remaining ?? null });
-        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey); }, 3000);
+        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt); }, 3000);
         return;
       }
       if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
@@ -853,25 +871,25 @@ export default function ReaderPage() {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
       const message = e instanceof Error ? e.message : copy.commonExt.error;
       if (code === 'quiz_pending') {
-        if (!pollsLeft) {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }
-        setMashqNotice(message || preparing);
-        setMashqStatus((prev) => prev ? { ...prev, state: 'pending' } : prev);
-        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey); }, 3000);
+        mashqRetry.current = window.setTimeout(() => { void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt); }, 3000);
       } else if (code === 'quiz_empty') {
-        setMashqNotice(message || mashqCopy(locale).noneLeft);
-        setMashqStatus((prev) => prev ? { ...prev, state: 'empty', unseenCount: 0 } : prev);
+        setMashqNotice(null);
+        setMashqPhase('empty');
       } else if (code === 'mashq_burst') toast.message(message);
       else if (!isDailyLimitError(e) && !handleLimitError(e)) {
         setMashqNotice(message);
+        setMashqPhase('form');
         toast.error(message);
       }
     } finally {
       setMashqStarting(false);
     }
   };
+  mashqStartRef.current = (count, repeatMissed) => { void startMashq(count, repeatMissed); };
 
   if (!pageCount) {
     return (
@@ -1019,6 +1037,8 @@ export default function ReaderPage() {
             onClick={() => {
               const pageId = segment?.id ?? outline[segmentIndex]?.id ?? '';
               if ((segment?.wordCount ?? 0) >= 60) {
+                setMashqNotice(null);
+                setMashqPhase('form');
                 setMashqOpen(true);
                 return;
               }
@@ -1339,7 +1359,7 @@ export default function ReaderPage() {
                   <div className="text-xs text-[#4a5565]">{mashqCopy(locale).cardBody}</div>
                 </div>
                 <div className="flex gap-2 shrink-0">
-                  <button type="button" onClick={() => setMashqOpen(true)} className="h-11 px-3 rounded-xl bg-g-blue-700 text-white text-xs font-semibold">{mashqCopy(locale).start}</button>
+                  <button type="button" onClick={() => { setMashqNotice(null); setMashqPhase('form'); setMashqOpen(true); }} className="h-11 px-3 rounded-xl bg-g-blue-700 text-white text-xs font-semibold">{mashqCopy(locale).start}</button>
                   <button type="button" onClick={() => setMashqCardHidden(true)} className="h-11 px-3 rounded-xl text-xs font-semibold text-[#6b7280]">{mashqCopy(locale).later}</button>
                 </div>
               </div>
@@ -1477,16 +1497,18 @@ export default function ReaderPage() {
         remaining={mashqStatus?.remaining ?? null}
         missedToday={mashqStatus?.missedToday ?? 0}
         starting={mashqStarting}
-        empty={mashqStatus?.state === 'empty'}
-        preparing={mashqStatus?.state === 'pending'}
-        failed={mashqStatus?.state === 'failed'}
+        preparing={mashqPhase === 'preparing'}
+        failed={mashqPhase === 'failed'}
+        empty={mashqPhase === 'empty'}
         notice={mashqNotice}
         onClose={() => {
           if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+          mashqArmed.current = null;
           setMashqOpen(false);
           setMashqNotice(null);
+          setMashqPhase('form');
         }}
-        onStart={(count, repeat) => { setMashqNotice(null); void startMashq(count, repeat); }}
+        onStart={(count, repeat) => { setMashqNotice(null); mashqArmed.current = segment?.id ?? 'retry'; void startMashq(count, repeat); }}
       />
     </div>
   );

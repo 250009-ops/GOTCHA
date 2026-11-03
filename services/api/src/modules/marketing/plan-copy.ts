@@ -81,7 +81,7 @@ const T = {
     everythingFree: 'Bepul tarifdagi hamma narsa',
     payOnce: "Bepul importlar yetmayaptimi? Har bir import uchun Atmos orqali bir marta toʻlang",
     upfront: "Narx oldindan koʻrsatiladi va hujjat hajmiga bogʻliq",
-    plusLookups: (n: number | null, free: number) => (n == null ? `Soʻz izohlari uchun belgilangan kunlik limit yoʻq (bepul tarifda kuniga ${free} ta)` : `Kuniga ${n} ta soʻz izohi (Free tarifida ${free} ta)`),
+    plusLookups: (n: number | null, free: number) => (n == null ? `Soʻz izohlari uchun belgilangan kunlik limit yoʻq (bepul tarifda kuniga ${free} ta)` : `Kuniga ${n} ta soʻz izohi (bepul tarifda ${free} ta)`),
     plusQuizzes: (n: number | null, free: number) => (n == null ? `Mashqda kunlik cheklov yoʻq (bepul tarifda barcha kitoblar boʻyicha kuniga ${free} ta savol)` : `Kuniga ${n} ta Mashq savoli (bepul tarifda ${free} ta, barcha kitoblar boʻyicha)`),
     plusChapters: (plus: number, free: number) => `Bepul tarifda kuniga ${free} ta bob testi, Plus bilan ${plus} ta`,
     plusImportOff: 'Har bir pullik importga 50% chegirma',

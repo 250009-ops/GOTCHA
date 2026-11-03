@@ -79,7 +79,7 @@ export const LIMIT_COPY: Record<LimitLang, LimitCopy> = {
     importMonthlyBody: (n) => `Bu oydagi ${n} ta bepul sahifa ishlatildi.`,
     paymentsOff: 'Pullik importlar hozircha mavjud emas.',
     ok: 'OK',
-    freePlan: 'Free tarifi',
+    freePlan: 'Bepul tarif',
   },
 };
 
