@@ -1,0 +1,114 @@
+/**
+ * Public plan copy, uz/ru/en. ONLY claims that are true in the code today (team/marketing/PLUS-OFFER.md §1, 31 Oct 2026).
+ * Banned (false or not built): offline reading, "no monthly fee", unlimited imports, priority support, no ads, $ prices.
+ * plan-copy.test.ts guards against these strings coming back.
+ */
+export type PlanLang = 'en' | 'ru' | 'uz';
+export const PLAN_LANGS: PlanLang[] = ['en', 'ru', 'uz'];
+
+export function planLang(v: unknown): PlanLang {
+  const s = String(v ?? '').toLowerCase().slice(0, 2);
+  return s === 'ru' || s === 'uz' ? s : 'en';
+}
+
+/** "24 990 soʻm" style: digits grouped with a space; "soʻm" (uz/en) or "сум" (ru). */
+export function formatSom(amount: number, lang: PlanLang = 'en'): string {
+  const n = Math.max(0, Math.round(Number(amount) || 0));
+  const grouped = String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  return `${grouped} ${lang === 'ru' ? 'сум' : 'soʻm'}`;
+}
+
+type Cycle = 'daily' | 'monthly' | 'yearly';
+/** Russian plural: 1 / 2–4 / 5+ (11–14 → many). */
+function ruForm(n: number, one: string, few: string, many: string): string {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+const T = {
+  en: {
+    freeName: 'Free', freeUnit: 'to start', freeCta: 'Get started',
+    library: 'Access to the public library',
+    lookupsDay: (n: number) => `${n} word lookups a day`,
+    quizzesDay: (n: number) => `${n} Mashq questions a day, across all books`,
+    importsDay: (n: number) => `${n} free ${n === 1 ? 'import' : 'imports'} a day`,
+    importPages: (n: number, c: Cycle) => `Up to ${n} free ${n === 1 ? 'page' : 'pages'} of imports a ${c === 'daily' ? 'day' : c === 'yearly' ? 'year' : 'month'}`,
+    review: 'Vocabulary review',
+    ppiName: 'Pay per import', ppiLabel: 'Pay as you go', ppiUnit: 'one-time payments', ppiCta: 'Start reading for free',
+    everythingFree: 'Everything in Free',
+    payOnce: 'Need more than your free imports? Pay once per import via Atmos',
+    upfront: 'Price shown upfront, based on document length',
+    // PLUS-OFFER.md §4 (14:33): null = no Plus lookup cap configured.
+    plusLookups: (n: number | null, free: number) => (n == null ? `No fixed daily limit on word lookups (${free} a day on Free)` : `${n} word lookups a day (${free} on Free)`),
+    plusQuizzes: (n: number | null, free: number) => (n == null ? `No daily limit on Mashq (${free} questions a day on Free, across all books)` : `${n} Mashq questions a day (${free} on Free, across all books)`),
+    plusChapters: (plus: number, free: number) => `${free} chapter quizzes a day on Free, ${plus} with Plus`,
+    plusImportOff: '50% off every paid import',
+    plusFree: 'Everything in Free stays included',
+    free: 'Free',
+    plusName: 'Plus', passUnit: '30-day pass',
+  },
+  ru: {
+    freeName: 'Бесплатно', freeUnit: 'для начала', freeCta: 'Начать',
+    library: 'Доступ к открытой библиотеке',
+    lookupsDay: (n: number) => `${n} пояснений слов в день`,
+    quizzesDay: (n: number) => `${n} вопросов Mashq в день по всем книгам`,
+    importsDay: (n: number) => `${n} ${ruForm(n, 'бесплатный импорт', 'бесплатных импорта', 'бесплатных импортов')} в день`,
+    importPages: (n: number, c: Cycle) => `До ${n} ${ruForm(n, 'бесплатной страницы', 'бесплатных страниц', 'бесплатных страниц')} импорта в ${c === 'daily' ? 'день' : c === 'yearly' ? 'год' : 'месяц'}`,
+    review: 'Повторение слов',
+    ppiName: 'Оплата за импорт', ppiLabel: 'Платите только за то, что нужно', ppiUnit: 'разовые платежи', ppiCta: 'Начать читать бесплатно',
+    everythingFree: 'Всё из бесплатного плана',
+    payOnce: 'Нужно больше бесплатных импортов? Разовая оплата за импорт через Atmos',
+    upfront: 'Цена видна заранее и зависит от объёма документа',
+    plusLookups: (n: number | null, free: number) => (n == null ? `Без фиксированного дневного лимита на пояснения слов (в бесплатном плане ${free} в день)` : `${n} пояснений слов в день (${free} на Free)`),
+    plusQuizzes: (n: number | null, free: number) => (n == null ? `Без дневного лимита на Mashq (в бесплатном плане ${free} вопросов в день по всем книгам)` : `${n} вопросов Mashq в день (в бесплатном плане ${free}, по всем книгам)`),
+    plusChapters: (plus: number, free: number) => `${free} тестов по главам в день на бесплатном плане, ${plus} с Plus`,
+    plusImportOff: 'Скидка 50% на каждый платный импорт',
+    plusFree: 'Всё из бесплатного плана остаётся с вами',
+    free: 'Бесплатно',
+    plusName: 'Plus', passUnit: 'доступ на 30 дней',
+  },
+  uz: {
+    freeName: 'Bepul', freeUnit: 'boshlash uchun', freeCta: 'Boshlash',
+    library: 'Ochiq kutubxonadan foydalanish',
+    lookupsDay: (n: number) => `Kuniga ${n} ta soʻz izohi`,
+    quizzesDay: (n: number) => `Barcha kitoblar boʻyicha kuniga ${n} ta Mashq savoli`,
+    importsDay: (n: number) => `Kuniga ${n} ta bepul import`,
+    importPages: (n: number, c: Cycle) => `${c === 'daily' ? 'Kuniga' : c === 'yearly' ? 'Yiliga' : 'Oyiga'} ${n} sahifagacha bepul import`,
+    review: "Soʻzlarni takrorlash",
+    ppiName: "Har import uchun toʻlov", ppiLabel: "Kerak boʻlganda toʻlang", ppiUnit: "bir martalik toʻlovlar", ppiCta: "Bepul oʻqishni boshlash",
+    everythingFree: 'Bepul tarifdagi hamma narsa',
+    payOnce: "Bepul importlar yetmayaptimi? Har bir import uchun Atmos orqali bir marta toʻlang",
+    upfront: "Narx oldindan koʻrsatiladi va hujjat hajmiga bogʻliq",
+    plusLookups: (n: number | null, free: number) => (n == null ? `Soʻz izohlari uchun belgilangan kunlik limit yoʻq (bepul tarifda kuniga ${free} ta)` : `Kuniga ${n} ta soʻz izohi (bepul tarifda ${free} ta)`),
+    plusQuizzes: (n: number | null, free: number) => (n == null ? `Mashqda kunlik cheklov yoʻq (bepul tarifda barcha kitoblar boʻyicha kuniga ${free} ta savol)` : `Kuniga ${n} ta Mashq savoli (bepul tarifda ${free} ta, barcha kitoblar boʻyicha)`),
+    plusChapters: (plus: number, free: number) => `Bepul tarifda kuniga ${free} ta bob testi, Plus bilan ${plus} ta`,
+    plusImportOff: 'Har bir pullik importga 50% chegirma',
+    plusFree: 'Bepul tarifdagi hamma narsa sizda qoladi',
+    free: 'Bepul',
+    plusName: 'Plus', passUnit: '30 kunlik muddat',
+  },
+} as const;
+
+export const planCopy = (lang: PlanLang) => T[lang];
+
+export const BANNED_PLAN_CLAIMS = [
+  /offline/i, /oflayn/i, /офлайн/i,
+  /no monthly fee/i, /unlimited/i, /fair use/i, /безлимит/i, /cheksiz/i, /unlimited (content )?imports/i, /priority support/i, /no ads/i,
+  /\$/,
+];
+
+/**
+ * AC1-01 safety net: a public plan price below 1000 soʻm is never shown (the live row still holds the old USD "9").
+ * Returns the price in soʻm, or null when it must be hidden (unset, 0, NaN, or < 1000).
+ */
+export const MIN_PUBLIC_PLAN_PRICE_UZS = 1000;
+export function publicPlanPriceUzs(raw: unknown): number | null {
+  if (raw === null || raw === undefined || raw === '') return null;
+  const n = Math.round(Number(raw));
+  return Number.isFinite(n) && n >= MIN_PUBLIC_PLAN_PRICE_UZS ? n : null;
+}
+/** Approved Plus prices (option C, Sarvarbek 31 Oct 13:34 via Kai); seed + data fix use these. */
+export const PLUS_PRICE_30_UZS = 24990;
+export const PLUS_PRICE_365_UZS = 199990;

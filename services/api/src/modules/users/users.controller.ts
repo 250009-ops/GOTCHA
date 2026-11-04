@@ -4,21 +4,30 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
+  Query,
+  Res,
   Patch,
   Post,
+  StreamableFile,
+  UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { createReadStream } from 'fs';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
-import { CurrentUser, AuthUserPayload } from '../../common/decorators';
+import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
+import { verifyAvatar } from './avatar-sign';
 import { UsersService } from './users.service';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
   DeleteAccountDto,
+  SetAgeDto, SetAiPreferenceDto,
   UpdatePreferencesDto,
   UpdateProfileDto,
   UpdateTargetLanguageDto,
@@ -28,6 +37,24 @@ import {
 @Controller('users')
 export class UsersController {
   constructor(private users: UsersService) {}
+
+  /** <img> cannot send a Bearer token, so the link itself is signed and expires. */
+  @Public()
+  @Get('avatars/:file')
+  @Header('Cache-Control', 'private, max-age=600')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async avatar(
+    @Param('file') file: string,
+    @Query('exp') exp = '',
+    @Query('sig') sig = '',
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!verifyAvatar(file, String(exp), String(sig))) throw new UnauthorizedException();
+    const abs = await this.users.avatarAbsolutePath(file);
+    const lower = file.toLowerCase();
+    res.setHeader('Content-Type', lower.endsWith('.png') ? 'image/png' : lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'image/webp');
+    return new StreamableFile(createReadStream(abs));
+  }
 
   @Get('me')
   me(@CurrentUser() user: AuthUserPayload) {
@@ -42,6 +69,18 @@ export class UsersController {
   @Get('me/export')
   exportData(@CurrentUser() user: AuthUserPayload) {
     return this.users.exportData(user.sub);
+  }
+
+  /** W-12 one-time age prompt (also "prefer not to say"). */
+  @Post('me/age')
+  setAge(@CurrentUser() user: AuthUserPayload, @Body() dto: SetAgeDto) {
+    return this.users.setAge(user.sub, dto.birthYear);
+  }
+
+  /** Learner AI-off switch (Settings). Same per-account flag support uses. */
+  @Patch('me/ai')
+  setAi(@CurrentUser() user: AuthUserPayload, @Body() dto: SetAiPreferenceDto) {
+    return this.users.setAiPreference(user.sub, dto.aiDisabled);
   }
 
   @Patch('me')
@@ -70,6 +109,11 @@ export class UsersController {
   ) {
     if (!file) throw new BadRequestException('File is required');
     return this.users.uploadAvatar(user.sub, file);
+  }
+
+  @Delete('me/avatar')
+  removeAvatar(@CurrentUser() user: AuthUserPayload) {
+    return this.users.removeAvatar(user.sub);
   }
 
   @Patch('me/preferences')

@@ -1,11 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { AppLanguage, WordStatus } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ReadingService } from '../reading/reading.service';
 import { SaveVocabularyDto, ReviewVocabularyDto, UpdateVocabularyDto } from './dto/vocabulary.dto';
-import { applySrsReview } from '../../utils/srs';
+import { applySrsReview, reviewCard } from '../../utils/srs';
 import type { SrsRating } from '@gotcha/shared';
 
 type MemoryVocab = {
@@ -253,7 +253,25 @@ export class VocabularyService {
     return { ok: true };
   }
 
-  async review(userId: string, vocabId: string, dto: ReviewVocabularyDto) {
+  async review(
+    userId: string,
+    vocabId: string,
+    dto: ReviewVocabularyDto,
+    meta: {
+      exerciseType?: string;
+      correct?: boolean;
+      responseMs?: number;
+      answerId?: string;
+      sessionId?: string;
+      verdict?: string;
+      xp?: number;
+      /** Extra (ahead-of-schedule) practice: logged, but a correct answer does not move the schedule. */
+      extra?: boolean;
+      /** FSRS state before the review (0 = New). */
+      stateBefore?: number;
+      judgedByAi?: boolean;
+    } = {},
+  ) {
     if (this.useMemory(userId)) {
       const store = this.memoryStore(userId);
       const entry = Array.from(store.values()).find((v) => v.id === vocabId);
@@ -281,32 +299,46 @@ export class VocabularyService {
     });
     if (!vocab) throw new NotFoundException('Vocabulary entry not found');
 
-    const next = applySrsReview(vocab, dto.rating);
+    const now = new Date();
+    const keepSchedule = !!meta.extra && dto.rating !== 'again';
+    const next = reviewCard(vocab, dto.rating, now, vocab.id);
 
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.userVocabulary.update({
-        where: { id: vocabId },
+    // m1: optimistic concurrency. Two answers on the same card must not both schedule from the same state.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.userVocabulary.updateMany({
+        where: { id: vocabId, lastReviewedAt: vocab.lastReviewedAt },
+        data: keepSchedule ? { lastReviewedAt: now } : { ...next, lastReviewedAt: now },
+      });
+      if (claimed.count === 0) throw new ConflictException({ message: 'This word was just reviewed; try again.', code: 'review_conflict' });
+      // Single review log: drives schedule history, XP, streak and analytics.
+      await tx.vocabularyReview.create({
         data: {
-          easeFactor: next.easeFactor,
-          intervalDays: next.intervalDays,
-          repetitions: next.repetitions,
-          dueAt: next.dueAt,
-          mastered: next.mastered,
-          lastReviewedAt: new Date(),
-        },
-      }),
-      this.prisma.vocabularyReview.create({
-        data: {
+          userId,
+          stateBefore: meta.stateBefore ?? vocab.fsrsState,
+          judgedByAi: !!meta.judgedByAi,
           vocabId,
           rating: dto.rating,
           intervalBefore: vocab.intervalDays,
-          intervalAfter: next.intervalDays,
+          intervalAfter: keepSchedule ? vocab.intervalDays : next.intervalDays,
+          exerciseType: meta.exerciseType ?? 'flashcard',
+          correct: meta.correct ?? dto.rating !== 'again',
+          responseMs: meta.responseMs,
+          answerId: meta.answerId,
+          sessionId: meta.sessionId,
+          verdict: meta.verdict,
+          xp: meta.xp ?? 0,
+          stabilityAfter: keepSchedule ? vocab.stability : next.stability,
+          extra: !!meta.extra,
         },
-      }),
-    ]);
+      });
+      return tx.userVocabulary.findUniqueOrThrow({ where: { id: vocabId } });
+    });
 
     if (updated.mastered) {
       await this.reading.markLemma(userId, updated.lemma, updated.sourceLang, WordStatus.known);
+    } else if (vocab.mastered && !updated.mastered) {
+      // A lapse on a mastered word puts it back into active learning.
+      await this.reading.markLemma(userId, updated.lemma, updated.sourceLang, WordStatus.learning);
     }
 
     return updated;

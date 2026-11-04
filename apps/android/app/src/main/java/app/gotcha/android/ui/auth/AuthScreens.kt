@@ -505,7 +505,7 @@ fun ForgotPasswordScreen(onBack: () -> Unit) {
         )
         Spacer(Modifier.height(24.dp))
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-            BrandMark(size = 56, cornerRadius = 16)
+            BrandMark(size = 56)
             Spacer(Modifier.height(16.dp))
             Text(
                 "Forgot password?",
@@ -1092,7 +1092,7 @@ private fun AuthScaffold(
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            BrandMark(size = 56, cornerRadius = 16)
+            BrandMark(size = 56)
             BrandWordmark(fontSize = 28)
         }
         Spacer(Modifier.height(24.dp))

@@ -1,5 +1,5 @@
 /**
- * Restore the default superadmin account (admin@gotcha.app / GotchaAdmin2026!).
+ * Restore the default superadmin account (admin@gotcha.app / <REDACTED-admin-pw>).
  * Handles the common failure mode: admin changed email away from admin@gotcha.app
  * (often unverified) and/or a duplicate admin@gotcha.app row was created by a prior restore.
  *
@@ -28,7 +28,7 @@ for (const envFile of ['.env', '.env.local']) {
 }
 
 const ADMIN_EMAIL = (process.env.ADMIN_EMAIL ?? 'admin@gotcha.app').trim().toLowerCase();
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = (process.env.ADMIN_PASSWORD ?? (() => { console.error("ADMIN_PASSWORD is required"); process.exit(1); })());
 
 const prisma = new PrismaClient();
 
@@ -138,7 +138,7 @@ async function main() {
 
   console.log('Admin credentials restored.');
   console.log(`  Email:    ${ADMIN_EMAIL}`);
-  console.log(`  Password: ${ADMIN_PASSWORD}`);
+  console.log("  Password: set from ADMIN_PASSWORD");
   console.log(`  User ID:  ${adminUserId}`);
   console.log('Sign in at https://gotchaa.uz/admin/ — use these credentials on the shared login page.');
 }

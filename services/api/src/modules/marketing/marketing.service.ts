@@ -1,33 +1,20 @@
+import { DAILY_CAP_FALLBACKS } from '@gotcha/shared';
+import { formatSom, planCopy, type PlanLang } from './plan-copy';
 import { Injectable, Logger } from '@nestjs/common';
 import { ContentSource, ContentType, PublishStatus } from '@prisma/client';
 import { LANGUAGE_META } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
-import { liveLearnerWhere, isFigmaSampleDisplayName } from '../../common/production-users';
+import { liveLearnerWhere } from '../../common/production-users';
 import { atmosMinAmountSom } from '../billing/atmos.client';
 import { catalogPriceUzs } from '../content/catalog-access';
 import { normalizeAllowedFormats } from '../../common/import-format';
-import { effectiveStreakCount } from '../../services/streak.service';
+import { paymentsUiEnabled } from '../../common/payments-ui';
+import { getPlanCaps } from '../../common/plan-caps';
+import { buildPlanCards } from '../billing/billing.service';
 
 const LIVE_LANGUAGE_CODES = ['en', 'ru', 'uz'] as const;
-const UNLIMITED_THRESHOLD = 1_000_000;
 const LANDING_CACHE_TTL_MS = 60_000;
 const CATALOG_CAP = 12;
-const READER_CAP = 6;
-const READER_SCAN_CAP = 400;
-
-/** Figma landing mock names — never treat as live top readers. */
-const FIGMA_LANDING_DISPLAY_NAMES = new Set(
-  [
-    'Dilshod M.',
-    'Dilshod M',
-    'Shakhzoda K.',
-    'Shakhzoda K',
-    'Alisher U.',
-    'Alisher U',
-    'Alisher T.',
-    'Alisher T',
-  ].map((n) => n.toLowerCase()),
-);
 
 export type LandingCatalogItem = {
   id: string;
@@ -69,6 +56,17 @@ export type LandingTopReader = {
   streakDays: number;
   wordsLearned: number;
 };
+
+/**
+ * Hotfix web1 (AUDIT C4/C6): the public landing payload carries no learner names, no per-user
+ * stats and no learner counter. `stats` / `topReaders` stay in the shape (always zero / empty)
+ * so cached or older web builds keep working.
+ */
+export function publicLandingPayload(
+  p: Omit<LandingPayload, 'stats' | 'topReaders'>,
+): LandingPayload {
+  return { ...p, stats: { learnerCount: 0 }, topReaders: [] };
+}
 
 export type LandingPayload = {
   generatedAt: string;
@@ -131,21 +129,10 @@ function serializeCatalogItem(row: {
   };
 }
 
-function readerInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (parts.length >= 2) {
-    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
-  }
-  const token = parts[0] ?? '';
-  return token.slice(0, 2).toUpperCase();
-}
-
-function isUsableDisplayName(name: string | null | undefined): name is string {
-  const value = name?.trim() ?? '';
-  if (value.length < 2) return false;
-  if (isFigmaSampleDisplayName(value)) return false;
-  if (FIGMA_LANDING_DISPLAY_NAMES.has(value.toLowerCase())) return false;
-  return true;
+/** W-03: public learner counts are hidden (0) until there are at least this many learners. */
+export const PUBLIC_LEARNER_MIN = 100;
+export function publicLearnerCount(n: number, min = PUBLIC_LEARNER_MIN): number {
+  return n >= min ? n : 0;
 }
 
 @Injectable()
@@ -157,9 +144,10 @@ export class MarketingService {
 
   async stats() {
     const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
+    const shown = publicLearnerCount(learnerCount);
     return {
-      learnerCount,
-      displayLearnerCount: learnerCount,
+      learnerCount: shown,
+      displayLearnerCount: shown,
     };
   }
 
@@ -167,60 +155,65 @@ export class MarketingService {
    * Public marketing pricing copy. There is NO recurring subscription in this product —
    * learners get a free allowance and pay Atmos once, per import, only when they exceed it.
    */
-  async plans() {
+  async plans(lang: PlanLang = 'en') {
+    const t = planCopy(lang);
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
 
-    const aiDailyQuota = freePlan?.aiDailyQuota ?? 50;
-    const importLimit = freePlan?.importLimit ?? 15;
+    // WLF-12: the enforced caps (platform_settings), never the plan row's ai_daily_quota / quiz_daily_quota.
+    const caps = await getPlanCaps(this.prisma);
+    const aiDailyQuota = caps.free.lookups;
+    // WLF-04: the Free card states the real import allowance (admin Import & Pricing → platform setting
+    // importFreeLimits, defaults 3 a day / 50 pages a month), the same numbers import-commerce enforces.
+    const importFree = await this.getImportFreeLimits().catch(() => DEFAULT_FREE_LIMITS);
+    const importLimit = Math.max(0, Math.floor(Number(importFree.dailyFreeImportsPerUser) || 0));
+    const pageLimit = Math.max(0, Math.floor(Number(importFree.monthlyFreePageLimit) || 0));
 
     const free = {
       id: freePlan?.id ?? 'free',
       tier: 'free' as const,
-      name: freePlan?.name ?? 'Free',
+      name: t.freeName,
       priceMonthly: 0,
-      priceLabel: '0 soʻm',
-      priceUnit: 'to start',
+      priceLabel: formatSom(0, lang),
+      priceUnit: t.freeUnit,
       aiDailyQuota,
       importLimit,
-      offlineEnabled: freePlan?.offlineEnabled ?? false,
-      unlimitedLookups: aiDailyQuota >= UNLIMITED_THRESHOLD,
-      unlimitedImports: importLimit >= UNLIMITED_THRESHOLD,
+      offlineEnabled: false,
+      unlimitedLookups: false, // Free has a daily lookup cap (20 by default)
+      unlimitedImports: false,
       popular: false,
-      cta: 'Get started',
+      cta: t.freeCta,
       features: [
-        'Access to public library',
-        `${aiDailyQuota} AI lookups / day`,
-        `${importLimit} free imports / day`,
-        'Basic SRS review',
-        '7-day reading history',
+        t.library,
+        t.lookupsDay(aiDailyQuota),
+        t.quizzesDay(caps.free.mashq),
+        t.importsDay(importLimit),
+        t.importPages(pageLimit, importFree.resetCycle),
+        t.review,
       ],
     };
 
     const payPerImport = {
       id: 'pay-per-import',
       tier: 'pay-per-import' as const,
-      name: 'Pay-per-import',
+      name: t.ppiName,
       priceMonthly: 0,
-      priceLabel: 'Pay as you go',
-      priceUnit: 'no subscription',
+      priceLabel: t.ppiLabel,
+      priceUnit: t.ppiUnit,
       aiDailyQuota,
       importLimit,
-      offlineEnabled: true,
+      offlineEnabled: false,
       unlimitedLookups: false,
       unlimitedImports: false,
       popular: true,
-      cta: 'Start reading for free',
-      features: [
-        'Everything in Free',
-        'No monthly fee, ever',
-        'Need more than your free imports? Pay once per import via Atmos',
-        'Price shown upfront, based on document length',
-        'Full reading analytics',
-        'Offline reading',
-      ],
+      cta: t.ppiCta,
+      features: [t.everythingFree, t.payOnce, t.upfront],
     };
 
-    return [free, payPerImport];
+    // B4: the pay-per-import card stays hidden until payments-02 is live (PAYMENT_GATEWAY_ENABLED, default off).
+    if (!paymentsUiEnabled()) return [free];
+    // Kai 6.1a: Plus card with the charged pass prices (24 990 / 199 990 by default), same as /billing/plans.
+    const plus = (await buildPlanCards(this.prisma as unknown as PrismaService, lang).catch(() => [] as Awaited<ReturnType<typeof buildPlanCards>>)).find((p) => p.tier === 'premium');
+    return plus ? [free, payPerImport, plus] : [free, payPerImport];
   }
 
   async landing(): Promise<LandingPayload> {
@@ -229,34 +222,20 @@ export class MarketingService {
       return this.landingCache.payload;
     }
 
-    const [stats, languages, catalog, importPricing, topReaders] = await Promise.all([
-      this.safeStats(),
+    const [languages, catalog, importPricing] = await Promise.all([
       this.safeLanguages(),
       this.safeCatalog(),
       this.safeImportPricing(),
-      this.safeTopReaders(),
     ]);
 
-    const payload: LandingPayload = {
+    const payload = publicLandingPayload({
       generatedAt: new Date().toISOString(),
-      stats,
       languages,
       catalog,
       importPricing,
-      topReaders,
-    };
+    });
     this.landingCache = { at: now, payload };
     return payload;
-  }
-
-  private async safeStats(): Promise<LandingPayload['stats']> {
-    try {
-      const learnerCount = await this.prisma.user.count({ where: liveLearnerWhere() });
-      return { learnerCount };
-    } catch (err) {
-      this.logger.warn(`landing stats failed: ${err instanceof Error ? err.message : err}`);
-      return { learnerCount: 0 };
-    }
   }
 
   private async safeLanguages(): Promise<LandingPayload['languages']> {
@@ -336,8 +315,9 @@ export class MarketingService {
     const row = await this.prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
     if (!row?.value || typeof row.value !== 'object') return DEFAULT_FREE_LIMITS;
     const merged = { ...DEFAULT_FREE_LIMITS, ...(row.value as object) } as typeof DEFAULT_FREE_LIMITS;
-    const cycle = ['daily', 'monthly', 'yearly'].includes(merged.resetCycle)
-      ? (merged.resetCycle as LandingImportPricing['freeLimits']['resetCycle'])
+    // WLF-37: pages are a monthly pool; stale 'daily' reads as monthly (same as import-commerce).
+    const cycle = merged.resetCycle === 'yearly'
+      ? 'yearly'
       : 'monthly';
     return {
       dailyFreeImportsPerUser: Number(merged.dailyFreeImportsPerUser) || 0,
@@ -369,66 +349,6 @@ export class MarketingService {
     } catch (err) {
       this.logger.warn(`landing import pricing failed: ${err instanceof Error ? err.message : err}`);
       return emptyPricing();
-    }
-  }
-
-  private async safeTopReaders(): Promise<LandingTopReader[]> {
-    try {
-      const users = await this.prisma.user.findMany({
-        where: {
-          ...liveLearnerWhere(),
-          displayName: { not: null },
-        },
-        select: {
-          displayName: true,
-          streakCount: true,
-          streakLastDate: true,
-          createdAt: true,
-          readingProgress: { select: { totalReadSeconds: true } },
-          _count: { select: { vocabulary: true } },
-        },
-        take: READER_SCAN_CAP,
-      });
-
-      const ranked = users
-        .map((user) => {
-          const displayName = user.displayName?.trim() ?? '';
-          const minutesRead = Math.floor(
-            user.readingProgress.reduce((sum, row) => sum + (row.totalReadSeconds || 0), 0) / 60,
-          );
-          const streakDays = effectiveStreakCount(user.streakCount, user.streakLastDate);
-          const wordsLearned = user._count.vocabulary;
-          return {
-            displayName,
-            minutesRead,
-            streakDays,
-            wordsLearned,
-            createdAt: user.createdAt.getTime(),
-          };
-        })
-        .filter((row) => isUsableDisplayName(row.displayName))
-        .filter(
-          (row) => row.minutesRead >= 30 || (row.streakDays >= 3 && row.wordsLearned >= 10),
-        )
-        .sort((a, b) => {
-          if (b.minutesRead !== a.minutesRead) return b.minutesRead - a.minutesRead;
-          if (b.streakDays !== a.streakDays) return b.streakDays - a.streakDays;
-          if (b.wordsLearned !== a.wordsLearned) return b.wordsLearned - a.wordsLearned;
-          return a.createdAt - b.createdAt;
-        })
-        .slice(0, READER_CAP);
-
-      return ranked.map((row, index) => ({
-        rank: index + 1,
-        displayName: row.displayName,
-        initials: readerInitials(row.displayName),
-        minutesRead: row.minutesRead,
-        streakDays: row.streakDays,
-        wordsLearned: row.wordsLearned,
-      }));
-    } catch (err) {
-      this.logger.warn(`landing top readers failed: ${err instanceof Error ? err.message : err}`);
-      return [];
     }
   }
 }

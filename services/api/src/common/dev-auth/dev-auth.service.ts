@@ -208,6 +208,16 @@ export class DevAuthService {
     };
   }
 
+  revokeRefresh(refreshToken: string) {
+    this.refreshTokens.delete(this.hashToken(refreshToken));
+  }
+
+  revokeAll(userId: string) {
+    for (const [hash, row] of this.refreshTokens) {
+      if (row.userId === userId) this.refreshTokens.delete(hash);
+    }
+  }
+
   private hashToken(token: string) {
     return createHash('sha256').update(token).digest('hex');
   }
@@ -247,8 +257,8 @@ export class DevAuthService {
         readerFontScale: 1,
         readerTheme: 'light',
         readerLineSpacing: 1.5,
-        showKnownWords: true,
-        ttsEnabled: false,
+        showKnownWords: false,
+        ttsEnabled: true,
         dailyGoalMinutes: 15,
         notificationsEnabled: true,
       },

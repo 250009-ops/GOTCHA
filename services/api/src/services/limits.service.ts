@@ -1,11 +1,11 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
+import { activeSubWhere } from '../common/plan-active';
 import { PrismaService } from '../prisma/prisma.service';
+import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, usageDayStart, userCapPlan } from '../common/plan-caps';
 import {
   AI_SETTING_KEYS,
   coerceNonNegInt,
   defaultAiPlatformSettings,
-  resolveLearnerDailyAiQuota,
-  UNLIMITED_AI_QUOTA,
 } from '../modules/ai/ai-settings';
 
 function envFlagTrue(value: string | undefined): boolean {
@@ -47,7 +47,7 @@ export class LimitsService {
 
   async getActivePlan(userId: string) {
     const sub = await this.prisma.userSubscription.findFirst({
-      where: { userId, status: 'active' },
+      where: { userId, ...activeSubWhere() },
       include: { plan: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -91,34 +91,93 @@ export class LimitsService {
     }
   }
 
+  /** Quizzes/day from the plan's quiz_daily_quota (Free 10, Plus 200), runtime DB config cached ≤ 60 s. */
   async assertQuizAllowed(userId: string) {
-    const plan = await this.getActivePlan(userId);
-    const row = await this.prisma.platformSetting.findUnique({
-      where: { key: AI_SETTING_KEYS.defaultUserQuota },
-    });
-    const platformDefault = coerceNonNegInt(
-      row?.value,
-      defaultAiPlatformSettings().defaultUserQuota,
-    );
-    const quota = resolveLearnerDailyAiQuota(plan?.aiDailyQuota, platformDefault);
-    if (quota <= 0 || quota >= UNLIMITED_AI_QUOTA) return;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
     const usage = await this.prisma.aiUsageDaily.findUnique({
-      where: { userId_usageDate: { userId, usageDate: today } },
+      where: { userId_usageDate: { userId, usageDate: usageDayStart() } },
     });
-    if ((usage?.quizCount ?? 0) >= quota) {
-      throw new ForbiddenException('Daily AI quiz quota exceeded');
-    }
+    assertUnderCap('quizzes', plan, caps, usage?.quizCount ?? 0);
   }
 
   async incrementQuizUsage(userId: string) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
     await this.prisma.aiUsageDaily.upsert({
       where: { userId_usageDate: { userId, usageDate: today } },
       create: { userId, usageDate: today, quizCount: 1 },
       update: { quizCount: { increment: 1 } },
     });
+  }
+  /**
+   * PAY2-04: atomic check-and-increment. Ensures today's row exists, then a single conditional
+   * `UPDATE … SET quiz_count = quiz_count + 1 WHERE quiz_count < cap` claims a slot; concurrent requests
+   * serialise on the row so the cap can never be exceeded. 0 rows → the 429 daily-limit error.
+   * Call releaseQuizSlot() if the quiz is not delivered (generation failed / no questions).
+   */
+  async reserveQuizSlot(userId: string) {
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
+    const usageDate = usageDayStart();
+    const where = { userId_usageDate: { userId, usageDate } };
+    // ON CONFLICT DO NOTHING: parallel first-of-day requests can't collide on the (user, date) key.
+    await this.prisma.aiUsageDaily.createMany({ data: [{ userId, usageDate, quizCount: 0 }], skipDuplicates: true });
+    const cap = capOf(caps, plan, 'quizzes');
+    if (!cap) {
+      await this.prisma.aiUsageDaily.update({ where, data: { quizCount: { increment: 1 } } });
+      return;
+    }
+    const { count } = await this.prisma.aiUsageDaily.updateMany({
+      where: { userId, usageDate, quizCount: { lt: cap } },
+      data: { quizCount: { increment: 1 } },
+    });
+    if (count === 0) throw dailyLimitException('quizzes', plan, caps);
+  }
+
+  /**
+   * Claim up to `n` Mashq questions for today. Plus (null cap) always gets `n`.
+   * Free gets only the room left under the cap, so two tabs cannot pass 20.
+   * Release the unused part if fewer questions are actually served.
+   */
+  async reserveMashq(userId: string, n: number): Promise<number> {
+    if (n <= 0) return 0;
+    const [caps, plan] = await Promise.all([getPlanCaps(this.prisma), userCapPlan(this.prisma, userId)]);
+    const usageDate = usageDayStart();
+    const where = { userId_usageDate: { userId, usageDate } };
+    await this.prisma.aiUsageDaily.createMany({ data: [{ userId, usageDate, mashqQuestionCount: 0 }], skipDuplicates: true });
+    const cap = capOf(caps, plan, 'mashq');
+    if (cap == null) {
+      await this.prisma.aiUsageDaily.update({ where, data: { mashqQuestionCount: { increment: n } } });
+      return n;
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const row = await this.prisma.aiUsageDaily.findUnique({ where });
+      const used = row?.mashqQuestionCount ?? 0;
+      const room = cap - used;
+      if (room <= 0) throw dailyLimitException('mashq', plan, caps);
+      const grant = Math.min(n, room);
+      const { count } = await this.prisma.aiUsageDaily.updateMany({
+        where: { userId, usageDate, mashqQuestionCount: used },
+        data: { mashqQuestionCount: { increment: grant } },
+      });
+      if (count === 1) return grant;
+    }
+    throw dailyLimitException('mashq', plan, caps);
+  }
+
+  async releaseMashq(userId: string, n: number) {
+    if (n <= 0) return;
+    const usageDate = usageDayStart();
+    await this.prisma.$executeRaw`
+      UPDATE ai_usage_daily
+      SET mashq_question_count = GREATEST(0, mashq_question_count - ${n})
+      WHERE user_id = ${userId}::uuid AND usage_date = ${usageDate}
+    `.catch(() => undefined);
+  }
+
+  /** PAY2-04: give back a reserved slot (never below 0). */
+  async releaseQuizSlot(userId: string) {
+    await this.prisma.aiUsageDaily.updateMany({
+      where: { userId, usageDate: usageDayStart(), quizCount: { gt: 0 } },
+      data: { quizCount: { decrement: 1 } },
+    }).catch(() => undefined);
   }
 }

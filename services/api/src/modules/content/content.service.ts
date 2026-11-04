@@ -1,5 +1,8 @@
+import { resolveCoverKey, uzOrthography, type CoverMode } from '@gotcha/shared';
+import { userImportOwnerWhere } from './user-import-privacy';
+import { ageBand, AgeBand, allowedAgeRatings } from '../../common/safety/age-policy';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
-import { ContentSource, ContentType, PublishStatus, Prisma, WordStatus } from '@prisma/client';
+import { ContentSource, ContentType, PublishStatus, Prisma, PurchaseStatus, WordStatus } from '@prisma/client';
 import { APP_LANGUAGES, LANGUAGE_META, LIVE_LANGUAGES } from '@gotcha/shared';
 import { ensureLanguageCatalog, getLearnerVisibleLanguageCodes } from '../../common/language-catalog';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
@@ -10,6 +13,7 @@ import {
 } from '../../common/dev-auth/dev-content.data';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StreakService } from '../../services/streak.service';
+import { recordReadingActivity } from '../reading/reading-activity';
 import { ContentQueryDto, UpdateProgressDto } from './dto/content.dto';
 import {
   catalogAccessGranted,
@@ -32,7 +36,12 @@ const FALLBACK_LANG_META: Record<string, { name: string; nativeName: string; fla
 function serializeContent(item: object, access?: { granted: boolean }) {
   const row = item as CatalogPricedItem & {
     coverImageKey?: string | null;
+    coverMode?: string | null;
+    originalCoverKey?: string | null;
+    language?: string | null;
+    title?: string | null;
     subtitle?: string | null;
+    description?: string | null;
     author?: string | null;
     isFree?: boolean;
   };
@@ -46,10 +55,17 @@ function serializeContent(item: object, access?: { granted: boolean }) {
   };
   const locked = requiresCatalogPayment(priced);
   const priceUzs = catalogPriceUzs(priced);
+  const { originalCoverKey: _orig, ...rest } = row;
+  const uz = (value: unknown) => (row.language === 'uz' && typeof value === 'string' ? uzOrthography(value) : value);
   return {
-    ...row,
-    coverImageUrl: row.coverImageKey ?? null,
-    authorName: row.author ?? row.subtitle ?? null,
+    ...rest,
+    title: uz(row.title),
+    subtitle: uz(row.subtitle),
+    description: uz(row.description),
+    // covers-01: template mode ⇒ null (the learner draws the cover); upload/original ⇒ that image.
+    coverImageUrl: resolveCoverKey(row),
+    coverMode: (row.coverMode as CoverMode | undefined) ?? 'template',
+    authorName: uz(row.author ?? row.subtitle ?? null),
     isFree: !locked,
     priceUzs,
     accessGranted: access?.granted ?? !locked,
@@ -109,7 +125,7 @@ export class ContentService {
 
   private async assertLearnerCanRead(contentId: string, userId?: string, isAdmin?: boolean) {
     const item = await this.prisma.contentItem.findFirst({
-      where: this.readableByLearnerWhere(contentId, userId),
+      where: { AND: [this.readableByLearnerWhere(contentId, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
     });
     if (!item) throw new NotFoundException('Content not found');
     const purchasedIds = await paidCatalogIds(this.prisma, userId, [item.id]);
@@ -124,6 +140,24 @@ export class ContentService {
    * able to read their own `review` imports immediately (moderation only gates public
    * visibility — not the owner's reader). Archived/rejected stays hidden.
    */
+  /**
+   * W-12 / AI-1: minors only see catalog books rated for their band (under-13 → all_ages,
+   * 13-17 / unknown age → all_ages + teen_13). A learner's own imports stay readable to
+   * them; imported text is checked separately (see WEB-LAUNCH-PLAN content-import).
+   */
+  private async learnerAgeWhere(userId?: string, isAdmin?: boolean): Promise<Prisma.ContentItemWhereInput> {
+    if (isAdmin) return {};
+    let band: AgeBand;
+    if (!userId) band = 'adult'; // anonymous catalog browsing: can't read without an account
+    else {
+      const u = await this.prisma.user.findUnique({ where: { id: userId }, select: { birthYear: true } });
+      band = ageBand(u?.birthYear ?? null);
+    }
+    const ratings = allowedAgeRatings(band);
+    if (!ratings) return {};
+    return { OR: [{ ageRating: { in: ratings } }, ...(userId ? [{ createdById: userId }] : [])] };
+  }
+
   private readableByLearnerWhere(id: string, userId?: string): Prisma.ContentItemWhereInput {
     if (!userId) {
       return { id, publishStatus: PublishStatus.published };
@@ -137,6 +171,8 @@ export class ContentService {
           publishStatus: { in: [PublishStatus.published, PublishStatus.review, PublishStatus.draft] },
         },
         { readingProgress: { some: { userId } } },
+        // final-5: a completed purchase keeps an archived catalog book readable for its buyer.
+        { purchases: { some: { userId, status: PurchaseStatus.completed } } },
       ],
     };
   }
@@ -211,6 +247,7 @@ export class ContentService {
 
     const catalogWhere: Prisma.ContentItemWhereInput = {
       publishStatus: PublishStatus.published,
+      AND: [await this.learnerAgeWhere(userId)],
       contentSource: { not: ContentSource.user_import },
       contentType: { not: ContentType.user_import },
       ...langWhere,
@@ -334,6 +371,7 @@ export class ContentService {
 
     const where: Prisma.ContentItemWhereInput = {
       publishStatus: PublishStatus.published,
+      AND: [await this.learnerAgeWhere(userId, isAdmin)],
       ...(query.lang
         ? { language: query.lang }
         : learnerScope
@@ -391,7 +429,7 @@ export class ContentService {
     }
 
     const item = await this.prisma.contentItem.findFirst({
-      where: this.readableByLearnerWhere(id, userId),
+      where: { AND: [this.readableByLearnerWhere(id, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
       include: {
         license: true,
         segments: {
@@ -443,7 +481,7 @@ export class ContentService {
     }
 
     const item = await this.prisma.contentItem.findFirst({
-      where: this.readableByLearnerWhere(contentId, userId),
+      where: { AND: [this.readableByLearnerWhere(contentId, userId), userImportOwnerWhere(userId, isAdmin), await this.learnerAgeWhere(userId, isAdmin)] },
       select: {
         id: true,
         isFree: true,
@@ -533,7 +571,14 @@ export class ContentService {
     };
 
     if (dto.readSeconds && dto.readSeconds > 0) {
-      await this.streak.recordActivity(userId, Math.round(dto.readSeconds / 60));
+      await this.streak.recordActivity(userId, dto.readSeconds ?? 0);
+      await recordReadingActivity(
+        this.prisma,
+        userId,
+        contentId,
+        dto.segmentId,
+        dto.readSeconds,
+      );
     }
 
     return this.prisma.readingProgress.upsert({

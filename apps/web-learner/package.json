@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "esbuild src/lib/payments.test.ts --bundle --alias:@gotcha/shared=../../packages/shared/src/index.ts --platform=node --format=esm --outfile=node_modules/.cache/payments.test.mjs --log-level=warning --define:import.meta.env={} && node node_modules/.cache/payments.test.mjs && node --test tests/*.test.mjs"
   },
   "dependencies": {
     "@gotcha/shared": "*",

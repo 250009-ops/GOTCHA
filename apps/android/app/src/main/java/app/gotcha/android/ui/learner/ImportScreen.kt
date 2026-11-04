@@ -1,5 +1,6 @@
-﻿package app.gotcha.android.ui.learner
+package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -385,11 +386,11 @@ private fun FreeAllowanceBanner(allowance: ImportQuoteFreeLimits) {
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .background(Color(0xFFF5F3FF))
-            .border(1.dp, Color(0xFFDDD6FF), RoundedCornerShape(16.dp))
+            .background(GotchaBlue.B50)
+            .border(1.dp, GotchaBlue.B200, RoundedCornerShape(16.dp))
             .padding(14.dp),
     ) {
-        Text(text, fontFamily = Inter, color = Color(0xFF5B21B6), fontSize = 12.sp, lineHeight = 16.sp)
+        Text(text, fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp, lineHeight = 16.sp)
     }
 }
 
@@ -451,7 +452,7 @@ private fun ImportWebTabPanel(
                 ) {
                     Text(
                         if (gatewayEnabled) {
-                            "Import allowance reached. Delete an old import or pay per material size via Atmos."
+                            "Import allowance reached. Delete an old import or buy this import in the app."
                         } else {
                             "Import allowance reached. Delete an old import to free up space — paid imports are not available right now."
                         },
@@ -464,9 +465,9 @@ private fun ImportWebTabPanel(
             }
             Text(
                 if (gatewayEnabled) {
-                    "Paid imports use page-tier prices from Admin (UZS) via Atmos. Free daily/page allowances from Import & Pricing apply first."
+                    "Paid imports are priced by page count and bought with Google Play."
                 } else {
-                    "Imports are free right now — paid imports via Atmos are currently disabled. Admin free limits apply as soon as payments are enabled."
+                    "Imports are free right now."
                 },
                 fontFamily = Inter,
                 color = Color(0xFF99A1AF),
@@ -492,7 +493,7 @@ private fun ImportWebTabButton(
 ) {
     val bg = if (selected) Color(0x80F5F3FF) else Color.Transparent
     val borderColor = if (selected) GotchaColors.BrandPurple else Color.Transparent
-    val textColor = if (selected) Color(0xFF7008E7) else Color(0xFF99A1AF)
+    val textColor = if (selected) GotchaBlue.B700 else Color(0xFF99A1AF)
     Column(
         modifier = modifier
             .background(bg)
@@ -660,15 +661,15 @@ private fun ImportHistoryRow(
                         Text(
                             "${minOf(item.progressPagesDone ?: 0, item.progressPagesTotal)} / ${item.progressPagesTotal} pages",
                             fontFamily = Inter,
-                            color = Color(0xFF1447E6),
+                            color = GotchaBlue.LearningText,
                             fontSize = 12.sp,
                         )
                     }
                     if (isPendingImportStatus(status) && item.progressPhase == "ocr") {
-                        Text("AI is reading scanned pages…", fontFamily = Inter, color = Color(0xFF5B21B6), fontSize = 12.sp)
+                        Text("AI is reading scanned pages…", fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
                     }
                     if (isPendingImportStatus(status) && item.progressPhase == "ai") {
-                        Text("AI is cleaning up the text…", fontFamily = Inter, color = Color(0xFF5B21B6), fontSize = 12.sp)
+                        Text("AI is cleaning up the text…", fontFamily = Inter, color = GotchaBlue.B800, fontSize = 12.sp)
                     }
                     if (status == "failed" && !item.errorMessage.isNullOrBlank()) {
                         Text(
@@ -745,7 +746,7 @@ private fun ImportHistoryRow(
 private fun ImportStatusBadge(status: String) {
     val (bg, border, text, label, icon) = when (status) {
         "ready" -> StatusStyle(Color(0xFFECFDF5), Color(0xFFA4F4CF), Color(0xFF007A55), "Ready", Icons.Outlined.CheckCircle)
-        "processing", "tokenizing" -> StatusStyle(Color(0xFFEFF6FF), Color(0xFFBEDBFF), Color(0xFF1447E6), "Processing", Icons.Outlined.Schedule)
+        "processing", "tokenizing" -> StatusStyle(GotchaBlue.LearningBg, Color(0xFFBEDBFF), GotchaBlue.LearningText, "Processing", Icons.Outlined.Schedule)
         "queued" -> StatusStyle(Color(0xFFFFFBEB), Color(0xFFFEE685), Color(0xFFBB4D00), "Queued", Icons.Outlined.Schedule)
         "failed" -> StatusStyle(Color(0xFFFEF2F2), Color(0xFFFFC9C9), Color(0xFFC10007), "Failed", Icons.Outlined.ErrorOutline)
         else -> StatusStyle(Color(0xFFF9FAFB), Color(0xFFE5E7EB), Color(0xFF4B5563), status.replaceFirstChar { it.titlecase(Locale.getDefault()) }, Icons.Outlined.Schedule)

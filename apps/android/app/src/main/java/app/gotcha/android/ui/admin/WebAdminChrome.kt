@@ -128,16 +128,15 @@ fun WebAdminShellFrame(
                                 .padding(8.dp),
                             tint = Color(0xFF0F172A),
                         )
-                        Text(
-                            "GOTCHA Admin",
-                            fontFamily = Inter,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 16.sp,
-                            color = Color(0xFF0F172A),
+                        Row(
                             modifier = Modifier.weight(1f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(9.dp),
+                        ) {
+                            app.gotcha.android.ui.components.BrandMark(size = 24)
+                            app.gotcha.android.ui.components.BrandWordmark(fontSize = 14, color = GotchaColors.Ink)
+                            Text("Admin", fontFamily = Inter, fontSize = 12.sp, color = Color(0xFF64748B))
+                        }
                         Icon(
                             Icons.Outlined.NotificationsNone,
                             contentDescription = "Notifications",
@@ -224,27 +223,18 @@ private fun AdminWebSidebar(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
             modifier = Modifier.padding(start = 12.dp, bottom = 28.dp),
         ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(GotchaColors.WebAdminActive),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("G", color = Color.White, fontFamily = BagelFatOne, fontSize = 18.sp, fontWeight = FontWeight.ExtraBold)
-            }
+            app.gotcha.android.ui.components.BrandMark(size = 32, elevated = true)
             Column {
-                Text("GOTCHA", color = Color.White, fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                app.gotcha.android.ui.components.BrandWordmark(fontSize = 18, color = Color.White)
                 Text(
-                    "ADMIN CONSOLE",
-                    color = GotchaColors.WebAdminActive,
+                    "Admin Console",
+                    color = Color.White.copy(alpha = 0.3f),
                     fontFamily = Inter,
-                    fontWeight = FontWeight.SemiBold,
                     fontSize = 10.sp,
-                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }

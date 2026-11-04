@@ -94,10 +94,23 @@ fun Throwable.networkUserMessage(): String? {
     }
 }
 
+/** Interface language for messages built outside composition (set by LearnerShell). */
+object ApiErrorLanguage {
+    @Volatile var current: String? = null
+}
+
+/** QA N8: friendly, localized rate-limit text instead of NestJS's raw "ThrottlerException: Too Many Requests". */
+fun rateLimitMessage(lang: String? = ApiErrorLanguage.current): String = when (lang?.take(2)?.lowercase()) {
+    "ru" -> "Слишком много запросов. Подождите немного и попробуйте снова."
+    "uz" -> "Soʻrovlar juda koʻp. Biroz kuting va qayta urinib koʻring."
+    else -> "Too many requests. Please wait a moment and try again."
+}
+
 /** Human-readable message from the API body, falling back to a safe user-facing string. */
 fun Throwable.apiErrorMessage(fallback: String = "Something went wrong"): String {
     networkUserMessage()?.let { return it }
     val http = this as? HttpException
+    if (http?.code() == 429 || http?.body()?.code == "rate_limited") return rateLimitMessage()
     val fromBody = http?.body()?.message?.let { el ->
         runCatching {
             when {

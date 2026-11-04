@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.admin
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -96,7 +98,7 @@ fun AdminStatCard(
     hint: String? = null,
     hintColor: Color = Color(0xFF64748B),
     icon: ImageVector? = null,
-    accentBg: Color = Color(0xFFF5F3FF),
+    accentBg: Color = GotchaBlue.B50,
     accentFg: Color = GotchaColors.WebAdminActive,
     modifier: Modifier = Modifier,
 ) {
@@ -200,8 +202,8 @@ fun AdminLineChart(values: List<Pair<String, Float>>, modifier: Modifier = Modif
         return
     }
     val max = values.maxOf { it.second }.coerceAtLeast(1f)
-    val line = Color(0xFF6C1D95)
-    val fill = Color(0xFF6C1D95).copy(alpha = 0.12f)
+    val line = GotchaBlue.B700
+    val fill = GotchaBlue.B700.copy(alpha = 0.12f)
     Canvas(modifier = modifier.fillMaxWidth().height(160.dp)) {
         val pts = values.mapIndexed { i, (_, v) ->
             val x = if (values.size == 1) size.width / 2 else size.width * i / (values.size - 1)

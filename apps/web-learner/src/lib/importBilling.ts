@@ -1,5 +1,15 @@
 import { api } from './api';
 
+export type BillingCopy = {
+  today: string;
+  thisMonth: string;
+  thisYear: string;
+  importsFree: string;
+  freeImportsLeft: (remaining: number, total: number, cycle: string) => string;
+  freePagesLeft: (remaining: number, total: number, cycle: string) => string;
+  configuredPool: (dailyImports: number, pageLimit: number, cycle: string) => string;
+};
+
 export type ImportType = 'paste' | 'url' | 'pdf' | 'epub';
 
 export type ImportFreeAllowance = {
@@ -27,6 +37,9 @@ export type ImportQuote = {
   freeReason: string | null;
   requiresPayment: boolean;
   freeLimits?: ImportFreeAllowance;
+  listAmountUzs?: number;
+  discountUzs?: number;
+  promo?: { id: string; code: string } | null;
 };
 
 export type ImportCheckout = {
@@ -108,6 +121,7 @@ export async function quoteImport(body: {
   textLength?: number;
   wordCount?: number;
   pageCount?: number;
+  promoCode?: string;
 }) {
   return api<ImportQuote>('/billing/imports/quote', {
     method: 'POST',
@@ -131,6 +145,7 @@ export async function checkoutImport(body: {
   wordCount?: number;
   pageCount?: number;
   platform?: 'web' | 'android';
+  promoCode?: string;
 }) {
   return api<ImportCheckout>('/billing/imports/checkout', {
     method: 'POST',
@@ -187,9 +202,10 @@ export async function catalogAccess(contentId: string) {
   return api<CatalogAccess>(`/billing/content/${contentId}/access`);
 }
 
-export async function checkoutCatalog(contentId: string) {
+export async function checkoutCatalog(contentId: string, promoCode?: string) {
   return api<CatalogCheckout>(`/billing/content/${contentId}/checkout`, {
     method: 'POST',
+    body: JSON.stringify(promoCode ? { promoCode } : {}),
   });
 }
 
@@ -203,18 +219,25 @@ export function wordCountOf(text: string) {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
-export function pageWindowLabel(resetCycle?: string | null) {
-  if (resetCycle === 'daily') return 'today';
-  if (resetCycle === 'yearly') return 'this year';
-  return 'this month';
+export function pageWindowLabel(resetCycle: string | null | undefined, billing: BillingCopy) {
+  if (resetCycle === 'daily') return billing.today;
+  if (resetCycle === 'yearly') return billing.thisYear;
+  return billing.thisMonth;
 }
 
-export function formatFreeAllowance(allowance: ImportFreeAllowance) {
-  const pagesWindow = pageWindowLabel(allowance.resetCycle);
-  if (!allowance.gatewayEnabled) {
-    return `Imports are currently free (payments paused). Configured pool: ${allowance.dailyFreeImportsPerUser} imports/day · ${allowance.monthlyFreePageLimit} pages ${pagesWindow}.`;
-  }
-  return `${allowance.dailyFreeRemaining} of ${allowance.dailyFreeImportsPerUser} free imports left today · ${allowance.monthlyPagesRemaining} of ${allowance.monthlyFreePageLimit} free pages left ${pagesWindow}.`;
+export function formatFreeAllowance(allowance: ImportFreeAllowance, billing: BillingCopy) {
+  const pagesWindow = pageWindowLabel(allowance.resetCycle, billing);
+  // final-5 (b): the free allowance is enforced with the gateway off too, so always show what is left.
+  const line = `${billing.freeImportsLeft(
+    allowance.dailyFreeRemaining,
+    allowance.dailyFreeImportsPerUser,
+    billing.today,
+  )} · ${billing.freePagesLeft(
+    allowance.monthlyPagesRemaining,
+    allowance.monthlyFreePageLimit,
+    pagesWindow,
+  )}.`;
+  return line.charAt(0).toUpperCase() + line.slice(1);
 }
 
 export function isValidCardNumber(cardNumber: string) {

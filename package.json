@@ -2,12 +2,12 @@
   "name": "gotcha",
   "private": true,
   "workspaces": [
+    "packages/shared",
     "services/api",
     "services/worker",
     "apps/admin",
     "apps/web",
-    "apps/web-learner",
-    "packages/shared"
+    "apps/web-learner"
   ],
   "scripts": {
     "dev:api": "npm run dev --workspace=services/api",
@@ -16,7 +16,7 @@
     "dev:admin": "npm run dev --workspace=apps/admin",
     "dev:web": "npm run dev --workspace=apps/web",
     "dev:web-learner": "npm run dev --workspace=apps/web-learner",
-    "build": "npm run build --workspaces --if-present",
+    "build": "npm run build -w packages/shared && npm run build --workspaces --if-present -w services/api -w services/worker -w apps/admin -w apps/web -w apps/web-learner",
     "db:migrate": "npm run db:migrate --workspace=services/api",
     "db:seed": "npm run db:seed --workspace=services/api",
     "db:generate": "npm run db:generate --workspace=services/api",
@@ -27,7 +27,8 @@
     "deploy:learner-auth": "node scripts/deploy-learner-auth.mjs",
     "smoke:production": "node scripts/smoke-production.mjs",
     "smoke:mobile": "node scripts/smoke-mobile.mjs",
-    "deploy:assetlinks": "node scripts/deploy-assetlinks.mjs"
+    "deploy:assetlinks": "node scripts/deploy-assetlinks.mjs",
+    "test": "npm run test --workspace=services/api"
   },
   "engines": {
     "node": ">=22"

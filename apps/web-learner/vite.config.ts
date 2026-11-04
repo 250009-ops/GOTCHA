@@ -8,9 +8,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      // `@gotcha/shared` ships a CommonJS build for the Nest/ts-node backend; Rollup can't
-      // statically resolve named exports from it through the npm-workspace symlink. Point
-      // Vite straight at the TS source instead so esbuild processes it as a normal ES module.
+      '@gotcha/shared/learner-copy': fileURLToPath(new URL('../../packages/shared/src/learnerCopy.ts', import.meta.url)),
       '@gotcha/shared': fileURLToPath(new URL('../../packages/shared/src/index.ts', import.meta.url)),
     },
   },

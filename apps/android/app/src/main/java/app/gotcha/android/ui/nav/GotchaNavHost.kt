@@ -1,5 +1,6 @@
 package app.gotcha.android.ui.nav
 
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -10,18 +11,22 @@ import androidx.compose.runtime.setValue
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import app.gotcha.android.AuthDeepLink
 import app.gotcha.android.LocalAppContainer
 import app.gotcha.android.PendingAuthDeepLink
+import app.gotcha.android.PendingExternalImport
 import app.gotcha.android.PendingReaderNavigation
+import app.gotcha.android.debug.ExternalImportDebug
 import app.gotcha.android.ui.admin.AdminShell
 import app.gotcha.android.ui.auth.ForgotPasswordScreen
 import app.gotcha.android.ui.auth.ResetPasswordFromLinkScreen
 import app.gotcha.android.ui.auth.SignInScreen
 import app.gotcha.android.ui.auth.SignUpScreen
 import app.gotcha.android.ui.auth.VerifyEmailFromLinkScreen
+import app.gotcha.android.ui.learner.ExternalImportScreen
 import app.gotcha.android.ui.learner.ImportScreen
 import app.gotcha.android.ui.learner.LearnerShell
 import app.gotcha.android.ui.learner.PracticeScreen
@@ -49,6 +54,7 @@ object Routes {
     const val ImportUrl = "import_url"
     const val ImportPaste = "import_paste"
     const val ImportFile = "import_file"
+    const val ExternalImport = "external_import"
     fun verifyEmail(token: String) = "verify_email?token=${android.net.Uri.encode(token)}"
     fun resetPassword(token: String) = "reset_password?token=${android.net.Uri.encode(token)}"
     fun reader(id: String) = "reader/$id"
@@ -62,6 +68,8 @@ fun GotchaNavHost() {
     val container = LocalAppContainer.current
     val scope = rememberCoroutineScope()
     var bootstrapped by remember { mutableStateOf(false) }
+    val pendingExternalImport by PendingExternalImport.collectAsState()
+    val navBackStackEntry by nav.currentBackStackEntryAsState()
 
     LaunchedEffect(Unit) { bootstrapped = true }
 
@@ -79,7 +87,35 @@ fun GotchaNavHost() {
         PendingReaderNavigation.collectLatest { id ->
             if (!id.isNullOrBlank()) {
                 PendingReaderNavigation.value = null
+                runCatching { container.contentRepository.prefetchReader(id) }
                 nav.navigate(Routes.reader(id)) { launchSingleTop = true }
+            }
+        }
+    }
+
+    // Route when a Telegram/share import is pending — re-runs after Splash → Learner transition.
+    LaunchedEffect(pendingExternalImport, navBackStackEntry) {
+        val route = navBackStackEntry?.destination?.route
+        ExternalImportDebug.log(
+            "NAV",
+            "effect pending=${pendingExternalImport?.fileName} route=$route",
+        )
+        if (pendingExternalImport == null) return@LaunchedEffect
+        if (route == null) {
+            ExternalImportDebug.log("NAV", "skip: route=null")
+            return@LaunchedEffect
+        }
+        when (route) {
+            Routes.Splash, Routes.Onboarding, Routes.SignIn, Routes.SignUp,
+            Routes.ForgotPassword, Routes.VerifyEmail, Routes.ResetPassword,
+            Routes.ExternalImport,
+            -> ExternalImportDebug.log("NAV", "skip: waiting on $route")
+            else -> {
+                ExternalImportDebug.log("NAV", "navigate → external_import from $route")
+                nav.navigate(Routes.ExternalImport) {
+                    launchSingleTop = true
+                    popUpTo(Routes.Learner) { inclusive = false }
+                }
             }
         }
     }
@@ -129,6 +165,13 @@ fun GotchaNavHost() {
                     else -> Routes.Learner
                 }
                 nav.navigate(dest) { popUpTo(Routes.Splash) { inclusive = true } }
+                if (PendingExternalImport.value != null && dest == Routes.Learner) {
+                    ExternalImportDebug.log("NAV", "splash callback → external_import")
+                    nav.navigate(Routes.ExternalImport) {
+                        launchSingleTop = true
+                        popUpTo(Routes.Learner) { inclusive = false }
+                    }
+                }
             }
         }
         composable(Routes.Onboarding) {
@@ -139,8 +182,15 @@ fun GotchaNavHost() {
         composable(Routes.SignIn) {
             SignInScreen(
                 onSignedIn = { isAdmin ->
-                    nav.navigate(if (isAdmin) Routes.Admin else Routes.Learner) {
+                    val dest = if (isAdmin) Routes.Admin else Routes.Learner
+                    nav.navigate(dest) {
                         popUpTo(Routes.SignIn) { inclusive = true }
+                    }
+                    if (PendingExternalImport.value != null && dest == Routes.Learner) {
+                        nav.navigate(Routes.ExternalImport) {
+                            launchSingleTop = true
+                            popUpTo(Routes.Learner) { inclusive = false }
+                        }
                     }
                 },
                 onGoSignUp = { nav.navigate(Routes.SignUp) },
@@ -187,6 +237,14 @@ fun GotchaNavHost() {
             )
         }
         composable(Routes.Learner) {
+            // Login/app start: confirm any unverified Play purchase, then load unified entitlements (web + Play).
+            androidx.compose.runtime.LaunchedEffect(Unit) { runCatching { container.playBilling.syncAtLogin() } }
+            LaunchedEffect(pendingExternalImport) {
+                ExternalImportDebug.log(
+                    "NAV",
+                    "Learner visible pending=${pendingExternalImport?.fileName}",
+                )
+            }
             LearnerShell(
                 onOpenReader = { id -> nav.navigate(Routes.reader(id)) },
                 onOpenImport = { nav.navigate(Routes.Import) },
@@ -242,11 +300,20 @@ fun GotchaNavHost() {
         ) { entry ->
             val contentId = entry.arguments?.getString("contentId")?.takeIf { it.isNotBlank() }
             val segmentId = entry.arguments?.getString("segmentId")?.takeIf { it.isNotBlank() }
-            PracticeScreen(
-                contentId = contentId,
-                segmentId = segmentId,
-                onBack = { nav.popBackStack() },
-            )
+            if (contentId == null) {
+                // "My words": FSRS daily practice (hub → player → summary).
+                app.gotcha.android.ui.learner.DailyPracticeScreen(
+                    onBack = { nav.popBackStack() },
+                    onOpenLibrary = { nav.popBackStack() },
+                )
+            } else {
+                // Chapter quiz stays on the legacy session API.
+                PracticeScreen(
+                    contentId = contentId,
+                    segmentId = segmentId,
+                    onBack = { nav.popBackStack() },
+                )
+            }
         }
         slideUpSheetComposable(Routes.Import) {
             ImportScreen(
@@ -274,6 +341,21 @@ fun GotchaNavHost() {
                 onImported = {
                     nav.popBackStack()
                     nav.popBackStack(Routes.Import, inclusive = true)
+                },
+            )
+        }
+        rootSlideComposable(Routes.ExternalImport) {
+            ExternalImportScreen(
+                onCancel = {
+                    container.externalImportController.reset()
+                    nav.popBackStack()
+                },
+                onOpenReader = { contentId ->
+                    container.externalImportController.reset()
+                    nav.navigate(Routes.reader(contentId)) {
+                        popUpTo(Routes.Learner) { inclusive = false }
+                        launchSingleTop = true
+                    }
                 },
             )
         }

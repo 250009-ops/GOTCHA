@@ -10,13 +10,19 @@
     />
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#2107AA" />
+    <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="%BASE_URL%favicon-32.png" />
     <link rel="icon" type="image/png" sizes="16x16" href="%BASE_URL%favicon-16.png" />
     <link rel="icon" href="%BASE_URL%favicon.ico" sizes="any" />
     <link rel="apple-touch-icon" href="%BASE_URL%apple-touch-icon.png" />
+    <link rel="manifest" href="%BASE_URL%site.webmanifest" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Inter:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,600;0,700;1,400&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Fraunces:opsz,wght,SOFT@9..144,600,50&family=Literata:opsz,wght@7..72,600&family=Manrope:wght@600;700;800&family=Inter:wght@400;500;600;700;800&family=Lora:ital,wght@0,400;0,600;0,700;1,400&family=Noto+Naskh+Arabic:wght@400;700&family=Amiri:wght@400;700&family=Noto+Sans+KR:wght@400;700&family=Noto+Serif+KR:wght@400;700&display=swap" rel="stylesheet" />
+    <script>
+      // App chrome stays light until dark mode covers every page. A stored "dark" becomes "system". See src/lib/appTheme.ts.
+      (function () { try { var p = localStorage.getItem('gotcha.appTheme'); if (p === 'dark') localStorage.setItem('gotcha.appTheme', 'system'); document.documentElement.dataset.theme = 'light'; } catch (e) {} })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

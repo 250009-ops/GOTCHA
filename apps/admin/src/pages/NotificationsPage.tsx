@@ -61,7 +61,7 @@ export default function NotificationsPage() {
   }
 
   useEffect(() => {
-    load().catch(console.error);
+    void load();
   }, []);
 
   function openCreate() {
@@ -121,7 +121,7 @@ export default function NotificationsPage() {
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
         <div className="font-semibold mb-2">Could not load notifications</div>
         <p className="mb-4">{error}</p>
-        <Button onClick={() => load().catch(console.error)}>Retry</Button>
+        <Button onClick={() => void load()}>Retry</Button>
       </div>
     );
   }

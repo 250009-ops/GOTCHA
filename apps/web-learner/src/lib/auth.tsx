@@ -8,15 +8,24 @@ import {
   type ReactNode,
 } from 'react';
 import { useLocation } from 'react-router-dom';
-import { api, clearTokens, setTokens } from './api';
+import { api, clearTokens, getRefreshToken, setTokens } from './api';
 import { isPublicAuthPath } from './authRoutes';
+import { detectLearnerLocale } from './learnerLocale';
+import { learnerCopyFor } from '@gotcha/shared/learner-copy';
 import type { UserPreferences, UserProfile, UserStats, VocabItem } from './types';
+import { shouldLogoutOnBootstrapError } from './bootstrapPolicy';
+
+function learnerErrors() {
+  return learnerCopyFor(detectLearnerLocale()).errors;
+}
 
 interface AuthContextValue {
   user: UserProfile | null;
   stats: UserStats | null;
   preferences: UserPreferences | null;
   loading: boolean;
+  bootstrapError: boolean;
+  retryBootstrap: () => void;
   login: (email: string, password: string) => Promise<{
     accessToken: string;
     refreshToken: string;
@@ -28,10 +37,15 @@ interface AuthContextValue {
     displayName?: string;
     nativeLanguage: string;
     targetLanguages: string[];
+    uiLanguage?: string;
+    acceptTerms?: boolean;
+    acceptAiConsent?: boolean;
+    consentVersion?: string;
+    birthYear?: number;
   }) => Promise<{ requiresEmailVerification?: boolean; email?: string }>;
   logout: () => void;
   refreshProfile: () => Promise<void>;
-  updateProfile: (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
+  updateProfile: (patch: { displayName?: string | null; nativeLanguage?: string; uiLanguage?: string }) => Promise<void>;
   updatePreferences: (patch: Partial<UserPreferences>) => Promise<void>;
   uploadAvatar: (file: File) => Promise<void>;
   vocabItems: VocabItem[];
@@ -48,10 +62,13 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 const defaultPreferences: UserPreferences = {
   readerFontScale: 1,
   readerTheme: 'light',
+  appTheme: 'system',
   readerLineSpacing: 1.5,
-  showKnownWords: true,
-  ttsEnabled: false,
+  showKnownWords: false,
+  ttsEnabled: true,
   dailyGoalMinutes: 15,
+  dailyGoalXp: 60,
+  dailyNewWords: 10,
   notificationsEnabled: true,
 };
 
@@ -74,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     ]);
     setUser(profile);
     setStats({
-      streakCount: profile.streakCount ?? 0,
+      streakCount: typeof userStats.streakCount === 'number' ? userStats.streakCount : (profile.streakCount ?? 0),
       todayMinutes: Number(userStats.todayReadMinutes ?? 0),
       dailyGoalMinutes: profile.preferences?.dailyGoalMinutes ?? 15,
       wordsLearned: userStats.vocabularyTotal ?? 0,
@@ -96,12 +113,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         })),
       );
     } catch (e) {
-      setVocabError(e instanceof Error ? e.message : 'Failed to load vocabulary');
+      setVocabError(e instanceof Error ? e.message : learnerErrors().failedLoadVocab);
       throw e;
     } finally {
       setVocabLoading(false);
     }
   }, []);
+
+  const [bootstrapError, setBootstrapError] = useState(false);
 
   const bootstrap = useCallback(async () => {
     const token = localStorage.getItem('gotcha_learner_access');
@@ -117,17 +136,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* profile ok; vocab error surfaced via vocabError */
       }
-    } catch {
-      clearTokens();
-      setUser(null);
-      setStats(null);
-      setPreferences(null);
-      setVocabItems([]);
+    } catch (e) {
+      // WL4-02: a 5xx/network error must NOT log out — keep tokens and offer a retry.
+      if (shouldLogoutOnBootstrapError(e)) {
+        clearTokens();
+        setUser(null);
+        setStats(null);
+        setPreferences(null);
+        setVocabItems([]);
+      } else {
+        setBootstrapError(true);
+      }
     } finally {
       setLoading(false);
       setBootstrapped(true);
     }
   }, [refreshProfile, refreshVocab]);
+
+  const retryBootstrap = useCallback(() => {
+    setBootstrapError(false);
+    setLoading(true);
+    void bootstrap();
+  }, [bootstrap]);
 
   useEffect(() => {
     // Public auth pages: drop *stale* sessions only. Never wipe a session that
@@ -196,6 +226,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       displayName?: string;
       nativeLanguage: string;
       targetLanguages: string[];
+      acceptTerms?: boolean;
+      acceptAiConsent?: boolean;
+      consentVersion?: string;
+      birthYear?: number;
+      uiLanguage?: string;
     }) => {
       const res = await api<{
         accessToken?: string;
@@ -217,7 +252,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       if (!res.accessToken || !res.refreshToken || !res.user) {
-        throw new Error(res.message || 'Registration failed');
+        throw new Error(res.message || learnerErrors().registrationFailed);
       }
 
       setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
@@ -229,6 +264,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(() => {
+    const refreshToken = getRefreshToken();
+    if (refreshToken) {
+      void api('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }).catch(() => undefined);
+    }
     clearTokens();
     setUser(null);
     setStats(null);
@@ -251,7 +290,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const updateProfile = useCallback(
-    async (patch: { displayName?: string; nativeLanguage?: string; uiLanguage?: string }) => {
+    async (patch: { displayName?: string | null; nativeLanguage?: string; uiLanguage?: string }) => {
       const updated = await api<UserProfile>('/users/me', {
         method: 'PATCH',
         body: JSON.stringify(patch),
@@ -304,6 +343,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stats,
       preferences: preferences ?? defaultPreferences,
       loading,
+      bootstrapError,
+      retryBootstrap,
       login,
       register,
       logout,
@@ -324,6 +365,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       stats,
       preferences,
       loading,
+      bootstrapError,
+      retryBootstrap,
       login,
       register,
       logout,

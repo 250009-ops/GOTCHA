@@ -1,4 +1,6 @@
 import { useId, useMemo, useState } from 'react';
+import { surfaceCopy } from '@gotcha/shared';
+import { useLearnerLocale } from '../lib/learnerLocaleContext';
 import {
   Area,
   AreaChart,
@@ -24,9 +26,20 @@ const AXIS_TICK = { fill: '#99a1af', fontSize: 11, fontWeight: 500 } as const;
 const GRID_STROKE = '#f3f4f6';
 const AXIS_STROKE = '#e5e7eb';
 
+function chartLocale(): string {
+  try {
+    const stored = localStorage.getItem('gotcha.learner.locale');
+    if (stored === 'ru') return 'ru-RU';
+    if (stored === 'uz') return 'uz-Latn-UZ';
+  } catch {
+    /* ignore */
+  }
+  return 'en-GB';
+}
+
 function formatShortDate(iso: string) {
   const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return d.toLocaleDateString(chartLocale(), { month: 'short', day: 'numeric' });
 }
 
 function niceMax(max: number) {
@@ -73,7 +86,7 @@ function ChartTooltipShell({
     <div className="rounded-xl border border-[#e5e7eb] bg-white px-3 py-2 shadow-lg shadow-violet-500/10">
       <div className="text-[11px] font-medium text-[#99a1af]">{tipDateLabel(String(label ?? ''))}</div>
       <div className="mt-0.5 text-sm font-semibold text-gray-900">
-        {Number.isFinite(value) ? value.toLocaleString('en-US') : '—'}
+        {Number.isFinite(value) ? value.toLocaleString(chartLocale()) : '—'}
         {valueSuffix ? ` ${valueSuffix}` : ''}
         {valueLabel ? (
           <span className="ml-1 text-xs font-medium text-[#99a1af]">{valueLabel}</span>
@@ -110,7 +123,7 @@ function ChartShell({
 
 export function AreaLineChart({
   data,
-  color = '#8e51ff',
+  color = 'var(--g-blue-500)',
   valueSuffix = 'min',
   valueLabel = '',
   emptyMessage = 'No activity in this range',
@@ -291,29 +304,50 @@ export function BarChart({
 
 const HEATMAP_LEVELS = [
   'bg-[#f3f4f6] ring-1 ring-inset ring-gray-200',
-  'bg-[#ede9fe]',
-  'bg-[#c4b4ff]',
-  'bg-[#8e51ff]',
-  'bg-[#7008e7]',
+  'bg-g-blue-50',
+  'bg-g-blue-200',
+  'bg-g-blue-500',
+  'bg-g-blue-700',
 ];
 
-function heatmapLevel(count: number, max: number) {
+function heatmapLevelAbsolute(count: number) {
   if (count <= 0) return 0;
-  if (max <= 0) return 1;
-  const pct = count / max;
-  if (pct > 0.75) return 4;
-  if (pct > 0.5) return 3;
-  if (pct > 0.25) return 2;
-  return 1;
+  if (count === 1) return 1;
+  if (count === 2) return 2;
+  if (count === 3) return 3;
+  return 4;
 }
 
-export function HeatmapCalendar({ data }: { data: { date: string; count: number }[] }) {
-  const [hover, setHover] = useState<{ date: string; count: number; x: number; y: number } | null>(null);
+function heatmapActivityLabel(
+  count: number,
+  finished = 0,
+  labels: { noBooksRead: string; booksRead: (n: number) => string; booksReadFinished: (c: number, f: number) => string },
+) {
+  if (count <= 0) return labels.noBooksRead;
+  if (finished > 0) return labels.booksReadFinished(count, finished);
+  return labels.booksRead(count);
+}
 
-  const { weeks, max, monthLabels } = useMemo(() => {
-    const weeks: { date: string; count: number }[][] = [];
+export function HeatmapCalendar({
+  data,
+  labels,
+}: {
+  data: { date: string; count: number; finished?: number }[];
+  labels?: { noBooksRead: string; booksRead: (n: number) => string; booksReadFinished: (c: number, f: number) => string };
+}) {
+  const { locale } = useLearnerLocale();
+  const surface = surfaceCopy(locale);
+  const activityLabels = labels ?? {
+    noBooksRead: 'No books read',
+    booksRead: (count: number) => `${count} book${count === 1 ? '' : 's'} read`,
+    booksReadFinished: (count: number, finished: number) =>
+      `${count} book${count === 1 ? '' : 's'} read · ${finished} finished`,
+  };
+  const [hover, setHover] = useState<{ date: string; count: number; finished: number; x: number; y: number } | null>(null);
+
+  const { weeks, monthLabels } = useMemo(() => {
+    const weeks: { date: string; count: number; finished?: number }[][] = [];
     for (let i = 0; i < data.length; i += 7) weeks.push(data.slice(i, i + 7));
-    const max = Math.max(...data.map((d) => d.count), 0);
     const monthLabels: { week: number; label: string }[] = [];
     let lastMonth = -1;
     weeks.forEach((week, wi) => {
@@ -323,18 +357,18 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
       if (month !== lastMonth) {
         monthLabels.push({
           week: wi,
-          label: new Date(`${first.date}T00:00:00`).toLocaleDateString('en-US', { month: 'short' }),
+          label: new Date(`${first.date}T00:00:00`).toLocaleDateString(chartLocale(), { month: 'short' }),
         });
         lastMonth = month;
       }
     });
-    return { weeks, max, monthLabels };
+    return { weeks, monthLabels };
   }, [data]);
 
   if (!data.length) {
     return (
       <div className="flex h-[120px] items-center justify-center rounded-xl border border-dashed border-gray-200 bg-gray-50/50 text-xs text-[#99a1af]">
-        Activity heatmap will appear as you learn
+        {surface.heatmapEmpty}
       </div>
     );
   }
@@ -358,14 +392,15 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
             {weeks.map((week, wi) => (
               <div key={wi} className="flex flex-col gap-[3px] shrink-0">
                 {week.map((d) => {
-                  const level = heatmapLevel(d.count, max || 1);
+                  const level = heatmapLevelAbsolute(d.count);
+                  const finished = d.finished ?? 0;
                   return (
                     <button
                       key={d.date}
                       type="button"
-                      aria-label={`${formatShortDate(d.date)}: ${d.count} session${d.count === 1 ? '' : 's'}`}
+                      aria-label={`${formatShortDate(d.date)}: ${heatmapActivityLabel(d.count, finished, activityLabels)}`}
                       className={cn(
-                        'h-3 w-3 rounded-[5px] transition-transform duration-150 hover:scale-125 hover:ring-2 hover:ring-[#8e51ff]/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-[#8e51ff]',
+                        'h-3 w-3 rounded-[5px] transition-transform duration-150 hover:scale-125 hover:ring-2 hover:ring-g-blue-500/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-500',
                         HEATMAP_LEVELS[level],
                       )}
                       onMouseEnter={(e) => {
@@ -374,6 +409,7 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
                         setHover({
                           date: d.date,
                           count: d.count,
+                          finished,
                           x: rect.left - (parent?.left ?? 0) + rect.width / 2,
                           y: rect.top - (parent?.top ?? 0),
                         });
@@ -385,6 +421,7 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
                         setHover({
                           date: d.date,
                           count: d.count,
+                          finished,
                           x: rect.left - (parent?.left ?? 0) + rect.width / 2,
                           y: rect.top - (parent?.top ?? 0),
                         });
@@ -406,17 +443,17 @@ export function HeatmapCalendar({ data }: { data: { date: string; count: number 
         >
           <div className="text-[11px] font-medium text-[#99a1af]">{formatShortDate(hover.date)}</div>
           <div className="text-xs font-semibold text-gray-900">
-            {hover.count} session{hover.count === 1 ? '' : 's'}
+            {heatmapActivityLabel(hover.count, hover.finished, activityLabels)}
           </div>
         </div>
       ) : null}
 
       <div className="flex items-center justify-end gap-1.5 text-[11px] text-[#99a1af]">
-        <span>Less</span>
+        <span>{surface.fewerBooks}</span>
         {HEATMAP_LEVELS.map((c) => (
           <div key={c} className={cn('h-2.5 w-2.5 rounded-[5px]', c)} />
         ))}
-        <span>More</span>
+        <span>{surface.moreBooks}</span>
       </div>
     </div>
   );

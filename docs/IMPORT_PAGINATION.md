@@ -61,7 +61,7 @@ cd services/worker && npm run start
 # Paste long text (≥ ~150 words) → expect multiple segments
 curl -s -X POST http://localhost:3000/auth/login \
   -H "Content-Type: application/json" \
-  -d "{\"email\":\"learner@gotcha.app\",\"password\":\"Learner2026!\"}"
+  -d "{\"email\":\"learner@gotcha.app\",\"password\":\"$LEARNER_PASSWORD\"}"
 # Use accessToken:
 curl -s -X POST http://localhost:3000/imports/paste \
   -H "Authorization: Bearer <token>" \

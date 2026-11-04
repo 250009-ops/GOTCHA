@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Search, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Newspaper, Search, Upload, X } from 'lucide-react';
+import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/EmptyState';
 import { LibrarySkeleton } from '../components/LibrarySkeleton';
@@ -10,19 +11,92 @@ import { useAuth } from '../lib/auth';
 import { resolveMediaUrl } from '../lib/media';
 import { formatUzs } from '../lib/importBilling';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
-import { type ContentItem, gradientForId } from '../lib/types';
+import { openReader } from '../lib/readerReturn';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { LANGUAGE_META, type ContentItem } from '../lib/types';
+import { BookCover, coverDisplayTitle } from '../components/cover/BookCover';
 
 const cefrStyle: Record<string, string> = {
   a1: 'bg-emerald-100 text-emerald-700',
   a2: 'bg-teal-100 text-teal-700',
   b1: 'bg-blue-100 text-blue-700',
   b2: 'bg-indigo-100 text-indigo-700',
-  c1: 'bg-violet-100 text-[#7008e7]',
+  c1: 'bg-violet-100 text-g-blue-700',
   c2: 'bg-pink-100 text-pink-700',
 };
-const staticFilterTabs = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
-type StaticFilterTab = (typeof staticFilterTabs)[number];
-type FilterTab = 'All' | StaticFilterTab | string;
+const staticFilterIds = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
+type StaticFilterId = (typeof staticFilterIds)[number];
+type FilterTab = 'All' | StaticFilterId | string;
+type KindFilter = 'All' | 'Fiction' | 'News' | 'Imports';
+type LevelFilter = '' | 'A1–A2' | 'B1–B2' | 'C1–C2';
+const KINDS: KindFilter[] = ['All', 'Fiction', 'News', 'Imports'];
+const LEVELS: Exclude<LevelFilter, ''>[] = ['A1–A2', 'B1–B2', 'C1–C2'];
+
+/** Browse filter strings not in the shared copy yet (uz / ru / en). */
+const LX = {
+  en: { allLangs: 'All languages', level: 'Level', anyLevel: 'Any', myImports: 'My imports', clear: 'Clear filters', results: (n: number) => `${n} ${n === 1 ? 'title' : 'titles'}`, language: 'Language' },
+  ru: { allLangs: 'Все языки', level: 'Уровень', anyLevel: 'Любой', myImports: 'Мои импорты', clear: 'Сбросить фильтры', results: (n: number) => `Найдено: ${n}`, language: 'Язык' },
+  uz: { allLangs: 'Barcha tillar', level: 'Daraja', anyLevel: 'Hammasi', myImports: 'Importlarim', clear: 'Filtrlarni tozalash', results: (n: number) => `${n} ta natija`, language: 'Til' },
+};
+
+/** Legacy single `?filter=` plus the newer `?lang=` / `?level=` → three independent filters. */
+function splitFilters(params: URLSearchParams, languageTabs: string[], nativeCode: string | null) {
+  const legacy = parseFilterParam(params.get('filter') ?? params.get('genre'), languageTabs, nativeCode);
+  let kind: KindFilter = 'All';
+  let lang = '';
+  let level: LevelFilter = '';
+  if ((KINDS as string[]).includes(legacy)) kind = legacy as KindFilter;
+  else if ((LEVELS as string[]).includes(legacy)) level = legacy as LevelFilter;
+  else if (legacy !== 'All') lang = legacy.toLowerCase();
+  const l = params.get('lang')?.trim().toLowerCase();
+  if (l && l !== nativeCode && languageTabs.includes(l.toUpperCase())) lang = l;
+  const lv = parseFilterParam(params.get('level'), [], nativeCode);
+  if ((LEVELS as string[]).includes(lv)) level = lv as LevelFilter;
+  return { kind, lang, level };
+}
+
+function matchesLevel(item: ContentItem, level: LevelFilter) {
+  if (!level) return true;
+  const c = (item.cefrLevel ?? '').toLowerCase();
+  if (level === 'A1–A2') return c === 'a1' || c === 'a2';
+  if (level === 'B1–B2') return c === 'b1' || c === 'b2';
+  return c === 'c1' || c === 'c2';
+}
+
+const CHIP_UZ: Record<string, string> = {
+  de: 'Nemischa', ar: 'Arabcha', ko: 'Koreyscha', tr: 'Turkcha', ru: 'Ruscha', uz: 'Oʻzbekcha', en: 'Inglizcha',
+};
+const CHIP_RU: Record<string, string> = {
+  de: 'Немецкий', ar: 'Арабский', ko: 'Корейский', tr: 'Турецкий', ru: 'Русский', uz: 'Узбекский', en: 'Английский',
+};
+
+function filterLabel(filter: FilterTab, copy: ReturnType<typeof useLearnerCopy>, locale = 'uz'): string {
+  switch (filter) {
+    case 'All':
+      return copy.library.filterAll;
+    case 'Fiction':
+      return copy.library.filterFiction;
+    case 'News':
+      return copy.library.filterNews;
+    case 'Imports':
+      return copy.library.filterImports;
+    case 'A1–A2':
+      return copy.library.filterA1A2;
+    case 'B1–B2':
+      return copy.library.filterB1B2;
+    case 'C1–C2':
+      return copy.library.filterC1C2;
+    default: {
+      const code = filter.toLowerCase();
+      if (code.length === 2) {
+        if (locale === 'uz') return CHIP_UZ[code] ?? LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.nativeName ?? filter;
+        if (locale === 'ru') return CHIP_RU[code] ?? LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.label ?? filter;
+        return LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.label ?? filter;
+      }
+      return filter;
+    }
+  }
+}
 
 function SectionHeading({
   title,
@@ -33,6 +107,7 @@ function SectionHeading({
   subtitle?: string;
   onSeeAll?: () => void;
 }) {
+  const copy = useLearnerCopy();
   return (
     <div className="flex items-start justify-between gap-3 mb-4 min-w-0">
       <div className="min-w-0 flex-1">
@@ -43,45 +118,22 @@ function SectionHeading({
         <button
           type="button"
           onClick={onSeeAll}
-          className="flex items-center gap-0.5 text-xs font-semibold text-[#7f22fe] hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
+          className="flex items-center gap-0.5 text-xs font-semibold text-g-blue-700 hover:text-violet-800 hover:bg-violet-50 pl-2 pr-1.5 py-1.5 rounded-lg transition-colors shrink-0 whitespace-nowrap"
         >
-          See all <ChevronRight className="w-3.5 h-3.5" />
+          {copy.common.seeAll} <ChevronRight className="w-3.5 h-3.5" />
         </button>
       ) : null}
     </div>
   );
 }
 
-function formatWordCount(count: number) {
-  if (count >= 1000) return `${(count / 1000).toFixed(1)}k words`;
-  return `${count} words`;
-}
-
 function itemSubtitle(item: ContentItem) {
   return item.subtitle ?? item.description ?? '';
 }
 
-function CoverArt({ item, className }: { item: ContentItem; className?: string }) {
-  const src = resolveMediaUrl(item.coverImageUrl);
-  const [failed, setFailed] = useState(false);
-  const showImage = Boolean(src) && !failed;
-  return (
-    <div
-      className={cn('relative flex items-center justify-center overflow-hidden', className)}
-      style={showImage ? undefined : { backgroundImage: gradientForId(item.id) }}
-    >
-      {showImage ? (
-        <img
-          src={src ?? ''}
-          alt=""
-          className="absolute inset-0 h-full w-full object-cover"
-          onError={() => setFailed(true)}
-        />
-      ) : (
-        <BookOpen className="text-white/60 w-8 h-8 sm:w-10 sm:h-10" />
-      )}
-    </div>
-  );
+function CoverArt({ item, className, variant = 'card' }: { item: ContentItem; className?: string; variant?: 'card' | 'thumb' }) {
+  // Landing poster when this book has one; otherwise the stored cover image. Same 2:3 frame as the landing page.
+  return <BookCover item={item} variant={variant} resolveUrl={resolveMediaUrl} className={cn('relative', className)} />;
 }
 
 function CefrBadge({ level }: { level: string }) {
@@ -97,34 +149,39 @@ function ContentCard({
   view = 'grid',
   highlighted = false,
   langFlags = {},
+  libraryReturn,
 }: {
   item: ContentItem;
   view?: 'grid' | 'list';
   compact?: boolean;
   highlighted?: boolean;
   langFlags?: Record<string, string>;
+  /** When set (e.g. Browse Library), reader back returns here instead of library home. */
+  libraryReturn?: string | null;
 }) {
   const navigate = useNavigate();
+  const copy = useLearnerCopy();
+  const open = () => openReader(navigate, item.id, libraryReturn);
   const isProg = (item.progressPct ?? 0) > 0;
   const subtitle = itemSubtitle(item);
-  const highlightClass = highlighted ? 'ring-2 ring-[#7008e7] ring-offset-2' : '';
+  const highlightClass = highlighted ? 'ring-2 ring-g-blue-700 ring-offset-2' : '';
 
   if (view === 'list') {
     return (
       <button
         type="button"
         id={`catalog-item-${item.id}`}
-        onClick={() => navigate(`/app/read/${item.id}`)}
+        onClick={open}
         className={cn(
           'w-full flex items-center gap-4 p-3 bg-white rounded-2xl border border-gray-100/80 hover:border-violet-200 hover:shadow-sm hover:shadow-violet-100 transition-all text-left group',
           highlightClass,
         )}
       >
-        <CoverArt item={item} className="w-[3.25rem] aspect-[3/4] rounded-lg shrink-0" />
+        <CoverArt item={item} variant="thumb" className="w-[3.25rem] aspect-[2/3] rounded-lg shrink-0" />
         <div className="flex-1 min-w-0">
           <div className="flex items-start justify-between gap-2">
             <div className="min-w-0 flex-1">
-              <div className="font-semibold text-gray-900 text-sm truncate group-hover:text-[#7008e7] transition-colors">{item.title}</div>
+              <div className="font-semibold text-gray-900 text-sm truncate group-hover:text-g-blue-700 transition-colors">{item.title}</div>
               {subtitle && <div className="text-gray-400 text-xs mt-0.5 line-clamp-1">{subtitle}</div>}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
@@ -135,13 +192,13 @@ function ContentCard({
           <div className="flex items-center gap-4 mt-2 text-xs text-gray-400">
             <span className="flex items-center gap-1">
               <BookOpen className="w-3 h-3" />
-              {formatWordCount(item.wordCount)}
+              {copy.common.words(item.wordCount)}
             </span>
             <span className="capitalize">{item.contentType.replace('_', ' ')}</span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
-              <span className="text-[#7008e7] font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
+              <span className="text-g-blue-700 font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
             )}
-            {isProg && <span className="text-[#7f22fe] font-medium">{Math.round(item.progressPct ?? 0)}% read</span>}
+            {isProg && <span className="text-g-blue-700 font-medium">{copy.libraryPage.percentRead(Math.round(item.progressPct ?? 0))}</span>}
           </div>
           {isProg && (
             <div className="mt-2 h-1 bg-gray-100 rounded-full overflow-hidden">
@@ -158,50 +215,39 @@ function ContentCard({
     <button
       type="button"
       id={`catalog-item-${item.id}`}
-      onClick={() => navigate(`/app/read/${item.id}`)}
+      onClick={open}
       className={cn(
         'bg-white rounded-2xl border border-gray-100/80 overflow-hidden hover:border-violet-200 hover:shadow-md hover:shadow-violet-100/60 transition-all text-left group flex flex-col w-full h-full',
         highlightClass,
       )}
     >
-      <div className="relative shrink-0 w-full aspect-[3/4]">
-        <CoverArt item={item} className="absolute inset-0 w-full h-full" />
-        <div className="absolute inset-0 bg-gradient-to-t from-black/40 to-transparent pointer-events-none" />
-        <div className="absolute bottom-2 left-2 flex flex-wrap gap-1.5 max-w-[calc(100%-2rem)]">
-          <CefrBadge level={item.cefrLevel} />
-          <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[11px] font-medium bg-white/20 backdrop-blur text-white capitalize truncate max-w-[5rem]">
-            {item.contentType.replace('_', ' ')}
-          </span>
-        </div>
-        <div className="absolute top-2 right-2 flex items-center gap-1">
-          {item.accessGranted === false && (item.priceUzs ?? 0) > 0 && (
-            <span className="inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-semibold bg-white/90 text-[#7008e7] shadow-sm">
-              {formatUzs(item.priceUzs ?? 0)}
-            </span>
-          )}
-          <span className="text-lg leading-none drop-shadow">{langFlags[item.language] ?? '🌐'}</span>
-        </div>
+      <div className="relative shrink-0 w-full aspect-[2/3]">
+        <CoverArt item={item} className="!absolute inset-0 w-full h-full" />
       </div>
-      <div className="p-3 flex-1 flex flex-col min-h-0">
-        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-[#7008e7] transition-colors mb-1">{item.title}</div>
+      <div className="p-3 flex-1 flex flex-col min-h-0 min-w-0 overflow-hidden">
+        <div className="font-semibold text-gray-900 text-sm leading-snug line-clamp-2 group-hover:text-g-blue-700 transition-colors mb-1 min-w-0 overflow-hidden">{item.title}</div>
         {subtitle ? (
           <div className="text-gray-400 text-xs line-clamp-2 mb-auto">{subtitle}</div>
         ) : (
           <div className="mb-auto" />
         )}
         <div className="flex items-center justify-between mt-3 pt-2 border-t border-gray-50 text-xs text-gray-400">
-          <span className="flex items-center gap-1 truncate">
+          <span className="flex items-center gap-1.5 truncate min-w-0">
+            <CefrBadge level={item.cefrLevel} />
             <BookOpen className="w-3 h-3 shrink-0" />
-            {formatWordCount(item.wordCount)}
+            {copy.common.words(item.wordCount)}
+            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+              <span className="text-g-blue-700 font-semibold">{formatUzs(item.priceUzs ?? 0)}</span>
+            ) : null}
           </span>
             {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
-              <span className="text-violet-500/70 shrink-0 font-medium">Try sample</span>
+              <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.trySample}</span>
             ) : isProg ? (
-              <span className="font-semibold text-[#7f22fe] shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
+              <span className="font-semibold text-g-blue-700 shrink-0">{Math.round(item.progressPct ?? 0)}%</span>
             ) : item.knownWordRatio != null && item.knownWordRatio > 0 ? (
-              <span className="text-gray-400 shrink-0">{Math.round(item.knownWordRatio * 100)}% known</span>
+              <span className="text-gray-400 shrink-0">{copy.libraryPage.percentKnown(Math.round(item.knownWordRatio * 100))}</span>
             ) : (
-              <span className="text-violet-500/70 shrink-0 font-medium">New</span>
+              <span className="text-violet-500/70 shrink-0 font-medium">{copy.libraryPage.newBadge}</span>
             )}
         </div>
         {isProg && (
@@ -216,41 +262,41 @@ function ContentCard({
 
 function ContinueReadingCard({ item }: { item: ContentItem }) {
   const navigate = useNavigate();
-  const cover = resolveMediaUrl(item.coverImageUrl);
+  const copy = useLearnerCopy();
+  const open = () => openReader(navigate, item.id);
+  const title = coverDisplayTitle(item);
+  const author = item.authorName?.trim();
   return (
     <div
-      className="relative overflow-hidden rounded-2xl cursor-pointer group h-full min-h-[11rem]"
-      style={cover ? undefined : { backgroundImage: gradientForId(item.id) }}
-      onClick={() => navigate(`/app/read/${item.id}`)}
+      className="flex overflow-hidden rounded-2xl border border-gray-100/80 bg-white cursor-pointer group"
+      data-testid="continue-reading-hero"
+      onClick={open}
     >
-      {cover && (
-        <img src={cover} alt="" className="absolute inset-0 h-full w-full object-cover" />
-      )}
-      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
-      <div className="relative p-5 sm:p-6 min-h-[11rem] h-full flex flex-col justify-end">
-        <span className="text-[11px] font-semibold text-white/70 uppercase tracking-wider mb-2">Continue reading</span>
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex-1 min-w-0">
-            <div className="text-white font-bold text-lg sm:text-xl leading-tight line-clamp-2 mb-0.5">{item.title}</div>
-            {itemSubtitle(item) && <div className="text-white/60 text-sm line-clamp-1">{itemSubtitle(item)}</div>}
-          </div>
-          <div className="flex items-center justify-between gap-3 sm:ml-4 sm:flex-col sm:items-end sm:gap-2 shrink-0">
-            {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
-              <span className="text-white font-bold text-sm sm:text-base">{formatUzs(item.priceUzs ?? 0)}</span>
-            ) : (
-              <span className="text-white/90 font-bold text-xl sm:text-2xl tabular-nums">{item.progressPct ?? 0}%</span>
-            )}
-            <Button
-              size="sm"
-              className="bg-white text-gray-900 hover:bg-white/90 rounded-xl h-8 px-4 text-xs font-semibold shadow-lg"
-              onClick={(e) => { e.stopPropagation(); navigate(`/app/read/${item.id}`); }}
-            >
-              Resume <ArrowRight className="w-3 h-3 ml-1" />
-            </Button>
-          </div>
+      <div className="w-[6.75rem] sm:w-[8.25rem] shrink-0 aspect-[2/3] self-start">
+        <BookCover item={item} variant="hero" resolveUrl={resolveMediaUrl} className="h-full w-full" />
+      </div>
+      <div className="flex-1 min-w-0 overflow-hidden p-4 sm:px-5 flex flex-col justify-center gap-3">
+        <div className="min-w-0">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">{copy.libraryPage.continueReading}</span>
+          <div className="mt-1 font-semibold text-gray-900 text-base sm:text-lg leading-snug line-clamp-2 min-w-0" lang={item.language}>{title}</div>
+          {author ? <div className="mt-0.5 text-sm text-gray-500 truncate">{author}</div> : null}
         </div>
-        <div className="mt-3 h-1 bg-white/20 rounded-full overflow-hidden">
-          <div className="h-full bg-white rounded-full" style={{ width: `${item.progressPct ?? 0}%` }} />
+        <div className="flex items-center justify-between gap-3">
+          {item.accessGranted === false && (item.priceUzs ?? 0) > 0 ? (
+            <span className="text-g-blue-700 font-bold text-sm">{formatUzs(item.priceUzs ?? 0)}</span>
+          ) : (
+            <span className="text-gray-900 font-bold text-xl tabular-nums">{item.progressPct ?? 0}%</span>
+          )}
+          <Button
+            size="sm"
+            className="rounded-xl min-h-11 px-4 text-xs font-semibold"
+            onClick={(e) => { e.stopPropagation(); open(); }}
+          >
+            {copy.libraryPage.resume} <ArrowRight className="w-3 h-3 ml-1" />
+          </Button>
+        </div>
+        <div className="h-1 bg-gray-100 rounded-full overflow-hidden">
+          <div className="h-full bg-violet-500 rounded-full" style={{ width: `${Math.max(item.progressPct ? 2 : 0, Math.min(100, item.progressPct ?? 0))}%` }} />
         </div>
       </div>
     </div>
@@ -314,7 +360,7 @@ function parseFilterParam(
   if (aliases[normalized]) return aliases[normalized];
   const langTab = languageTabs.find((t) => t.toLowerCase() === raw.trim().toLowerCase());
   if (langTab) return langTab;
-  const staticMatch = (['All', ...staticFilterTabs] as const).find((t) => t.toLowerCase() === raw.trim().toLowerCase());
+  const staticMatch = (['All', ...staticFilterIds] as const).find((t) => t.toLowerCase() === raw.trim().toLowerCase());
   return staticMatch ?? 'All';
 }
 
@@ -391,8 +437,13 @@ export default function LibraryPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, stats } = useAuth();
+  const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [feedError, setFeedError] = useState(false);
+  const [catalogError, setCatalogError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [catalogItems, setCatalogItems] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [catalogLoading, setCatalogLoading] = useState(false);
@@ -412,10 +463,6 @@ export default function LibraryPage() {
   const languageTabs = useMemo(
     () => learnableLangCodes.map((code) => code.toUpperCase()),
     [learnableLangCodes],
-  );
-  const filterTabs = useMemo(
-    () => ['All', ...languageTabs, ...staticFilterTabs] as FilterTab[],
-    [languageTabs],
   );
   const langFlags = useMemo(
     () => Object.fromEntries(catalogLangs.map((l) => [l.code, l.flagEmoji])),
@@ -438,47 +485,56 @@ export default function LibraryPage() {
     if (!user || !getAccessToken()) return;
     let cancelled = false;
     setLoading(true);
+    setFeedError(false);
     api<FeedResponse>('/content/feed')
       .then((data) => {
         if (!cancelled) setFeed(data);
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setFeedError(true);
+      })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [user, nativeCode, targetScopeKey]);
+  }, [user, nativeCode, targetScopeKey, reloadKey]);
 
-  const initialFilter = useMemo(
-    () => parseFilterParam(searchParams.get('filter') ?? searchParams.get('genre'), languageTabs, nativeCode),
+  const initialFilters = useMemo(
+    () => splitFilters(searchParams, languageTabs, nativeCode),
     [searchParams, languageTabs, nativeCode],
   );
 
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
-  const [activeFilter, setActiveFilter] = useState<FilterTab>(initialFilter);
+  const [kindFilter, setKindFilter] = useState<KindFilter>(initialFilters.kind);
+  const [langFilter, setLangFilter] = useState(initialFilters.lang);
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>(initialFilters.level);
+  const lx = LX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
 
+  // A language that is the learner's native one, or no longer in the catalogue, is dropped.
   useEffect(() => {
-    const isStatic =
-      activeFilter === 'All' || (staticFilterTabs as readonly string[]).includes(activeFilter as StaticFilterTab);
-    const isNativeChip = Boolean(nativeCode && activeFilter.toLowerCase() === nativeCode);
-    const isOrphanLang =
-      /^[a-z]{2}$/i.test(activeFilter) && languageTabs.length > 0 && !languageTabs.includes(activeFilter);
-    if (!isNativeChip && (isStatic || !isOrphanLang)) return;
-    setActiveFilter('All');
+    if (!langFilter) return;
+    const isNative = Boolean(nativeCode && langFilter === nativeCode);
+    const isOrphan = languageTabs.length > 0 && !languageTabs.includes(langFilter.toUpperCase());
+    if (!isNative && !isOrphan) return;
+    setLangFilter('');
     if (!isBrowse) return;
     const params = new URLSearchParams(searchParams);
-    params.delete('filter');
+    params.delete('lang');
+    if ((params.get('filter') ?? '').toLowerCase() === langFilter) params.delete('filter');
     params.delete('genre');
     setSearchParams(params, { replace: true });
-  }, [activeFilter, languageTabs, nativeCode, isBrowse, searchParams, setSearchParams]);
+  }, [langFilter, languageTabs, nativeCode, isBrowse, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!isBrowse) return;
     setSearch(searchParams.get('q') ?? '');
-    setActiveFilter(initialFilter);
-  }, [isBrowse, searchParams, initialFilter]);
+    setKindFilter(initialFilters.kind);
+    setLangFilter(initialFilters.lang);
+    setLevelFilter(initialFilters.level);
+  }, [isBrowse, searchParams, initialFilters]);
 
   const collectionSlug = searchParams.get('collection');
   const activeCollection = useMemo(
@@ -487,11 +543,10 @@ export default function LibraryPage() {
   );
 
   const catalogLangQuery = useMemo(() => {
-    if (!languageTabs.includes(activeFilter)) return '';
-    const code = activeFilter.toLowerCase();
-    if (nativeCode && code === nativeCode) return '';
-    return code;
-  }, [activeFilter, languageTabs, nativeCode]);
+    if (!langFilter || !languageTabs.includes(langFilter.toUpperCase())) return '';
+    if (nativeCode && langFilter === nativeCode) return '';
+    return langFilter;
+  }, [langFilter, languageTabs, nativeCode]);
 
   useEffect(() => {
     if (!isBrowse || !user || !getAccessToken() || collectionSlug) {
@@ -500,6 +555,7 @@ export default function LibraryPage() {
     }
     let cancelled = false;
     setCatalogLoading(true);
+    setCatalogError(false);
     (async () => {
       const all: ContentItem[] = [];
       let page = 1;
@@ -516,14 +572,17 @@ export default function LibraryPage() {
       }
       if (!cancelled) setCatalogItems(dedupeItems(all));
     })()
-      .catch(console.error)
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setCatalogError(true);
+      })
       .finally(() => {
         if (!cancelled) setCatalogLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery]);
+  }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery, reloadKey]);
 
   const uniqueItems = useMemo(() => {
     if (!feed) return [];
@@ -551,12 +610,12 @@ export default function LibraryPage() {
     if (activeCollection) {
       return dedupeItems(activeCollection.items.map((i) => i.content).filter(Boolean));
     }
-    if (isBrowse && activeFilter === 'Imports') {
+    if (isBrowse && kindFilter === 'Imports') {
       return feed?.myImports ?? [];
     }
     if (isBrowse) return catalogItems;
     return uniqueItems;
-  }, [activeCollection, isBrowse, activeFilter, feed, catalogItems, uniqueItems]);
+  }, [activeCollection, isBrowse, kindFilter, feed, catalogItems, uniqueItems]);
 
   const allowedLangs = useMemo(() => new Set(learnableLangCodes), [learnableLangCodes]);
   const filtered = browseBaseItems.filter((item) => {
@@ -565,8 +624,21 @@ export default function LibraryPage() {
       if (nativeCode && lang === nativeCode) return false;
       if (allowedLangs.size > 0 && !allowedLangs.has(lang)) return false;
     }
-    return matchesSearch(item, search) && matchesFilter(item, activeFilter, languageTabs);
+    return (
+      matchesSearch(item, search) &&
+      matchesFilter(item, kindFilter, languageTabs) &&
+      (!langFilter || itemLanguage(item) === langFilter) &&
+      matchesLevel(item, levelFilter)
+    );
   });
+  // Learner's own target languages first, then the rest of the catalogue.
+  const targetOrder = (user?.targetLanguages ?? []).map((t) => t.targetLanguage.toLowerCase());
+  const langOptions = [...learnableLangCodes].sort((a, b) => {
+    const ia = targetOrder.indexOf(a);
+    const ib = targetOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  const filtersActive = kindFilter !== 'All' || Boolean(langFilter) || Boolean(levelFilter);
 
   const hero = feed?.continueReading?.[0];
   // `??` does not fall through empty arrays — fill from recently published when continue-reading has ≤1 item
@@ -579,19 +651,30 @@ export default function LibraryPage() {
       .slice(0, 3);
   }, [feed]);
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? 'morning' : hour < 17 ? 'afternoon' : 'evening';
-  const firstName = (user?.displayName ?? 'Learner').split(' ')[0];
+  const greetingText =
+    hour < 12 ? copy.libraryPage.goodMorning : hour < 18 ? copy.libraryPage.goodAfternoon : copy.libraryPage.goodEvening;
+  const firstName = (user?.displayName ?? copy.libraryPage.learnerFallback).split(' ')[0];
+  const retryLibrary = () => setReloadKey((n) => n + 1);
   const libraryEmpty =
     isBrowse
-      ? !loading && !catalogLoading && browseBaseItems.length === 0
-      : !loading && uniqueItems.length === 0;
+      ? !loading && !catalogLoading && !catalogError && browseBaseItems.length === 0
+      : !loading && !feedError && uniqueItems.length === 0;
 
-  const setFilter = (next: FilterTab) => {
-    setActiveFilter(next);
+  const writeFilters = (next: { kind?: KindFilter; lang?: string; level?: LevelFilter }) => {
+    const kind = next.kind ?? kindFilter;
+    const lang = next.lang ?? langFilter;
+    const level = next.level ?? levelFilter;
+    setKindFilter(kind);
+    setLangFilter(lang);
+    setLevelFilter(level);
     if (!isBrowse) return;
     const params = new URLSearchParams(searchParams);
-    if (next === 'All') params.delete('filter');
-    else params.set('filter', next);
+    if (kind === 'All') params.delete('filter');
+    else params.set('filter', kind);
+    if (lang) params.set('lang', lang);
+    else params.delete('lang');
+    if (level) params.set('level', level);
+    else params.delete('level');
     params.delete('genre');
     setSearchParams(params, { replace: true });
   };
@@ -610,6 +693,7 @@ export default function LibraryPage() {
   }
 
   if (isBrowse) {
+    const browseReturnPath = `${location.pathname}${location.search}`;
     return (
       <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-6 min-w-0">
         <div className="space-y-3">
@@ -617,13 +701,13 @@ export default function LibraryPage() {
             <button
               type="button"
               onClick={() => navigate('/app')}
-              className="hover:text-[#7f22fe] transition-colors font-medium"
+              className="hover:text-g-blue-700 transition-colors font-medium"
             >
-              Library
+              {copy.library.title}
             </button>
             <ChevronRight className="w-3.5 h-3.5 shrink-0" />
             <span className="text-gray-600 font-medium truncate">
-              {activeCollection?.title ?? 'Browse Library'}
+              {activeCollection?.title ?? copy.libraryPage.browseTitle}
             </span>
           </nav>
 
@@ -633,11 +717,11 @@ export default function LibraryPage() {
                 type="button"
                 onClick={() => navigate('/app')}
                 className="sm:hidden p-2 -ml-2 rounded-xl text-gray-500 hover:bg-gray-100 hover:text-gray-800 transition-colors"
-                aria-label="Back to Library"
+                aria-label={copy.library.backToLibrary}
               >
                 <ArrowLeft className="w-5 h-5" />
               </button>
-              <h1 className="text-2xl font-bold text-gray-900 truncate">Browse Library</h1>
+              <h1 className="text-2xl font-bold text-gray-900 truncate">{copy.libraryPage.browseTitle}</h1>
             </div>
             <div className="relative flex-1 sm:max-w-xs">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
@@ -645,15 +729,15 @@ export default function LibraryPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setBrowseSearch(e.target.value)}
-                placeholder="Search…"
+                placeholder={copy.library.searchPlaceholder}
                 className="w-full pl-8 pr-4 h-9 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-violet-300"
               />
             </div>
             <div className="hidden sm:flex items-center gap-1 bg-gray-100 rounded-xl p-1">
-              <button type="button" onClick={() => setView('grid')} className={cn('p-1.5 rounded-lg transition-colors', view === 'grid' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label="Grid view">
+              <button type="button" onClick={() => setView('grid')} className={cn('p-1.5 rounded-lg transition-colors', view === 'grid' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label={copy.library.gridView}>
                 <Grid3X3 className="w-4 h-4" />
               </button>
-              <button type="button" onClick={() => setView('list')} className={cn('p-1.5 rounded-lg transition-colors', view === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label="List view">
+              <button type="button" onClick={() => setView('list')} className={cn('p-1.5 rounded-lg transition-colors', view === 'list' ? 'bg-white shadow-sm text-gray-700' : 'text-gray-400 hover:text-gray-600')} aria-label={copy.library.listView}>
                 <List className="w-4 h-4" />
               </button>
             </div>
@@ -665,48 +749,130 @@ export default function LibraryPage() {
         </div>
 
         {!search && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {filterTabs.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all',
-                  activeFilter === f ? 'bg-[#7f22fe] text-white border-[#7f22fe] shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+          <div className="space-y-3" data-testid="library-filters">
+            <div className="flex items-end justify-between gap-3 border-b border-[#e6e8f0]">
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide -mb-px" role="tablist" aria-label={copy.libraryPage.browseTitle}>
+                {KINDS.map((k) => {
+                  const Icon = k === 'All' ? BookOpen : k === 'Fiction' ? BookOpen : k === 'News' ? Newspaper : Upload;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      role="tab"
+                      aria-selected={kindFilter === k}
+                      onClick={() => writeFilters({ kind: k })}
+                      className={cn(
+                        'shrink-0 inline-flex items-center gap-2 h-11 px-3 sm:px-4 border-b-2 text-sm font-semibold transition-colors',
+                        kindFilter === k ? 'border-g-blue-700 text-g-blue-700' : 'border-transparent text-[#6b7080] hover:text-[#101828]',
+                      )}
+                    >
+                      {k !== 'All' && <Icon className="w-4 h-4" />}
+                      {k === 'Imports' ? lx.myImports : filterLabel(k, copy, locale)}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="hidden sm:block shrink-0 pb-3 text-xs text-[#8a8fa0]">{lx.results(filtered.length)}</span>
+            </div>
+
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0" role="radiogroup" aria-label={lx.language}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!langFilter}
+                  onClick={() => writeFilters({ lang: '' })}
+                  className={cn(
+                    'shrink-0 h-9 px-3.5 rounded-full border text-[13px] font-semibold transition-colors',
+                    !langFilter ? 'bg-[#101828] border-[#101828] text-white' : 'bg-white border-[#e3e5ee] text-[#4a5565] hover:border-[#c5cafd]',
+                  )}
+                >
+                  {lx.allLangs}
+                </button>
+                {langOptions.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    role="radio"
+                    aria-checked={langFilter === code}
+                    onClick={() => writeFilters({ lang: langFilter === code ? '' : code })}
+                    className={cn(
+                      'shrink-0 inline-flex items-center gap-2 h-9 pl-2.5 pr-3.5 rounded-full border text-[13px] font-semibold transition-colors',
+                      langFilter === code ? 'bg-g-blue-50 border-g-blue-700 text-g-blue-700' : 'bg-white border-[#e3e5ee] text-[#4a5565] hover:border-[#c5cafd]',
+                    )}
+                  >
+                    <CatalogLanguageFlag code={code} className="h-3.5 w-5 rounded-[3px]" />
+                    {filterLabel(code.toUpperCase(), copy, locale)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-[#8a8fa0]">{lx.level}</span>
+                <div className="inline-flex bg-[#f1f2f7] p-1 rounded-xl" role="radiogroup" aria-label={lx.level}>
+                  {(['', ...LEVELS] as LevelFilter[]).map((lv) => (
+                    <button
+                      key={lv || 'any'}
+                      type="button"
+                      role="radio"
+                      aria-checked={levelFilter === lv}
+                      onClick={() => writeFilters({ level: lv })}
+                      className={cn(
+                        'h-7 px-2.5 rounded-[9px] text-xs font-semibold whitespace-nowrap transition-colors',
+                        levelFilter === lv ? 'bg-white text-g-blue-700 shadow-sm' : 'text-[#6b7080] hover:text-[#101828]',
+                      )}
+                    >
+                      {lv || lx.anyLevel}
+                    </button>
+                  ))}
+                </div>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => writeFilters({ kind: 'All', lang: '', level: '' })}
+                    className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-xs font-semibold text-[#6b7080] hover:text-[#101828] hover:bg-gray-100"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{lx.clear}</span>
+                  </button>
                 )}
-              >
-                {f}
-              </button>
-            ))}
+              </div>
+            </div>
           </div>
         )}
 
-        {libraryEmpty ? (
+        {catalogError && catalogItems.length === 0 ? (
           <EmptyState
             icon={BookOpen}
-            title="Your library is empty"
-            description="Import your own text or explore featured collections once content is available."
-            actionLabel="Import content"
+            title={copy.libraryPage.loadErrorTitle}
+            description={copy.libraryPage.loadErrorBody}
+            actionLabel={copy.commonExt.retry}
+            onAction={retryLibrary}
+          />
+        ) : libraryEmpty ? (
+          <EmptyState
+            icon={BookOpen}
+            title={copy.libraryPage.yourLibraryEmpty}
+            description={copy.library.emptyDescription}
+            actionLabel={copy.library.importAction}
             onAction={() => navigate('/app/import')}
           />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Search}
-            title="No content found"
-            description="Try a different search or filter to find something to read."
+            title={copy.libraryPage.noContentFound}
+            description={copy.library.noResults}
             compact
           />
         ) : view === 'grid' ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5 gap-4 auto-rows-fr min-w-0">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} langFlags={langFlags} />
+              <ContentCard key={item.id} item={item} langFlags={langFlags} libraryReturn={browseReturnPath} />
             ))}
           </div>
         ) : (
           <div className="space-y-2">
             {filtered.map((item) => (
-              <ContentCard key={item.id} item={item} view="list" langFlags={langFlags} />
+              <ContentCard key={item.id} item={item} view="list" langFlags={langFlags} libraryReturn={browseReturnPath} />
             ))}
           </div>
         )}
@@ -715,26 +881,27 @@ export default function LibraryPage() {
   }
 
   const streakCount = stats?.streakCount ?? 0;
+  const dailyGoalMinutes = stats?.dailyGoalMinutes ?? 15;
   // Don't claim a streak that doesn't exist — see docs/E2E_AUDIT_REPORT.md's
   // always-positive-streak-greeting finding.
   const streakSubtitle =
     streakCount === 0
-      ? 'Start reading today to begin a streak.'
+      ? copy.libraryPage.streakStartToday(dailyGoalMinutes)
       : streakCount === 1
-        ? "You're on day 1 — keep it going tomorrow!"
-        : "Keep your streak alive — you're on a roll.";
+        ? copy.libraryPage.streakDayOne
+        : copy.libraryPage.streakKeepAlive;
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-8 min-w-0">
       <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-4 lg:gap-6 min-w-0">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold text-gray-900">Good {greeting}, {firstName} 👋</h1>
+          <h1 className="text-2xl font-bold text-gray-900">{greetingText}, {firstName} 👋</h1>
           <p className="text-gray-500 mt-0.5 text-sm">{streakSubtitle}</p>
         </div>
         <div className="flex gap-3 min-w-0 w-full lg:w-auto">
           {[
-            { icon: Flame, value: `${streakCount} days`, label: 'Streak', color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
-            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: 'Words', color: 'text-[#155dfc] bg-[#eff6ff] border-[#bedbff]' },
+            { icon: Flame, value: copy.libraryPage.days(streakCount), label: copy.libraryPage.streak, color: 'text-[#e17100] bg-[#fffbeb] border-[#fee685]' },
+            { icon: Brain, value: `${stats?.wordsLearned ?? 0}`, label: copy.libraryPage.words, color: 'text-[#155dfc] bg-g-learning-bg border-[#bedbff]' },
           ].map((s) => (
             <div key={s.label} className={cn('flex items-center gap-2 border rounded-xl px-3 py-2.5 min-w-0 flex-1 lg:flex-none lg:min-w-[7.5rem]', s.color)}>
               <s.icon className="w-4 h-4 shrink-0" />
@@ -750,9 +917,9 @@ export default function LibraryPage() {
       {highlightedItem && (
         <section className="space-y-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-wider text-[#7008e7]">New material</p>
+            <p className="text-xs font-semibold uppercase tracking-wider text-g-blue-700">{copy.libraryPage.newMaterialLabel}</p>
             <h2 className="text-gray-900 font-bold mt-0.5">{highlightedItem.title}</h2>
-            <p className="text-gray-400 text-sm">On your library dashboard — open it when you want to read or purchase.</p>
+            <p className="text-gray-400 text-sm">{copy.libraryPage.newMaterialHint}</p>
           </div>
           <div className="max-w-[10.5rem] sm:max-w-[12rem]">
             <ContentCard item={highlightedItem} highlighted langFlags={langFlags} />
@@ -763,11 +930,11 @@ export default function LibraryPage() {
       {hero && (
         <div
           className={cn(
-            'grid gap-5 items-stretch',
+            'grid grid-cols-1 gap-5 items-stretch min-w-0',
             heroSideItems.length > 0 && 'lg:grid-cols-3',
           )}
         >
-          <div className={cn('min-h-[11rem]', heroSideItems.length > 0 && 'lg:col-span-1')}>
+          <div className={cn('min-w-0 self-start', heroSideItems.length > 0 && 'lg:col-span-1')}>
             <ContinueReadingCard item={hero} />
           </div>
           {heroSideItems.length > 0 && (
@@ -775,8 +942,8 @@ export default function LibraryPage() {
               className={cn(
                 'lg:col-span-2 grid gap-3 lg:gap-4 auto-rows-fr',
                 heroSideItems.length === 1 && 'grid-cols-1 max-w-xs sm:max-w-sm',
-                heroSideItems.length === 2 && 'grid-cols-2',
-                heroSideItems.length >= 3 && 'grid-cols-2 md:grid-cols-3',
+                heroSideItems.length === 2 && 'grid-cols-1 sm:grid-cols-2',
+                heroSideItems.length >= 3 && 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3',
               )}
             >
               {heroSideItems.map((item) => (
@@ -790,8 +957,7 @@ export default function LibraryPage() {
       {(feed?.recentlyPublished?.length ?? 0) > 0 && (
         <section>
           <SectionHeading
-            title="New in the library"
-            subtitle="Admin catalog — A4 covers, not your personal imports"
+            title={copy.libraryPage.newInLibrary}
             onSeeAll={() => navigate('/app/browse')}
           />
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
@@ -808,8 +974,7 @@ export default function LibraryPage() {
       {(feed?.myImports?.length ?? 0) > 0 && (
         <section>
           <SectionHeading
-            title="Your imports"
-            subtitle="Files and URLs you brought in — kept separate from the store"
+            title={copy.libraryPage.yourImports}
             onSeeAll={() => navigate('/app/browse?filter=Imports')}
           />
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
@@ -845,33 +1010,43 @@ export default function LibraryPage() {
         );
       })}
 
+      {feedError && (
+        <EmptyState
+          icon={BookOpen}
+          title={copy.libraryPage.loadErrorTitle}
+          description={copy.libraryPage.loadErrorBody}
+          actionLabel={copy.commonExt.retry}
+          onAction={retryLibrary}
+        />
+      )}
+
       {libraryEmpty && (
         <div className="space-y-4">
           <EmptyState
             icon={BookOpen}
-            title="Your library is empty"
-            description="Import your own text or explore featured collections once content is available."
-            actionLabel="Import content"
+            title={copy.libraryPage.yourLibraryEmpty}
+            description={copy.library.emptyDescription}
+            actionLabel={copy.library.importAction}
             onAction={() => navigate('/app/import')}
           />
           <div className="flex justify-center">
             <button
               type="button"
               onClick={() => navigate('/app/import')}
-              className="inline-flex items-center gap-2 text-sm text-[#7f22fe] hover:text-violet-800 font-medium"
+              className="inline-flex items-center gap-2 text-sm text-g-blue-700 hover:text-violet-800 font-medium"
             >
               <Upload className="w-4 h-4" />
-              Or import your first article
+              {copy.library.importAction}
             </button>
           </div>
         </div>
       )}
 
-      {!libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
+      {!feedError && !libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
         <section>
           <SectionHeading
-            title="Browse Library"
-            subtitle="Explore all available reading content"
+            title={copy.libraryPage.browseTitle}
+            subtitle={copy.library.allContent}
             onSeeAll={() => navigate('/app/browse')}
           />
         </section>

@@ -1,0 +1,100 @@
+/* Gotcha design tokens — the ONE place colours are defined for every web app (team/design/tokens.css, DESIGN-practice.md).
+   Canonical copy: packages/shared/styles/gotcha-tokens.css → synced into apps/{web-learner,admin,web} by
+   `node packages/shared/brand/sync.mjs`. To re-brand, change the --g-blue-* scale (or the semantic roles) here only.
+
+   Layers:
+   1. Brand scale  --g-blue-50…950 (anchored on the logo blue #2107AA = 700). Static: does not change with theme.
+      Exposed to Tailwind as g-blue-*; Tailwind's violet/purple/fuchsia/indigo scales are aliased to it so legacy
+      utility classes follow the brand.
+   2. Neutrals     --g-sidebar, --g-canvas, --g-admin-sidebar, … (static).
+   3. Semantic roles --g-bg, --g-card, --g-text, --g-cta, … switch with <html data-theme="light|dark">
+      (appTheme preference: system | light | dark). Themed UI (practice, shells) uses the g-* role classes. */
+:root {
+  --g-blue-50: #eef0ff; --g-blue-100: #e0e3ff; --g-blue-200: #c5cafd; --g-blue-300: #a0a6fa; --g-blue-400: #7a7ef5;
+  --g-blue-500: #5550ec; --g-blue-600: #3b2ad6; --g-blue-700: #2107aa; --g-blue-800: #1a068a; --g-blue-900: #14056b; --g-blue-950: #0c0342;
+  --g-brand-shadow: rgba(33, 7, 170, 0.22);
+  --g-sidebar: #0b0c26; --g-canvas: #f6f7ff; --g-admin-sidebar: #181a28; --g-admin-canvas: #f8fafc;
+  --g-surface-input: #f9faff; --g-border-input: #e4e7f0; --g-text-placeholder: #6b7080;
+  --g-learning-text: #0e7490; --g-learning-bg: #ecfeff; --g-info-text: #334155; --g-info-surface: #f1f5f9; --g-reader-bg: #ffffff;
+  --g-mark-shadow: 0 10px 7.5px rgba(33, 7, 170, 0.5), 0 4px 3px rgba(33, 7, 170, 0.5);
+
+  /* semantic roles — light */
+  --g-admin-bg: var(--g-admin-canvas);
+  --g-bg: var(--g-canvas); --g-raised: #ffffff; --g-card: #ffffff; --g-card-2: #f9fafb; --g-input: var(--g-surface-input); --g-overlay: #ffffff;
+  --g-text: #101828; --g-text-2: #4a5565; --g-text-3: var(--g-text-placeholder);
+  --g-line: #e5e7eb; --g-line-input: var(--g-border-input);
+  --g-cta: var(--g-blue-700); --g-cta-hover: var(--g-blue-800); --g-accent: var(--g-blue-700); --g-accent-soft: var(--g-blue-50);
+  --g-accent-line: var(--g-blue-200); --g-progress: var(--g-blue-700); --g-track: var(--g-blue-100); --g-focus: var(--g-blue-600);
+  --g-ok: #047857; --g-ok-bg: #ecfdf5; --g-ok-line: #a7f3d0;
+  --g-bad: #dc2626; --g-bad-bg: #fff5f5; --g-bad-line: #fecaca;
+  --g-warn: #b45309; --g-warn-bg: #fef3c7; --g-warn-line: #fee685;
+  --g-info: var(--g-info-text); --g-info-bg: var(--g-info-surface); --g-info-line: #cbd5e1;
+  --g-learn: var(--g-learning-text); --g-learn-bg: var(--g-learning-bg);
+  --g-on-fill: #ffffff; /* ok/bad fills only */
+  --g-on-cta: #ffffff;
+  --g-streak-bg: #fffbeb; --g-streak-line: #fee685; --g-streak-text: #bb4d00; --g-streak-icon: #fe9a00;
+  --g-topbar: rgba(255, 255, 255, 0.95);
+  --g-shadow-card: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.06);
+  color-scheme: light;
+}
+[data-theme='dark'] {
+  --g-admin-bg: #0a0b14;
+  --g-bg: #0a0b14; --g-raised: #11121e; --g-card: #181a28; --g-card-2: #11121e; --g-input: #0a0b14; --g-overlay: #212336;
+  --g-text: #ededf0; --g-text-2: #a1a1aa; --g-text-3: #8b8b94;
+  --g-line: rgba(255, 255, 255, 0.07); --g-line-input: rgba(255, 255, 255, 0.1);
+  --g-cta: var(--g-blue-500); --g-cta-hover: #6763f0; --g-accent: var(--g-blue-300); --g-accent-soft: rgba(85, 80, 236, 0.2);
+  --g-accent-line: rgba(160, 166, 250, 0.45); --g-progress: var(--g-blue-400); --g-track: rgba(85, 80, 236, 0.22); --g-focus: var(--g-blue-300);
+  --g-ok: #34d399; --g-ok-bg: rgba(52, 211, 153, 0.12); --g-ok-line: rgba(52, 211, 153, 0.3);
+  --g-bad: #f87171; --g-bad-bg: rgba(248, 113, 113, 0.12); --g-bad-line: rgba(248, 113, 113, 0.3);
+  --g-warn: #fe9a00; --g-warn-bg: rgba(254, 154, 0, 0.12); --g-warn-line: rgba(254, 154, 0, 0.3);
+  --g-info: #cbd5e1; --g-info-bg: rgba(203, 213, 225, 0.08); --g-info-line: rgba(203, 213, 225, 0.2);
+  --g-learn: #67e8f9; --g-learn-bg: rgba(103, 232, 249, 0.1);
+  --g-on-fill: #0a0b14; /* ok/bad fills only */
+  --g-on-cta: #ffffff;
+  --g-streak-bg: rgba(254, 154, 0, 0.1); --g-streak-line: rgba(254, 154, 0, 0.28); --g-streak-text: #fe9a00; --g-streak-icon: #fe9a00;
+  --g-topbar: #11121e;
+  --g-shadow-card: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 8px 24px rgba(0, 0, 0, 0.35);
+  color-scheme: dark;
+}
+::selection { background: var(--g-blue-100); }
+[data-theme='dark'] ::selection { background: rgba(85, 80, 236, 0.28); }
+
+@theme inline {
+  /* brand scale (static) */
+  --color-g-blue-50: var(--g-blue-50); --color-g-blue-100: var(--g-blue-100); --color-g-blue-200: var(--g-blue-200);
+  --color-g-blue-300: var(--g-blue-300); --color-g-blue-400: var(--g-blue-400); --color-g-blue-500: var(--g-blue-500);
+  --color-g-blue-600: var(--g-blue-600); --color-g-blue-700: var(--g-blue-700); --color-g-blue-800: var(--g-blue-800);
+  --color-g-blue-900: var(--g-blue-900); --color-g-blue-950: var(--g-blue-950);
+  --color-g-sidebar: var(--g-sidebar); --color-g-canvas: var(--g-canvas); --color-g-admin-sidebar: var(--g-admin-sidebar);
+  --color-g-learning-text: var(--g-learning-text); --color-g-learning-bg: var(--g-learning-bg);
+  --color-g-info-text: var(--g-info-text); --color-g-info-surface: var(--g-info-surface); --color-g-reader-bg: var(--g-reader-bg);
+  --color-g-surface-input: var(--g-surface-input); --color-g-border-input: var(--g-border-input); --color-g-text-placeholder: var(--g-text-placeholder);
+  /* legacy Tailwind hue scales follow the brand */
+  --color-violet-50: var(--g-blue-50); --color-violet-100: var(--g-blue-100); --color-violet-200: var(--g-blue-200);
+  --color-violet-300: var(--g-blue-300); --color-violet-400: var(--g-blue-400); --color-violet-500: var(--g-blue-500);
+  --color-violet-600: var(--g-blue-600); --color-violet-700: var(--g-blue-700); --color-violet-800: var(--g-blue-800);
+  --color-violet-900: var(--g-blue-900); --color-violet-950: var(--g-blue-950);
+  --color-purple-50: var(--g-blue-50); --color-purple-100: var(--g-blue-100); --color-purple-200: var(--g-blue-200);
+  --color-purple-300: var(--g-blue-300); --color-purple-400: var(--g-blue-400); --color-purple-500: var(--g-blue-500);
+  --color-purple-600: var(--g-blue-600); --color-purple-700: var(--g-blue-700); --color-purple-800: var(--g-blue-800);
+  --color-purple-900: var(--g-blue-900);
+  --color-fuchsia-50: var(--g-blue-50); --color-fuchsia-100: var(--g-blue-100); --color-fuchsia-700: var(--g-blue-700);
+  --color-indigo-50: var(--g-blue-50); --color-indigo-100: var(--g-blue-100); --color-indigo-700: var(--g-blue-700);
+  /* semantic roles (theme-aware) */
+  --color-g-admin-bg: var(--g-admin-bg);
+  --color-g-bg: var(--g-bg); --color-g-raised: var(--g-raised); --color-g-card: var(--g-card); --color-g-card-2: var(--g-card-2);
+  --color-g-input: var(--g-input); --color-g-overlay: var(--g-overlay);
+  --color-g-text: var(--g-text); --color-g-text-2: var(--g-text-2); --color-g-text-3: var(--g-text-3);
+  --color-g-line: var(--g-line); --color-g-line-input: var(--g-line-input);
+  --color-g-accent: var(--g-accent); --color-g-cta: var(--g-cta); --color-g-cta-hover: var(--g-cta-hover);
+  --color-g-accent-soft: var(--g-accent-soft); --color-g-accent-line: var(--g-accent-line); --color-g-progress: var(--g-progress);
+  --color-g-track: var(--g-track); --color-g-focus: var(--g-focus);
+  --color-g-ok: var(--g-ok); --color-g-ok-bg: var(--g-ok-bg); --color-g-ok-line: var(--g-ok-line);
+  --color-g-bad: var(--g-bad); --color-g-bad-bg: var(--g-bad-bg); --color-g-bad-line: var(--g-bad-line);
+  --color-g-warn: var(--g-warn); --color-g-warn-bg: var(--g-warn-bg); --color-g-warn-line: var(--g-warn-line);
+  --color-g-info: var(--g-info); --color-g-info-bg: var(--g-info-bg); --color-g-info-line: var(--g-info-line);
+  --color-g-learn: var(--g-learn); --color-g-learn-bg: var(--g-learn-bg); --color-g-on-fill: var(--g-on-fill);
+  --color-g-streak-bg: var(--g-streak-bg); --color-g-streak-line: var(--g-streak-line); --color-g-streak-text: var(--g-streak-text); --color-g-streak-icon: var(--g-streak-icon);
+  --color-g-topbar: var(--g-topbar);
+  --shadow-g-card: var(--g-shadow-card);
+}

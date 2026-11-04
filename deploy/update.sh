@@ -138,6 +138,7 @@ rm -rf services/api/dist services/worker/dist
 rm -f services/api/*.tsbuildinfo services/worker/*.tsbuildinfo
 npm run build --workspace=services/api
 test -f services/api/dist/main.js
+node -e "const fs=require('fs'); const rev=fs.existsSync('deploy/LOCAL_REV')?fs.readFileSync('deploy/LOCAL_REV','utf8').trim().slice(0,12):'dev'; fs.writeFileSync('services/api/dist/build-info.json', JSON.stringify({sha:rev, date:new Date().toISOString().slice(0,10)}));"
 npm run build --workspace=services/worker
 cd services/api && npx prisma migrate deploy && cd "$APP_DIR"
 

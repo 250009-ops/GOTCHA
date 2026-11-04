@@ -81,7 +81,7 @@ const TABS: Array<{ id: Tab; label: string }> = [
 const PAGE_SIZE = 15;
 
 const langBadge: Record<string, string> = {
-  fr: 'bg-violet-50 text-[#6c1d95]',
+  fr: 'bg-violet-50 text-g-blue-700',
   en: 'bg-sky-50 text-sky-700',
   ru: 'bg-amber-50 text-amber-700',
   uz: 'bg-fuchsia-50 text-fuchsia-700',
@@ -133,6 +133,7 @@ export default function ContentPage() {
   const [attributionText, setAttributionText] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [opsError, setOpsError] = useState<string | null>(null);
   // Moderator-role admins can only reach /admin/moderation — the catalog endpoints below
   // 403 for them. Track that separately so the moderation queue still renders instead of
   // the whole page getting stuck on a permissions error.
@@ -179,6 +180,7 @@ export default function ContentPage() {
     setModeration(mod.status === 'fulfilled' ? mod.value : []);
     setIngestion(ing.status === 'fulfilled' ? ing.value : []);
     if (mod.status === 'rejected') throw mod.reason;
+    setOpsError(null);
   }
 
   useEffect(() => {
@@ -210,7 +212,9 @@ export default function ContentPage() {
   }, [filtered, safePage]);
 
   useEffect(() => {
-    if (tab === 'user_imports') loadOps().catch(console.error);
+    if (tab === 'user_imports') {
+      loadOps().catch((e: unknown) => setOpsError(e instanceof Error ? e.message : 'Failed to load the moderation queue'));
+    }
   }, [tab]);
 
   function setTab(next: Tab) {
@@ -342,7 +346,7 @@ export default function ContentPage() {
                 className={cn(
                   'px-3 py-2.5 text-sm font-semibold border-b-2 -mb-px transition',
                   tab === t.id
-                    ? 'border-[#6c1d95] text-[#6c1d95]'
+                    ? 'border-g-blue-700 text-g-blue-700'
                     : 'border-transparent text-slate-500 hover:text-slate-800',
                 )}
               >
@@ -378,6 +382,9 @@ export default function ContentPage() {
 
         {tab === 'user_imports' ? (
           <div className="p-4 space-y-6">
+            {opsError && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{opsError}</div>
+            )}
             <section>
               <div className="font-semibold mb-1">Moderation queue</div>
               <div className="text-sm text-slate-500 mb-3">Review user imports awaiting approval.</div>
@@ -430,7 +437,7 @@ export default function ContentPage() {
                 {licenses.map((item) => (
                   <tr key={item.id}>
                     <td className="px-4 py-3 text-sm font-medium">{item.rightsHolder}</td>
-                    <td className="px-4 py-3"><Badge className="bg-violet-50 text-[#6c1d95]">{item.status}</Badge></td>
+                    <td className="px-4 py-3"><Badge className="bg-violet-50 text-g-blue-700">{item.status}</Badge></td>
                     <td className="px-4 py-3 text-sm text-slate-500">{item.attributionText}</td>
                   </tr>
                 ))}
@@ -485,7 +492,7 @@ export default function ContentPage() {
                   <div className="flex gap-1">
                     <button
                       type="button"
-                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-g-blue-700"
                       aria-label="Preview reading screen"
                       title="Preview reading screen"
                       onClick={() => setPreviewId(item.id)}
@@ -494,7 +501,7 @@ export default function ContentPage() {
                     </button>
                     <button
                       type="button"
-                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-[#6c1d95]"
+                      className="size-8 rounded-lg grid place-items-center text-slate-500 hover:bg-violet-50 hover:text-g-blue-700"
                       aria-label="Edit"
                       onClick={() => navigate(`/content/${item.id}/edit`)}
                     >

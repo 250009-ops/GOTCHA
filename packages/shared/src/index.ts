@@ -15,6 +15,19 @@ export type LiveLanguage = (typeof LIVE_LANGUAGES)[number];
 export const UI_LANGUAGES = ['en', 'ru', 'uz'] as const;
 export type UiLanguage = (typeof UI_LANGUAGES)[number];
 
+/** o'/g' → oʻ/gʻ (U+02BB); other in-word apostrophes → tutuq belgisi (U+02BC). */
+export function uzOrthography(text: string): string {
+  const og = '\u02BB';
+  const tutuq = '\u02BC';
+  const mark = '\uE000';
+  return text
+    .replace(/([OoGg])[''`´‘’ʼʻ]/g, `$1${mark}`)
+    .replace(/([A-Za-z])[''`´‘’ʼʻ]([A-Za-z])/g, `$1${tutuq}$2`)
+    .replace(new RegExp(mark, 'g'), og);
+}
+
+export { UI_LANGUAGE_PICKER } from './uiLanguagePickerMeta';
+
 export function isLiveLanguage(code?: string | null): code is LiveLanguage {
   return !!code && (LIVE_LANGUAGES as readonly string[]).includes(code);
 }
@@ -82,6 +95,50 @@ export function languageMetaOf(code?: string | null): {
 
 export function languageLabel(code?: string | null): string {
   return languageMetaOf(code).label;
+}
+
+/** Learning-language names in the UI language (uz: Ruscha, Nemischa; ru: Русский, Немецкий). */
+const UI_LANG_NAMES: Record<string, { uz: string; ru: string }> = {
+  en: { uz: 'Inglizcha', ru: 'Английский' },
+  ru: { uz: 'Ruscha', ru: 'Русский' },
+  uz: { uz: 'Oʻzbekcha', ru: 'Узбекский' },
+  de: { uz: 'Nemischa', ru: 'Немецкий' },
+  ko: { uz: 'Koreyscha', ru: 'Корейский' },
+  ar: { uz: 'Arabcha', ru: 'Арабский' },
+  fr: { uz: 'Fransuzcha', ru: 'Французский' },
+  es: { uz: 'Ispancha', ru: 'Испанский' },
+  ja: { uz: 'Yaponcha', ru: 'Японский' },
+  zh: { uz: 'Xitoycha', ru: 'Китайский' },
+  tr: { uz: 'Turkcha', ru: 'Турецкий' },
+  pt: { uz: 'Portugalcha', ru: 'Португальский' },
+  it: { uz: 'Italyancha', ru: 'Итальянский' },
+  hi: { uz: 'Hindcha', ru: 'Хинди' },
+  fa: { uz: 'Forscha', ru: 'Персидский' },
+  uk: { uz: 'Ukraincha', ru: 'Украинский' },
+  pl: { uz: 'Polyakcha', ru: 'Польский' },
+  nl: { uz: 'Niderlandcha', ru: 'Нидерландский' },
+  sv: { uz: 'Shvedcha', ru: 'Шведский' },
+  id: { uz: 'Indonezcha', ru: 'Индонезийский' },
+  vi: { uz: 'Vyetnamcha', ru: 'Вьетнамский' },
+  th: { uz: 'Taycha', ru: 'Тайский' },
+  he: { uz: 'Ibroniy', ru: 'Иврит' },
+  ur: { uz: 'Urdu', ru: 'Урду' },
+};
+
+export function languageUiName(code?: string | null, ui?: string | null): string {
+  const key = (code ?? '').trim().toLowerCase();
+  const lang = ui === 'ru' || ui === 'uz' ? ui : 'en';
+  if (!key) return '';
+  if (lang === 'en') return languageMetaOf(key).label;
+  const row = UI_LANG_NAMES[key];
+  if (row) return row[lang];
+  try {
+    const name = new Intl.DisplayNames([lang === 'uz' ? 'uz-Latn' : 'ru'], { type: 'language' }).of(key);
+    if (name && name.toLowerCase() !== key) return name.charAt(0).toUpperCase() + name.slice(1);
+  } catch {
+    /* fall through */
+  }
+  return languageMetaOf(key).nativeName || languageMetaOf(key).label;
 }
 
 export function languageFlag(code?: string | null): string {
@@ -196,3 +253,26 @@ export interface CatalogLanguage {
   flagEmoji: string;
   isEnabled: boolean;
 }
+
+/** Type-only re-exports — runtime import via `@gotcha/shared/learner-copy`. */
+export type { LearnerCopy, FullLearnerCopy, LearnerCopyExt, UiLanguage as LearnerUiLanguage } from './learnerCopy';
+export { READING_PREVIEW } from './learnerCopy';
+
+export {
+  formatNotification,
+  localizeNotificationItem,
+  normalizeNotificationLocale,
+  parseNotificationParams,
+  type NotificationParams,
+} from './notificationCopy';
+export * from './practice';
+export * from './practiceCopy';
+export * from './plural';
+export * from './limitCopy';
+export * from './apiErrors';
+export * from './promoCopy';
+export * from './payCopy';
+export * from './dailyLimits';
+export * from './mashqCopy';
+export * from './coverTemplate';
+export * from './landingPoster';

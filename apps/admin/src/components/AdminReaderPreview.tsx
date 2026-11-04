@@ -132,11 +132,11 @@ export function AdminReaderPreview({
         role="dialog"
         aria-modal="true"
         aria-labelledby="admin-reader-title"
-        className="relative z-10 flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[#FDFCFF] shadow-2xl"
+        className="relative z-10 flex h-full w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-g-reader-bg shadow-2xl"
       >
         <header className="h-12 shrink-0 flex items-center gap-3 border-b border-[#e5e7eb] bg-white px-4">
           <div className="min-w-0 flex-1">
-            <p className="text-[11px] font-semibold uppercase tracking-wider text-[#7008e7]">Reading preview</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wider text-g-blue-700">Reading preview</p>
             <h2 id="admin-reader-title" className="text-sm font-bold text-gray-900 truncate">
               {book?.title ?? 'Loading…'}
             </h2>
@@ -158,7 +158,7 @@ export function AdminReaderPreview({
 
         {loading ? (
           <div className="flex-1 grid place-items-center">
-            <Loader2 className="size-7 text-[#7f22fe] animate-spin" />
+            <Loader2 className="size-7 text-g-blue-700 animate-spin" />
           </div>
         ) : error ? (
           <div className="flex-1 grid place-items-center p-6 text-sm text-rose-600">{error}</div>
@@ -182,14 +182,14 @@ export function AdminReaderPreview({
                     onClick={() => go(group.firstIndex)}
                     className={cn(
                       'w-full text-left px-4 py-2.5',
-                      active ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50',
+                      active ? 'bg-g-blue-50 border-r-[1.6px] border-g-blue-700' : 'hover:bg-gray-50',
                     )}
                   >
-                    <div className={cn('text-sm font-medium truncate', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                    <div className={cn('text-sm font-medium truncate', active ? 'text-g-blue-900' : 'text-[#4a5565]')}>
                       {group.title}
                     </div>
                     {group.pageCount > 1 ? (
-                      <div className={cn('text-xs mt-0.5', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
+                      <div className={cn('text-xs mt-0.5', active ? 'text-g-blue-700' : 'text-[#99a1af]')}>
                         {group.pageCount} pages
                       </div>
                     ) : null}
@@ -201,7 +201,7 @@ export function AdminReaderPreview({
             <div className="min-w-0 flex-1 flex flex-col">
               <div className="min-h-0 flex-1 overflow-y-auto">
                 <div className="max-w-[68ch] mx-auto px-5 py-8">
-                  <div className="text-xs font-semibold text-[#8e51ff] uppercase tracking-[1.2px] mb-1">
+                  <div className="text-xs font-semibold text-g-blue-500 uppercase tracking-[1.2px] mb-1">
                     {index + 1} of {pages.length}
                   </div>
                   <h3 className="text-2xl font-bold text-[#101828] font-serif leading-8 mb-8">{chapterLabel}</h3>
@@ -225,7 +225,7 @@ export function AdminReaderPreview({
                     type="button"
                     disabled={index >= pages.length - 1}
                     onClick={() => go(index + 1)}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-[#7f22fe] px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-g-blue-700 px-3 py-2 text-sm font-medium text-white disabled:opacity-40"
                   >
                     Next <ChevronRight className="size-4" />
                   </button>

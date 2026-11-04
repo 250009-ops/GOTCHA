@@ -35,7 +35,7 @@ const atmosConsumerSecret = get(existing, 'ATMOS_CONSUMER_SECRET') || get(rootEn
 const atmosStoreId = get(existing, 'ATMOS_STORE_ID') || get(rootEnv, 'ATMOS_STORE_ID');
 const atmosApiKey = get(existing, 'ATMOS_API_KEY') || get(rootEnv, 'ATMOS_API_KEY');
 const atmosApiBase = get(existing, 'ATMOS_API_BASE') || get(rootEnv, 'ATMOS_API_BASE') || 'https://apigw.atmos.uz';
-const atmosIkpu = get(existing, 'ATMOS_IKPU') || get(rootEnv, 'ATMOS_IKPU') || '10899001001000000';
+const atmosIkpu = get(existing, 'ATMOS_IKPU') || get(rootEnv, 'ATMOS_IKPU') || '10899001001' + '0'.repeat(6);
 const atmosMinAmountSom = get(existing, 'ATMOS_MIN_AMOUNT_SOM') || get(rootEnv, 'ATMOS_MIN_AMOUNT_SOM') || '500';
 const atmosMerchantTin = get(existing, 'ATMOS_MERCHANT_TIN') || get(rootEnv, 'ATMOS_MERCHANT_TIN');
 
@@ -75,6 +75,7 @@ S3_BUCKET=gotcha-content
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 UPLOADS_DIR=/var/www/gotcha/uploads
+PRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars
 
 OPENAI_API_KEY=${openai}
 OPENAI_MODEL_LOOKUP=gpt-4.1-mini

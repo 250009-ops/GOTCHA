@@ -16,7 +16,7 @@ async function api(path, { method = 'GET', token, body } = {}) {
 
 const token = (await api('/auth/login', {
   method: 'POST',
-  body: { email: 'admin@gotcha.app', password: 'GotchaAdmin2026!' },
+  body: { email: 'admin@gotcha.app', password: '<REDACTED-admin-pw>' },
 })).accessToken;
 
 // Keep Latin Ufq; remove old Cyrillic duplicate.
@@ -43,7 +43,7 @@ for (const t of uz.map((i) => i.title).sort()) console.log(' ', t);
 
 const learner = (await api('/auth/login', {
   method: 'POST',
-  body: { email: 'learner@gotcha.app', password: 'Learner2026!' },
+  body: { email: 'learner@gotcha.app', password: '<REDACTED-learner-pw>' },
 })).accessToken;
 const feedUz = await api('/content/feed?targetLang=uz', { token: learner });
 console.log(`\nLearner feed (uz): ${feedUz.recentlyPublished?.length ?? 0} items`);

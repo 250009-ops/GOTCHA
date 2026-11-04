@@ -67,6 +67,7 @@ export default function ContentEditorPage() {
   const [publishStatus, setPublishStatus] = useState('draft');
   const [showLibraryPreview, setShowLibraryPreview] = useState(false);
   const [enabledLanguages, setEnabledLanguages] = useState<string[]>([...APP_LANGUAGES]);
+  const [langError, setLangError] = useState<string | null>(null);
   const serverLoaded = useRef(false);
   const draftRestored = useRef(false);
 
@@ -147,7 +148,7 @@ export default function ContentEditorPage() {
         const codes = data.languages.filter((l) => l.isEnabled).map((l) => l.code);
         if (codes.length) setEnabledLanguages(codes);
       })
-      .catch(console.error);
+      .catch((e: unknown) => setLangError(e instanceof Error ? e.message : 'Could not load languages'));
   }, []);
 
   const languageOptions = useMemo(() => {
@@ -365,6 +366,7 @@ export default function ContentEditorPage() {
                   <option key={l} value={l}>{LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.flag ?? '🌐'} {LANGUAGE_META[l as keyof typeof LANGUAGE_META]?.label ?? l}</option>
                 ))}
               </Select>
+              {langError && <p className="col-span-full text-sm text-rose-700">{langError}</p>}
               <Select value={cefrLevel} onChange={(e) => setCefrLevel(e.target.value)}>
                 {['a1', 'a2', 'b1', 'b2', 'c1', 'c2'].map((l) => (
                   <option key={l} value={l}>{l.toUpperCase()}</option>
@@ -430,7 +432,7 @@ export default function ContentEditorPage() {
               <span className="text-sm font-medium text-slate-600">Source PDF</span>
               <div className="mt-2 flex items-center gap-3">
                 <div className="size-20 rounded-xl border border-dashed border-slate-300 overflow-hidden bg-slate-50 grid place-items-center">
-                  <FileText className={`size-6 ${pdfFile ? 'text-[#6c1d95]' : 'text-slate-400'}`} />
+                  <FileText className={`size-6 ${pdfFile ? 'text-g-blue-700' : 'text-slate-400'}`} />
                 </div>
                 <div className="min-w-0">
                   <input
@@ -541,7 +543,7 @@ export default function ContentEditorPage() {
                       <div className="pb-2">
                         {ch.pages.map((p) => (
                           <div key={p.pageIndex} className="pl-10 pr-4 py-1.5">
-                            <div className="text-xs font-medium text-[#6c1d95]">{p.title}</div>
+                            <div className="text-xs font-medium text-g-blue-700">{p.title}</div>
                             <div className="text-[11px] text-slate-500 line-clamp-2">{p.preview}</div>
                           </div>
                         ))}

@@ -1,5 +1,5 @@
 import { PDFParse, PasswordException } from 'pdf-parse';
-import JSZip from 'jszip';
+import JSZip = require('jszip'); // jszip is CommonJS (no .default); tsconfig has no esModuleInterop
 import { countPdfPagesFromBytes, MAX_BILLABLE_PAGES } from './pdf-page-count';
 import * as cheerio from 'cheerio';
 import { JSDOM } from 'jsdom';
@@ -39,7 +39,10 @@ export const MAX_PDF_PAGES = 4000;
 const IMPORT_USER_AGENT =
   'GotchaImporter/2.1 (+https://gotcha.app; contact=imports@gotcha.app) Mozilla/5.0 (compatible; AppleWebKit/537.36; Chrome/122.0.0.0 Safari/537.36)';
 /** OCR is expensive; keep a tight cap even when text-layer PDFs may be huge. */
-export const OCR_MAX_PAGES = 200;
+export const OCR_MAX_PAGES = (() => {
+  const n = Number(process.env.IMPORT_OCR_MAX_PAGES);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 200;
+})();
 const URL_FETCH_TIMEOUT_MS = 180_000;
 const URL_MAX_BYTES = 40 * 1024 * 1024;
 /** Gutenberg mirrors: fail fast instead of waiting 3 minutes per 404/hang. */
@@ -82,6 +85,14 @@ export interface ExtractedDocument {
   usedOcr?: boolean;
   pageCount?: number;
   truncatedPages?: boolean;
+  /** PDF pages beyond MAX_PDF_PAGES that were not extracted at all. */
+  pagesNotExtracted?: number;
+  /** Scanned pages that needed OCR but were beyond OCR_MAX_PAGES (left without text). */
+  ocrSkippedPages?: number;
+  /** Scanned pages that were OCR'd. */
+  ocrPagesDone?: number;
+  /** First page number left without OCR (1-based), when ocrSkippedPages > 0. */
+  ocrFirstSkippedPage?: number;
 }
 
 export function countWords(text: string): number {
@@ -896,6 +907,7 @@ export async function extractTextFromPdf(
     ocrTargets.length > 0 &&
     (needsOcrScan || totalTextWords < MIN_IMPORT_WORDS || thinRatio >= 0.3);
   let usedOcr = false;
+  const ocrSkipped = shouldRunOcr ? pagesNeedingOcr.slice(OCR_MAX_PAGES) : [];
 
   if (shouldRunOcr) {
     let ocrDone = 0;
@@ -962,6 +974,10 @@ export async function extractTextFromPdf(
     usedOcr,
     pageCount: fullPageCount || pageCount,
     truncatedPages,
+    pagesNotExtracted: truncatedPages ? Math.max(0, (fullPageCount || allPages.length) - MAX_PDF_PAGES) : 0,
+    ocrSkippedPages: ocrSkipped.length,
+    ocrPagesDone: shouldRunOcr ? ocrTargets.length : 0,
+    ocrFirstSkippedPage: ocrSkipped[0],
   });
 }
 
@@ -1003,8 +1019,12 @@ function chapterTitleFromHtml(html: string, fallback: string): string {
     $('h2').first().text().trim() ||
     $('title').first().text().trim() ||
     fallback;
-  return t.replace(/\s+/g, ' ').slice(0, 120) || fallback;
+  const clean = t.replace(/\s+/g, ' ').slice(0, 120);
+  // W-28: calibre EPUBs carry <title>Unknown</title> on every file — not a chapter title.
+  return clean && !GENERIC_EPUB_TITLE.test(clean) ? clean : fallback;
 }
+
+const GENERIC_EPUB_TITLE = /^(unknown|untitled|none|null|chapter|text|document|index\d*|part\d*)$/i;
 
 export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocument> {
   const zip = await JSZip.loadAsync(buffer);
@@ -1046,6 +1066,13 @@ export async function extractTextFromEpub(buffer: Buffer): Promise<ExtractedDocu
       chapters[0]?.title || 'Imported EPUB',
     );
     if (split.length >= 3) return chaptersToDocument(split);
+  }
+  // W-28: file splits ≠ chapters (e.g. 28 files, 47 "One…Forty-seven" headings). If the files had no real
+  // titles, let the text splitter find the printed headings and keep it when it finds more chapters.
+  const generic = chapters.filter((c) => /^Chapter \d+$/.test(c.title)).length;
+  if (chapters.length > 1 && generic >= chapters.length * 0.8) {
+    const split = splitAccurateChapters(chapters.map((c) => c.text).join('\n\n'), chapters[0]?.title || 'Imported EPUB');
+    if (split.length > chapters.length) return chaptersToDocument(split);
   }
   if (chapters.length === 1 && countWords(chapters[0].text) >= 400) {
     const split = splitAccurateChapters(chapters[0].text, chapters[0].title);

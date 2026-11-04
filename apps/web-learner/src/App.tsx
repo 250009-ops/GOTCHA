@@ -1,8 +1,13 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { LocaleNavigate } from './components/LocaleNavigate';
+import { Route, Routes } from 'react-router-dom';
 import { ProtectedRoute } from './components/ProtectedRoute';
+import { useAuth } from './lib/auth';
+import { useAppTheme } from './lib/appTheme';
 import AuthPage from './pages/AuthPage';
 import ImportPage from './pages/ImportPage';
 import ImportPaymentReturnPage from './pages/ImportPaymentReturnPage';
+import PaymentsPage from './pages/PaymentsPage';
+import PlusPage from './pages/PlusPage';
 import LearnerShell from './pages/LearnerShell';
 import LibraryPage from './pages/LibraryPage';
 import PracticePage from './pages/PracticePage';
@@ -15,11 +20,14 @@ import NotificationsPage from './pages/NotificationsPage';
 import VerifyEmailPage from './pages/VerifyEmailPage';
 import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import ResetPasswordPage from './pages/ResetPasswordPage';
+import NotFoundPage from './pages/NotFoundPage';
 
 export default function App() {
+  const { preferences } = useAuth();
+  useAppTheme(preferences?.appTheme);
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/app" replace />} />
+      <Route path="/" element={<LocaleNavigate to="/app" />} />
       <Route path="/login" element={<AuthPage mode="login" />} />
       <Route path="/register" element={<AuthPage mode="register" />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
@@ -38,10 +46,16 @@ export default function App() {
         <Route path="vocabulary" element={<VocabularyPage />} />
         <Route path="import" element={<ImportPage />} />
         <Route path="import/payment-return" element={<ImportPaymentReturnPage />} />
+        <Route path="payments" element={<PaymentsPage />} />
+        <Route path="plus" element={<PlusPage />} />
         <Route path="stats" element={<StatsPage />} />
         <Route path="messages" element={<MessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {/* Mashq home lives in the shell (sidebar + top bar); a running session opens as a focused full-screen layer. */}
+        <Route path="practice" element={<PracticePage />} />
+        {/* S3a: /app/<legacy> → new route; unknown → 404 page inside the shell */}
+        <Route path="*" element={<NotFoundPage />} />
       </Route>
       <Route
         path="/app/read/:id"
@@ -51,15 +65,7 @@ export default function App() {
           </ProtectedRoute>
         }
       />
-      <Route
-        path="/app/practice"
-        element={
-          <ProtectedRoute>
-            <PracticePage />
-          </ProtectedRoute>
-        }
-      />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<NotFoundPage />} />
     </Routes>
   );
 }

@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -186,12 +187,6 @@ fun ReaderScreen(
         try {
             val freshContent = container.contentRepository.getFetch(targetId).data
             if (targetId == contentId) content = freshContent
-            if (freshContent.needsCatalogPayment()) {
-                if (targetId == contentId) segments = emptyList()
-                return
-            }
-            val freshSegments = container.contentRepository.segmentsFetch(targetId).data.segments
-            if (targetId == contentId) segments = freshSegments
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
@@ -211,23 +206,55 @@ fun ReaderScreen(
         preparedAnnotated = annotated
     }
 
-    LaunchedEffect(loadProgress) {
-        while (smoothProgress < loadProgress) {
-            smoothProgress = (smoothProgress + 1).coerceAtMost(loadProgress)
-            delay(10)
-        }
-    }
-
     suspend fun stepProgress(target: Int, pauseMs: Long = 90) {
         if (loadProgress < target) loadProgress = target
+        while (smoothProgress < target) {
+            smoothProgress = (smoothProgress + 2).coerceAtMost(target)
+            delay(10)
+        }
         delay(pauseMs)
     }
 
-    suspend fun finishLoader() {
-        loadProgress = 100
-        while (smoothProgress < 100) delay(16)
-        delay(400)
+    suspend fun finishLoader(fast: Boolean = false) {
+        val milestones = listOf(25, 50, 75, 92, 100)
+        val tickMs = if (fast) 6L else 12L
+        val stepMs = if (fast) 18L else 50L
+        val tailMs = if (fast) 100L else 350L
+        val step = if (fast) 5 else 2
+        for (milestone in milestones) {
+            if (loadProgress < milestone) loadProgress = milestone
+            while (smoothProgress < milestone) {
+                smoothProgress = (smoothProgress + step).coerceAtMost(milestone)
+                delay(tickMs)
+            }
+            if (milestone < 100) delay(stepMs)
+        }
+        delay(tailMs)
         loaderDone = true
+    }
+
+    /** Content + first page already warm (e.g. Telegram re-open). */
+    suspend fun openWarmReader(
+        targetId: String,
+        warmContent: ContentItem,
+        warmSegments: List<Segment>,
+        fastLoader: Boolean,
+    ) {
+        if (targetId != contentId) return
+        content = warmContent
+        segments = warmSegments
+        segmentIndex = segmentIndex.coerceIn(0, warmSegments.lastIndex.coerceAtLeast(0))
+        val pageText = warmSegments.getOrNull(segmentIndex)?.plainText.orEmpty()
+            .ifBlank { readerBodyText(warmSegments, FIRST_PAGE_CHAR_LIMIT) }
+        loadProgress = 75
+        smoothProgress = 75
+        if (pageText.isNotBlank()) {
+            applyPreparedPage(targetId, pageText)
+        }
+        loadProgress = 92
+        smoothProgress = 92
+        lastProgressAtMs = System.currentTimeMillis()
+        finishLoader(fast = fastLoader)
     }
 
     LaunchedEffect(contentId, reloadKey) {
@@ -240,34 +267,62 @@ fun ReaderScreen(
         fetchError = false
         stepProgress(8, 80)
 
-        container.userRepository.mePeek()?.data?.let { me ->
-            targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            fontScale = me.preferences?.readerFontScale ?: 1.0
-            readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-        }
         runCatching {
-            val me = container.userRepository.me()
-            targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
-            fontScale = me.preferences?.readerFontScale ?: 1.0
-            readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
-        }
-        runCatching {
-            wordStatuses = container.contentRepository.knownWords()
-                .associate { kw ->
-                    kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
-                }
+            container.userRepository.mePeek()?.data?.let { me ->
+                targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
+                fontScale = me.preferences?.readerFontScale ?: 1.0
+                readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
+            }
         }
 
         val peekedContent = container.contentRepository.getPeek(targetId)?.data
+        val memSegments = container.contentRepository.segmentsMemory(targetId).orEmpty()
         val peekedSegments = container.contentRepository.segmentsPeek(targetId)?.data?.segments.orEmpty()
-        if (peekedContent != null) stepProgress(25, 70)
+        val warmSegments = when {
+            memSegments.any { !it.plainText.isNullOrBlank() } -> memSegments
+            peekedSegments.any { !it.plainText.isNullOrBlank() } -> peekedSegments
+            else -> emptyList()
+        }
+        val warmOpen = peekedContent != null && warmSegments.isNotEmpty()
+
+        if (!warmOpen) {
+            runCatching {
+                val me = container.userRepository.me()
+                targetLang = me.nativeLanguage?.lowercase()?.ifBlank { "en" } ?: "en"
+                fontScale = me.preferences?.readerFontScale ?: 1.0
+                readerTheme = me.preferences?.readerTheme?.lowercase() ?: "light"
+            }
+            runCatching {
+                wordStatuses = container.contentRepository.knownWords()
+                    .associate { kw ->
+                        kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
+                    }
+            }
+        } else {
+            runCatching {
+                wordStatuses = container.contentRepository.knownWords()
+                    .associate { kw ->
+                        kw.lemma.lowercase() to (kw.status?.lowercase()?.ifBlank { "known" } ?: "known")
+                    }
+            }
+            if (peekedContent != null) stepProgress(25, if (warmOpen) 20 else 70)
+        }
+
         if (peekedContent?.needsCatalogPayment() == true) {
             if (targetId != contentId) return@LaunchedEffect
             content = peekedContent
             segments = emptyList()
-            finishLoader()
+            finishLoader(fast = warmOpen)
             return@LaunchedEffect
         }
+
+        if (warmOpen && peekedContent != null) {
+            openWarmReader(targetId, peekedContent, warmSegments, fastLoader = true)
+            refreshInBackground(targetId)
+            return@LaunchedEffect
+        }
+
+        if (peekedContent != null) stepProgress(25, 70)
         if (peekedSegments.isNotEmpty()) stepProgress(50, 70)
 
         val bothCached = peekedContent != null && peekedSegments.isNotEmpty()
@@ -285,7 +340,7 @@ fun ReaderScreen(
             stepProgress(92, 100)
             lastProgressAtMs = System.currentTimeMillis()
             refreshInBackground(targetId)
-            finishLoader()
+            finishLoader(fast = false)
             return@LaunchedEffect
         }
 
@@ -302,13 +357,20 @@ fun ReaderScreen(
                 return@LaunchedEffect
             }
 
-            val fetchedSegments = if (peekedSegments.isNotEmpty()) {
+            val resumeIndex = fetchedContent.outline
+                ?.indexOfFirst { it.id == fetchedContent.currentSegmentId }
+                ?.takeIf { it >= 0 } ?: segmentIndex
+
+            val fetchedSegments = if (peekedSegments.isNotEmpty() &&
+                peekedSegments.any { !it.plainText.isNullOrBlank() }
+            ) {
                 peekedSegments
             } else {
-                container.contentRepository.segmentsFetch(targetId).data.segments
+                container.contentRepository.segmentsForReaderOpen(fetchedContent, resumeIndex)
             }
             if (targetId != contentId) return@LaunchedEffect
             segments = fetchedSegments
+            segmentIndex = resumeIndex.coerceIn(0, fetchedSegments.lastIndex.coerceAtLeast(0))
             stepProgress(60, 90)
 
             if (fetchedSegments.isEmpty()) {
@@ -325,11 +387,14 @@ fun ReaderScreen(
                 applyPreparedPage(targetId, pageText)
             }
             if (targetId != contentId) return@LaunchedEffect
-            finishLoader()
+            finishLoader(fast = false)
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            if (coroutineContext.isActive && targetId == contentId) fetchError = true
+            if (coroutineContext.isActive && targetId == contentId) {
+                fetchError = true
+                finishLoader()
+            }
         } finally {
             if (coroutineContext.isActive && targetId == contentId) {
                 isFetching = false
@@ -341,6 +406,18 @@ fun ReaderScreen(
 
     LaunchedEffect(contentId, segmentIndex, segments, showUnknownOnly, wordStatuses) {
         if (content == null || segments.isEmpty()) return@LaunchedEffect
+        val seg = segments.getOrNull(segmentIndex) ?: return@LaunchedEffect
+        if (seg.plainText.isNullOrBlank()) {
+            preparingText = true
+            val loaded = runCatching {
+                container.contentRepository.fetchSegmentBody(contentId, seg)
+            }.getOrNull()
+            if (loaded != null && loaded.plainText.isNullOrBlank().not()) {
+                segments = segments.mapIndexed { i, s -> if (i == segmentIndex) loaded else s }
+            }
+            preparingText = false
+            if (loaded?.plainText.isNullOrBlank()) return@LaunchedEffect
+        }
         val pageText = segments.getOrNull(segmentIndex)?.plainText?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
         preparingText = true
         applyPreparedPage(contentId, pageText)
@@ -398,7 +475,7 @@ fun ReaderScreen(
     val currentSegment = segments.getOrNull(segmentIndex)
     val currentPageText = currentSegment?.plainText?.takeIf { it.isNotBlank() }.orEmpty()
     val paymentRequired = content?.needsCatalogPayment() == true
-    val readerReady = !paymentRequired && content != null && segments.isNotEmpty() &&
+    val readerReady = loaderDone && !paymentRequired && content != null && segments.isNotEmpty() &&
         currentPageText.isNotBlank() && preparedAnnotated != null
     val showGlassLoader = !paymentRequired && !fetchError && !loaderDone
 
@@ -478,8 +555,11 @@ fun ReaderScreen(
                         if (payError != null) {
                             Text(payError!!, color = GotchaColors.Danger, fontFamily = Inter, fontSize = 13.sp)
                         }
+                        // PM3: show the price Google Play will charge (localized), not our UZS list price.
+                        var playPrice by remember(contentId) { mutableStateOf<String?>(null) }
+                        LaunchedEffect(contentId) { playPrice = container.playBilling.bookPrice(contentId) }
                         GotchaPrimaryButton(
-                            text = "Unlock for ${formatSom(amount)}",
+                            text = "Unlock for ${playPrice ?: formatSom(amount)}",
                             loading = payLoading,
                             onClick = {
                                 scope.launch {
@@ -496,7 +576,7 @@ fun ReaderScreen(
                                     } catch (e: CancellationException) {
                                         throw e
                                     } catch (e: Exception) {
-                                        payError = e.apiErrorMessage("Could not start checkout")
+                                        payError = if (e is app.gotcha.android.data.billing.PlayBillingException) e.message else e.apiErrorMessage("Could not start checkout")
                                     } finally {
                                         payLoading = false
                                     }
@@ -504,80 +584,7 @@ fun ReaderScreen(
                             },
                         )
                     } else {
-                        ImportPaymentStepUi(
-                            step = payStep,
-                            amountLabel = formatSom(amount),
-                            cardNumber = cardNumber,
-                            onCardNumberChange = { cardNumber = it },
-                            cardExpiry = cardExpiry,
-                            onCardExpiryChange = { cardExpiry = it },
-                            otpCode = otpCode,
-                            onOtpChange = { otpCode = it },
-                            maskedPhone = maskedPhone,
-                            loading = payLoading,
-                            error = payError,
-                            onSubmitCard = {
-                                val id = paymentId ?: return@ImportPaymentStepUi
-                                scope.launch {
-                                    payLoading = true
-                                    payError = null
-                                    try {
-                                        val result = container.importRepository.preApply(
-                                            id,
-                                            cardNumber.filter(Char::isDigit),
-                                            cardExpiry.filter(Char::isDigit),
-                                        )
-                                        maskedPhone = result.maskedPhone
-                                        payStep = "otp"
-                                        otpCode = ""
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        payError = e.apiErrorMessage("Card verification failed")
-                                    } finally {
-                                        payLoading = false
-                                    }
-                                }
-                            },
-                            onConfirmOtp = {
-                                val id = paymentId ?: return@ImportPaymentStepUi
-                                scope.launch {
-                                    payLoading = true
-                                    payError = null
-                                    try {
-                                        val result = container.importRepository.apply(id, otpCode)
-                                        if (result.step == "paid") {
-                                            payStep = "celebrate"
-                                        } else {
-                                            payError = "Payment not confirmed yet. Check the SMS code and try again."
-                                        }
-                                    } catch (e: CancellationException) {
-                                        throw e
-                                    } catch (e: Exception) {
-                                        payError = e.apiErrorMessage("Payment confirmation failed")
-                                    } finally {
-                                        payLoading = false
-                                    }
-                                }
-                            },
-                            onResendOtp = {
-                                val id = paymentId ?: return@ImportPaymentStepUi
-                                scope.launch {
-                                    runCatching { container.importRepository.retryOtp(id) }
-                                        .onFailure { payError = it.apiErrorMessage("Could not resend OTP") }
-                                }
-                            },
-                            onCancel = {
-                                if (payStep == "otp") {
-                                    payStep = "card"
-                                    otpCode = ""
-                                    payError = null
-                                } else {
-                                    payStep = "price"
-                                    payError = null
-                                }
-                            },
-                        )
+                        Unit // Card checkout removed: in-app purchases go through Google Play (ImportRepository.checkout)
                     }
                     }
                 }
@@ -637,7 +644,7 @@ fun ReaderScreen(
             val pageBg = when (readerTheme) {
                 "sepia" -> Color(0xFFF4E8D0)
                 "dark" -> Color(0xFF1C1917)
-                else -> Color(0xFFFDFCFF)
+                else -> GotchaBlue.ReaderBg
             }
             val pageInk = when (readerTheme) {
                 "sepia" -> Color(0xFF3D2B1F)
@@ -741,11 +748,11 @@ fun ReaderScreen(
                             Icon(
                                 Icons.Outlined.Visibility,
                                 contentDescription = "Unknown only",
-                                tint = if (showUnknownOnly) Color(0xFF7008E7) else Color(0xFF6A7282),
+                                tint = if (showUnknownOnly) GotchaBlue.B700 else Color(0xFF6A7282),
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(10.dp))
-                                    .background(if (showUnknownOnly) Color(0xFFF5F3FF) else Color.Transparent)
+                                    .background(if (showUnknownOnly) GotchaBlue.B50 else Color.Transparent)
                                     .clickable { showUnknownOnly = !showUnknownOnly }
                                     .padding(6.dp),
                             )
@@ -765,7 +772,7 @@ fun ReaderScreen(
                                 Icon(
                                     Icons.Outlined.School,
                                     contentDescription = "Practice",
-                                    tint = if (hasSegments) Color(0xFF7008E7) else GotchaColors.TextSubtle,
+                                    tint = if (hasSegments) GotchaBlue.B700 else GotchaColors.TextSubtle,
                                     modifier = Modifier.size(14.dp),
                                 )
                             }
@@ -827,12 +834,12 @@ fun ReaderScreen(
                                     fontFamily = Inter,
                                     fontWeight = FontWeight.Medium,
                                     fontSize = 12.sp,
-                                    color = if (active) Color(0xFF7008E7) else Color(0xFF4A5565),
+                                    color = if (active) GotchaBlue.B700 else Color(0xFF4A5565),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(50))
-                                        .background(if (active) Color(0xFFF5F3FF) else Color.White)
+                                        .background(if (active) GotchaBlue.B50 else Color.White)
                                         .border(
                                             1.dp,
                                             if (active) GotchaColors.WebAccent else Color(0xFFE5E7EB),
@@ -862,7 +869,7 @@ fun ReaderScreen(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
                             letterSpacing = 1.2.sp,
-                            color = Color(0xFF8E51FF),
+                            color = GotchaBlue.B500,
                         )
 
                         Text(
@@ -1438,7 +1445,7 @@ private fun DictionaryBottomSheet(
                                     color = GotchaColors.WebAccent,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFFF5F3FF))
+                                        .background(GotchaBlue.B50)
                                         .padding(horizontal = 6.dp, vertical = 2.dp),
                                 )
                             }
@@ -1466,7 +1473,7 @@ private fun DictionaryBottomSheet(
                         Modifier
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(12.dp))
-                            .background(Color(0xFFF5F3FF))
+                            .background(GotchaBlue.B50)
                             .padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                     ) {
@@ -1483,7 +1490,7 @@ private fun DictionaryBottomSheet(
                             if (lookup.contextualMeaning?.isNotBlank() == true && !sentenceLike) {
                                 Modifier.border(1.dp, Color(0xFFE5E8EB), RoundedCornerShape(12.dp)).background(Color(0xFFF9FAFB))
                             } else {
-                                Modifier.background(Color(0xFFF5F3FF))
+                                Modifier.background(GotchaBlue.B50)
                             },
                         )
                         .padding(12.dp),
@@ -1503,7 +1510,7 @@ private fun DictionaryBottomSheet(
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         val statusColors = when (wordStatus) {
                             "known" -> Color(0xFFD1FAE5) to Color(0xFF047857)
-                            "learning" -> Color(0xFFEFF6FF) to Color(0xFF1447E6)
+                            "learning" -> GotchaBlue.LearningBg to GotchaBlue.LearningText
                             "ignored" -> Color(0xFFF3F4F6) to Color(0xFF6B7280)
                             else -> Color(0xFFFFFBEB) to Color(0xFFBB4D00)
                         }
@@ -1526,8 +1533,8 @@ private fun DictionaryBottomSheet(
                             icon = Icons.Outlined.BookmarkBorder,
                             active = wordStatus == "learning",
                             activeBorder = Color(0xFFBFDBFE),
-                            activeBg = Color(0xFFEFF6FF),
-                            activeColor = Color(0xFF1447E6),
+                            activeBg = GotchaBlue.LearningBg,
+                            activeColor = GotchaBlue.LearningText,
                             enabled = wordStatus != "learning",
                             onClick = onSave,
                             modifier = Modifier.weight(1f),
@@ -1628,10 +1635,10 @@ private object ReaderWordColors {
     val learningText = Color(0xFF193CB8)
     val learningUnderline = Color(0xFF51A2FF)
     val ignoredText = Color(0xFF9CA3AF)
-    val selectionBg = Color(0xFFF5F3FF)
+    val selectionBg = GotchaBlue.B50
     val selectionRing = Color(0x998E51FF)
-    val dragHighlightBg = Color(0xFFF5F3FF)
-    val dragHighlightText = Color(0xFF8E51FF)
+    val dragHighlightBg = GotchaBlue.B50
+    val dragHighlightText = GotchaBlue.B500
 }
 
 private fun readerHighlightStatus(status: String, showUnknownOnly: Boolean): String? {

@@ -75,7 +75,7 @@ fun SplashScreen(onFinished: (loggedIn: Boolean, isAdmin: Boolean, onboardingDon
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp),
         ) {
-            BrandMark(size = 100, splash = true, cornerRadius = 24)
+            BrandMark(size = 100, elevated = true)
             Spacer(Modifier.height(24.dp))
             BrandWordmark(fontSize = 48, color = Color.White)
             Spacer(Modifier.height(12.dp))
@@ -130,8 +130,6 @@ private val pages = listOf(
     ),
 )
 
-private val OnboardingLogoPurple = Color(0xFF6C2BD9)
-
 @Composable
 fun OnboardingScreen(onDone: () -> Unit) {
     val container = LocalAppContainer.current
@@ -156,12 +154,8 @@ fun OnboardingScreen(onDone: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                BrandMark(
-                    size = 32,
-                    cornerRadius = 7,
-                    tileColor = OnboardingLogoPurple,
-                )
-                Spacer(Modifier.width(8.dp))
+                BrandMark(size = 32)
+                Spacer(Modifier.width(12.dp))
                 BrandWordmark(fontSize = 18)
             }
             if (index < pages.lastIndex) {

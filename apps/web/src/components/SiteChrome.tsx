@@ -1,39 +1,25 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LANGUAGE_META } from '@gotcha/shared';
 import { Brand } from './Brand';
+import { UiLanguageDropdown } from './UiLanguageDropdown';
 import { loginUrl, registerUrl } from '../lib/links';
 import { useMarketingCopy, useWebLocale } from '../lib/webLocaleContext';
-import { isWebLocale } from '../lib/webLocale';
+import { isWebLocale, marketingLocaleFor, type WebLocale } from '../lib/webLocale';
+import { LEGAL_TITLES } from '../lib/legalPm.titles';
 
 function LanguagePicker({ className }: { className?: string }) {
-  const { locale, copyLocale, setLocale, localeOptions } = useWebLocale();
+  const { copyLocale, setLocale } = useWebLocale();
   const copy = useMarketingCopy();
 
   return (
-    <label className={`inline-flex items-center gap-1.5 ${className ?? ''}`}>
-      <span className="sr-only">{copy.nav.language}</span>
-      <select
-        value={copyLocale}
-        onChange={(e) => {
-          const code = e.target.value;
-          if (isWebLocale(code)) setLocale(code);
-        }}
-        aria-label={copy.nav.language}
-        className="h-9 max-w-[9.5rem] truncate rounded-lg border border-[#e2e8f0] bg-white px-2.5 text-xs font-semibold text-[#4a5565] outline-none focus:border-[#2107aa] focus:ring-2 focus:ring-[#2107aa]/15"
-      >
-        {localeOptions.map((opt) => (
-          <option key={opt.code} value={opt.code}>
-            {LANGUAGE_META[opt.code].flag} {opt.nativeName}
-          </option>
-        ))}
-      </select>
-      {locale !== copyLocale && (
-        <span className="hidden text-[10px] text-[#99a1af] lg:inline" title={locale}>
-          auto
-        </span>
-      )}
-    </label>
+    <UiLanguageDropdown
+      value={copyLocale as 'en' | 'ru' | 'uz'}
+      onChange={(code) => {
+        if (isWebLocale(code)) setLocale(code as WebLocale);
+      }}
+      ariaLabel={copy.nav.language}
+      className={className}
+    />
   );
 }
 
@@ -47,9 +33,7 @@ function NavLinks({
   const copy = useMarketingCopy();
   const navLinks = useMemo(
     () => [
-      { to: '/#catalog', label: copy.nav.catalog },
-      { to: '/#pricing', label: copy.nav.pricing },
-      { to: '/#readers', label: copy.nav.readers },
+      { to: '/#library', label: copy.nav.catalog },
       { to: '/#features', label: copy.nav.features },
       { to: '/#how', label: copy.nav.how },
     ],
@@ -73,6 +57,7 @@ function NavLinks({
 }
 
 export function SiteNav() {
+  const { copyLocale } = useWebLocale();
   const copy = useMarketingCopy();
   const [open, setOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
@@ -98,7 +83,7 @@ export function SiteNav() {
 
   return (
     <nav
-      className={`sticky top-0 z-50 h-[72px] w-full border-b transition-[background,box-shadow,backdrop-filter] duration-300 ${
+      className={`sticky top-0 z-50 h-[72px] w-full overflow-visible border-b transition-[background,box-shadow,backdrop-filter] duration-300 ${
         scrolled
           ? 'border-[#e2e8f0] bg-white/[0.95] shadow-[0_8px_24px_rgba(16,24,40,0.08)] backdrop-blur-[12px]'
           : 'border-[#e2e8f0] bg-white'
@@ -112,16 +97,16 @@ export function SiteNav() {
         </div>
 
         <div className="flex items-center gap-3 sm:gap-4">
-          <LanguagePicker className="hidden md:inline-flex" />
+          <LanguagePicker className="inline-flex shrink-0" />
           <a
-            className="hidden font-['Geist',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
-            href={loginUrl()}
+            className="hidden font-['Manrope',sans-serif] text-sm font-semibold text-[#101828] transition-colors hover:text-[#2107aa] lg:inline"
+            href={loginUrl({ ui: copyLocale })}
           >
             {copy.nav.signIn}
           </a>
           <a
-            className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-white transition-transform hover:-translate-y-px md:inline-flex"
-            href={registerUrl({ plan: 'free' })}
+            className="hidden h-11 items-center justify-center rounded-lg bg-[#2107aa] px-6 font-['Manrope',sans-serif] text-[15px] font-semibold text-[var(--g-on-cta)] transition-transform hover:-translate-y-px md:inline-flex"
+            href={registerUrl({ plan: 'free', ui: copyLocale })}
           >
             {copy.nav.getStarted}
           </a>
@@ -153,7 +138,6 @@ export function SiteNav() {
 
       {open && (
         <div className="flex flex-col gap-5 border-b border-[#e2e8f0] bg-white px-5 py-6 shadow-[0_12px_24px_rgba(15,23,42,0.08)] lg:hidden">
-          <LanguagePicker />
           <div className="flex flex-col gap-1">
             <NavLinks
               onNavigate={() => setOpen(false)}
@@ -163,14 +147,14 @@ export function SiteNav() {
           <div className="flex flex-col gap-2.5">
             <a
               className="flex h-11 items-center justify-center rounded-lg border border-[#e2e8f0] text-sm font-medium text-[#4a5565]"
-              href={loginUrl()}
+              href={loginUrl({ ui: copyLocale })}
               onClick={() => setOpen(false)}
             >
               {copy.nav.signIn}
             </a>
             <a
-              className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-white"
-              href={registerUrl({ plan: 'free' })}
+              className="flex h-11 items-center justify-center rounded-lg bg-[#2107aa] text-sm font-semibold text-[var(--g-on-cta)]"
+              href={registerUrl({ plan: 'free', ui: copyLocale })}
               onClick={() => setOpen(false)}
             >
               {copy.nav.getStarted}
@@ -182,8 +166,12 @@ export function SiteNav() {
   );
 }
 
+const ENTITY = { uz: 'Erkin Tizim jamoasi', ru: 'команда Erkin Tizim', en: 'the Erkin Tizim team' } as const;
+
 export function SiteFooter() {
   const copy = useMarketingCopy();
+  const { copyLocale } = useWebLocale();
+  const footerLocale = marketingLocaleFor(copyLocale);
 
   return (
     <footer className="w-full border-t border-[#e2e8f0] bg-white">
@@ -191,7 +179,7 @@ export function SiteFooter() {
         <div className="flex flex-col justify-between gap-10 lg:flex-row lg:items-start">
           <div className="flex max-w-[320px] flex-col gap-4">
             <Brand size="sm" />
-            <p className="font-['Geist',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">{copy.footer.tagline}</p>
+            <p className="font-['Manrope',sans-serif] text-[13px] leading-[1.5] text-[#4a5565]">{copy.footer.tagline}</p>
           </div>
 
           <div className="flex flex-wrap gap-10 lg:gap-16">
@@ -199,18 +187,12 @@ export function SiteFooter() {
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
                 {copy.footer.product}
               </h4>
-              <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
-                <Link to="/#catalog" className="transition-colors hover:text-[#101828]">
+              <div className="flex flex-col gap-3 font-['Manrope',sans-serif] text-[13px] text-[#4a5565]">
+                <Link to="/#library" className="transition-colors hover:text-[#101828]">
                   {copy.nav.catalog}
-                </Link>
-                <Link to="/#pricing" className="transition-colors hover:text-[#101828]">
-                  {copy.nav.pricing}
                 </Link>
                 <Link to="/#how" className="transition-colors hover:text-[#101828]">
                   {copy.nav.how}
-                </Link>
-                <Link to="/roadmap" className="transition-colors hover:text-[#101828]">
-                  {copy.footer.roadmap}
                 </Link>
               </div>
             </div>
@@ -218,21 +200,24 @@ export function SiteFooter() {
               <h4 className="font-['Manrope',sans-serif] text-[13px] font-bold uppercase text-[#101828]">
                 {copy.footer.legal}
               </h4>
-              <div className="flex flex-col gap-3 font-['Geist',sans-serif] text-[13px] text-[#4a5565]">
+              <div className="flex flex-col gap-3 font-['Manrope',sans-serif] text-[13px] text-[#4a5565]">
                 <Link to="/privacy" className="transition-colors hover:text-[#101828]">
                   {copy.footer.privacy}
                 </Link>
                 <Link to="/terms" className="transition-colors hover:text-[#101828]">
                   {copy.footer.terms}
                 </Link>
+                <Link to="/oferta" className="transition-colors hover:text-[#101828]">
+                  {LEGAL_TITLES.oferta[footerLocale]}
+                </Link>
               </div>
             </div>
           </div>
         </div>
 
-        <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Geist',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
-          <p>{copy.footer.rights}</p>
-          <p>{copy.footer.powered}</p>
+        <div className="flex flex-col justify-between gap-3 border-t border-[#e2e8f0] pt-6 font-['Manrope',sans-serif] text-xs text-[#99a1af] lg:flex-row lg:items-center">
+          <p>{copy.footer.rights} · {ENTITY[copyLocale as 'uz' | 'ru' | 'en'] ?? ENTITY.en}</p>
+          <a href="mailto:support@gotchaa.uz" className="transition-colors hover:text-[#101828]">support@gotchaa.uz</a>
         </div>
       </div>
     </footer>

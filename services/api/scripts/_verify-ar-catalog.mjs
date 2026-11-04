@@ -1,7 +1,7 @@
 /** Verify Arabic curriculum on production. */
 const API = (process.env.API_URL ?? 'https://gotchaa.uz/api/v1').replace(/\/$/, '');
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL ?? 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD ?? 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD;
 
 const TITLES = [
   '\u0642\u0646\u062f\u064a\u0644 \u0623\u0645 \u0647\u0627\u0634\u0645',

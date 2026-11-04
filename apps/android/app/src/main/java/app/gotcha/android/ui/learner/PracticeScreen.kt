@@ -1,5 +1,6 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -215,7 +216,7 @@ fun PracticeScreen(
         else -> content?.title ?: "Practice"
     }
 
-    Column(Modifier.fillMaxSize().background(Color(0xFFFDFCFF)).statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().background(GotchaBlue.ReaderBg).statusBarsPadding()) {
         Row(
             Modifier
                 .fillMaxWidth()
@@ -620,14 +621,15 @@ private fun PracticeResultsView(
                         )
                         if (r?.isCorrect != true) {
                             Text(
-                                "Correct answer: ${q.correctAnswer}",
+                                "Correct answer: ${r?.correctAnswer?.takeIf { it.isNotBlank() } ?: q.correctAnswer}",
                                 fontFamily = Inter,
                                 fontSize = 12.sp,
                                 color = GotchaColors.SuccessText,
                             )
                         }
-                        if (!q.explanation.isNullOrBlank()) {
-                            Text(q.explanation, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
+                        val explanation = r?.explanation?.takeIf { it.isNotBlank() } ?: q.explanation
+                        if (!explanation.isNullOrBlank()) {
+                            Text(explanation, fontFamily = Inter, fontSize = 12.sp, color = GotchaColors.TextSubtle)
                         }
                     }
                 }

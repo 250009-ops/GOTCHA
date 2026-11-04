@@ -1,60 +1,57 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Check, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
-import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
+import { adminAppUrl, isAllowedAdminReturnUrl } from '../lib/links';
 import { authSwitchSearch, authFlowSearch } from '../lib/authRoutes';
 import { AuthIcon, authAssets as a } from '../assets/auth';
 import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
+import { CONSENT_VERSION } from '../components/safety/signupConsent';
+import { LegalLinksLine } from '../components/safety/LegalLinksLine';
+import { safeLearnerReturnPath } from '../lib/learnerReturn';
+
+/** Sign-up step labels and the password hint (uz / ru / en). */
+const SX = {
+  en: { step1: 'Account', step2: 'Languages', stepOf: (n: number) => `Step ${n} of 2`, pwRule: 'At least 8 characters' },
+  ru: { step1: 'Аккаунт', step2: 'Языки', stepOf: (n: number) => `Шаг ${n} из 2`, pwRule: 'Минимум 8 символов' },
+  uz: { step1: 'Hisob', step2: 'Tillar', stepOf: (n: number) => `${n}-qadam, jami 2`, pwRule: 'Kamida 8 ta belgi' },
+};
+
+const inputCls =
+  'w-full h-12 pl-11 pr-3.5 bg-white border border-[#dfe2ec] rounded-xl text-[15px] text-[#101828] placeholder:text-[#9aa0ae] hover:border-[#c5cafd] focus-visible:outline-none focus-visible:border-[#2107AA] focus-visible:ring-4 focus-visible:ring-[#2107AA]/10 transition-all';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
 }
 
-function LegalConsent() {
-  const termsHref = `${MARKETING_URL}/terms`;
-  const privacyHref = `${MARKETING_URL}/privacy`;
-  return (
-    <p className="text-center text-[12px] leading-[18px] text-[#9ca3af]">
-      By continuing, you agree to GOTCHA's{' '}
-      <a
-        href={termsHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
-      >
-        Terms of Use
-      </a>{' '}
-      and{' '}
-      <a
-        href={privacyHref}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="font-semibold text-[#6b7280] underline decoration-[#d1d5db] underline-offset-[3px] hover:text-[#7f22fe] hover:decoration-[#7f22fe]"
-      >
-        Privacy Policy
-      </a>
-      .
-    </p>
-  );
-}
 
 export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, register } = useAuth();
+  const { login, register, updateProfile } = useAuth();
+  const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
+  // S3 consent (unticked by default) + W-12 optional birth year.
+  const [acceptTerms, setAcceptTerms] = useState(false);
+  const [acceptAi, setAcceptAi] = useState(false);
+  const [birthYear, setBirthYear] = useState<number | null>(null);
   const isLogin = mode === 'login';
-  const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
+  // final-6.1a: learners go back to the /app/* page they came from (returnUrl or the ProtectedRoute state), never off-site.
+  const fromState = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from;
+  const learnerReturn = adminReturnUrl ? null
+    : safeLearnerReturnPath(searchParams.get('returnUrl')) ?? (fromState?.pathname ? safeLearnerReturnPath(`${fromState.pathname}${fromState.search ?? ''}`) : null);
   const authQuery = authFlowSearch(searchParams);
   const forgotPasswordTo = authQuery ? `/forgot-password?${authQuery}` : '/forgot-password';
   const seededEmail = (location.state as { email?: string } | null)?.email?.trim() || '';
@@ -67,16 +64,17 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [email, setEmail] = useState(
     seededEmail || (adminReturnUrl && devPrefillEnabled ? 'admin@gotcha.app' : ''),
   );
-  const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? 'GotchaAdmin2026!' : '');
+  const [password, setPassword] = useState(adminReturnUrl && devPrefillEnabled ? (import.meta.env.VITE_DEV_ADMIN_PASSWORD ?? '') : '');
   const [name, setName] = useState(seededName);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
-  // Prefill target from the landing `lang` query only. Native starts empty so the
-  // learner chooses it themselves — do not default to English (or any other language).
+  // Native starts as the UI language. Target comes from the landing `lang` query.
   const [step, setStep] = useState<'credentials' | 'languages'>('credentials');
-  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage | null>(null);
+  const [nativeLanguage, setNativeLanguage] = useState<AppLanguage | null>(
+    !isLogin && (locale === 'uz' || locale === 'ru' || locale === 'en') ? locale : null,
+  );
   const [targetLanguages, setTargetLanguages] = useState<AppLanguage[]>(
     landingLang ? [landingLang] : [],
   );
@@ -107,11 +105,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const goToLanguageStep = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name || !email || !password) {
-      toast.error('Please fill in all fields');
+      toast.error(copy.authToasts.fillAllFields);
       return;
     }
     if (password.length < 8) {
-      toast.error('Password must be at least 8 characters');
+      toast.error(copy.authToasts.passwordMinLength);
       return;
     }
     setStep('languages');
@@ -120,15 +118,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !password) {
-      toast.error('Please fill in all fields');
+      toast.error(copy.authToasts.fillAllFields);
       return;
     }
     if (!isLogin && !nativeLanguage) {
-      toast.error('Pick your native language');
+      toast.error(copy.authToasts.pickNativeLanguage);
       return;
     }
     if (!isLogin && targetLanguages.length === 0) {
-      toast.error('Pick at least one language to learn');
+      toast.error(copy.authToasts.pickTargetLanguage);
       return;
     }
     setLoading(true);
@@ -139,7 +137,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         const handoffTarget = adminReturnUrl || (session.isAdmin ? adminAppUrl() : null);
         if (handoffTarget) {
           if (!session.isAdmin) {
-            toast.error('This account does not have admin access');
+            toast.error(copy.authToasts.noAdminAccess);
             navigate('/app', { replace: true });
             return;
           }
@@ -150,20 +148,19 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             accessToken: session.accessToken,
             refreshToken: session.refreshToken,
           }).toString();
-          toast.success('Welcome back!');
+          toast.success(copy.authToasts.welcomeBack);
           window.location.assign(handoff.toString());
           return;
         }
-        if (searchParams.get('returnUrl')) {
-          // returnUrl was present but rejected (wrong origin) — stay in learner.
-          toast.message('Signed in to the learner app');
+        if (searchParams.get('returnUrl') && !learnerReturn) {
+          toast.message(copy.authToasts.signedInLearner);
         } else {
-          toast.success('Welcome back!');
+          toast.success(copy.authToasts.welcomeBack);
         }
-        navigate('/app', { replace: true });
+        navigate(learnerReturn ?? '/app', { replace: true });
       } else {
         if (!nativeLanguage) {
-          toast.error('Pick your native language');
+          toast.error(copy.authToasts.pickNativeLanguage);
           return;
         }
         const result = await register({
@@ -172,19 +169,29 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           displayName: name || undefined,
           nativeLanguage,
           targetLanguages,
+          uiLanguage: locale,
+          acceptTerms,
+          acceptAiConsent: acceptAi,
+          ...(acceptTerms ? { consentVersion: CONSENT_VERSION } : {}),
+          ...(birthYear != null ? { birthYear } : {}),
         });
         if (result.requiresEmailVerification) {
-          toast.success('Check your inbox to verify your email');
-          navigate(`/verify-email?email=${encodeURIComponent(result.email || email)}`);
+          toast.success(copy.authToasts.checkInbox);
+          navigate(`/verify-email?email=${encodeURIComponent(result.email || email)}&lang=${locale}`);
           return;
         }
-        toast.success('Account created!');
-        navigate('/app', { replace: true });
+        try {
+          await updateProfile({ uiLanguage: locale });
+        } catch {
+          /* non-blocking */
+        }
+        toast.success(copy.authToasts.accountCreated);
+        navigate(learnerReturn ?? '/app', { replace: true });
       }
     } catch (err) {
       const e = err as Error & { code?: string; email?: string; status?: number };
       if (e.code === 'EMAIL_NOT_VERIFIED' || /verify your email/i.test(e.message || '')) {
-        toast.message('Please verify your email before signing in');
+        toast.message(copy.authToasts.verifyBeforeSignIn);
         const verifyQ = authFlowSearch(searchParams, { email: e.email || email });
         navigate(verifyQ ? `/verify-email?${verifyQ}` : `/verify-email?email=${encodeURIComponent(e.email || email)}`);
         return;
@@ -193,7 +200,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         e.code === 'EMAIL_EXISTS_UNVERIFIED' ||
         (e.status === 409 && /not verified/i.test(e.message || ''))
       ) {
-        toast.message('Account already exists — check your inbox or resend verification');
+        toast.message(copy.authToasts.accountExistsUnverified);
         const verifyQ = authFlowSearch(searchParams, { email: e.email || email });
         navigate(verifyQ ? `/verify-email?${verifyQ}` : `/verify-email?email=${encodeURIComponent(e.email || email)}`);
         return;
@@ -203,7 +210,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         e.status === 409 ||
         /already (registered|exists)/i.test(e.message || '')
       ) {
-        toast.error('Account already exists — sign in instead');
+        toast.error(copy.authToasts.accountExistsSignIn);
         const q = authSwitchSearch(searchParams, 'login');
         navigate(
           { pathname: '/login', search: q ? `?${q}` : '' },
@@ -211,14 +218,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
         );
         return;
       }
-      toast.error(err instanceof Error ? err.message : 'Authentication failed');
+      toast.error(err instanceof Error ? err.message : copy.authToasts.authFailed);
     } finally {
       setLoading(false);
     }
-  };
-
-  const goHome = () => {
-    window.location.assign(MARKETING_URL);
   };
 
   const goingTo = isLogin ? 'register' : 'login';
@@ -229,36 +232,54 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   };
 
   const showLanguageStep = !isLogin && step === 'languages';
+  const sx = SX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
+  const pwOk = password.length >= 8;
 
   return (
     <AuthShell>
       <div className="w-full max-w-[448px] min-w-0">
-        <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-5 sm:p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
+        <div className="bg-white border border-[#e6e8f0] rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 shadow-[0_24px_48px_-24px_rgba(16,24,40,0.18)]">
+          {!isLogin && (
+            <div className="flex items-center gap-3" aria-label={sx.stepOf(showLanguageStep ? 2 : 1)}>
+              {[sx.step1, sx.step2].map((label, i) => {
+                const n = i + 1;
+                const current = (showLanguageStep ? 2 : 1) === n;
+                const done = showLanguageStep && n === 1;
+                return (
+                  <div key={label} className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={`size-6 shrink-0 rounded-full grid place-items-center text-xs font-bold ${done ? 'bg-emerald-500 text-white' : current ? 'bg-g-blue-700 text-white' : 'bg-[#eef0f5] text-[#8a8fa0]'}`}>
+                      {done ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : n}
+                    </span>
+                    <span className={`text-[13px] font-semibold truncate ${current ? 'text-[#101828]' : 'text-[#8a8fa0]'}`}>{label}</span>
+                    {n === 1 && <span className={`h-px flex-1 ${showLanguageStep ? 'bg-emerald-300' : 'bg-[#e6e8f0]'}`} />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-extrabold text-[#101828] leading-8">
-              {isLogin ? 'Welcome back' : showLanguageStep ? 'What do you want to learn?' : 'Create your account'}
+            <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">
+              {isLogin ? copy.auth.welcomeBack : showLanguageStep ? copy.auth.whatToLearn : copy.auth.createAccount}
             </h2>
             <p className="text-[#6b7280] text-sm leading-5">
               {isLogin
                 ? adminReturnUrl
-                  ? 'Sign in with your admin account to open the admin console.'
-                  : 'Sign in to continue your reading journey.'
+                  ? copy.auth.signInAdminSubtitle
+                  : copy.auth.signInSubtitle
                 : showLanguageStep
-                  ? 'Search and add the language you want to learn. You can add more later in Settings.'
-                  : plan === 'pay-per-import'
-                    ? 'Create your free account — pay only if you need more than your free imports.'
-                    : 'Sign up to start your reading journey.'}
+                  ? copy.auth.languageStepSubtitle
+                  : copy.auth.signUpSubtitle}
             </p>
-            {!isLogin && !showLanguageStep && plan === 'pay-per-import' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-[#ddd6fe] px-3 py-1 text-xs font-semibold text-[#7f22fe] self-start">
-                <AuthIcon src={a.sparkles} size={16} />
-                No subscription — pay per import via Atmos
-              </div>
-            )}
-            {!isLogin && !showLanguageStep && plan === 'free' && (
-              <div className="mt-1 inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700 self-start">
-                <AuthIcon src={a.check} size={16} />
-                Free forever plan
+            {!isLogin && !showLanguageStep && (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 border border-emerald-200 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  <AuthIcon src={a.check} size={16} />
+                  {copy.auth.freeForeverBadge}
+                </div>
+                <div className="inline-flex items-center gap-1.5 rounded-full bg-[#f3f0ff] border border-g-blue-200 px-3 py-1 text-xs font-semibold text-g-blue-700">
+                  <AuthIcon src={a.sparkles} size={16} />
+                  {copy.auth.payPerImportBadge}
+                </div>
               </div>
             )}
           </div>
@@ -266,59 +287,72 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {showLanguageStep ? (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">Your native language</label>
+                <label id="auth-native-label" className="text-[13px] font-semibold text-[#344054]">{copy.auth.nativeLanguage}</label>
                 <LanguageSearchInput
+                  labelledBy="auth-native-label"
                   options={catalogLangs}
                   value={nativeLanguage ? [nativeLanguage] : []}
                   onChange={(codes) => setNativeLanguage((codes[0] as AppLanguage) ?? null)}
                   multiple={false}
-                  placeholder="Search your native language..."
+                  placeholder={copy.auth.nativeLanguagePlaceholder}
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label className="text-xs font-semibold text-[#4a5565]">
-                  Languages you want to learn{' '}
-                  <span className="text-[#9ca3af] font-normal">(search and add at least one)</span>
+                <label id="auth-target-label" className="text-[13px] font-semibold text-[#344054]">
+                  {copy.auth.targetLanguages}{' '}
+                  <span className="text-[#4a5565] font-normal">{copy.auth.targetLanguagesHint}</span>
                 </label>
                 <LanguageSearchInput
                   options={catalogLangs}
+                  labelledBy="auth-target-label"
                   value={targetLanguages}
                   onChange={(codes) => setTargetLanguages(codes as AppLanguage[])}
                   exclude={nativeLanguage ? [nativeLanguage] : []}
-                  placeholder="Search a language to add..."
+                  placeholder={copy.auth.targetLanguagesPlaceholder}
                 />
               </div>
+              {/* WL4-07: consent + birth year sit ABOVE Create account so they are in view at 360x640. */}
+              <SignupSafetyFields
+                locale={locale}
+                accepted={acceptTerms}
+                onAccepted={setAcceptTerms}
+                aiAccepted={acceptAi}
+                onAiAccepted={setAcceptAi}
+                birthYear={birthYear}
+                onBirthYear={setBirthYear}
+              />
               <div className="flex gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setStep('credentials')}
-                  className="h-11 rounded-[14px] font-bold text-sm px-4"
+                  className="h-12 rounded-xl font-bold text-sm px-5"
                 >
-                  Back
+                  {copy.common.back}
                 </Button>
                 <Button
                   type="submit"
-                  disabled={loading || !nativeLanguage || targetLanguages.length === 0}
-                  className="flex-1 h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                  disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms || !acceptAi}
+                  className="flex-1 h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Creating account…
+                      {copy.auth.creatingAccount}
                     </span>
                   ) : (
-                    'Create free account'
+                    copy.auth.createFreeAccount
                   )}
                 </Button>
               </div>
-              <LegalConsent />
             </form>
           ) : (
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
               {!isLogin && (
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="auth-name" className="text-xs font-semibold text-[#4a5565]">Full name</label>
+                  <label htmlFor="auth-name" className="text-[13px] font-semibold text-[#344054]">{copy.auth.fullName}</label>
+                  <div className="relative">
+                  <UserRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                   <input
                     id="auth-name"
                     name="name"
@@ -326,13 +360,16 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     autoComplete="name"
                     value={name}
                     onChange={(e) => setName(e.target.value)}
-                    placeholder="Alex Chen"
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                    placeholder={copy.auth.namePlaceholder}
+                    className={inputCls}
                   />
+                  </div>
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label htmlFor="auth-email" className="text-xs font-semibold text-[#4a5565]">Email</label>
+                <label htmlFor="auth-email" className="text-[13px] font-semibold text-[#344054]">{copy.auth.email}</label>
+                <div className="relative">
+                <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                 <input
                   id="auth-email"
                   name="email"
@@ -343,13 +380,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                  placeholder={copy.auth.emailPlaceholder}
+                  className={inputCls}
                 />
+                </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label htmlFor="auth-password" className="text-xs font-semibold text-[#4a5565]">Password</label>
+                <label htmlFor="auth-password" className="text-[13px] font-semibold text-[#344054]">{copy.auth.password}</label>
                 <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                   <input
                     id="auth-password"
                     name="password"
@@ -357,78 +396,75 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     autoComplete={isLogin ? 'current-password' : 'new-password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    placeholder={isLogin ? 'Your password' : 'At least 8 characters'}
-                    className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-[#7f22fe]/20 focus:border-[#7f22fe] focus:bg-white transition-all"
+                    placeholder={isLogin ? copy.auth.passwordPlaceholderLogin : copy.auth.passwordPlaceholderRegister}
+                    className={`${inputCls} !pr-12`}
                   />
                   <button
                     type="button"
                     onClick={() => setShowPass((s) => !s)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 p-1 text-[#9ca3af] hover:text-[#4a5565]"
-                    aria-label={showPass ? 'Hide password' : 'Show password'}
+                    className="absolute right-1 top-1/2 inline-flex size-11 -translate-y-1/2 items-center justify-center rounded-xl text-[#4a5565] hover:text-[#101828] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
+                    aria-label={showPass ? copy.auth.hidePassword : copy.auth.showPassword}
                   >
                     {showPass ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
                   </button>
                 </div>
+                {!isLogin && (
+                  <p className={`flex items-center gap-1.5 text-xs font-medium ${pwOk ? 'text-emerald-600' : 'text-[#8a8fa0]'}`}>
+                    <Check className="w-3.5 h-3.5" strokeWidth={pwOk ? 3 : 2} />
+                    {sx.pwRule}
+                  </p>
+                )}
               </div>
               {isLogin && (
                 <div className="flex items-center justify-end">
                   <Link
                     to={forgotPasswordTo}
-                    className="text-[13px] font-semibold text-[#7f22fe] hover:text-[#6b1fd8]"
+                    className="inline-flex min-h-11 items-center rounded-lg text-[13px] font-semibold text-g-blue-700 hover:text-g-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
                   >
-                    Forgot password?
+                    {copy.auth.forgotPassword}
                   </Link>
                 </div>
               )}
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-11 rounded-[14px] bg-[#7f22fe] hover:bg-[#6b1fd8] font-bold text-sm shadow-[0_10px_12px_rgba(127,34,254,0.2)]"
+                className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
               >
                 {loading ? (
                     <span className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      {isLogin ? 'Signing in…' : 'Continuing…'}
+                      {isLogin ? copy.auth.signingIn : copy.auth.continuing}
                     </span>
                   ) : isLogin ? (
-                    'Sign in'
+                    copy.auth.signIn
                   ) : (
-                    'Continue'
+                    copy.common.continue
                   )}
               </Button>
-              {!isLogin && <LegalConsent />}
+              {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. WLF-36: plain links. */}
+              {!isLogin && <LegalLinksLine locale={locale} />}
             </form>
           )}
 
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-[#e5e7eb]" />
-            <span className="text-xs text-[#9ca3af]">or</span>
-            <div className="flex-1 h-px bg-[#e5e7eb]" />
-          </div>
-
-          <div className="flex items-center justify-between gap-3 text-[13px] whitespace-nowrap">
+          {/* final-5: admin sign-in never offers 'Sign up free'. */}
+          {!adminReturnUrl && (
+          <div className="flex items-center justify-center gap-1.5 text-sm flex-wrap border-t border-[#eef0f5] pt-5">
             <span className="text-[#6b7280]">
-              {isLogin ? "Don't have an account?" : 'Already have an account?'}
+              {isLogin ? copy.auth.noAccount : copy.auth.hasAccount}
             </span>
             <Link
               replace
               to={switchTo}
               state={{ email, name }}
-              className="text-[#7f22fe] font-bold hover:text-[#6b1fd8]"
+              className="inline-flex min-h-11 items-center rounded-lg text-g-blue-700 font-bold hover:text-g-blue-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
             >
-              {isLogin ? 'Sign up free' : 'Sign in'}
+              {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>
           </div>
+          )}
         </div>
 
-        <button
-          type="button"
-          onClick={goHome}
-          className="mt-5 flex items-center gap-1.5 text-sm font-medium text-[#99a1af] hover:text-[#4a5565] mx-auto"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          Back to homepage
-        </button>
+
       </div>
     </AuthShell>
   );

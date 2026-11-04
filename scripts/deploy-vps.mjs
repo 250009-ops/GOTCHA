@@ -144,6 +144,7 @@ try {
       `chmod +x ${APP_DIR}/deploy/install.sh ${APP_DIR}/deploy/update.sh`,
       // keep previous uploads if any
       `if [ -d ${APP_DIR}.prev/uploads ]; then cp -a ${APP_DIR}.prev/uploads ${APP_DIR}/; fi`,
+      `if [ -d ${APP_DIR}.prev/private-avatars ]; then cp -a ${APP_DIR}.prev/private-avatars ${APP_DIR}/; fi`,
     ].join(' && '),
     120_000,
   );

@@ -14,6 +14,12 @@ load_vite_build_env() {
   export VITE_MARKETING_URL="${marketing:-https://${DOMAIN}}"
   export VITE_LEARNER_APP_URL="${learner:-https://${DOMAIN}/learn}"
   export VITE_ADMIN_APP_URL="${admin:-https://${DOMAIN}/admin}"
+  local sha="dev"
+  if [[ -n "${APP_DIR:-}" && -f "${APP_DIR}/deploy/LOCAL_REV" ]]; then
+    sha="$(tr -d '[:space:]' < "${APP_DIR}/deploy/LOCAL_REV" | cut -c1-12)"
+  fi
+  export VITE_BUILD_SHA="$sha"
+  export VITE_BUILD_DATE="$(date -u +%F)"
 
   if [[ -z "${VITE_API_URL}" || "${VITE_API_URL}" == *"localhost"* || "${VITE_API_URL}" == *"127.0.0.1"* ]]; then
     echo "ERROR: VITE_API_URL must be a public production URL (got: '${VITE_API_URL}')"

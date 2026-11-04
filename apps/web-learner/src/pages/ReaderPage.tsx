@@ -1,5 +1,7 @@
+import { ReportButton } from '../components/safety/SafetyActions';
+import { handleLimitError } from '../lib/limits';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft,
   BookmarkPlus,
@@ -9,9 +11,12 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Flag,
   GraduationCap,
   Loader2,
   Minus,
+  MoreHorizontal,
+  Type,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -24,15 +29,21 @@ import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { mashqCopy, surfaceCopy } from '@gotcha/shared';
+import { MashqSheet } from '../components/practice/MashqSheet';
+import { pagesLabel } from '../lib/pagesLabel';
 import { formatUzs } from '../lib/importBilling';
+import { resolveReaderLibraryReturn } from '../lib/readerReturn';
 import { speakText } from '../lib/tts';
+import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
 
-function displayChapterTitle(title: string | undefined | null, fallbackIndex: number) {
+function displayChapterTitle(title: string | undefined | null, fallbackIndex: number, chapterN: (n: number) => string) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
-  if (!raw) return `Chapter ${fallbackIndex + 1}`;
+  if (!raw) return chapterN(fallbackIndex + 1); // WL4-06: localised fallback
   return raw;
 }
 
@@ -94,9 +105,59 @@ function resolveResumeIndex(
 const STATUS_STYLES: Record<WordStatus, string> = {
   unknown: 'border-b-[1.6px] border-dashed border-[#ffb900] text-[#973c00] cursor-pointer hover:bg-amber-50/80 rounded-[6px]',
   learning: 'border-b-[1.6px] border-solid border-[#51a2ff] text-[#193cb8] cursor-pointer hover:bg-blue-50/80 rounded-[6px]',
-  known: 'cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
+  known: 'border-b-[1.6px] border-solid border-emerald-400 cursor-pointer hover:bg-emerald-50/80 rounded-[6px]',
   ignored: 'text-gray-400 cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
 };
+
+/** Dark reading theme needs lighter status colours for contrast. */
+const STATUS_STYLES_DARK: Record<WordStatus, string> = {
+  unknown: 'border-b-[1.6px] border-dashed border-[#fbbf24] text-[#fcd34d] cursor-pointer hover:bg-white/10 rounded-[6px]',
+  learning: 'border-b-[1.6px] border-solid border-[#60a5fa] text-[#bfdbfe] cursor-pointer hover:bg-white/10 rounded-[6px]',
+  known: 'border-b-[1.6px] border-solid border-emerald-400 cursor-pointer hover:bg-white/10 rounded-[6px]',
+  ignored: 'text-stone-500 cursor-pointer hover:bg-white/10 rounded-[6px]',
+};
+
+/** Reader strings not in the shared copy yet (uz / ru / en). */
+const RX = {
+  en: {
+    display: 'Text & display', textSize: 'Text size', lineSpacing: 'Line spacing', theme: 'Page colour',
+    themes: { light: 'Light', sepia: 'Sepia', dark: 'Dark' }, pronounce: 'Pronounce words', on: 'On', off: 'Off',
+    more: 'More', report: 'Report this book', onPage: 'on this page',
+    pageOfBook: (n: number, total: number, pct: number) => `Page ${n} of ${total} · ${pct}% of the book`,
+    spacing: ['Compact', 'Normal', 'Relaxed', 'Wide'],
+    aiOff: 'AI lookups are temporarily disabled. Please try again later.',
+    aiPaused: 'AI lookups are paused for today. Try again tomorrow.',
+    aiLimit: 'Daily AI lookup limit reached. Try again tomorrow.',
+    aiUnavailable: 'AI lookup is unavailable right now. Please try again later.',
+    aiFailed: 'AI lookup failed. Please try again in a moment.',
+  },
+  ru: {
+    display: 'Текст и вид', textSize: 'Размер текста', lineSpacing: 'Межстрочный интервал', theme: 'Цвет страницы',
+    themes: { light: 'Светлая', sepia: 'Сепия', dark: 'Тёмная' }, pronounce: 'Произношение слов', on: 'Вкл', off: 'Выкл',
+    more: 'Ещё', report: 'Пожаловаться на книгу', onPage: 'на этой странице',
+    pageOfBook: (n: number, total: number, pct: number) => `Страница ${n} из ${total} · ${pct}% книги`,
+    spacing: ['Плотно', 'Обычно', 'Свободно', 'Широко'],
+    aiOff: 'ИИ-перевод временно отключён. Попробуйте позже.',
+    aiPaused: 'ИИ-перевод на сегодня приостановлен. Попробуйте завтра.',
+    aiLimit: 'Дневной лимит ИИ-переводов исчерпан. Попробуйте завтра.',
+    aiUnavailable: 'ИИ-перевод сейчас недоступен. Попробуйте позже.',
+    aiFailed: 'Не удалось получить перевод. Попробуйте ещё раз.',
+  },
+  uz: {
+    display: 'Matn va koʻrinish', textSize: 'Matn oʻlchami', lineSpacing: 'Qatorlar oraligʻi', theme: 'Sahifa rangi',
+    themes: { light: 'Oq', sepia: 'Sepiya', dark: 'Tungi' }, pronounce: 'Soʻzlarni talaffuz qilish', on: 'Yoqilgan', off: 'Oʻchiq',
+    more: 'Boshqa', report: 'Kitob haqida shikoyat', onPage: 'shu sahifada',
+    pageOfBook: (n: number, total: number, pct: number) => `${n}-sahifa, jami ${total} · kitobning ${pct}%`,
+    spacing: ['Zich', 'Oʻrtacha', 'Keng', 'Juda keng'],
+    aiOff: 'AI izohlar vaqtincha oʻchirilgan. Keyinroq urinib koʻring.',
+    aiPaused: 'AI izohlar bugun uchun toʻxtatildi. Ertaga urinib koʻring.',
+    aiLimit: 'Bugungi AI izohlar limiti tugadi. Ertaga urinib koʻring.',
+    aiUnavailable: 'AI izoh hozir mavjud emas. Keyinroq urinib koʻring.',
+    aiFailed: 'AI izoh olinmadi. Birozdan soʻng qayta urinib koʻring.',
+  },
+};
+const LINE_SPACINGS = [1.3, 1.6, 1.9, 2.2] as const;
+const READER_THEMES = ['light', 'sepia', 'dark'] as const;
 
 const LONG_PRESS_MS = 380;
 const DRAG_CANCEL_PX = 10;
@@ -111,6 +172,7 @@ function DictionaryPanel({
   onPronounce,
   loading,
   showVocabActions = true,
+  showPronounce = true,
 }: {
   result: LookupResult | null;
   status: WordStatus;
@@ -121,20 +183,31 @@ function DictionaryPanel({
   onPronounce: () => void;
   loading: boolean;
   showVocabActions?: boolean;
+  showPronounce?: boolean;
 }) {
+  const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
+  const statusLabel =
+    status === 'unknown'
+      ? copy.reader.unknown
+      : status === 'learning'
+        ? copy.reader.learning
+        : status === 'known'
+          ? copy.reader.known
+          : copy.reader.ignore;
   return (
     <div className="flex flex-col h-full bg-white">
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#f3f4f6] shrink-0">
-        <span className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">Dictionary</span>
-        <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-gray-600 transition-colors" aria-label="Close dictionary">
+        <span className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">{copy.reader.dictionary}</span>
+        <button type="button" onClick={onClose} className="p-1 rounded-lg hover:bg-gray-100 text-[#99a1af] hover:text-gray-600 transition-colors" aria-label={copy.commonExt.close}>
           <X className="w-4 h-4" />
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {loading && (
           <div className="flex flex-col items-center justify-center py-10 gap-3">
-            <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
-            <span className="text-sm text-[#99a1af]">Looking up…</span>
+            <Loader2 className="w-6 h-6 text-g-blue-700 animate-spin" />
+            <span className="text-sm text-[#99a1af]">{copy.reader.lookingUp}</span>
           </div>
         )}
         {!loading && result && (
@@ -147,11 +220,11 @@ function DictionaryPanel({
                       {result.kind === 'sentence' ? result.lemma : (result.phrase?.trim() || result.lemma)}
                     </span>
                     {result.kind !== 'sentence' && result.phrase?.trim() ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-g-blue-50 text-g-blue-700">
                         Phrase
                       </span>
                     ) : result.kind === 'sentence' ? (
-                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-[#f5f3ff] text-[#7f22fe]">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-md bg-g-blue-50 text-g-blue-700">
                         Sentence
                       </span>
                     ) : null}
@@ -160,25 +233,27 @@ function DictionaryPanel({
                     <div className="text-sm text-[#6b7382] mt-1">{result.lemma}</div>
                   ) : null}
                 </div>
-                <button
-                  type="button"
-                  onClick={onPronounce}
-                  className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-[#7f22fe]"
-                  aria-label="Pronounce"
-                  title="Pronounce word"
-                >
-                  <Volume2 className="w-4 h-4" />
-                </button>
+                {showPronounce ? (
+                  <button
+                    type="button"
+                    onClick={onPronounce}
+                    className="p-1.5 rounded-lg transition-colors shrink-0 hover:bg-gray-100 text-[#99a1af] hover:text-g-blue-700"
+                    aria-label={copy.reader.pronounceWord}
+                    title={copy.reader.pronounceWord}
+                  >
+                    <Volume2 className="w-4 h-4" />
+                  </button>
+                ) : null}
               </div>
             </div>
             {result.kind !== 'sentence' && result.contextualMeaning?.trim() ? (
-              <div className="bg-[#f5f3ff] rounded-xl p-3">
-                <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Natural meaning</div>
+              <div className="bg-g-blue-50 rounded-xl p-3">
+                <div className="text-xs font-semibold text-g-blue-700 uppercase tracking-wider mb-1">{copy.reader.naturalMeaning}</div>
                 <div className="text-[#1e2939] leading-relaxed">{result.contextualMeaning}</div>
               </div>
             ) : null}
-            <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-[#f5f3ff] rounded-xl p-3'}>
-              <div className="text-xs font-semibold text-[#7f22fe] uppercase tracking-wider mb-1">Translation</div>
+            <div className={result.kind !== 'sentence' && result.contextualMeaning?.trim() ? 'rounded-xl p-3 border border-[#e5e8eb] bg-[#f9fafb]' : 'bg-g-blue-50 rounded-xl p-3'}>
+              <div className="text-xs font-semibold text-g-blue-700 uppercase tracking-wider mb-1">{copy.reader.translation}</div>
               <div className="text-[#1e2939] leading-relaxed whitespace-pre-wrap break-words">{result.translation}</div>
             </div>
             {showVocabActions ? (
@@ -186,13 +261,13 @@ function DictionaryPanel({
             <div className="flex items-center gap-2 text-xs">
               <div className={cn('px-2 py-1 rounded-md font-medium', {
                 'bg-[#fffbeb] text-[#bb4d00]': status === 'unknown',
-                'bg-[#eff6ff] text-[#1447e6]': status === 'learning',
+                'bg-g-learning-bg text-g-learning-text': status === 'learning',
                 'bg-emerald-100 text-emerald-700': status === 'known',
                 'bg-gray-100 text-gray-500': status === 'ignored',
               })}>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
+                {statusLabel}
               </div>
-              <span className="text-[#99a1af]">→ Mark as:</span>
+              <span className="text-[#99a1af]">{copy.reader.markAsLabel}</span>
             </div>
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -201,11 +276,11 @@ function DictionaryPanel({
                 disabled={status === 'learning'}
                 className={cn(
                   'flex flex-col items-center gap-1 p-2.5 rounded-xl border text-xs font-medium transition-all',
-                  status === 'learning' ? 'border-blue-200 bg-blue-50 text-[#1447e6]' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-[#4a5565] hover:text-[#1447e6]',
+                  status === 'learning' ? 'border-blue-200 bg-blue-50 text-g-learning-text' : 'border-gray-200 hover:border-blue-300 hover:bg-blue-50 text-[#4a5565] hover:text-g-learning-text',
                 )}
               >
                 <BookmarkPlus className="w-4 h-4" />
-                <span>Save</span>
+                <span>{copy.reader.save}</span>
               </button>
               <button
                 type="button"
@@ -217,7 +292,7 @@ function DictionaryPanel({
                 )}
               >
                 <Check className="w-4 h-4" />
-                <span>Known</span>
+                <span>{copy.reader.known}</span>
               </button>
               <button
                 type="button"
@@ -229,7 +304,7 @@ function DictionaryPanel({
                 )}
               >
                 <EyeOff className="w-4 h-4" />
-                <span>Ignore</span>
+                <span>{copy.reader.ignore}</span>
               </button>
             </div>
               </>
@@ -239,7 +314,7 @@ function DictionaryPanel({
         {!loading && !result && (
           <div className="text-center py-10 text-[#99a1af]">
             <BookOpen className="w-8 h-8 mx-auto mb-2 opacity-30" />
-            <div className="text-sm">Tap a word to catch its phrase, or drag any span — even the whole page</div>
+            <div className="text-sm">{surfaceCopy(locale).tapWord}</div>
           </div>
         )}
       </div>
@@ -248,9 +323,15 @@ function DictionaryPanel({
 }
 
 export default function ReaderPage() {
+  const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale(); // WL4-05: Report follows the active UI language
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { user, preferences, updatePreferences, refreshVocab } = useAuth();
+  const location = useLocation();
+  const { preferences, updatePreferences, refreshVocab, refreshProfile } = useAuth();
+  const goToLibrary = useCallback(() => {
+    navigate(resolveReaderLibraryReturn(location.state));
+  }, [navigate, location.state]);
 
   const [content, setContent] = useState<ContentItem | null>(null);
   const [outline, setOutline] = useState<ContentOutlineSegment[]>([]);
@@ -268,9 +349,16 @@ export default function ReaderPage() {
   const [chaptersOpen, setChaptersOpen] = useState(true);
   const [wordStatuses, setWordStatuses] = useState<Record<string, WordStatus>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadNonce, setReloadNonce] = useState(0);
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const displayRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const rx = RX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
   const readingPaneRef = useRef<HTMLDivElement>(null);
   const readerBodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -290,6 +378,46 @@ export default function ReaderPage() {
     content?.accessGranted === false ? Math.max(0, content.trialSegmentCount ?? 0) : pageCount;
   const isTrial = Boolean(content?.accessGranted === false && trialLimit > 0);
   const segment = pageCache[segmentIndex];
+  const [mashqStatus, setMashqStatus] = useState<{ state?: string; unseenCount: number; missedToday: number; remaining: number | null } | null>(null);
+  const [mashqOpen, setMashqOpen] = useState(false);
+  const [mashqStarting, setMashqStarting] = useState(false);
+  const [mashqNotice, setMashqNotice] = useState<string | null>(null);
+  const [mashqPhase, setMashqPhase] = useState<'form' | 'preparing' | 'failed' | 'empty'>('form');
+  const [mashqCardHidden, setMashqCardHidden] = useState(false);
+  const mashqRetry = useRef<number | null>(null);
+  const mashqGen = useRef(0);
+  const mashqOpenRef = useRef(false);
+  const mashqStartRef = useRef<(count: number, repeatMissed: boolean) => void>(() => {});
+  const mashqArmed = useRef<string | null>(null);
+  mashqOpenRef.current = mashqOpen;
+  useEffect(() => {
+    setMashqOpen(false);
+    setMashqNotice(null);
+    setMashqCardHidden(false);
+    const sid = segment?.id;
+    if (!sid || (segment?.wordCount ?? 0) < 60) {
+      setMashqStatus(null);
+      return;
+    }
+    let cancel = false;
+    api<{ state?: string; unseenCount: number; missedToday: number; remaining: number | null }>(`/practice/pages/${sid}/bank-status`)
+      .then((status) => { if (!cancel) setMashqStatus(status); })
+      .catch(() => { if (!cancel) setMashqStatus(null); });
+    return () => {
+      cancel = true;
+      mashqGen.current += 1;
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+    };
+  }, [segment?.id, segment?.wordCount]);
+  useEffect(() => {
+    if (!mashqOpen || !segment?.id) return;
+    if (mashqStatus?.remaining === 0) return;
+    if (mashqStatus?.remaining != null && mashqStatus.remaining < 3) return;
+    if (mashqArmed.current === segment.id) return;
+    mashqArmed.current = segment.id;
+    const count = Math.min(5, mashqStatus?.remaining ?? 5);
+    mashqStartRef.current(count, false);
+  }, [mashqOpen, segment?.id, mashqStatus?.remaining]);
   const tokens = segment?.tokenMap ?? [];
   const stanzaBreaks = useReaderStanzaBreaks(
     readerBodyRef,
@@ -308,7 +436,7 @@ export default function ReaderPage() {
       if (!group) {
         group = {
           key,
-          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key),
+          title: displayChapterTitle(seg.chapterTitle || seg.title?.split(' · ')[0], key, copy.reader.chapterN),
           firstIndex: i,
           pageCount: 0,
         };
@@ -336,10 +464,12 @@ export default function ReaderPage() {
     const pos = pages.findIndex(({ index }) => index === segmentIndex);
     return { current: Math.max(1, pos + 1), total: Math.max(1, pages.length) };
   }, [outline, segmentIndex, currentChapter, pageCount]);
-  const targetLang = user?.nativeLanguage ?? 'en';
+  // Lookup bug (b): glosses answer in the active UI language (owner decision).
+  const targetLang = locale;
   const sourceLang = content?.language ?? 'en';
 
   const pronounceWord = useCallback(() => {
+    if (preferences?.ttsEnabled === false) return;
     const spoken = lookupHeadline(
       activeWord ?? '',
       activeLookup?.phrase,
@@ -347,14 +477,15 @@ export default function ReaderPage() {
     );
     if (!spoken.trim()) return;
     void speakText(spoken, sourceLang).catch((err) => {
-      toast.error(err instanceof Error ? err.message : 'Pronunciation is unavailable');
+      toast.error(err instanceof Error ? err.message : copy.errors.pronunciationUnavailable);
     });
-  }, [activeLookup, activeWord, sourceLang]);
+  }, [activeLookup, activeWord, sourceLang, copy.errors.pronunciationUnavailable, preferences?.ttsEnabled]);
 
   // Wall-clock time spent since the last progress save, so PATCH /content/:id/progress
   // gets a real `readSeconds` and content.service.ts's streak.recordActivity actually fires
   // (see docs/E2E_AUDIT_REPORT.md's reading-page-never-triggers-streak finding).
   const lastProgressAtRef = useRef<number>(Date.now());
+  const contextSentenceRef = useRef('');
 
   useEffect(() => {
     if (preferences?.readerFontScale != null) {
@@ -386,8 +517,10 @@ export default function ReaderPage() {
     setOutline([]);
     Promise.all([
       api<ContentItem>(`/content/${id}`),
-      api<Array<{ lemma: string; status: string }>>('/reading/known-words'),
+      // W-23: a known-words hiccup must not hide the whole book.
+      api<Array<{ lemma: string; status: string }>>('/reading/known-words').catch(() => []),
     ]).then(async ([item, known]) => {
+      setLoadError(false);
       setContent(item);
       const trialCount = item.trialSegmentCount ?? 0;
       const canTrial = item.accessGranted === false && trialCount > 0;
@@ -436,18 +569,23 @@ export default function ReaderPage() {
       }
       setWordStatuses(map);
       lastProgressAtRef.current = Date.now();
-    }).catch((e) => toast.error(e.message)).finally(() => setLoading(false));
-  }, [id, accessNonce]);
+    }).catch((e) => {
+      // W-23: a network/parse failure (e.g. a truncated large-book response) is not "not found".
+      if ((e as { status?: number }).status !== 404) setLoadError(true);
+      toast.error(e.message);
+    }).finally(() => setLoading(false));
+  }, [id, accessNonce, reloadNonce]);
 
   const lemmaStatus = useCallback(
     (lemma: string): WordStatus => wordStatuses[lemma.toLowerCase()] ?? 'unknown',
     [wordStatuses],
   );
 
+  // Counts describe the page on screen (prefetched neighbours used to inflate them as you paged).
   const { unknownCount, learningCount } = useMemo(() => {
     const unknown = new Set<string>();
     const learning = new Set<string>();
-    for (const seg of Object.values(pageCache)) {
+    for (const seg of segment ? [segment] : []) {
       for (const t of seg.tokenMap ?? []) {
         if (!t.isWord) continue;
         const key = (t.lemma ?? t.surface).toLowerCase();
@@ -457,7 +595,7 @@ export default function ReaderPage() {
       }
     }
     return { unknownCount: unknown.size, learningCount: learning.size };
-  }, [pageCache, lemmaStatus]);
+  }, [segment, lemmaStatus]);
 
   const persistFontScale = (next: number) => {
     setFontScale(next);
@@ -466,6 +604,7 @@ export default function ReaderPage() {
 
   const handleWordClick = useCallback(
     async (lemma: string, surface: string, sentence: string, span: TokenSpan, wordTokens: Array<{ i: number; surface: string; lemma: string | null }>) => {
+      contextSentenceRef.current = sentence.slice(0, 500);
       setLockedSpan(span);
       setLiveSpan(null);
       setActiveWord(lemma);
@@ -505,25 +644,36 @@ export default function ReaderPage() {
         setVocabMarkable(isVocabMarkableSelection(surface, tokenCount, res.kind ?? (sentenceLike ? 'sentence' : undefined)));
         if (head) setActiveWord(head);
       } catch (e) {
-        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        if (handleLimitError(e)) return;
+        const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
-          message = 'AI lookups are temporarily disabled. Please try again later.';
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if (isSlowDownError(e)) {
+          // Silent speed guard: neutral note (server text, localized), not an error.
+          toast.message(raw, { id: 'lookup-slow-down' });
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
+          message = rx.aiOff;
         } else if (/platform ai daily limit/i.test(raw)) {
-          message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
+          message = rx.aiPaused;
         } else if (/quota exceeded|daily limit reached|lookup limit reached/i.test(raw)) {
-          message = 'Daily AI lookup limit reached. Try again tomorrow.';
+          message = rx.aiLimit;
         } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
-          message = 'AI lookup is unavailable right now. Please try again later.';
+          message = rx.aiUnavailable;
         } else if (/AI lookup failed/i.test(raw)) {
-          message = 'AI lookup failed. Please try again in a moment.';
+          message = rx.aiFailed;
         }
-        toast.error(message);
+        if (message) toast.error(message);
       } finally {
         setLookupLoading(false);
       }
     },
-    [sourceLang, targetLang],
+    [sourceLang, targetLang, copy.errors.lookupFailed, rx],
   );
 
   const markStatus = async (status: WordStatus) => {
@@ -534,9 +684,17 @@ export default function ReaderPage() {
         body: JSON.stringify({ lemma: activeWord, sourceLang, status }),
       });
       setWordStatuses((p) => ({ ...p, [activeWord]: status }));
-      toast.success(`"${activeWord}" marked as ${status}`);
+      const statusText =
+        status === 'unknown'
+          ? copy.reader.unknown
+          : status === 'learning'
+            ? copy.reader.learning
+            : status === 'known'
+              ? copy.reader.known
+              : copy.reader.ignore;
+      toast.success(`"${activeWord}" ${copy.reader.markedAs(statusText)}`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Update failed');
+      toast.error(e instanceof Error ? e.message : copy.errors.updateFailed);
     }
   };
 
@@ -550,16 +708,18 @@ export default function ReaderPage() {
           sourceLang,
           targetLang,
           translation: activeLookup.translation,
-          contextSentence: segment.plainText.slice(0, 200),
+          contextSentence: contextSentenceRef.current || extractSentenceAround(segment.plainText, 0, 0),
           contextSegmentId: segment.id,
           contentId: id,
         }),
       });
       setWordStatuses((p) => ({ ...p, [activeWord]: 'learning' }));
-      toast.success(`"${activeWord}" saved to vocabulary`);
+      toast.success(`"${activeWord}" ${copy.reader.savedToVocab}`);
       void refreshVocab().catch(() => undefined);
+      // W-19b: the home "Words" card reads stats from /users/me/stats; refresh it too.
+      void refreshProfile().catch(() => undefined);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : 'Save failed');
+      toast.error(e instanceof Error ? e.message : copy.errors.saveFailed);
     }
   };
 
@@ -667,35 +827,91 @@ export default function ReaderPage() {
     setActiveLookup(null);
   };
 
+  // Close the header popovers on outside click / Esc.
+  useEffect(() => {
+    if (!displayOpen && !moreOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (displayOpen && displayRef.current && !displayRef.current.contains(t)) setDisplayOpen(false);
+      // Report dialog is portaled; keep the menu mounted while it is open.
+      if (moreOpen && moreRef.current && !moreRef.current.contains(t) && !(t as HTMLElement).closest?.('[role="dialog"]')) setMoreOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [displayOpen, moreOpen]);
+
+  // ← / → turn pages, Esc closes the dictionary or a popover (not while typing).
+  const keyNav = useRef({ prev: () => {}, next: () => {}, esc: () => {} });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
+      if (e.key === 'ArrowRight') keyNav.current.next();
+      else if (e.key === 'ArrowLeft') keyNav.current.prev();
+      else if (e.key === 'Escape') keyNav.current.esc();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  keyNav.current = {
+    prev: () => goPrev(),
+    next: () => {
+      if (isTrial && segmentIndex >= trialLimit - 1) setPaywallOpen(true);
+      else goNext();
+    },
+    esc: () => {
+      if (displayOpen || moreOpen) {
+        setDisplayOpen(false);
+        setMoreOpen(false);
+      } else if (activeWord || dictOpen) closeDict();
+    },
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#FDFCFF]">
-        <div className="w-8 h-8 border-2 border-violet-300 border-t-[#7f22fe] rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-g-reader-bg">
+        <div className="w-8 h-8 border-2 border-violet-300 border-t-g-blue-700 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (!content && loadError) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 bg-g-reader-bg p-6 text-sm text-[#6a7282]">
+        <p>{copy.reader.contentLoadFailed}</p>
+        <button
+          type="button"
+          onClick={() => setReloadNonce((n) => n + 1)}
+          className="rounded-full bg-g-blue-700 px-4 py-2 font-medium text-g-on-cta"
+        >
+          {copy.reader.tryAgain}
+        </button>
       </div>
     );
   }
 
   if (!content) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
-        <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">Content not found</div>
+        <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">{copy.reader.contentNotFound}</div>
       </div>
     );
   }
 
   if (content.accessGranted === false && !isTrial) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
@@ -713,20 +929,110 @@ export default function ReaderPage() {
     );
   }
 
+  const startMashq = async (count: number, repeatMissed: boolean, attempt = 0, idempotencyKey = crypto.randomUUID(), startedAt = Date.now()) => {
+    const segmentId = segment?.id;
+    const gen = mashqGen.current;
+    const stale = () => mashqGen.current !== gen || !segmentId;
+    if (!segmentId || mashqStatus?.remaining === 0) return;
+    if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+    const giveUp = () => {
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+      setMashqNotice(null);
+      setMashqPhase('failed');
+    };
+    const again = () => {
+      const gap = Math.min(3000 * 1.5 ** attempt, 15000);
+      const wait = Math.round(gap * (0.8 + Math.random() * 0.4));
+      mashqRetry.current = window.setTimeout(() => {
+        if (!stale()) void startMashq(count, repeatMissed, attempt + 1, idempotencyKey, startedAt);
+      }, wait);
+    };
+    if (attempt > 0 && !mashqOpenRef.current) return;
+    if (Date.now() - startedAt >= 60_000) {
+      giveUp();
+      return;
+    }
+    setMashqPhase('preparing');
+    setMashqNotice(null);
+    setMashqStarting(true);
+    const page = pageInChapter.current;
+    const chapterIndex = segment.chapterIndex ?? outline[segmentIndex]?.chapterIndex ?? 0;
+    try {
+      const started = await api<{ id?: string; state?: string }>('/practice/sessions', {
+        method: 'POST',
+        body: JSON.stringify({
+          contentId: id,
+          segmentId,
+          practiceType: 'comprehension',
+          source: 'page_bank',
+          page,
+          chapterIndex,
+          count,
+          repeatMissed,
+          idempotencyKey,
+        }),
+      });
+      if (stale()) return;
+      if (started.state === 'pending' || !started.id) {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
+          giveUp();
+          return;
+        }
+        again();
+        return;
+      }
+      if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+      navigate(`/app/practice?sessionId=${started.id}&contentId=${id ?? ''}&segmentId=${segmentId}`);
+    } catch (e) {
+      if (stale()) return;
+      const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
+      const message = e instanceof Error ? e.message : copy.commonExt.error;
+      if (code === 'quiz_pending') {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
+          giveUp();
+          return;
+        }
+        again();
+      } else if (code === 'quiz_empty') {
+        setMashqNotice(null);
+        setMashqPhase('empty');
+      } else if (attempt > 0) {
+        setMashqNotice(null);
+        setMashqPhase('failed');
+      } else if (code === 'mashq_burst') toast.message(message);
+      else if (!isDailyLimitError(e) && !handleLimitError(e)) {
+        setMashqNotice(message);
+        setMashqPhase('form');
+        toast.error(message);
+      }
+    } finally {
+      setMashqStarting(false);
+    }
+  };
+  mashqStartRef.current = (count, repeatMissed) => { void startMashq(count, repeatMissed); };
+
   if (!pageCount) {
     return (
-      <div className="min-h-screen flex flex-col bg-[#FDFCFF]">
+      <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={() => navigate('/app')} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
+          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
             <ArrowLeft className="w-4 h-4" />
-            Library
+            {copy.nav.library}
           </button>
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center text-[#99a1af]">
             <BookOpen className="w-12 h-12 mx-auto mb-3 opacity-30" />
-            <div className="text-[#4a5565] font-medium">No content segments available</div>
-            <div className="text-sm mt-1">This item may still be processing.</div>
+            <div className="text-[#4a5565] font-medium">{copy.reader.noSegments}</div>
+            <div className="text-sm mt-1">{copy.reader.stillProcessing}</div>
+            {/* WL4-09: localised empty state with a retry (re-fetches the item). */}
+            <button
+              type="button"
+              onClick={() => setReloadNonce((n) => n + 1)}
+              className="mt-4 rounded-full bg-g-blue-700 px-4 py-2 text-sm font-medium text-g-on-cta"
+            >
+              {copy.reader.tryAgain}
+            </button>
           </div>
         </div>
       </div>
@@ -734,7 +1040,7 @@ export default function ReaderPage() {
   }
 
   const currentChapterLabel = currentChapter?.title
-    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex);
+    || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex, copy.reader.chapterN);
   const zoomPct = Math.round(fontScale * 100);
   const readerTheme = preferences?.readerTheme ?? 'light';
   const pageTone =
@@ -742,7 +1048,14 @@ export default function ReaderPage() {
       ? 'bg-[#F4E8D0] text-[#3D2B1F]'
       : readerTheme === 'dark'
         ? 'bg-[#1C1917] text-[#F5F5F4]'
-        : 'bg-[#FDFCFF]';
+        : 'bg-g-reader-bg';
+  const darkPage = readerTheme === 'dark';
+  const bodyTone = darkPage ? 'text-[#e7e5e4]' : readerTheme === 'sepia' ? 'text-[#3D2B1F]' : 'text-[#1e2939]';
+  const titleTone = darkPage ? 'text-[#fafaf9]' : readerTheme === 'sepia' ? 'text-[#2a1d14]' : 'text-[#101828]';
+  const statusStyles = darkPage ? STATUS_STYLES_DARK : STATUS_STYLES;
+  const lineSpacing = preferences?.readerLineSpacing ?? 1.5;
+  const bookPct = Math.max(1, Math.round(((segmentIndex + 1) / Math.max(1, pageCount)) * 100));
+  const ttsOn = preferences?.ttsEnabled !== false;
 
   return (
     <div className={cn('flex flex-col h-screen max-h-dvh overflow-hidden', pageTone)}>
@@ -750,74 +1063,148 @@ export default function ReaderPage() {
       <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shrink-0 min-w-0">
         <button
           type="button"
-          onClick={() => navigate('/app')}
+          onClick={goToLibrary}
           className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium shrink-0"
         >
           <ArrowLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">Library</span>
+          <span className="hidden sm:inline">{copy.nav.library}</span>
         </button>
         <div className="w-px h-4 bg-[#e5e7eb] shrink-0" />
         <div className="flex-1 min-w-0 flex items-baseline gap-2 overflow-hidden">
           <span className="font-semibold text-[#1e2939] text-sm truncate">{content.title}</span>
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
         </div>
-
-        <div className="hidden lg:flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">
-            <span className="size-2 rounded bg-[#ffb900]" />
-            <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} unknown</span>
-          </div>
-          <div className="flex items-center gap-1.5 bg-[#eff6ff] border border-[#bedbff] rounded-full px-2.5 py-1">
-            <span className="size-2 rounded bg-[#51a2ff]" />
-            <span className="text-xs font-medium text-[#1447e6] whitespace-nowrap">{learningCount} learning</span>
-          </div>
-          <span className="bg-[#dbeafe] text-[#1447e6] text-[10px] font-semibold rounded-lg px-1.5 py-0.5 leading-[15px]">
+        <div className="hidden lg:flex items-center gap-1.5 shrink-0" title={rx.onPage}>
+          <span className="inline-flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 h-7">
+            <span className="size-2 rounded-full bg-[#ffb900]" />
+            <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} {copy.reader.unknown}</span>
+          </span>
+          <span className="inline-flex items-center gap-1.5 bg-g-learning-bg border border-[#bedbff] rounded-full px-2.5 h-7">
+            <span className="size-2 rounded-full bg-[#51a2ff]" />
+            <span className="text-xs font-medium text-g-learning-text whitespace-nowrap">{learningCount} {copy.reader.learning}</span>
+          </span>
+          <span className="bg-[#eef0ff] text-g-blue-700 text-[11px] font-bold rounded-md px-1.5 h-6 inline-flex items-center">
             {content.cefrLevel.toUpperCase()}
           </span>
         </div>
+        <div className="hidden lg:block w-px h-5 bg-[#e5e7eb] shrink-0" />
 
-        <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))}
-            className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
-            aria-label="Zoom out"
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-xs text-[#99a1af] w-8 text-center tabular-nums">{zoomPct}%</span>
-          <button
-            type="button"
-            onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))}
-            className="p-1.5 rounded-[10px] hover:bg-gray-100 text-[#6a7282]"
-            aria-label="Zoom in"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-          <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setShowUnknownOnly((v) => !v)}
             className={cn(
-              'flex items-center gap-1.5 p-1.5 rounded-[10px] text-xs font-medium transition-colors',
-              showUnknownOnly ? 'bg-[#f5f3ff] text-[#7008e7]' : 'hover:bg-gray-100 text-[#6a7282]',
+              'inline-flex items-center gap-1.5 h-9 px-2.5 rounded-[10px] text-xs font-semibold transition-colors',
+              showUnknownOnly ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#4a5565]',
             )}
             aria-pressed={showUnknownOnly}
-            title="Show only unknown-word highlights"
+            title={copy.reader.unknownOnlyTitle}
           >
-            <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Unknown only</span>
+            <Eye className="w-4 h-4" />
+            <span className="hidden xl:inline">{copy.reader.unknownOnly}</span>
           </button>
-          <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
+
+          <div ref={displayRef} className="relative">
+            <button
+              type="button"
+              onClick={() => { setDisplayOpen((v) => !v); setMoreOpen(false); }}
+              aria-expanded={displayOpen}
+              aria-haspopup="dialog"
+              aria-label={rx.display}
+              title={rx.display}
+              className={cn('inline-flex items-center justify-center h-9 min-w-9 px-2 rounded-[10px] transition-colors', displayOpen ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#4a5565]')}
+              data-testid="reader-display"
+            >
+              <Type className="w-4 h-4" />
+            </button>
+            {displayOpen && (
+              <div className="absolute right-0 top-11 z-40 w-[300px] bg-white border border-[#e9ebf3] rounded-2xl shadow-[0_18px_40px_rgba(16,24,40,.14)] p-4 space-y-4" role="group" aria-label={rx.display}>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.textSize}</div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))} disabled={fontScale <= 0.75} className="size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50 disabled:opacity-40" aria-label={copy.reader.zoomOut}>
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="flex-1 h-9 rounded-[10px] bg-[#f6f7fb] grid place-items-center text-sm font-semibold text-[#101828] tabular-nums">{zoomPct}%</div>
+                    <button type="button" onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))} disabled={fontScale >= 1.5} className="size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50 disabled:opacity-40" aria-label={copy.reader.zoomIn}>
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.lineSpacing}</div>
+                  <div className="grid grid-cols-4 gap-1 bg-[#f1f2f7] p-1 rounded-xl" role="radiogroup" aria-label={copy.settings.lineSpacing}>
+                    {LINE_SPACINGS.map((v, i) => {
+                      const on = Math.abs(lineSpacing - v) < 0.15 || (i === 1 && !LINE_SPACINGS.some((x) => Math.abs(lineSpacing - x) < 0.15));
+                      return (
+                        <button key={v} type="button" role="radio" aria-checked={on} onClick={() => void updatePreferences({ readerLineSpacing: v })} className={cn('h-8 rounded-[9px] text-[11.5px] font-semibold', on ? 'bg-white text-g-blue-700 shadow-sm' : 'text-[#6b7080] hover:text-[#101828]')}>
+                          {rx.spacing[i]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.theme}</div>
+                  <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={copy.settings.readerTheme}>
+                    {READER_THEMES.map((th) => (
+                      <button key={th} type="button" role="radio" aria-checked={readerTheme === th} onClick={() => void updatePreferences({ readerTheme: th })} className={cn('h-14 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 text-[11.5px] font-semibold', th === 'light' ? 'bg-white text-[#101828]' : th === 'sepia' ? 'bg-[#F4E8D0] text-[#3D2B1F]' : 'bg-[#1C1917] text-[#F5F5F4]', readerTheme === th ? 'border-g-blue-700' : 'border-[#e3e5ee]')}>
+                        <span className="text-base font-serif leading-none">Aa</span>
+                        {rx.themes[th]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#f0f1f6]">
+                  <span className="text-sm font-medium text-[#101828] inline-flex items-center gap-2"><Volume2 className="w-4 h-4 text-[#6b7080]" />{rx.pronounce}</span>
+                  <button type="button" role="switch" aria-checked={ttsOn} aria-label={copy.settings.tts} onClick={() => void updatePreferences({ ttsEnabled: !ttsOn })} className={cn('relative w-10 h-6 rounded-full transition-colors shrink-0', ttsOn ? 'bg-g-blue-700' : 'bg-[#d6d9e3]')}>
+                    <span className={cn('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', ttsOn ? 'left-[18px]' : 'left-0.5')} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
-            onClick={() => navigate(`/app/practice?contentId=${id}&segmentId=${segment?.id ?? outline[segmentIndex]?.id ?? ''}`)}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
-            title="Quiz yourself on this chapter"
+            onClick={() => {
+              const pageId = segment?.id ?? outline[segmentIndex]?.id ?? '';
+              if ((segment?.wordCount ?? 0) >= 60) {
+                setMashqNotice(null);
+                setMashqPhase('form');
+                setMashqOpen(true);
+                return;
+              }
+              navigate(`/app/practice?contentId=${id}&segmentId=${pageId}`);
+            }}
+            className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-[10px] text-xs font-semibold text-white bg-g-blue-700 hover:bg-g-blue-800 transition-colors"
+            title={(segment?.wordCount ?? 0) >= 60 ? mashqCopy(locale).pill : copy.reader.practiceTitle}
           >
-            <GraduationCap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Practice</span>
+            <GraduationCap className="w-4 h-4" />
+            <span className="hidden sm:inline">{copy.reader.practice}</span>
           </button>
+
+          {/* Report stays reachable (Play policy for AI / user content) but out of the toolbar. */}
+          <div ref={moreRef} className="relative">
+            <button
+              type="button"
+              onClick={() => { setMoreOpen((v) => !v); setDisplayOpen(false); }}
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              aria-label={rx.more}
+              className="inline-flex items-center justify-center size-9 rounded-[10px] hover:bg-gray-100 text-[#6b7080]"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            <div className={cn('absolute right-0 top-11 z-40 w-56 bg-white border border-[#e9ebf3] rounded-xl shadow-[0_18px_40px_rgba(16,24,40,.14)] p-1.5', !moreOpen && 'hidden')} role="menu">
+              <ReportButton lang={locale}
+                target={{ kind: 'content', contentId: content.id }}
+                icon={<Flag className="w-4 h-4" />}
+                name={content.title}
+                className="w-full flex items-center gap-2.5 h-10 px-3 rounded-lg text-sm font-medium text-[#101828] hover:bg-[#f6f7fb]"
+              />
+            </div>
+          </div>
         </div>
       </header>
 
@@ -832,7 +1219,7 @@ export default function ReaderPage() {
           {chaptersOpen ? (
             <>
               <div className="px-4 py-3 border-b border-[#f3f4f6]">
-                <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">Chapters</div>
+                <div className="text-xs font-semibold text-[#99a1af] uppercase tracking-[0.6px]">{copy.reader.chapters}</div>
               </div>
               <div className="flex-1 overflow-y-auto py-2">
                 {chapterGroups
@@ -846,15 +1233,15 @@ export default function ReaderPage() {
                           onClick={() => goToSegment(group.firstIndex)}
                           className={cn(
                             'w-full text-left px-4 py-2.5 transition-colors',
-                            activeHere ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                            activeHere ? 'bg-g-blue-50 border-r-[1.6px] border-g-blue-700' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
                           )}
                         >
-                          <div className={cn('text-sm font-medium truncate', activeHere ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
+                          <div className={cn('text-sm font-medium truncate', activeHere ? 'text-g-blue-900' : 'text-[#4a5565]')}>
                             {group.title}
                           </div>
                           {group.pageCount > 1 && (
-                            <div className={cn('text-xs mt-0.5', activeHere ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                              {group.pageCount} pages
+                            <div className={cn('text-xs mt-0.5', activeHere ? 'text-g-blue-700' : 'text-[#99a1af]')}>
+                              {pagesLabel(group.pageCount, locale)}
                             </div>
                           )}
                         </button>
@@ -869,14 +1256,14 @@ export default function ReaderPage() {
                           onClick={() => goToSegment(i)}
                           className={cn(
                             'w-full text-left px-4 py-3 transition-colors',
-                            active ? 'bg-[#f5f3ff] border-r-[1.6px] border-[#7f22fe]' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
+                            active ? 'bg-g-blue-50 border-r-[1.6px] border-g-blue-700' : 'hover:bg-gray-50 border-r-[1.6px] border-transparent',
                           )}
                         >
-                          <div className={cn('text-xs font-semibold', active ? 'text-[#7008e7]' : 'text-[#99a1af]')}>
-                            {pageCount > 1 ? `Page ${i + 1}` : 'Content'}
+                          <div className={cn('text-xs font-semibold', active ? 'text-g-blue-700' : 'text-[#99a1af]')}>
+                            {pageCount > 1 ? copy.reader.page(i + 1) : copy.reader.content}
                           </div>
-                          <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-[#4d179a]' : 'text-[#4a5565]')}>
-                            {displayChapterTitle(seg.chapterTitle || seg.title, i)}
+                          <div className={cn('text-sm font-medium truncate mt-0.5', active ? 'text-g-blue-900' : 'text-[#4a5565]')}>
+                            {displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN)}
                           </div>
                         </button>
                       );
@@ -888,18 +1275,18 @@ export default function ReaderPage() {
                 className="h-8 border-t border-[#f3f4f6] flex items-center justify-center gap-1 text-xs font-medium text-[#99a1af] hover:text-[#4a5565] hover:bg-gray-50 transition-colors"
               >
                 <PanelLeftClose className="w-3.5 h-3.5" />
-                Collapse
+                {copy.reader.collapse}
               </button>
             </>
           ) : (
             <button
               type="button"
               onClick={() => setChaptersOpen(true)}
-              className="flex-1 flex flex-col items-center justify-center gap-2 text-[#99a1af] hover:text-[#7008e7] hover:bg-[#f5f3ff] transition-colors"
-              title="Expand chapters"
+              className="flex-1 flex flex-col items-center justify-center gap-2 text-[#99a1af] hover:text-g-blue-700 hover:bg-g-blue-50 transition-colors"
+              title={copy.reader.chapters}
             >
               <PanelLeftOpen className="w-4 h-4" />
-              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180">Chapters</span>
+              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180">{copy.reader.chapters}</span>
             </button>
           )}
         </aside>
@@ -911,7 +1298,7 @@ export default function ReaderPage() {
           <div className="md:hidden flex gap-2 overflow-x-auto px-4 pt-3 pb-1 scrollbar-hide">
             {(chapterGroups ?? outline.map((seg, i) => ({
               key: i,
-              title: displayChapterTitle(seg.chapterTitle || seg.title, i),
+              title: displayChapterTitle(seg.chapterTitle || seg.title, i, copy.reader.chapterN),
               firstIndex: i,
               pageCount: 1,
             }))).map((group) => (
@@ -922,7 +1309,7 @@ export default function ReaderPage() {
                 className={cn(
                   'shrink-0 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors max-w-[12rem] truncate',
                   segmentIndex >= group.firstIndex && segmentIndex < group.firstIndex + group.pageCount
-                    ? 'bg-[#f5f3ff] border-[#7f22fe] text-[#7008e7]'
+                    ? 'bg-g-blue-50 border-g-blue-700 text-g-blue-700'
                     : 'bg-white border-gray-200 text-[#4a5565]',
                 )}
               >
@@ -932,28 +1319,30 @@ export default function ReaderPage() {
           </div>
 
           <div
-            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6"
-            style={{ fontSize: `${fontScale}rem` }}
+            dir={['ar', 'fa', 'he', 'ur'].includes(String(content.language || '').toLowerCase()) ? 'rtl' : 'ltr'}
+            lang={String(content.language || 'en').toLowerCase()}
+            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6 text-start"
+            style={{ fontSize: `${fontScale}rem`, lineHeight: lineSpacing }}
           >
             {isTrial ? (
-              <div className="mb-6 rounded-xl border border-violet-200 bg-[#f5f3ff] px-4 py-3 text-sm text-[#4d179a]">
-                Free sample of this book. Unlock the rest for {formatUzs(content.priceUzs ?? 0)}.
+              <div className="mb-6 rounded-xl border border-violet-200 bg-g-blue-50 px-4 py-3 text-sm text-g-blue-900">
+                {copy.reader.trialBanner(formatUzs(content.priceUzs ?? 0))}
               </div>
             ) : null}
             <div className="mb-8">
-              <div className="text-xs font-semibold text-[#8e51ff] uppercase tracking-[1.2px] mb-1">
+              <div className={cn('text-xs font-semibold uppercase tracking-[1.2px] mb-1', darkPage ? 'text-[#a5b4fc]' : 'text-g-blue-500')}>
                 {chapterGroups
-                  ? `Chapter ${(chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1} of ${chapterGroups.length}`
-                  : `${segmentIndex + 1} of ${pageCount}`}
+                  ? rx.pageOfBook(pageInChapter.current, pageInChapter.total, bookPct)
+                  : rx.pageOfBook(segmentIndex + 1, pageCount, bookPct)}
               </div>
-              <h1 className="text-2xl font-bold text-[#101828] font-serif leading-8">
+              <h1 className={cn('text-2xl font-bold font-serif leading-8', titleTone)}>
                 {currentChapterLabel}
               </h1>
             </div>
 
             <div
               ref={readerBodyRef}
-              className="text-[#1e2939] leading-[1.9] font-serif select-none touch-pan-y whitespace-pre-wrap"
+              className={cn('font-serif select-none touch-pan-y whitespace-pre-wrap', bodyTone)}
               onPointerDown={(e) => {
                 if (e.button !== 0 || !segment) return;
                 const el = (e.target as HTMLElement | null)?.closest?.('[data-token-i]');
@@ -1047,7 +1436,7 @@ export default function ReaderPage() {
             >
               {!segment ? (
                 <div className="flex items-center justify-center py-16">
-                  <Loader2 className="w-6 h-6 text-[#7f22fe] animate-spin" />
+                  <Loader2 className="w-6 h-6 text-g-blue-700 animate-spin" />
                 </div>
               ) : tokens.map((token) => {
                 const stanzaBreak = stanzaBreaks.has(token.i) ? (
@@ -1068,6 +1457,7 @@ export default function ReaderPage() {
                 }
                 const key = (token.lemma ?? token.surface).toLowerCase();
                 const status = lemmaStatus(key);
+                const showKnownWords = preferences?.showKnownWords ?? false;
                 const highlightStatus: WordStatus | null = showUnknownOnly
                   ? status === 'unknown'
                     ? 'unknown'
@@ -1076,7 +1466,9 @@ export default function ReaderPage() {
                     ? status
                     : status === 'ignored'
                       ? 'ignored'
-                      : null;
+                      : status === 'known' && showKnownWords
+                        ? 'known'
+                        : null;
                 const selected = tokenInSpan(token.i, liveSpan ?? lockedSpan);
 
                 return (
@@ -1103,8 +1495,8 @@ export default function ReaderPage() {
                       }}
                       className={cn(
                         'px-px py-0.5',
-                        highlightStatus ? STATUS_STYLES[highlightStatus] : STATUS_STYLES.known,
-                        selected && 'ring-2 ring-[#8e51ff]/60 bg-[#f5f3ff]',
+                        highlightStatus ? statusStyles[highlightStatus] : cn('cursor-pointer rounded-[6px]', darkPage ? 'hover:bg-white/10' : 'hover:bg-gray-100/80'),
+                        selected && 'ring-2 ring-g-blue-500/60 bg-g-blue-50',
                       )}
                     >
                       {token.surface}
@@ -1116,11 +1508,25 @@ export default function ReaderPage() {
 
           </div>
           </div>
+          {(segment?.wordCount ?? 0) >= 60 && (mashqStatus?.unseenCount ?? 0) >= 3 && !mashqCardHidden ? (
+            <div className="shrink-0 border-t border-[#e5e7eb] bg-[#f8f7ff] px-4 py-3">
+              <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold text-[#101828]">{mashqCopy(locale).cardTitle}</div>
+                  <div className="text-xs text-[#4a5565]">{mashqCopy(locale).cardBody}</div>
+                </div>
+                <div className="flex gap-2 shrink-0">
+                  <button type="button" onClick={() => { setMashqNotice(null); setMashqPhase('form'); setMashqOpen(true); }} className="h-11 px-3 rounded-xl bg-g-blue-700 text-white text-xs font-semibold">{mashqCopy(locale).start}</button>
+                  <button type="button" onClick={() => setMashqCardHidden(true)} className="h-11 px-3 rounded-xl text-xs font-semibold text-[#6b7280]">{mashqCopy(locale).later}</button>
+                </div>
+              </div>
+            </div>
+          ) : null}
           <div className="shrink-0 border-t border-[#e5e7eb] bg-white px-4 py-2.5">
             <div className="max-w-[68ch] mx-auto flex items-center justify-between gap-3">
               <Button variant="outline" onClick={goPrev} disabled={segmentIndex === 0} className="rounded-xl gap-1.5">
                 <ChevronLeft className="w-4 h-4" />
-                <span className="hidden sm:inline">Previous</span>
+                <span className="hidden sm:inline">{copy.reader.previous}</span>
               </Button>
               <form
                 className="flex items-center gap-1.5 text-xs text-[#99a1af]"
@@ -1136,31 +1542,31 @@ export default function ReaderPage() {
                   value={pageDraft}
                   onChange={(e) => setPageDraft(e.target.value.replace(/[^\d]/g, ''))}
                   onBlur={commitPageJump}
-                  aria-label="Go to page in this chapter"
-                  className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#8e51ff]/40 focus:border-[#7f22fe]"
+                  aria-label={copy.reader.goToPage}
+                  className="w-12 h-8 text-center rounded-xl border border-[#e5e7eb] bg-white text-[#1e2939] tabular-nums text-xs font-medium focus:outline-none focus:ring-2 focus:ring-g-blue-500/40 focus:border-g-blue-700"
                 />
                 <span className="tabular-nums">/ {pageInChapter.total}</span>
               </form>
               {isTrial && segmentIndex >= trialLimit - 1 ? (
-                <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
-                  Unlock full book
+                <Button onClick={() => setPaywallOpen(true)} className="rounded-xl gap-1.5 bg-g-blue-700 hover:bg-g-blue-700">
+                  {copy.reader.unlockFullBook}
                 </Button>
               ) : segmentIndex < pageCount - 1 ? (
-                <Button onClick={goNext} className="rounded-xl gap-1.5 bg-[#7f22fe] hover:bg-[#7008e7]">
-                  <span className="hidden sm:inline">Next</span>
+                <Button onClick={goNext} className="rounded-xl gap-1.5 bg-g-blue-700 hover:bg-g-blue-700">
+                  <span className="hidden sm:inline">{copy.reader.next}</span>
                   <ChevronRight className="w-4 h-4" />
                 </Button>
               ) : (
                 <Button
                   onClick={() => {
                     void saveProgress(segmentIndex, true);
-                    toast.success('Reading complete!');
-                    navigate('/app');
+                    toast.success(copy.reader.readingComplete);
+                    goToLibrary();
                   }}
                   className="rounded-xl gap-1.5 bg-emerald-600 hover:bg-emerald-700"
                 >
                   <Check className="w-4 h-4" />
-                  Finish
+                  {copy.reader.finish}
                 </Button>
               )}
             </div>
@@ -1185,16 +1591,17 @@ export default function ReaderPage() {
               onPronounce={pronounceWord}
               loading={lookupLoading}
               showVocabActions={vocabMarkable}
+              showPronounce={preferences?.ttsEnabled !== false}
             />
           ) : (
             <button
               type="button"
               onClick={() => setDictOpen(true)}
               className="h-full flex flex-col items-center justify-center gap-1.5 text-[#99a1af] hover:text-[#4a5565] hover:bg-gray-50 transition-colors"
-              title="Dictionary"
+              title={copy.reader.dictionary}
             >
               <BookOpen className="w-4 h-4" />
-              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180 mt-1">Dictionary</span>
+              <span className="text-[10px] font-medium [writing-mode:vertical-rl] rotate-180 mt-1">{copy.reader.dictionary}</span>
             </button>
           )}
         </aside>
@@ -1213,6 +1620,7 @@ export default function ReaderPage() {
             onPronounce={pronounceWord}
             loading={lookupLoading}
             showVocabActions={vocabMarkable}
+            showPronounce={preferences?.ttsEnabled !== false}
           />
         </div>
       )}
@@ -1224,7 +1632,7 @@ export default function ReaderPage() {
               type="button"
               className="absolute top-3 right-3 z-10 size-8 rounded-full bg-[#f3f4f6] hover:bg-[#e5e7eb] grid place-items-center text-gray-500"
               onClick={() => setPaywallOpen(false)}
-              aria-label="Keep reading the sample"
+              aria-label={copy.reader.keepReadingSample}
             >
               <X className="w-4 h-4" />
             </button>
@@ -1241,6 +1649,24 @@ export default function ReaderPage() {
           </div>
         </div>
       ) : null}
+      <MashqSheet
+        open={mashqOpen}
+        remaining={mashqStatus?.remaining ?? null}
+        missedToday={mashqStatus?.missedToday ?? 0}
+        starting={mashqStarting}
+        preparing={mashqPhase === 'preparing'}
+        failed={mashqPhase === 'failed'}
+        empty={mashqPhase === 'empty'}
+        notice={mashqNotice}
+        onClose={() => {
+          if (mashqRetry.current) window.clearTimeout(mashqRetry.current);
+          mashqArmed.current = null;
+          setMashqOpen(false);
+          setMashqNotice(null);
+          setMashqPhase('form');
+        }}
+        onStart={(count, repeat) => { setMashqNotice(null); mashqArmed.current = segment?.id ?? 'retry'; void startMashq(count, repeat); }}
+      />
     </div>
   );
 }

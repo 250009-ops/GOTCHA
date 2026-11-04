@@ -62,7 +62,7 @@ export function StatCard({
           {hint && <div className="mt-3 text-xs text-slate-500">{hint}</div>}
         </div>
         {icon && (
-          <div className={cn('size-10 rounded-xl flex items-center justify-center', accent ?? 'bg-violet-50 text-[#6c1d95]')}>
+          <div className={cn('size-10 rounded-xl flex items-center justify-center', accent ?? 'bg-violet-50 text-g-blue-700')}>
             {icon}
           </div>
         )}
@@ -94,9 +94,9 @@ export function Button({
     <button
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold transition disabled:opacity-50',
-        variant === 'primary' && 'bg-[#6c1d95] text-white hover:bg-[#5a187c]',
+        variant === 'primary' && 'bg-g-blue-700 text-white hover:bg-[#5a187c]',
         variant === 'secondary' && 'bg-slate-100 text-slate-700 hover:bg-slate-200',
-        variant === 'ghost' && 'bg-violet-50 text-[#6c1d95] hover:bg-violet-100',
+        variant === 'ghost' && 'bg-violet-50 text-g-blue-700 hover:bg-violet-100',
         variant === 'danger' && 'bg-rose-50 text-rose-700 hover:bg-rose-100',
         className,
       )}
@@ -110,7 +110,7 @@ export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
     <input
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-[#6c1d95] focus:ring-2 focus:ring-[#6c1d95]/20',
+        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-g-blue-700 focus:ring-2 focus:ring-g-blue-700/20',
         props.className,
       )}
     />
@@ -122,7 +122,7 @@ export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
     <textarea
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-[#6c1d95] focus:ring-2 focus:ring-[#6c1d95]/20',
+        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 outline-none focus:border-g-blue-700 focus:ring-2 focus:ring-g-blue-700/20',
         props.className,
       )}
     />
@@ -134,7 +134,7 @@ export function Select(props: React.SelectHTMLAttributes<HTMLSelectElement>) {
     <select
       {...props}
       className={cn(
-        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-[#6c1d95] focus:ring-2 focus:ring-[#6c1d95]/20',
+        'w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-g-blue-700 focus:ring-2 focus:ring-g-blue-700/20',
         props.className,
       )}
     />
@@ -174,7 +174,7 @@ export function ErrorBlock({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-lg bg-[#6c1d95] px-4 py-2 text-white text-sm font-semibold"
+          className="rounded-lg bg-g-blue-700 px-4 py-2 text-white text-sm font-semibold"
         >
           Retry
         </button>
@@ -272,7 +272,7 @@ export function TablePagination({
               className={cn(
                 'min-w-8 rounded-lg px-2 py-1.5 text-xs font-semibold transition',
                 p === safePage
-                  ? 'bg-[#6c1d95] text-white'
+                  ? 'bg-g-blue-700 text-white'
                   : 'text-slate-600 hover:bg-slate-100',
               )}
             >

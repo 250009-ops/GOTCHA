@@ -1,10 +1,21 @@
-import { IsEnum, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength } from 'class-validator';
+import { IsEnum, IsIn, IsInt, IsNumber, IsOptional, IsString, IsBoolean, Min, Max, MinLength, MaxLength, Matches } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 import { AppLanguage, CefrLevel } from '@prisma/client';
+
+/** No control characters and no links. Empty (after trim) clears the name. */
+const DISPLAY_NAME = /^(?!.*(?:https?:\/\/|www\.))[^\u0000-\u001F\u007F\u2028\u2029]*$/u;
 
 export class UpdateProfileDto {
   @IsOptional()
+  @Transform(({ value }) => {
+    if (typeof value !== 'string') return value;
+    const trimmed = value.trim();
+    return trimmed.length === 0 ? null : trimmed;
+  })
   @IsString()
-  displayName?: string;
+  @MaxLength(50)
+  @Matches(DISPLAY_NAME, { message: 'Display name cannot contain links or control characters.' })
+  displayName?: string | null;
 
   @IsOptional()
   @IsEnum(AppLanguage)
@@ -23,8 +34,8 @@ export class UpdatePreferencesDto {
   readerFontScale?: number;
 
   @IsOptional()
-  @IsString()
-  readerTheme?: string;
+  @IsIn(['light', 'sepia', 'dark'])
+  readerTheme?: 'light' | 'sepia' | 'dark';
 
   @IsOptional()
   @IsNumber()
@@ -46,9 +57,38 @@ export class UpdatePreferencesDto {
   @Max(120)
   dailyGoalMinutes?: number;
 
+  /** Practice hub options are 30 / 60 / 120 / 200. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(10)
+  @Max(500)
+  dailyGoalXp?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(50)
+  dailyNewWords?: number;
+
   @IsOptional()
   @IsBoolean()
   notificationsEnabled?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  onboardingDone?: boolean;
+
+  /** When false (the default, and the default for minors), peers do not see online status or last seen. */
+  @IsOptional()
+  @IsBoolean()
+  showOnlineStatus?: boolean;
+
+  /** `dark` is still accepted so older clients don't get a 400. The service stores it as `system`. */
+  @IsOptional()
+  @IsIn(['system', 'light', 'dark'])
+  appTheme?: 'system' | 'light' | 'dark';
 }
 
 export class ChangePasswordDto {
@@ -85,8 +125,21 @@ export class UpdateTargetLanguageDto {
   isPrimary?: boolean;
 }
 
+export class SetAgeDto {
+  /** Omit/null = "prefer not to say" (unknown-age limits apply). */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  birthYear?: number | null;
+}
+
 export class DeleteAccountDto {
   @IsString()
   @MaxLength(128)
   currentPassword!: string;
+}
+
+export class SetAiPreferenceDto {
+  @IsBoolean()
+  aiDisabled!: boolean;
 }

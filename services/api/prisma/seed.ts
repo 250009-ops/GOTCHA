@@ -1,4 +1,5 @@
-import { PrismaClient, AppLanguage, CefrLevel, ContentType, ContentSource, PublishStatus, LicenseStatus, AdminRole, WordStatus } from '@prisma/client';
+import { copyCatalogBaseSom } from '../src/common/catalog-pricing';
+import { Prisma, PrismaClient, AppLanguage, CefrLevel, ContentType, ContentSource, PublishStatus, LicenseStatus, AdminRole, WordStatus } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { tokenizeText, slugify, uniqueWordCount } from '../src/utils/tokenizer';
 import {
@@ -6,8 +7,34 @@ import {
   FIGMA_ADMIN_METRICS,
 } from '../src/modules/admin/admin-figma-metrics';
 import { syntheticUserEmailWhere } from '../src/common/production-users';
+/**
+ * WL4-15: no passwords in the repo. Seed passwords come from env, or a random one is generated.
+ * On an existing user the hash is only replaced when the env var is set, so a redeploy never resets a real password.
+ * A generated password is printed once, outside production only.
+ */
+import { randomBytes } from 'crypto';
+import { seedRefusal } from './seed-guard';
+function seedPassword(envKey: string): { value: string; fromEnv: boolean } {
+  const v = process.env[envKey];
+  return v && v.length >= 12 ? { value: v, fromEnv: true } : { value: randomBytes(18).toString('base64url'), fromEnv: false };
+}
+function logGenerated(email: string, s: { fromEnv: boolean; value: string }) {
+  if (s.fromEnv) console.log(`${email}: password from env`);
+  else if (process.env.NODE_ENV !== 'production') console.log(`${email}: generated password (dev only, not stored): ${s.value}`);
+  else console.log(`${email}: random password set on create; use password reset to sign in`);
+}
 
-const prisma = new PrismaClient();
+
+// WLF-16: refuse outside local/test (NODE_ENV=production, no ALLOW_SEED=1, or a non-local DB host).
+const refusal = seedRefusal();
+if (refusal) {
+  console.error(`prisma/seed.ts refused: ${refusal}. Seed is for local/test databases only (set ALLOW_SEED=1).`);
+  process.exit(1);
+}
+// WLF-16: insert-only. Every upsert keeps existing rows (prices, plans, settings, the admin user) untouched.
+const prisma = new PrismaClient().$extends({
+  query: { $allModels: { async upsert({ args, query }) { return query({ ...args, update: {} }); } } },
+}) as unknown as PrismaClient;
 
 const DEMO_CATALOG_SLUGS = [
   'the-master-and-margarita',
@@ -181,43 +208,20 @@ async function main() {
   console.log('Seeding Gotcha database...');
 
   // Free: lookups/imports follow admin Settings + Import & Pricing (do not overwrite on redeploy).
-  // Premium: unlimited.
+  // Premium (Plus): no daily word-lookup cap, 200 quizzes/day (14:40) — see common/plan-limits.ts. The DB quota column is not read.
   const UNLIMITED = 1_000_000;
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'free' },
-    update: {
-      name: 'Free',
-      priceMonthly: 0,
-      offlineEnabled: false,
-    },
-    create: {
-      tier: 'free',
-      name: 'Free',
-      priceMonthly: 0,
-      aiDailyQuota: 50,
-      importLimit: 15,
-      offlineEnabled: false,
-    },
-  });
-
-  await prisma.subscriptionPlan.upsert({
-    where: { tier: 'premium' },
-    update: {
-      name: 'Premium',
-      priceMonthly: 9,
-      aiDailyQuota: UNLIMITED,
-      importLimit: UNLIMITED,
-      offlineEnabled: true,
-    },
-    create: {
-      tier: 'premium',
-      name: 'Premium',
-      priceMonthly: 9,
-      aiDailyQuota: UNLIMITED,
-      importLimit: UNLIMITED,
-      offlineEnabled: true,
-    },
-  });
+  // Prices/limits come from prisma/pricing-seed.json (PRICING.md §7, non-PROPOSAL rows); admins edit them later.
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const pricing = require('./pricing-seed.json') as {
+    subscriptionPlans: Array<{ tier: 'free' | 'premium'; name: string; nameI18n: Record<string, string>; priceMonthly: number; period: string; aiDailyQuota: number; quizDailyQuota?: number; importLimit: number; offlineEnabled: boolean; features: string[] }>;
+  };
+  for (const [i, p] of pricing.subscriptionPlans.entries()) {
+    const data = {
+      name: p.name, priceMonthly: p.priceMonthly, aiDailyQuota: Math.min(p.aiDailyQuota, UNLIMITED), quizDailyQuota: Math.min(p.quizDailyQuota ?? (p.tier === 'premium' ? 200 : 10), UNLIMITED), importLimit: Math.min(p.importLimit, UNLIMITED),
+      offlineEnabled: p.offlineEnabled, nameI18n: p.nameI18n, period: p.period, features: p.features, active: true, sortOrder: i,
+    };
+    await prisma.subscriptionPlan.upsert({ where: { tier: p.tier }, update: data, create: { tier: p.tier, ...data } });
+  }
 
   const license = await prisma.license.upsert({
     where: { id: '00000000-0000-4000-8000-000000000001' },
@@ -233,11 +237,12 @@ async function main() {
     },
   });
 
-  const adminPassword = await bcrypt.hash('GotchaAdmin2026!', 12);
+  const adminPasswordSecret = seedPassword('SEED_ADMIN_PASSWORD');
+  const adminPassword = await bcrypt.hash(adminPasswordSecret.value, 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@gotcha.app' },
     update: {
-      passwordHash: adminPassword,
+      ...(adminPasswordSecret.fromEnv ? { passwordHash: adminPassword } : {}),
       emailVerifiedAt: new Date(),
       deletedAt: null,
     },
@@ -279,19 +284,20 @@ async function main() {
     await ensureSubscription(admin.id, freePlan.id, '00000000-0000-4000-8000-000000000010');
   }
 
-  const demoPassword = await bcrypt.hash('Learner2026!', 12);
+  const demoPasswordSecret = seedPassword('SEED_DEMO_PASSWORD');
+  const demoPassword = await bcrypt.hash(demoPasswordSecret.value, 12);
   const learnerCreatedAt = new Date('2025-10-12T10:00:00.000Z');
   const demoUser = await prisma.user.upsert({
     where: { email: 'learner@gotcha.app' },
     update: {
       displayName: 'Alex Chen',
-      passwordHash: demoPassword,
+      ...(demoPasswordSecret.fromEnv ? { passwordHash: demoPassword } : {}),
       nativeLanguage: 'en',
       uiLanguage: 'en',
       streakCount: 7,
       streakLastDate: new Date(),
       emailVerifiedAt: new Date(),
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
+      avatarUrl: null,
       createdAt: learnerCreatedAt,
     },
     create: {
@@ -303,7 +309,7 @@ async function main() {
       streakCount: 7,
       streakLastDate: new Date(),
       emailVerifiedAt: new Date(),
-      avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&h=200&fit=crop',
+      avatarUrl: null,
       createdAt: learnerCreatedAt,
       preferences: {
         create: {
@@ -401,6 +407,7 @@ async function main() {
       where: { slug },
       update: {
         coverImageKey: sampleCover,
+        originalCoverKey: sampleCover,
         publishStatus: PublishStatus.published,
       },
       create: {
@@ -413,6 +420,7 @@ async function main() {
         cefrLevel: story.level,
         genre: story.genre,
         coverImageKey: sampleCover,
+        originalCoverKey: sampleCover,
         licenseId: story.source === ContentSource.licensed ? license.id : undefined,
         wordCount,
         uniqueWordCount: uniqueWordCount(tokenMap as never),
@@ -479,6 +487,7 @@ async function main() {
       cefrLevel: 'b1',
       genre: 'fiction',
       coverImageKey: lighthouseCover,
+      originalCoverKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,
@@ -495,6 +504,7 @@ async function main() {
       cefrLevel: 'b1',
       genre: 'fiction',
       coverImageKey: lighthouseCover,
+      originalCoverKey: lighthouseCover,
       wordCount: lighthouseTotalWords,
       uniqueWordCount: lighthouseUnique,
       publishStatus: PublishStatus.published,
@@ -856,17 +866,17 @@ async function main() {
     { id: '00000000-0000-4000-8000-000000000041', label: '1 - 10 pages', minPages: 1, maxPages: 10, priceUsd: 12000, sortOrder: 1 },
     { id: '00000000-0000-4000-8000-000000000042', label: '11 - 50 pages', minPages: 11, maxPages: 50, priceUsd: 29000, sortOrder: 2 },
     { id: '00000000-0000-4000-8000-000000000043', label: '51 - 100 pages', minPages: 51, maxPages: 100, priceUsd: 49000, sortOrder: 3 },
-    { id: '00000000-0000-4000-8000-000000000044', label: '100+ pages', minPages: 101, maxPages: null, priceUsd: 79000, sortOrder: 4 },
+    { id: '00000000-0000-4000-8000-000000000044', label: '101+ pages', minPages: 101, maxPages: null, priceUsd: 79000, sortOrder: 4 },
   ];
-  for (const tier of pageTiers) {
-    await prisma.importPageTier.upsert({
-      where: { id: tier.id },
-      // IDEMPOTENT: Preserve admin-edited prices AND page ranges (gaps are closed in admin).
-      update: {
-        sortOrder: tier.sortOrder,
-      },
-      create: tier,
-    });
+  // final-5: insert-only when the table is empty (same as 0020). Never overwrite or add to live tiers (prod has DevOps rows).
+  if ((await prisma.importPageTier.count()) === 0) {
+    await prisma.importPageTier.createMany({ data: pageTiers });
+  }
+
+  // Plus pass prices in soʻm (option C). Create only if missing — never overwrite admin edits.
+  for (const [key, value] of [['plus.pass.price_30_uzs', 24990], ['plus.pass.price_365_uzs', 199990]] as const) {
+    const existing = await prisma.platformSetting.findUnique({ where: { key } });
+    if (!existing) await prisma.platformSetting.create({ data: { key, value } });
   }
 
   // IDEMPOTENT: Only create importFreeLimits if missing — do not overwrite admin edits
@@ -894,15 +904,19 @@ async function main() {
         key: 'catalogPricingRules',
         value: {
           contentType: 'book',
-          basePriceUsd: 4.99,
-          perPageSurchargeUsd: 0.02,
-          volumeDiscountsEnabled: true,
-          buy3PctOff: 10,
-          buy5PctOff: 20,
+          currency: 'UZS',
+          basePriceSom: 49000,
+          perPageSurchargeSom: 0,
+          volumeDiscountsEnabled: false,
+          buy3PctOff: 0,
+          buy5PctOff: 0,
         },
       },
     });
   }
+
+  // final-5: copy the live soʻm price from the legacy basePriceUsd key to basePriceSom (add-only, idempotent).
+  await copyCatalogBaseSom(prisma);
 
   const achievements = [
     { code: 'streak_7', title: 'Week Warrior', description: 'Maintain a 7-day streak', category: 'streak' as const, points: 50, threshold: 7, sortOrder: 1, iconKey: 'flame' },
@@ -925,8 +939,8 @@ async function main() {
   });
   await prisma.platformSetting.upsert({
     where: { key: 'supportEmail' },
-    update: { value: 'support@gotcha.app' },
-    create: { key: 'supportEmail', value: 'support@gotcha.app' },
+    update: {}, // final-5: never overwrite the live value (prod: support@gotchaa.uz)
+    create: { key: 'supportEmail', value: 'support@gotchaa.uz' },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiEnabled' },
@@ -966,7 +980,13 @@ async function main() {
   });
   const existingAiUserQuota = await prisma.platformSetting.findUnique({ where: { key: 'aiDefaultUserQuota' } });
   if (!existingAiUserQuota) {
-    await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 50 } });
+    await prisma.platformSetting.create({ data: { key: 'aiDefaultUserQuota', value: 20 } });
+  }
+  // payments-02 (Sarvarbek 14:32): Plus has no daily lookup cap (null), silent speed guard 30/min, 300/hour.
+  for (const [key, value] of [['plus.ai_lookup_quota', null], ['plus.lookup_hard_cap', null], ['lookup.burst_per_minute', 30], ['lookup.burst_per_hour', 300]] as const) {
+    if (!(await prisma.platformSetting.findUnique({ where: { key } }))) {
+      await prisma.platformSetting.create({ data: { key, value: value === null ? Prisma.JsonNull : value } });
+    }
   }
 
   await prisma.notificationCampaign.deleteMany({
@@ -1114,8 +1134,8 @@ async function main() {
   }
 
   console.log('Seed complete.');
-  console.log('Admin: admin@gotcha.app / GotchaAdmin2026!');
-  console.log('Demo learner: learner@gotcha.app / Learner2026!');
+  logGenerated('admin@gotcha.app', adminPasswordSecret);
+  logGenerated('learner@gotcha.app', demoPasswordSecret);
   console.log('Production metrics: live user/AI/revenue counts (Figma overlay removed).');
 }
 

@@ -8,7 +8,7 @@ import { resolve } from 'path';
 const API = process.env.API_BASE || 'http://localhost:3000/api/v1';
 const pdfPath = resolve(process.argv[2] || 'tmp/synthetic-60p.pdf');
 const email = process.env.SMOKE_EMAIL || 'learner@gotcha.app';
-const password = process.env.SMOKE_PASSWORD || 'Learner2026!';
+const password = process.env.SMOKE_PASSWORD;
 
 async function json(res) {
   const text = await res.text();

@@ -49,8 +49,8 @@ if (!indexHtml.includes('/admin/assets/')) {
 const stage = fs.mkdtempSync(path.join(os.tmpdir(), 'gotcha-admin-'));
 fs.cpSync(path.join(root, 'apps/admin/dist'), stage, { recursive: true });
 const tarPath = path.join(os.tmpdir(), `gotcha-admin-${Date.now()}.tgz`);
-const { spawnSync } = await import('node:child_process');
-spawnSync('tar', ['-czf', tarPath, '-C', stage, '.'], { stdio: 'inherit' });
+const packed = spawnSync('tar', ['-czf', tarPath, '-C', stage, '.'], { stdio: 'inherit' });
+if (packed.status !== 0) process.exit(packed.status ?? 1);
 
 function sshExec(conn, cmd) {
   return new Promise((resolve, reject) => {

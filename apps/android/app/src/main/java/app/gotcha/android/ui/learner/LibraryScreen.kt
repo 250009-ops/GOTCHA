@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.learner
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -86,7 +88,7 @@ import kotlin.math.roundToInt
 private val staticFilterTabs = listOf("Fiction", "News", "Imports", "A1–A2", "B1–B2", "C1–C2")
 
 private val coverPalettes = listOf(
-    listOf(Color(0xFF8E51FF), Color(0xFFAD46FF), Color(0xFF4F39F6)),
+    listOf(GotchaBlue.B500, GotchaBlue.B400, Color(0xFF4F39F6)),
     listOf(Color(0xFF00D492), Color(0xFF00BBA7), Color(0xFF0092B8)),
     listOf(Color(0xFFFB2C6B), Color(0xFFF6339A), Color(0xFFE60076)),
     listOf(Color(0xFF2B7FFF), Color(0xFF6A5CFF), Color(0xFF4F39F6)),
@@ -116,7 +118,7 @@ private fun cefrColors(level: String): Pair<Color, Color> = when (level.lowercas
     "a2" -> Color(0xFFCCFBF1) to Color(0xFF0F766E)
     "b1" -> Color(0xFFDBEAFE) to Color(0xFF1D4ED8)
     "b2" -> Color(0xFFE0E7FF) to Color(0xFF4338CA)
-    "c1" -> Color(0xFFEDE9FE) to Color(0xFF7008E7)
+    "c1" -> GotchaBlue.B50 to GotchaBlue.B700
     "c2" -> Color(0xFFFCE7F3) to Color(0xFFBE185D)
     else -> Color(0xFFF3F4F6) to Color(0xFF4B5563)
 }
@@ -406,7 +408,7 @@ private fun HomeBody(
 
         highlighted?.let { item ->
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("NEW MATERIAL", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = Color(0xFF7008E7), letterSpacing = 0.8.sp)
+                Text("NEW MATERIAL", fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 11.sp, color = GotchaBlue.B700, letterSpacing = 0.8.sp)
                 Text(item.title.orEmpty(), fontFamily = Inter, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF111827))
                 Text("On your library dashboard — open it when you want to read or purchase.", fontFamily = Inter, fontSize = 14.sp, color = Color(0xFF9CA3AF))
                 Box(Modifier.width(168.dp)) {
@@ -717,7 +719,7 @@ private fun StatChips(streak: Int, words: Int, fill: Boolean, modifier: Modifier
             "$words",
             "Words",
             Color(0xFF155DFC),
-            Color(0xFFEFF6FF),
+            GotchaBlue.LearningBg,
             Color(0xFFBEDBFF),
             chipMod,
         )
@@ -899,7 +901,7 @@ private fun ContentCard(
     onOpen: () -> Unit,
 ) {
     val shape = RoundedCornerShape(16.dp)
-    val highlightMod = if (highlighted) Modifier.border(2.dp, Color(0xFF7008E7), shape) else Modifier
+    val highlightMod = if (highlighted) Modifier.border(2.dp, GotchaBlue.B700, shape) else Modifier
     if (viewList) {
         Row(
             modifier = Modifier
@@ -972,7 +974,7 @@ private fun ContentCard(
                         fontFamily = Inter,
                         fontWeight = FontWeight.SemiBold,
                         fontSize = 10.sp,
-                        color = Color(0xFF7008E7),
+                        color = GotchaBlue.B700,
                     )
                 }
                 Text(langFlags[item.language?.lowercase()] ?: "🌐", fontSize = 16.sp)
@@ -1003,7 +1005,7 @@ private fun ContentCard(
                     fontFamily = Inter,
                     fontWeight = if (pct > 0) FontWeight.SemiBold else FontWeight.Medium,
                     fontSize = 12.sp,
-                    color = if (pct > 0) GotchaColors.WebAccent else Color(0xFF8B5CF6).copy(alpha = 0.70f),
+                    color = if (pct > 0) GotchaColors.WebAccent else GotchaBlue.B500.copy(alpha = 0.70f),
                 )
             }
             if ((item.progressPct ?: 0.0) > 0) {
@@ -1019,7 +1021,7 @@ private fun ContentCard(
                         Modifier
                             .fillMaxWidth((item.progressPct ?: 0.0).toFloat().coerceIn(0f, 100f) / 100f)
                             .height(4.dp)
-                            .background(Color(0xFF8B5CF6), RoundedCornerShape(50)),
+                            .background(GotchaBlue.B500, RoundedCornerShape(50)),
                     )
                 }
             }

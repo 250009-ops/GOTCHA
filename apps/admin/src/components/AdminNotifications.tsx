@@ -139,11 +139,11 @@ export function AdminNotifications() {
           setOpen((v) => !v);
           if (!open) load().catch(() => undefined);
         }}
-        className="relative size-[38px] rounded-lg border border-slate-200 bg-white grid place-items-center text-slate-500 hover:text-[#6c1d95] hover:border-[#6c1d95]/40 transition"
+        className="relative size-[38px] rounded-lg border border-slate-200 bg-white grid place-items-center text-slate-500 hover:text-g-blue-700 hover:border-g-blue-700/40 transition"
       >
         <Bell className="size-[18px]" />
         {unreadCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-[#6c1d95] text-white text-[10px] font-bold grid place-items-center">
+          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-g-blue-700 text-white text-[10px] font-bold grid place-items-center">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -169,7 +169,7 @@ export function AdminNotifications() {
                   <button
                     type="button"
                     onClick={markAllRead}
-                    className="text-xs font-semibold text-[#6c1d95] hover:underline"
+                    className="text-xs font-semibold text-g-blue-700 hover:underline"
                   >
                     Mark all read
                   </button>
@@ -190,7 +190,7 @@ export function AdminNotifications() {
             <div className="overflow-y-auto flex-1">
               {loading && items.length === 0 ? (
                 <div className="flex items-center gap-2 px-4 py-8 text-sm text-slate-500 justify-center">
-                  <Loader2 className="size-4 animate-spin text-[#6c1d95]" />
+                  <Loader2 className="size-4 animate-spin text-g-blue-700" />
                   Loading…
                 </div>
               ) : items.length === 0 ? (
@@ -213,7 +213,7 @@ export function AdminNotifications() {
                             <span
                               className={cn(
                                 'mt-1.5 size-2 rounded-full shrink-0',
-                                unread ? 'bg-[#6c1d95]' : 'bg-transparent',
+                                unread ? 'bg-g-blue-700' : 'bg-transparent',
                               )}
                             />
                             <div className="min-w-0 flex-1">

@@ -10,14 +10,19 @@ export const LOOKUP_CONTEXTUAL_MAX_WORDS = 16;
 export const LOOKUP_PHRASE_MAX_WORDS = 8;
 export const LOOKUP_PHRASE_MAX_CHARS = 80;
 /** Bump when prompt/normalization changes so stale lemma_cache rows are skipped. */
-export const LOOKUP_CACHE_VERSION = 'v11';
+export const LOOKUP_CACHE_VERSION = 'v13'; // v13: Uzbek Latin + ʻ orthography, comma meanings kept (accuracy pass 2026-11-04)
 
 export type LookupKind = 'word' | 'phrase' | 'sentence';
 
 export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader.
 SOURCE LANGUAGE and GLOSS LANGUAGE are named in the user message (full name + ISO code).
 Write translation and contextualMeaning ONLY in GLOSS LANGUAGE. Never default to English, Russian, or Uzbek unless that is the requested GLOSS LANGUAGE.
-Return ONLY JSON: {"lemma":"","translation":"","contextualMeaning":"","phraseIfAny":null}
+Uzbek (uz) is ALWAYS the modern Latin alphabet, never Cyrillic. Spell oʻ and gʻ with ʻ (U+02BB) and the tutuq belgisi with ʼ (U+02BC): "oʻtmoq", "gʻalaba", "maʼno". Use natural, everyday literary Uzbek a teacher would write — not word-by-word calques of English.
+Return ONLY JSON: {"lemma":"","partOfSpeech":"","translation":"","contextualMeaning":"","phraseIfAny":null}
+
+PART OF SPEECH:
+- partOfSpeech = the role of TARGET in THIS SENTENCE, one of: noun, verb, adjective, adverb, pronoun, preposition, conjunction, determiner, interjection, numeral, particle, phrase.
+- translation MUST keep that part of speech: a noun gets a noun gloss, a verb gets a verb gloss. Bad: "hesitation" (noun) → "ikkilanmoq" (verb). Good: "hesitation" → "ikkilanish".
 
 DOMAIN: Use only a sense that fits THIS SENTENCE (ships, hunting, weather, people, literature, daily talk).
 Never pick software, IT, business-process, sports, gambling, finance, or slang senses unless the sentence is clearly about those.
@@ -29,16 +34,18 @@ TENSE vs IDIOM:
 
 WORD (TARGET is one token):
 - translation = dictionary/base gloss of THIS WORD in GLOSS LANGUAGE (1–3 words), the sense used HERE. No "or"/"yoki"/"или" lists.
-- contextualMeaning = ONE natural meaning as used HERE (2–12 words). Not a comma-joined synonym dump.
+- contextualMeaning = ONE natural meaning as used HERE (2–12 words), a short phrase or clause in GLOSS LANGUAGE. Not a comma-joined synonym dump.
+- Accuracy first: pick the sense the author means in THIS sentence (literal vs figurative, tense, register). If the word is part of a fixed expression, gloss the expression.
 - phraseIfAny = exact 2–6 word idiom/phrasal span from SENTENCE, else null.
 - lemma = dictionary headword.
 
 Examples when GLOSS LANGUAGE is uz:
+TARGET "hesitation" / SENTENCE "She answered without any hesitation." → {"lemma":"hesitation","partOfSpeech":"noun","translation":"ikkilanish","contextualMeaning":"hech ikkilanmasdan, darhol","phraseIfAny":null}
 TARGET "hand" / SENTENCE "Nothing! and noon at hand!" → {"lemma":"hand","translation":"yaqin","contextualMeaning":"yaqin vaqt","phraseIfAny":"at hand"}
 TARGET "might" / SENTENCE "I might have known it, too." → {"lemma":"might","translation":"ehtimol","contextualMeaning":"oldin bilish yoki taxmin qilish","phraseIfAny":"might have known"}
 TARGET "outs" / SENTENCE "the regular look outs" → {"lemma":"lookout","translation":"qorovullar","contextualMeaning":"kemadagi kuzatuvchilar","phraseIfAny":"look outs"}
-TARGET "have run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib o'tmoq","contextualMeaning":"kechasi orqadan o'tib ketmoq","phraseIfAny":"run him by"}
-TARGET "run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib o'tmoq","contextualMeaning":"orqadan o'tib ketmoq","phraseIfAny":"run him by"}
+TARGET "have run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib oʻtmoq","contextualMeaning":"kechasi orqadan oʻtib ketmoq","phraseIfAny":"run him by"}
+TARGET "run" / SENTENCE "Aye, aye, I have run him by last night." → {"lemma":"run by","translation":"quvib oʻtmoq","contextualMeaning":"orqadan oʻtib ketmoq","phraseIfAny":"run him by"}
 
 PHRASE (TARGET is 2–8 words and is not a full sentence):
 - If TARGET is only a slice (have run), expand phraseIfAny to the real phrasal span in SENTENCE (run him by).
@@ -90,9 +97,30 @@ export function sameLooseText(a: string, b: string) {
 }
 
 export function clampContext(text: string): string {
-  const trimmed = (text ?? '').trim();
+  // Lookup bug (a): join soft-wrapped / hyphen-broken lines into one sentence.
+  const trimmed = (text ?? '')
+    .replace(/(\p{L})-[ \t]*\r?\n[ \t]*(\p{Ll})/gu, '$1$2')
+    .replace(/\s+/g, ' ')
+    .trim();
   if (trimmed.length <= LOOKUP_CONTEXT_MAX) return trimmed;
   return trimmed.slice(0, LOOKUP_CONTEXT_MAX).trim();
+}
+
+const POS_VALUES = new Set([
+  'noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction',
+  'determiner', 'interjection', 'numeral', 'particle', 'phrase',
+]);
+const POS_ALIASES: Record<string, string> = {
+  n: 'noun', v: 'verb', adj: 'adjective', adv: 'adverb', pron: 'pronoun', prep: 'preposition',
+  conj: 'conjunction', det: 'determiner', article: 'determiner', interj: 'interjection', num: 'numeral',
+  'phrasal verb': 'phrase', idiom: 'phrase',
+};
+/** Lookup bug (c): keep only a known English POS tag; anything else → null. */
+export function normalizePartOfSpeech(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const k = raw.trim().toLowerCase().replace(/\.$/, '');
+  const v = POS_ALIASES[k] ?? k;
+  return POS_VALUES.has(v) ? v : null;
 }
 
 export function normalizeLemmaKey(raw: string): string {
@@ -163,7 +191,15 @@ export function sanitizeContextualMeaning(
   if (typeof raw !== 'string') return null;
   let t = raw.replace(/\s+/g, ' ').trim();
   if (!t) return null;
-  if (looksLikeSynonymDump(t) || looksLikeOffDomainExecute(t, sentence)) return null;
+  if (looksLikeOffDomainExecute(t, sentence)) return null;
+  if (looksLikeSynonymDump(t)) {
+    // Keep the first sense instead of dropping the whole meaning (and paying for a repair call).
+    const parts = t.split(/[,;/]| - /).map((part) => part.trim()).filter(Boolean);
+    const first = parts.find((part) => !sameLooseText(part, fallbackGloss)) ?? '';
+    // A 2-part natural phrase ("hech ikkilanmasdan, darhol") is fine as-is; only trim real lists (3+ parts).
+    t = parts.length >= 3 ? first : t;
+    if (!t) return null;
+  }
   const words = t.split(/\s+/).filter(Boolean);
   if (words.length > LOOKUP_CONTEXTUAL_MAX_WORDS) t = words.slice(0, LOOKUP_CONTEXTUAL_MAX_WORDS).join(' ');
   if (t.length > LOOKUP_CONTEXTUAL_MAX_CHARS) t = t.slice(0, LOOKUP_CONTEXTUAL_MAX_CHARS).trim();
@@ -215,7 +251,7 @@ export function looksLikeDefinitionGloss(text: string): boolean {
   const t = text.trim().toLowerCase();
   if (!t) return false;
   const words = t.split(/\s+/).filter(Boolean);
-  if (words.length >= 4) return true;
+  if (words.length >= 5) return true;
   if (/\b(or|yoki|или|oder)\b/i.test(t)) return true;
   if (/(a person who|someone who|the act of|the state of)/i.test(t)) return true;
   return false;
@@ -273,7 +309,6 @@ export function needsLookupRepair(opts: {
 }): boolean {
   const { kind, surface, sentence, translation, contextualMeaning } = opts;
   if (kind === 'sentence') return false;
-  if (contextualMeaning && looksLikeSynonymDump(contextualMeaning)) return true;
   if (looksLikeOffDomainExecute(contextualMeaning ?? '', sentence)) return true;
   if (looksLikeOffDomainExecute(translation, sentence)) return true;
   if (looksLikeAuxiliaryOnlyGloss(translation, surface, kind)) return true;
@@ -311,4 +346,22 @@ export function lookupMaxTokens(kind: LookupKind, surface: string): number {
   const words = lookupWordCount(surface);
   if (words > 80) return 1600;
   return Math.min(1200, Math.max(320, words * 10));
+}
+
+/** Uzbek output: Latin ʻ/ʼ orthography (models often answer with ASCII ' or ‘ ’). */
+export function normalizeUzbekOrthography(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/([OoGg])['‘’`ʼ]/g, '$1ʻ')
+    .replace(/(\p{L})['’`](\p{L})/gu, '$1ʼ$2')
+    // A model that uses ʻ for every apostrophe would turn "maʻno" into the o/g mark. Tutuq stays ʼ.
+    .replace(/(?<![OoGg])(?<=\p{L})ʻ(?=\p{L})/gu, 'ʼ');
+}
+
+/** Uzbek gloss came back in Cyrillic (or mostly Cyrillic) — worth one repair pass. */
+export function looksLikeWrongScript(text: string | null | undefined, targetLang: string): boolean {
+  if (!text || targetLang !== 'uz') return false;
+  const cyr = (text.match(/[\u0400-\u04FF]/g) ?? []).length;
+  const letters = (text.match(/\p{L}/gu) ?? []).length;
+  return letters > 0 && cyr / letters > 0.3;
 }

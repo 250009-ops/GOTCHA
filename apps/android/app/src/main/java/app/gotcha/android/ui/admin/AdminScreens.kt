@@ -1,5 +1,6 @@
 ﻿package app.gotcha.android.ui.admin
 
+import app.gotcha.android.ui.theme.GotchaBlue
 import android.os.Build
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.background
@@ -481,7 +482,7 @@ private fun AdminDashboardScreen(
                                 hintColor = Color(0xFF059669),
                                 icon = Icons.Outlined.CreditCard,
                                 accentBg = Color(0xFFF0F9FF),
-                                accentFg = Color(0xFF0369A1),
+                                accentFg = GotchaBlue.InfoText,
                                 modifier = Modifier.weight(1f).clickable(onClick = onOpenUsers),
                             )
                         }
@@ -610,7 +611,7 @@ private fun AdminDashboardScreen(
                                         else -> onOpenUsers
                                     }
                                     val (icon, iconBg, iconTint) = when (item.type?.lowercase()) {
-                                        "content" -> Triple(Icons.AutoMirrored.Outlined.MenuBook, Color(0xFFF0E7FF), Color(0xFF7008E7))
+                                        "content" -> Triple(Icons.AutoMirrored.Outlined.MenuBook, GotchaBlue.B100, GotchaBlue.B700)
                                         "support" -> Triple(Icons.Outlined.WarningAmber, Color(0xFFFEF3C7), Color(0xFFF59E0B))
                                         else -> Triple(Icons.Outlined.PersonAdd, Color(0xFFECFDF5), Color(0xFF10B981))
                                     }
@@ -646,7 +647,7 @@ private fun AdminDashboardScreen(
                                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                                     ) {
                                         Box(
-                                            Modifier.size(32.dp).clip(CircleShape).background(Color(0xFFEDE9FE)),
+                                            Modifier.size(32.dp).clip(CircleShape).background(GotchaBlue.B50),
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Text(
@@ -1264,7 +1265,7 @@ private fun AdminUsersScreen(onOpenUser: (String) -> Unit) {
                         AdminStatCard(
                             label = "Pay as you go",
                             value = formatInt(stats?.payAsYouGo ?: 0),
-                            accentBg = Color(0xFFF5F3FF),
+                            accentBg = GotchaBlue.B50,
                             accentFg = GotchaColors.WebAdminActive,
                             modifier = Modifier.weight(1f),
                         )
@@ -1736,8 +1737,8 @@ private fun DashboardChartHeader(title: String, badge: String, accent: Boolean =
         Text(title, fontFamily = Inter, fontWeight = FontWeight.SemiBold, fontSize = 16.sp, color = Color(0xFF0F172A))
         AdminBadge(
             badge,
-            bg = if (accent) Color(0xFFF0E7FF) else Color(0xFFF1F5F9),
-            fg = if (accent) Color(0xFF7008E7) else Color(0xFF475569),
+            bg = if (accent) GotchaBlue.B100 else Color(0xFFF1F5F9),
+            fg = if (accent) GotchaBlue.B700 else Color(0xFF475569),
         )
     }
 }
@@ -1746,7 +1747,7 @@ private fun parseAdminHex(raw: String): Color = try {
     val hex = if (raw.startsWith("#")) raw else "#$raw"
     Color(android.graphics.Color.parseColor(hex))
 } catch (_: Exception) {
-    Color(0xFF6C1D95)
+    GotchaBlue.B700
 }
 
 internal fun formatUzs(value: Double): String {

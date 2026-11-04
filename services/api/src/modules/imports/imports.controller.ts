@@ -5,6 +5,7 @@ import {
   Delete,
   Get,
   Param,
+  ParseUUIDPipe,
   Post,
   Query,
   UploadedFile,
@@ -37,6 +38,11 @@ export class ImportsController {
     return this.imports.importPaste(user.sub, dto);
   }
 
+  @Post('url/preview')
+  previewUrl(@Body() dto: ImportUrlDto) {
+    return this.imports.previewUrl(dto.url);
+  }
+
   @Post('url')
   url(@CurrentUser() user: AuthUserPayload, @Body() dto: ImportUrlDto) {
     return this.imports.importUrl(user.sub, dto);
@@ -59,9 +65,9 @@ export class ImportsController {
       limits: { fileSize: MAX_FILE_BYTES },
     }),
   )
-  inspect(@UploadedFile() file: Express.Multer.File | undefined) {
+  inspect(@CurrentUser() user: AuthUserPayload, @UploadedFile() file: Express.Multer.File | undefined) {
     if (!file) throw new BadRequestException('File is required');
-    return this.imports.inspectFile(file);
+    return this.imports.inspectFile(user.sub, file);
   }
 
   @Post('file')
@@ -74,8 +80,8 @@ export class ImportsController {
         title: { type: 'string' },
         language: { type: 'string' },
         paymentId: { type: 'string', format: 'uuid' },
+        uploadId: { type: 'string', format: 'uuid', description: 'From POST /imports/inspect; replaces file' },
       },
-      required: ['file'],
     },
   })
   @UseInterceptors(
@@ -89,8 +95,19 @@ export class ImportsController {
     @UploadedFile() file: Express.Multer.File | undefined,
     @Body() dto: ImportFileDto,
   ) {
-    if (!file) throw new BadRequestException('File is required');
+    if (!file && !dto.uploadId) throw new BadRequestException('File or uploadId is required');
     return this.imports.importFile(user.sub, file, dto);
+  }
+
+  @Get(':id')
+  get(@CurrentUser() user: AuthUserPayload, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.imports.get(user.sub, id);
+  }
+
+  /** Re-queue a failed import from its stored source. Never charges again. */
+  @Post(':id/retry')
+  retry(@CurrentUser() user: AuthUserPayload, @Param('id', new ParseUUIDPipe()) id: string) {
+    return this.imports.retry(user.sub, id);
   }
 
   @Delete(':id')

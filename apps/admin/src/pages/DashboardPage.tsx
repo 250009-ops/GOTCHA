@@ -10,7 +10,7 @@ import { formatMoney, formatNumber, initials, relativeTime } from '../lib/utils'
 function activityVisual(type?: string) {
   switch ((type || '').toLowerCase()) {
     case 'content':
-      return { Icon: BookOpen, wrap: 'bg-[#f0e7ff] text-[#7008e7]' };
+      return { Icon: BookOpen, wrap: 'bg-g-blue-100 text-g-blue-700' };
     case 'support':
       return { Icon: AlertCircle, wrap: 'bg-[#fef3c7] text-[#f59e0b]' };
     default:
@@ -105,7 +105,7 @@ export default function DashboardPage() {
         <button
           type="button"
           onClick={load}
-          className="rounded-lg bg-[#6c1d95] px-4 py-2 text-white text-sm font-semibold"
+          className="rounded-lg bg-g-blue-700 px-4 py-2 text-white text-sm font-semibold"
         >
           Retry
         </button>
@@ -125,7 +125,7 @@ export default function DashboardPage() {
   return (
     <div>
       <PageHeader
-        title="Dashboard Overview"
+        title="Overview"
         subtitle={`Welcome back, ${firstName}. Live platform metrics from the database.`}
       />
 
@@ -183,9 +183,9 @@ export default function DashboardPage() {
               data.aiLimit > 0 ? (
                 <div>
                   <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden mt-1 mb-1">
-                    <div className="h-full bg-[#7008e7]" style={{ width: `${Math.min(100, data.aiUsagePct)}%` }} />
+                    <div className="h-full bg-g-blue-700" style={{ width: `${Math.min(100, data.aiUsagePct)}%` }} />
                   </div>
-                  <span className="text-[#7008e7] font-semibold">
+                  <span className="text-g-blue-700 font-semibold">
                     {data.aiUsagePct}% of daily limit
                   </span>
                 </div>
@@ -227,7 +227,7 @@ export default function DashboardPage() {
         <Card className="p-5">
           <div className="flex items-center justify-between mb-4">
             <div className="font-semibold">Revenue Trend</div>
-            <Badge className="bg-[#f0e7ff] text-[#7008e7]">{revenueBadge}</Badge>
+            <Badge className="bg-g-blue-100 text-g-blue-700">{revenueBadge}</Badge>
           </div>
           {revenueBars.length > 0 ? (
             <BarChart data={revenueBars} valueFormat="uzs" />
@@ -257,7 +257,7 @@ export default function DashboardPage() {
             <Card className="p-5">
               <div className="flex items-center justify-between mb-3">
                 <div className="font-semibold">Most Looked-up Idioms & Phrases</div>
-                <Link to="/content" className="text-sm font-semibold text-[#6c1d95]">
+                <Link to="/content" className="text-sm font-semibold text-g-blue-700">
                   View Library
                 </Link>
               </div>
@@ -314,7 +314,7 @@ export default function DashboardPage() {
       <Card className="p-5">
         <div className="flex items-center justify-between mb-3">
           <div className="font-semibold">Recent User Acquisitions</div>
-          <Link to="/users" className="text-sm font-semibold text-[#6c1d95]">
+          <Link to="/users" className="text-sm font-semibold text-g-blue-700">
             View users
           </Link>
         </div>
@@ -326,7 +326,7 @@ export default function DashboardPage() {
               <tr key={u.id}>
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <div className="size-8 rounded-full bg-violet-100 text-[#6c1d95] grid place-items-center text-xs font-bold">
+                    <div className="size-8 rounded-full bg-violet-100 text-g-blue-700 grid place-items-center text-xs font-bold">
                       {initials(u.displayName, u.email)}
                     </div>
                     <span className="text-sm font-medium">{u.displayName || 'Learner'}</span>
@@ -338,7 +338,7 @@ export default function DashboardPage() {
                   <Badge
                     className={
                       u.billingTier.toLowerCase().includes('premium') || u.billingTier.toLowerCase().includes('pro')
-                        ? 'bg-violet-50 text-[#6c1d95]'
+                        ? 'bg-violet-50 text-g-blue-700'
                         : 'bg-slate-100 text-slate-600'
                     }
                   >

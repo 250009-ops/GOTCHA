@@ -61,6 +61,8 @@ private data class WsEnvelope(
  * endpoint is unavailable — as in the current REST-only API — falls back to polite polling
  * so open chats still receive updates without manual refresh.
  */
+private const val WEBSOCKET_ENABLED = false
+
 class MessagingRealtimeHub(
     private val apiBaseUrl: String,
     private val tokenStore: TokenStore,
@@ -116,22 +118,29 @@ class MessagingRealtimeHub(
         }
     }
 
-    private suspend fun wsUrl(): String? {
-        val token = tokenStore.accessToken() ?: return null
+    /** Endpoint without credentials: the token goes in the Authorization header, never the URL (REVIEW m11). */
+    private fun wsUrl(): String? {
         val https = apiBaseUrl.trimEnd('/')
             .replace(Regex("^http://", RegexOption.IGNORE_CASE), "https://")
         if (!https.startsWith("https://", ignoreCase = true)) return null
         val wsBase = "wss://" + https.removePrefix("https://").removePrefix("HTTPS://")
-        return "$wsBase/messaging/ws?token=${java.net.URLEncoder.encode(token, Charsets.UTF_8.name())}"
+        return "$wsBase/messaging/ws"
     }
 
     private suspend fun connectWebSocket() {
-        val url = wsUrl()
-        if (url == null) {
+        // The API has no /messaging/ws endpoint (REST only), and a token in the query string would leak into
+        // proxy logs. Poll until a server WebSocket with header auth ships; then flip WEBSOCKET_ENABLED.
+        if (!WEBSOCKET_ENABLED) {
             startPolling()
             return
         }
-        val request = Request.Builder().url(url).build()
+        val url = wsUrl()
+        val token = tokenStore.accessToken()
+        if (url == null || token == null) {
+            startPolling()
+            return
+        }
+        val request = Request.Builder().url(url).header("Authorization", "Bearer $token").build()
         webSocket = wsClient.newWebSocket(
             request,
             object : WebSocketListener() {

@@ -4,6 +4,7 @@
  */
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -60,6 +61,19 @@ function upload(conn, local, remote) {
   });
 }
 
+function buildSha() {
+  const git = (args) => spawnSync('git', args, { cwd: root, encoding: 'utf8' }).stdout || '';
+  const head = git(['rev-parse', 'HEAD']).trim();
+  const diff = git(['diff', 'HEAD']);
+  const untracked = git(['ls-files', '--others', '--exclude-standard']);
+  if (head && !diff && !untracked.trim()) return head.slice(0, 12);
+  return crypto.createHash('sha256').update(head).update('\n').update(diff).update('\n').update(untracked).digest('hex').slice(0, 12);
+}
+
+const BUILD_SHA = buildSha();
+const BUILD_DATE = new Date().toISOString().slice(0, 10);
+console.log(`==> Build sha ${BUILD_SHA}`);
+
 const tarName = `gotcha-api-${Date.now()}.tgz`;
 const tarPath = path.join(os.tmpdir(), tarName);
 
@@ -103,16 +117,27 @@ try {
       `APP=${APP_DIR}`,
       `tar -xzf /tmp/gotcha-api-up/${tarName} -C "$APP"`,
       'ln -sfn "$APP/.env" "$APP/services/api/.env"',
+      'install -d -m 0750 /var/lib/gotcha/private-avatars',
+      `python3 -c 'from pathlib import Path; p=Path("/var/www/gotcha/.env"); t=p.read_text() if p.exists() else "";
+p.write_text(t if "PRIVATE_AVATARS_DIR=" in t else t.rstrip()+"\\nPRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars\\n")'`,
       'cd "$APP"',
+      'npm install sharp@0.32.6 --no-audit --no-fund',
+      'cd "$APP/services/api" && node -e "require(\'sharp\')" && cd "$APP"',
       'npm run build --workspace=packages/shared --if-present',
       'npm run db:generate',
       'rm -rf services/api/dist',
       'rm -f services/api/*.tsbuildinfo',
       'npm run build --workspace=services/api',
       'test -f services/api/dist/main.js',
-      'grep -q sendNewMessageEmail services/api/dist/common/mail/mail.service.js && echo OK_MESSAGE_EMAIL',
+      `node -e "require('fs').writeFileSync('services/api/dist/build-info.json', JSON.stringify({sha:'${BUILD_SHA}',date:'${BUILD_DATE}'}))"`,
+      'cd services/api && npx prisma migrate deploy && cd "$APP"',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',
+      `python3 -c 'from pathlib import Path; p=Path("/etc/nginx/sites-available/gotcha"); t=p.read_text() if p.exists() else ""; n="location ^~ /uploads/avatars/"; a="    location /uploads/ {"; b="    location ^~ /uploads/avatars/ {\\n        default_type application/json;\\n        return 401;\\n    }\\n\\n";
+print("skip") if (not t or n in t or a not in t) else p.write_text(t.replace(a, b.encode().decode("unicode_escape")+a, 1)) or print("denied")'`,
+      'nginx -t && systemctl reload nginx',
+      'sleep 4',
+      'curl -fsS http://127.0.0.1:3200/api/v1/health',
     ].join(' && '),
     900_000,
   );

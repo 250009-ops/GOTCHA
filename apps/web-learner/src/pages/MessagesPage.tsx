@@ -1,6 +1,13 @@
+import { deletedAccountLine, isUserDeletedError, shownName } from '../lib/deletedUser';
+import { handleLimitError } from '../lib/limits';
+import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AgePrompt } from '../components/safety/AgePrompt';
+import { withAppBase } from '../lib/authRoutes';
+import { isDailyLimitError } from '../lib/dailyLimit';
+import { AlertTriangle, ArrowLeft, ArrowRight, Ban, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Flag, Languages, MessageSquare, MoreHorizontal, Pencil, RotateCcw, Search, Send, Trash2, User as UserIcon, X } from 'lucide-react';
+import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
 import { toast } from 'sonner';
 import { PeerProfileModal, type MessagingPeerProfile } from '../components/PeerProfileModal';
 import { UserAvatar } from '../components/UserAvatar';
@@ -8,10 +15,10 @@ import { api, getAccessToken } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import {
   apiChatLang,
-  chatLangFlag,
   chatLangName,
   chatToLabel,
   chatTranslatingLabel,
+  chatTranslateFailedLabel,
   coerceToLang,
   inferComposerSource,
   composeChatPair,
@@ -27,6 +34,8 @@ import {
   tryTranslateChat,
 } from '../lib/chatLang';
 import type { LookupResult, VocabItem } from '../lib/types';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { surfaceCopy } from '@gotcha/shared';
 import { clampPhraseSpan, findChatWordPartRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, sentenceAroundPhrase, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 
 type Peer = {
@@ -39,6 +48,8 @@ type Peer = {
   online?: boolean;
   lastSeenAt?: string | null;
   typing?: boolean;
+  /** Privacy §11: the account was deleted; name is localised from this flag, composer is closed. */
+  deleted?: boolean;
 };
 
 type ContentRef = {
@@ -102,38 +113,68 @@ type Suggestion = Peer & { reading?: ContentRef | null };
 
 type LinePair = { to: string; native: string };
 
-const TEMPLATE_PEER_NAMES = new Set([
-  'john doe',
-  'yuki t.',
-  'yuki t',
-  'marc l.',
-  'marc l',
-  'elena r.',
-  'elena r',
-  'elena read',
-]);
+/** Chat-only UI strings (uz/ru/en) added with the messaging redesign. */
+const CHATX = {
+  en: {
+    notSent: 'Not sent', retry: 'Try again', remove: 'Remove', viewProfile: 'View profile', more: 'More actions', isNew: 'New',
+    learning: (lang: string) => `Learning ${lang}`,
+    emptyHint: 'Write in your own language — messages are translated automatically. Tap a word in the language you are learning to see its meaning.',
+    starters: ['👋 Hi! How are you?', '📖 What are you reading now?', '🤝 Want to practise together?'],
+    deleteTitle: 'Delete message?', keep: 'Cancel',
+  },
+  ru: {
+    notSent: 'Не отправлено', retry: 'Повторить', remove: 'Убрать', viewProfile: 'Открыть профиль', more: 'Ещё', isNew: 'Новый',
+    learning: (lang: string) => `Изучает: ${lang}`,
+    emptyHint: 'Пишите на своём языке — сообщения переводятся автоматически. Нажмите на слово на изучаемом языке, чтобы увидеть значение.',
+    starters: ['👋 Привет! Как дела?', '📖 Что вы сейчас читаете?', '🤝 Давайте практиковаться вместе?'],
+    deleteTitle: 'Удалить сообщение?', keep: 'Отмена',
+  },
+  uz: {
+    notSent: 'Yuborilmadi', retry: 'Qayta urinish', remove: 'Oʻchirish', viewProfile: 'Profilni koʻrish', more: 'Boshqa amallar', isNew: 'Yangi',
+    learning: (lang: string) => `${lang} oʻrganmoqda`,
+    emptyHint: 'Oʻz tilingizda yozing — xabar avtomatik tarjima qilinadi. Oʻrganayotgan tilingizdagi soʻzni bossangiz, maʼnosi chiqadi.',
+    starters: ['👋 Salom! Qalaysiz?', '📖 Hozir nima oʻqiyapsiz?', '🤝 Birga mashq qilamizmi?'],
+    deleteTitle: 'Xabar oʻchirilsinmi?', keep: 'Bekor qilish',
+  },
+};
+const chatX = (lang?: string | null) => CHATX[lang === 'ru' || lang === 'uz' ? lang : 'en'];
+const TIP_KEY = 'gotcha.chatTip.dismissed';
 
-function isTemplatePeerName(name?: string | null) {
-  return TEMPLATE_PEER_NAMES.has((name ?? '').trim().toLowerCase());
+const CHAT_TZ = 'Asia/Tashkent';
+const UZ_MONTHS = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+
+function chatDateLocale(code?: string | null) {
+  if (code === 'ru') return 'ru-RU';
+  if (code === 'en') return 'en-GB';
+  return 'uz-UZ';
 }
 
-function langBadge(_code?: string | null) {
-  return 'bg-[#f3f4f6] text-[#4a5565]';
-}
-
-function inboxTimestamp(iso?: string | null) {
-  if (!iso) return '';
+function tashkentParts(iso: string) {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startThat = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const diffDays = Math.round((startToday - startThat) / 86_400_000);
-  if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-  if (diffDays === 1) return 'Yesterday';
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (Number.isNaN(date.getTime())) return null;
+  const bag = new Intl.DateTimeFormat('en-GB', {
+    timeZone: CHAT_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: string) => bag.find((part) => part.type === type)?.value ?? '';
+  return { key: `${get('year')}-${get('month')}-${get('day')}`, day: Number(get('day')), month: Number(get('month')), time: `${get('hour')}:${get('minute')}` };
+}
+
+function inboxTimestamp(iso: string | undefined | null, yesterdayLabel: string, locale?: string | null) {
+  if (!iso) return '';
+  const parts = tashkentParts(iso);
+  if (!parts) return '';
+  const today = tashkentParts(new Date().toISOString());
+  const yesterday = tashkentParts(new Date(Date.now() - 86_400_000).toISOString());
+  if (today && parts.key === today.key) return parts.time;
+  if (yesterday && parts.key === yesterday.key) return yesterdayLabel;
+  if ((locale ?? 'uz') === 'uz') return `${parts.day}-${UZ_MONTHS[parts.month - 1] ?? ''}`;
+  return new Intl.DateTimeFormat(chatDateLocale(locale), { timeZone: CHAT_TZ, day: 'numeric', month: 'short' }).format(new Date(iso));
 }
 
 function useMinWidth(px: number) {
@@ -150,8 +191,16 @@ function useMinWidth(px: number) {
   return matches;
 }
 
+function friendlyError(e: unknown, copy: { commonExt: { error: string; offline: string; tooLong: string } }) {
+  const status = (e as { status?: number })?.status;
+  const msg = e instanceof Error ? e.message : '';
+  if (status === 400 && /long|4000|maxlength/i.test(msg)) return copy.commonExt.tooLong;
+  if (status == null || status === 0 || /failed to fetch|network|load failed/i.test(msg)) return copy.commonExt.offline;
+  return copy.commonExt.error;
+}
+
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return tashkentParts(iso)?.time ?? '';
 }
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -161,8 +210,12 @@ function canEditMessage(m: ChatMessage) {
   return Date.now() - new Date(m.createdAt).getTime() < EDIT_WINDOW_MS;
 }
 
-function messageSnippet(m: Pick<ChatMessage, 'body' | 'deleted'> | MessageReplyTo, fallback = 'Message') {
-  if (m.deleted) return 'Message deleted';
+function messageSnippet(
+  m: Pick<ChatMessage, 'body' | 'deleted'> | MessageReplyTo,
+  deletedLabel: string,
+  fallback = '',
+) {
+  if (m.deleted) return deletedLabel;
   const text = m.body.trim();
   if (!text) return fallback;
   return text.length > 80 ? `${text.slice(0, 80)}…` : text;
@@ -178,19 +231,23 @@ function applyReadReceipts(messages: ChatMessage[], peerLastReadAt?: string | nu
   });
 }
 
-function presenceLabel(peer?: Peer | null) {
+function presenceLabel(
+  peer: Peer | null | undefined,
+  mp: ReturnType<typeof useLearnerCopy>['messagesPage'],
+  ce: ReturnType<typeof useLearnerCopy>['commonExt'],
+) {
   if (!peer) return '';
-  if (peer.typing) return 'typing…';
-  if (peer.online) return 'online';
-  if (!peer.lastSeenAt) return 'last seen recently';
+  if (peer.typing) return mp.typing;
+  if (peer.online) return mp.online;
+  if (!peer.lastSeenAt) return '';
   const ms = Date.now() - new Date(peer.lastSeenAt).getTime();
   const mins = Math.floor(ms / 60000);
-  if (mins < 1) return 'last seen just now';
-  if (mins < 60) return `last seen ${mins}m ago`;
+  if (mins < 1) return mp.lastSeen(`1${ce.minutes}`);
+  if (mins < 60) return mp.lastSeen(`${mins}${ce.minutes}`);
   const hours = Math.floor(mins / 60);
-  if (hours < 24) return `last seen ${hours}h ago`;
+  if (hours < 24) return mp.lastSeen(`${hours}${ce.hours}`);
   const days = Math.floor(hours / 24);
-  return `last seen ${days}d ago`;
+  return mp.lastSeen(`${days}${ce.days}`);
 }
 
 function cx(...parts: Array<string | false | null | undefined>) {
@@ -203,12 +260,14 @@ function TappableMessageText({
   onWordTap,
   className,
   mine = false,
+  chatTipTitle,
 }: {
   text: string;
   selectedWord: string | null;
   onWordTap: (word: string) => void;
   className?: string;
   mine?: boolean;
+  chatTipTitle: string;
 }) {
   const parts = useMemo(() => tokenizeChatText(text), [text]);
   const wordParts = useMemo(
@@ -326,7 +385,7 @@ function TappableMessageText({
             data-chat-token-i={i}
             role="button"
             tabIndex={0}
-            title="Tap a word, or hold and drag a phrase"
+            title={chatTipTitle}
             onKeyDown={(e) => {
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
@@ -334,13 +393,11 @@ function TappableMessageText({
               }
             }}
             className={cx(
-              'cursor-pointer underline underline-offset-[3px] rounded-[4px] px-0.5 -mx-px transition-colors',
+              'cursor-pointer underline decoration-dotted decoration-[1.5px] underline-offset-[4px] rounded-[4px] px-0.5 -mx-px transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-600',
               mine
-                ? 'decoration-white/80 hover:bg-white/20 hover:decoration-white'
-                : 'decoration-[#c4b4ff] hover:bg-[#f5f3ff] hover:decoration-[#7f22fe]',
-              selected && (mine
-                ? 'font-semibold bg-white text-[#4d179a] decoration-[#4d179a] decoration-2 shadow-sm'
-                : 'font-semibold bg-[#ede9fe] text-[#4d179a] decoration-[#7f22fe] decoration-2'),
+                ? 'decoration-white/60 hover:bg-white/15 hover:decoration-white'
+                : 'decoration-g-blue-300 hover:bg-g-blue-50 hover:decoration-g-blue-700',
+              selected && 'no-underline bg-[#fff2b3] text-[#101828] shadow-[inset_0_-2px_0_#f5b400]',
             )}
           >
             {part.value}
@@ -355,11 +412,13 @@ function ToLangPicker({
   selected,
   options,
   uiLang,
+  nativeLang,
   onSelect,
 }: {
   selected: string;
   options: string[];
   uiLang?: string | null;
+  nativeLang: string;
   onSelect: (code: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -379,19 +438,22 @@ function ToLangPicker({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-[#e5e7eb] bg-white text-sm font-semibold text-gray-900"
+        className="flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-[11px] border border-[#e3e5ee] bg-white text-[13px] font-semibold text-[#101828] hover:bg-gray-50"
         aria-haspopup="listbox"
         aria-expanded={open}
+        aria-label={`${chatToLabel(uiLang)}: ${chatLangName(selected, uiLang)}`}
       >
-        <span className="text-[11px] font-semibold text-[#99a1af]">{chatToLabel(uiLang)}</span>
-        {chatLangName(selected, uiLang)}
-        <Languages className="w-3.5 h-3.5 text-[#7008e7]" />
-        <ChevronDown className="w-3.5 h-3.5 text-[#99a1af]" />
+        <span className="hidden sm:inline text-[11px] font-semibold text-[#9aa0ae] mr-0.5">{chatToLabel(uiLang)}</span>
+        <CatalogLanguageFlag code={nativeLang.toLowerCase()} className="h-3 w-[18px]" />
+        <ArrowRight className="w-3 h-3 text-[#9aa0ae]" aria-hidden />
+        <CatalogLanguageFlag code={selected.toLowerCase()} className="h-3 w-[18px]" />
+        <span className="hidden md:inline">{chatLangName(selected, uiLang)}</span>
+        <ChevronDown className="w-3.5 h-3.5 text-[#9aa0ae]" />
       </button>
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 top-full mt-2 z-20 min-w-full rounded-xl border border-[#e5e7eb] bg-white shadow-lg overflow-hidden"
+          className="absolute right-0 top-full mt-2 z-30 min-w-[200px] rounded-[14px] border border-[#e9ebf3] bg-white shadow-[0_18px_40px_rgba(16,24,40,0.14)] p-1.5"
         >
           {options.map((code) => (
             <button
@@ -404,12 +466,13 @@ function ToLangPicker({
                 setOpen(false);
               }}
               className={cx(
-                'w-full flex items-center gap-2 px-3 py-2 text-sm text-left hover:bg-[#f5f3ff]',
-                code === selected && 'bg-[#f5f3ff] font-semibold',
+                'w-full flex items-center gap-2.5 min-h-10 px-3 rounded-[9px] text-sm text-left hover:bg-g-blue-50',
+                code === selected ? 'bg-g-blue-50 font-semibold text-g-blue-700' : 'text-[#101828]',
               )}
             >
-              <span>{chatLangFlag(code)}</span>
-              {chatLangName(code, uiLang)}
+              <CatalogLanguageFlag code={code.toLowerCase()} className="h-3.5 w-5" />
+              <span className="flex-1">{chatLangName(code, uiLang)}</span>
+              {code === selected && <Check className="w-4 h-4" aria-hidden />}
             </button>
           ))}
         </div>
@@ -428,7 +491,10 @@ function WordMeaningPanel({
   onSave,
   onKnown,
   onIgnore,
+  copy,
+  sourceLang,
 }: {
+  sourceLang?: string;
   word: string;
   lookup: LookupResult | null;
   loading: boolean;
@@ -438,7 +504,11 @@ function WordMeaningPanel({
   onSave: () => void;
   onKnown: () => void;
   onIgnore: () => void;
+  copy: ReturnType<typeof useLearnerCopy>;
 }) {
+  const mp = copy.messagesPage;
+  const reader = copy.reader;
+  const { locale } = useLearnerLocale();
   const lemma = lookup?.lemma || word;
   const phonetic = lookup?.phonetic?.trim();
   const canAct = !loading && !!lookup?.translation;
@@ -450,21 +520,25 @@ function WordMeaningPanel({
     : (lookup?.phrase?.trim() || lemma);
   return (
     <div className="h-full w-full bg-white flex flex-col min-h-0">
-      <div className="flex items-center gap-3 px-5 pt-5 pb-4 shrink-0">
+      <div className="flex items-center justify-between gap-3 h-[60px] px-5 border-b border-[#eceef5] shrink-0">
+        <h2 className="text-[15px] font-bold text-[#101828]">{mp.wordMeaning}</h2>
         <button
           type="button"
           onClick={onBack}
-          className="size-8 rounded-lg bg-[#f2f5f5] border border-[#e4e7ec] grid place-items-center text-[#6b7382] hover:text-gray-800"
-          aria-label="Close word meaning"
+          className="size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50"
+          aria-label={copy.commonExt.close}
         >
-          <ArrowLeft className="w-4 h-4" />
+          <X className="w-4 h-4" />
         </button>
-        <h2 className="text-base font-semibold text-[#0f1729]">Word Meaning</h2>
       </div>
-      <div className="h-px bg-[#e5e8eb] shrink-0" />
       <div className="flex-1 overflow-y-auto min-h-0 px-5 py-5 space-y-5">
         <div className="space-y-1.5">
-          <p className="text-[22px] font-extrabold text-[#0f1729] leading-tight break-words">
+          {sourceLang && (
+            <p className="flex items-center gap-1.5 text-xs font-semibold text-[#6b7080]">
+              <CatalogLanguageFlag code={sourceLang.toLowerCase()} className="h-3 w-[18px]" />{chatLangName(sourceLang, locale)}
+            </p>
+          )}
+          <p className="text-[28px] font-extrabold tracking-tight text-[#101828] leading-tight break-words">
             {headline}
           </p>
           {!sentenceLike && lookup?.phrase?.trim() && lemma.trim() && lookup.phrase.trim().toLowerCase() !== lemma.trim().toLowerCase() ? (
@@ -473,7 +547,7 @@ function WordMeaningPanel({
           {phonetic ? (
             <p className="text-sm text-[#6b7382]">[{phonetic}]</p>
           ) : loading ? (
-            <p className="text-sm text-[#6b7382]">Looking up…</p>
+            <p className="text-sm text-[#6b7382]">{reader.lookingUp}</p>
           ) : null}
           <div className="flex flex-wrap gap-1.5 pt-1">
             {lookup?.partOfSpeech ? (
@@ -488,55 +562,55 @@ function WordMeaningPanel({
         {savedMsg ? <p className="text-sm text-[#047857]">{savedMsg}</p> : null}
 
         {!sentenceLike && (naturalMeaning || loading) ? (
-          <section className="rounded-xl bg-[#f5f3ff] p-3">
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Natural meaning</h3>
+          <section className="rounded-[14px] bg-[#f4f5ff] px-4 py-3.5">
+            <h3 className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-g-blue-700 mb-1.5">{reader.naturalMeaning}</h3>
             <p className="text-sm text-[#0f1729] leading-6">
-              {loading ? '…' : (naturalMeaning || lookup?.translation || 'No meaning yet.')}
+              {loading ? '…' : (naturalMeaning || lookup?.translation || reader.lookupError)}
             </p>
           </section>
         ) : null}
 
         {lookup?.translation && (sentenceLike || lookup.translation.trim() !== naturalMeaning) ? (
-          <section className={sentenceLike ? 'rounded-xl bg-[#f5f3ff] p-3' : undefined}>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#7f22fe] mb-2">Translation</h3>
-            <p className="text-sm text-[#0f1729] leading-6 whitespace-pre-wrap break-words">{lookup.translation}</p>
+          <section className={sentenceLike ? 'rounded-[14px] bg-[#f4f5ff] px-4 py-3.5' : undefined}>
+            <h3 className="text-[10.5px] font-bold uppercase tracking-[0.12em] text-[#8a8fa0] mb-1.5">{reader.translation}</h3>
+            <p className="text-base font-semibold text-[#101828] leading-6 whitespace-pre-wrap break-words">{lookup.translation}</p>
           </section>
         ) : null}
 
         {lookup?.grammarNote && lookup.grammarNote.trim() !== naturalMeaning && lookup.grammarNote.trim() !== lookup.translation?.trim() ? (
           <section>
-            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">Grammar note</h3>
+            <h3 className="text-[11px] font-bold uppercase tracking-wide text-[#6b7280] mb-2">{surfaceCopy(locale).grammarNote}</h3>
             <p className="text-sm text-[#4a5565] leading-6 whitespace-pre-wrap">{lookup.grammarNote}</p>
           </section>
         ) : null}
       </div>
 
       {showVocabActions ? (
-      <div className="shrink-0 border-t border-[#e4e7ec] p-4 grid grid-cols-3 gap-2">
+      <div className="shrink-0 border-t border-[#eceef5] p-4 grid grid-cols-3 gap-2">
         <button
           type="button"
           disabled={!canAct}
           onClick={onSave}
-          className="h-10 rounded-xl bg-[#7f22fe] text-white text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+          className="h-11 rounded-[12px] bg-g-blue-700 text-g-on-cta text-sm font-bold disabled:opacity-40 hover:bg-g-blue-800"
         >
-          Save
+          {reader.save}
         </button>
         <button
           type="button"
           disabled={!canAct}
           onClick={onKnown}
-          className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#0f1729] disabled:opacity-40 hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
+          className="h-11 rounded-[12px] border border-[#e3e5ee] bg-white text-sm font-semibold text-[#0f1729] disabled:opacity-40 hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
         >
           <Check className="w-4 h-4 text-[#16a34a]" />
-          Known
+          {reader.known}
         </button>
         <button
           type="button"
           onClick={onIgnore}
-          className="h-10 rounded-xl border border-[#e4e7ec] bg-white text-sm font-semibold text-[#6b7382] hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
+          className="h-11 rounded-[12px] border border-[#e3e5ee] bg-white text-sm font-semibold text-[#6b7382] hover:bg-[#f9fafb] inline-flex items-center justify-center gap-1"
         >
           <X className="w-4 h-4" />
-          Ignore
+          {reader.ignore}
         </button>
       </div>
       ) : null}
@@ -545,6 +619,13 @@ function WordMeaningPanel({
 }
 
 export default function MessagesPage() {
+  const { locale: uiLocale } = useLearnerLocale();
+  const peerName = (p: Peer | null | undefined, fallback: string) => shownName(p, uiLocale, fallback) ?? fallback;
+  const ux = chatX(uiLocale);
+  const [peerGone, setPeerGone] = useState(false);
+  const copy = useLearnerCopy();
+  const msg = copy.messages;
+  const mp = copy.messagesPage;
   const { user, refreshVocab, vocabItems, markVocabMastered } = useAuth();
   const [searchParams] = useSearchParams();
   const requestedChat = searchParams.get('c')?.trim() || null;
@@ -558,9 +639,20 @@ export default function MessagesPage() {
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [tipDismissed, setTipDismissed] = useState(false);
+  const [askAge, setAskAge] = useState(false);
+  const [recipientBlocked, setRecipientBlocked] = useState(false);
+  const [tipDismissed, setTipDismissed] = useState(() => {
+    try { return window.localStorage.getItem(TIP_KEY) === '1'; } catch { return false; }
+  });
+  const dismissTip = () => {
+    setTipDismissed(true);
+    try { window.localStorage.setItem(TIP_KEY, '1'); } catch { /* private mode */ }
+  };
+  const [headerMenu, setHeaderMenu] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ChatMessage | null>(null);
   const [toLangOverride, setToLangOverride] = useState<string | null>(null);
   const [linesById, setLinesById] = useState<Record<string, LinePair>>({});
+  const [translateFailed, setTranslateFailed] = useState<Record<string, boolean>>({});
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [selectedSentence, setSelectedSentence] = useState('');
   const [selectedNativeLine, setSelectedNativeLine] = useState('');
@@ -575,21 +667,31 @@ export default function MessagesPage() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const backfillFailRef = useRef<Map<string, number>>(new Map());
+  const lastMessageIdRef = useRef<string | null>(null);
   const typingSentAt = useRef(0);
   const isDesktop = useMinWidth(1024);
   const isXl = useMinWidth(1280);
 
   const nativeLang = normalizeChatLang(user?.nativeLanguage);
   const uiLang = user?.uiLanguage ?? nativeLang;
+  useEffect(() => {
+    lastMessageIdRef.current = detail?.messages[detail.messages.length - 1]?.id ?? null;
+  }, [detail]);
   const toOptions = useMemo(() => otherChatLangs(nativeLang), [nativeLang]);
+  // Default translation language = what *I* am learning (primary target), not the peer's native language.
+  const myLearning = useMemo(() => {
+    const list = user?.targetLanguages ?? [];
+    const code = (list.find((tl) => tl.isPrimary) ?? list[0])?.targetLanguage;
+    return code ? normalizeChatLang(code) : null;
+  }, [user?.targetLanguages]);
   const toLang = useMemo(
     () =>
       coerceToLang(
         nativeLang,
         toLangOverride
-          ?? learningTarget(nativeLang, detail?.peer?.nativeLanguage, toOptions[0]),
+          ?? learningTarget(nativeLang, myLearning && toOptions.includes(myLearning) ? myLearning : detail?.peer?.nativeLanguage, toOptions[0]),
       ),
-    [nativeLang, toLangOverride, detail?.peer?.nativeLanguage, toOptions],
+    [nativeLang, toLangOverride, myLearning, detail?.peer?.nativeLanguage, toOptions],
   );
 
   const persistTo = (code: string) => {
@@ -612,10 +714,10 @@ export default function MessagesPage() {
         api<ConversationRow[]>(`/messaging/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
         api<Suggestion[]>('/messaging/suggestions'),
       ]);
-      setConversations(inbox.filter((c) => !isTemplatePeerName(c.peer?.displayName)));
-      setSuggestions(suggested.filter((s) => !isTemplatePeerName(s.displayName)));
+      setConversations(inbox);
+      setSuggestions(suggested);
     } catch (e) {
-      if (!silent) setError(e instanceof Error ? e.message : 'Failed to load messages');
+      if (!silent) setError(friendlyError(e, copy));
     } finally {
       if (!silent) setLoadingList(false);
     }
@@ -666,12 +768,17 @@ export default function MessagesPage() {
         const d = await api<ConversationDetail>(`/messaging/conversations/${selectedId}`);
         if (cancelled) return;
         setDetail(d);
-        await api(`/messaging/conversations/${selectedId}/read`, { method: 'POST' });
+        const seenId = d.messages[d.messages.length - 1]?.id;
+        lastMessageIdRef.current = seenId ?? null;
+        await api(`/messaging/conversations/${selectedId}/read`, {
+          method: 'POST',
+          body: JSON.stringify(seenId ? { messageId: seenId } : {}),
+        });
         setConversations((prev) =>
           prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)),
         );
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to open chat');
+        if (!cancelled) setError(friendlyError(e, copy));
       } finally {
         if (!cancelled) setLoadingThread(false);
       }
@@ -709,9 +816,16 @@ export default function MessagesPage() {
           peerLastReadAt?: string | null;
           peer?: { id: string; online: boolean; lastSeenAt?: string | null; typing?: boolean } | null;
         }>(`/messaging/conversations/${selectedId}/status`);
+        const after = lastMessageIdRef.current;
+        const page = after
+          ? await api<{ messages?: ChatMessage[] }>(`/messaging/conversations/${selectedId}?after=${encodeURIComponent(after)}`)
+          : null;
         if (cancelled) return;
         setDetail((prev) => {
           if (!prev || prev.id !== selectedId) return prev;
+          const known = new Set(prev.messages.map((item) => item.id));
+          const extra = (page?.messages ?? []).filter((item) => item.id && !known.has(item.id));
+          const messages = extra.length ? [...prev.messages, ...extra] : prev.messages;
           return {
             ...prev,
             peerLastReadAt: status.peerLastReadAt ?? prev.peerLastReadAt,
@@ -723,7 +837,7 @@ export default function MessagesPage() {
                   typing: !!status.peer.typing,
                 }
               : prev.peer,
-            messages: applyReadReceipts(prev.messages, status.peerLastReadAt),
+            messages: applyReadReceipts(messages, status.peerLastReadAt),
           };
         });
         setConversations((prev) =>
@@ -759,6 +873,7 @@ export default function MessagesPage() {
     return () => window.clearInterval(id);
   }, [loadInbox, search]);
 
+  const [gatedPeer, setGatedPeer] = useState<{ id: string; under13: boolean } | null>(null);
   const startWith = async (peerId: string, contentId?: string | null) => {
     try {
       const d = await api<ConversationDetail>('/messaging/conversations', {
@@ -767,10 +882,17 @@ export default function MessagesPage() {
       });
       setSelectedId(d.id);
       setDetail(d);
+      setGatedPeer(null);
       setProfilePeerId(null);
       await loadInbox(search.trim() || undefined);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not start chat');
+      const code = (e as { code?: string }).code;
+      if (code === 'MESSAGING_NOT_ALLOWED') {
+        setGatedPeer({ id: peerId, under13: false });
+        setProfilePeerId(null);
+        return;
+      }
+      setError(friendlyError(e, copy));
     }
   };
 
@@ -819,7 +941,7 @@ export default function MessagesPage() {
               ...c,
               lastMessage: {
                 id: msg.id,
-                body: msg.deleted ? 'Message deleted' : msg.body,
+                body: msg.deleted ? mp.messageDeleted : msg.body,
                 translation: msg.deleted ? null : msg.translation,
                 senderId: msg.senderId,
                 createdAt: msg.createdAt,
@@ -848,7 +970,7 @@ export default function MessagesPage() {
               ...c,
               lastMessage: {
                 id: msg.id,
-                body: msg.deleted ? 'Message deleted' : msg.body,
+                body: msg.deleted ? mp.messageDeleted : msg.body,
                 translation: msg.deleted ? null : msg.translation,
                 senderId: msg.senderId,
                 createdAt: c.lastMessage.createdAt,
@@ -884,7 +1006,7 @@ export default function MessagesPage() {
   const deleteMessage = async (m: ChatMessage) => {
     if (!selectedId || !m.mine || m.deleted) return;
     setMenuId(null);
-    if (!window.confirm('Delete this message for everyone?')) return;
+    setPendingDelete(null);
     try {
       const updated = await api<ChatMessage>(
         `/messaging/conversations/${selectedId}/messages/${m.id}`,
@@ -892,7 +1014,7 @@ export default function MessagesPage() {
       );
       replaceMessage(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to delete');
+      setError(friendlyError(e, copy));
     }
   };
 
@@ -907,14 +1029,39 @@ export default function MessagesPage() {
     }).catch(() => undefined);
   };
 
-  const send = async () => {
-    if (!selectedId || !draft.trim() || sending) return;
-    const text = draft.trim();
-    const replyTarget = replyTo;
-    const editingMsg = editing;
-    setDraft('');
-    setReplyTo(null);
-    setEditing(null);
+  useEffect(() => {
+    setPeerGone(false);
+    setRecipientBlocked(false);
+    setError(null);
+    setHeaderMenu(false);
+    setPendingDelete(null);
+  }, [selectedId]);
+
+  const removeLocal = (id: string) => {
+    setDetail((prev) => (prev ? { ...prev, messages: prev.messages.filter((item) => item.id !== id) } : prev));
+    setLinesById((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const retryFailed = (m: ChatMessage) => {
+    const text = (linesById[m.id]?.native || m.translation || m.body || linesById[m.id]?.to || '').trim();
+    removeLocal(m.id);
+    if (text) void send(text);
+  };
+
+  const send = async (override?: string) => {
+    const text = (override ?? draft).trim();
+    if (!selectedId || !text || sending || recipientBlocked) return;
+    const replyTarget = override === undefined ? replyTo : null;
+    const editingMsg = override === undefined ? editing : null;
+    if (override === undefined) {
+      setDraft('');
+      setReplyTo(null);
+      setEditing(null);
+    }
     setSending(true);
     setError(null);
     const localId = `local-${Date.now()}`;
@@ -1031,6 +1178,7 @@ export default function MessagesPage() {
         status: msg.status ?? 'sent',
       });
     } catch (e) {
+      if (isUserDeletedError(e)) setPeerGone(true);
       if (!editingMsg) {
         setDetail((prev) =>
           prev
@@ -1046,7 +1194,17 @@ export default function MessagesPage() {
         setDraft(text);
         setEditing(editingMsg);
       }
-      setError(e instanceof Error ? e.message : editingMsg ? 'Failed to edit' : 'Failed to send');
+      const code = (e as { code?: string }).code;
+      if (code === 'BIRTH_YEAR_REQUIRED') {
+        setAskAge(true);
+        setError(mp.birthYearBanner);
+      } else if (code === 'RECIPIENT_NOT_ELIGIBLE') {
+        // One notice replaces the composer; no duplicate error line.
+        setRecipientBlocked(true);
+        setError(null);
+      } else {
+        setError(friendlyError(e, copy));
+      }
     } finally {
       setSending(false);
     }
@@ -1067,12 +1225,13 @@ export default function MessagesPage() {
         const topOk = !!existing?.to?.trim();
         const botOk = !!existing?.native?.trim()
           && (!sameChatText(existing.native, existing.to) || to === native);
+        const settleKey = `${msg.id}:${to}:${native}`;
         if (topOk && botOk) {
-          backfillFailRef.current.delete(msg.id);
+          backfillFailRef.current.set(settleKey, 1);
           continue;
         }
-        const fails = backfillFailRef.current.get(msg.id) ?? 0;
-        if (fails >= 5) continue;
+        if (backfillFailRef.current.has(settleKey)) continue;
+        backfillFailRef.current.set(settleKey, 1);
 
         const storedTr = msg.translation?.trim() || null;
         const bodyLooksNative = looksLikeLang(msg.body, native) && !looksLikeLang(msg.body, to);
@@ -1094,16 +1253,10 @@ export default function MessagesPage() {
         const seed = storedTr && !sameChatText(storedTr, msg.body) ? storedTr : msg.body;
         const seedLang = bodyLooksNative ? native : (bodyLooksTo || bodyLang === to ? to : (bodyLang ?? native));
         if (!toText) toText = await tryTranslateChat(seed, seedLang, to);
-        if (!nativeText) {
-          nativeText = await tryTranslateChat(toText ?? seed, toText ? to : seedLang, native)
-            ?? await tryTranslateChat(seed, seedLang, native)
-            ?? (bodyLooksNative ? msg.body : null);
-        }
+        else if (!nativeText) nativeText = await tryTranslateChat(seed, seedLang, native);
         if (!cancelled) {
-          if (toText && nativeText && !sameChatText(toText, nativeText)) {
-            backfillFailRef.current.delete(msg.id);
-          } else {
-            backfillFailRef.current.set(msg.id, fails + 1);
+          if (!toText && !nativeText) {
+            setTranslateFailed((prev) => ({ ...prev, [msg.id]: true }));
           }
           rememberPair(msg.id, toText, nativeText);
         }
@@ -1142,7 +1295,7 @@ export default function MessagesPage() {
             lemma: selectedWord.toLowerCase(),
             sentence: selectedSentence.slice(0, 4000) || selectedWord,
             sourceLang: apiChatLang(selectedLineLang),
-            targetLang: apiChatLang(nativeLang),
+            targetLang: uiLocale, // Lookup bug (b): answer in the UI language
           }),
         });
         if (!cancelled) {
@@ -1154,9 +1307,16 @@ export default function MessagesPage() {
           });
         }
       } catch (e) {
-        const raw = e instanceof Error ? e.message : 'Lookup failed';
+        if (handleLimitError(e)) return;
+        const raw = e instanceof Error ? e.message : copy.errors.lookupFailed;
         let message = raw;
-        if (/disabled by an administrator/i.test(raw)) {
+        // lookup_limit: the API already sends the uz/ru/en PLUS-OFFER Defaults #4 text (lib/api.ts).
+        if (isDailyLimitError(e)) {
+          // Friendly DailyLimitNotice (reset time, user's timezone) is already shown: no error toast.
+          message = '';
+        } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
+          message = raw;
+        } else if (/disabled by an administrator/i.test(raw)) {
           message = 'AI lookups are temporarily disabled. Please try again later.';
         } else if (/platform ai daily limit/i.test(raw)) {
           message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
@@ -1175,7 +1335,7 @@ export default function MessagesPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedWord, selectedSentence, selectedLineLang, nativeLang]);
+  }, [selectedWord, selectedSentence, selectedLineLang, uiLocale, copy.errors.lookupFailed]);
 
   const saveWord = async (mastered = false) => {
     if (!selectedWord || !lookup?.translation) return;
@@ -1198,15 +1358,15 @@ export default function MessagesPage() {
       }
       if (mastered && vocabId) {
         await markVocabMastered(vocabId, true);
-        setSavedMsg('Marked as known');
-        toast.success(`"${lemma}" marked as known`);
+        setSavedMsg(copy.reader.known);
+        toast.success(`"${lemma}" ${copy.reader.markedAs(copy.reader.known)}`);
       } else {
-        setSavedMsg('Saved to vocabulary');
-        toast.success(`"${lemma}" saved to vocabulary`);
+        setSavedMsg(copy.reader.savedToVocab);
+        toast.success(`"${lemma}" ${copy.reader.savedToVocab}`);
       }
       void refreshVocab().catch(() => undefined);
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Save failed';
+      const message = e instanceof Error ? e.message : copy.errors.saveFailed;
       setSavedMsg(message);
       toast.error(message);
     }
@@ -1230,59 +1390,60 @@ export default function MessagesPage() {
       onSave={() => void saveWord(false)}
       onKnown={() => void saveWord(true)}
       onIgnore={closeLookup}
+      copy={copy}
+      sourceLang={selectedLineLang}
     />
   ) : null;
   const showList = isDesktop || !selectedId;
   const showThread = isDesktop || !!selectedId;
 
+  const menuItem = 'w-full flex items-center gap-2.5 min-h-10 px-3 rounded-[9px] text-left text-sm font-medium text-[#101828] hover:bg-g-blue-50';
+
   return (
     <div className="absolute inset-0 flex bg-white overflow-hidden">
+      {askAge ? <AgePrompt force onDone={() => setAskAge(false)} /> : null}
       <aside
         className={cx(
-          'shrink-0 border-r border-[#e5e7eb] flex-col min-h-0 bg-white w-full lg:w-[360px]',
+          'shrink-0 border-r border-[#eceef5] flex-col min-h-0 bg-white w-full lg:w-[360px]',
           showList ? 'flex' : 'hidden',
         )}
       >
-        <div className="px-4 pt-4 pb-3 border-b border-[#e5e7eb]">
-          <h1 className="text-lg font-bold text-gray-900 mb-3">Messages</h1>
+        <div className="px-4 sm:px-5 pt-5 pb-3">
+          <h1 className="text-[22px] font-bold tracking-tight text-[#101828] mb-3">{msg.title}</h1>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[#99a1af]" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#9aa0ae]" />
             <input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search conversations..."
-              className="w-full h-9 pl-9 pr-3 rounded-xl bg-[#f9fafb] border border-[#e5e7eb] text-sm outline-none focus:border-[#7008e7] focus:ring-1 focus:ring-[#7008e7]/40"
+              placeholder={msg.searchPlaceholder}
+              aria-label={msg.searchPlaceholder}
+              className="w-full h-10 pl-10 pr-3 rounded-[11px] bg-[#f4f5fa] border border-transparent text-sm text-[#101828] outline-none placeholder:text-[#9aa0ae] focus:bg-white focus:border-g-blue-600 focus:ring-4 focus:ring-g-blue-50"
             />
           </div>
         </div>
 
         {suggestions.length > 0 && (
-          <div className="px-4 pt-4 pb-2 shrink-0">
-            <div className="text-[11px] font-bold tracking-wide text-[#99a1af] mb-3">
-              SUGGESTED FROM READINGS
+          <div className="px-4 sm:px-5 pb-3 shrink-0 border-b border-[#f0f1f6]">
+            <div className="text-[11px] font-bold tracking-[0.12em] text-[#8a8fa0] mb-2.5">
+              {mp.suggestedFromReadings}
             </div>
-            <div className="flex gap-3 overflow-x-auto pb-2">
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {suggestions.slice(0, 6).map((s) => (
                 <button
                   key={s.id}
                   type="button"
                   onClick={() => openPeerProfile(s.id)}
-                  className="w-[130px] shrink-0 rounded-2xl border border-[#e5e7eb] bg-white p-3 text-left hover:border-[#7008e7]/40 transition-colors"
+                  className="w-[112px] shrink-0 rounded-xl border border-[#eceef5] bg-white px-2 py-2.5 text-center hover:border-g-blue-200 hover:bg-g-blue-50/40 transition-colors"
                 >
-                  <div className="flex flex-col items-center gap-2">
-                    <UserAvatar name={s.displayName} url={s.avatarUrl} size={40} online={s.online} />
-                    <div className="flex items-center gap-1">
-                      <span className="text-xs font-semibold text-gray-900 truncate max-w-[70px]">
-                        {s.displayName.split(' ')[0]}
-                        {s.displayName.split(' ')[1] ? ` ${s.displayName.split(' ')[1]![0]}.` : ''}
-                      </span>
-                      <span className={cx('text-[10px] font-bold px-1.5 py-0.5 rounded', langBadge(s.primaryLanguage ?? s.nativeLanguage))}>
-                        {(s.primaryLanguage ?? s.nativeLanguage ?? 'en').toUpperCase().slice(0, 2)}
-                      </span>
-                    </div>
-                    <div className="text-[10px] text-[#99a1af] truncate w-full text-center">
-                      {s.reading?.title ?? 'Learner'}
-                    </div>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <UserAvatar name={s.displayName} url={s.avatarUrl} size={36} online={s.online} />
+                    <span className="text-xs font-semibold text-[#101828] truncate max-w-full">
+                      {s.displayName.split(' ')[0]}
+                      {s.displayName.split(' ')[1] ? ` ${s.displayName.split(' ')[1]![0]}.` : ''}
+                    </span>
+                    <span className="text-[10.5px] text-[#8a8fa0] truncate w-full">
+                      {s.reading?.title ?? mp.learner}
+                    </span>
                   </div>
                 </button>
               ))}
@@ -1290,73 +1451,75 @@ export default function MessagesPage() {
           </div>
         )}
 
-        <div className="px-4 pt-2 pb-1 text-[11px] font-bold tracking-wide text-[#99a1af]">
-          RECENT CHATS
+        {user?.birthYear == null ? (
+          <Link to={`${withAppBase('/app/settings')}#birth-year`} className="mx-4 mt-3 block rounded-xl bg-[#f3f0ff] px-3 py-2 text-sm font-medium text-[#2107AA]">
+            {mp.birthYearBanner}
+          </Link>
+        ) : null}
+        <div className="px-4 sm:px-5 pt-3 pb-1.5 text-[11px] font-bold tracking-[0.12em] text-[#8a8fa0]">
+          {mp.recentChats}
         </div>
         <div className="flex-1 overflow-y-auto min-h-0">
           {loadingList && conversations.length === 0 ? (
-            <div className="p-6 text-sm text-[#99a1af]">Loading conversations…</div>
+            <div className="p-6 text-sm text-[#99a1af]">{copy.common.loading}</div>
           ) : conversations.length === 0 ? (
-            <div className="p-6 text-sm text-[#99a1af] flex flex-col items-center gap-2 text-center">
-              <MessageSquare className="w-8 h-8 text-[#c4b4ff]" />
-              <p>No conversations yet. Search for learners or pick someone from Suggested from Readings.</p>
+            <div className="p-8 text-sm text-[#4a5565] flex flex-col items-center gap-3 text-center">
+              <span className="size-14 rounded-full bg-g-blue-50 grid place-items-center"><MessageSquare className="w-6 h-6 text-g-blue-700" /></span>
+              <p className="text-base font-semibold text-[#0f1729]">{mp.emptyTitle}</p>
+              <p>{mp.emptyBody}</p>
+              <button type="button" onClick={() => document.getElementById('learner-search')?.focus()} className="h-10 px-4 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-semibold">
+                {mp.sendFriend}
+              </button>
             </div>
           ) : (
             conversations.map((c) => {
               const active = c.id === selectedId;
+              const learning = c.peer?.primaryLanguage;
               return (
-                <div
+                <button
                   key={c.id}
+                  type="button"
+                  onClick={() => setSelectedId(c.id)}
+                  aria-current={active ? 'true' : undefined}
                   className={cx(
-                    'w-full flex items-center gap-3 px-4 py-3.5 border-b border-[#f3f4f6] text-left transition-colors',
-                    active ? 'bg-[#f4efff]' : 'hover:bg-[#f9fafb]',
+                    'relative w-full flex items-center gap-3 px-4 sm:px-5 py-3 text-left transition-colors',
+                    active ? 'bg-[#f3f1ff] before:absolute before:left-0 before:top-2.5 before:bottom-2.5 before:w-[3px] before:rounded-r before:bg-g-blue-700' : 'hover:bg-[#f9fafb]',
                   )}
                 >
-                  <button
-                    type="button"
-                    onClick={() => openPeerProfile(c.peer?.id)}
-                    className="relative shrink-0 rounded-full"
-                    aria-label={`Open ${c.peer?.displayName ?? 'learner'} profile`}
-                  >
-                    <UserAvatar name={c.peer?.displayName} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedId(c.id)}
-                    className="flex-1 min-w-0 text-left"
-                  >
+                  <UserAvatar name={peerName(c.peer, 'Learner')} url={c.peer?.avatarUrl} size={44} online={c.peer?.online} />
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 mb-0.5">
-                      <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="font-semibold text-sm text-gray-900 truncate">
-                          {c.peer?.displayName ?? 'Learner'}
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className={cx('text-sm truncate text-[#101828]', c.unreadCount > 0 ? 'font-bold' : 'font-semibold')}>
+                        {peerName(c.peer, 'Learner')}
+                      </span>
+                      {!c.lastMessage ? (
+                        <span className="text-[10px] font-bold text-g-blue-700 bg-g-blue-50 px-1.5 py-0.5 rounded-md shrink-0">{ux.isNew}</span>
+                      ) : learning ? (
+                        <span title={ux.learning(chatLangName(learning, uiLang))} className="shrink-0 inline-flex">
+                          <CatalogLanguageFlag code={learning.toLowerCase()} className="h-2.5 w-3.5" />
                         </span>
-                        <span className={cx('text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0', langBadge(c.language ?? c.peer?.primaryLanguage))}>
-                          {(c.language ?? c.peer?.primaryLanguage ?? 'en').toUpperCase().slice(0, 2)}
-                        </span>
-                      </div>
-                      <span className="text-[11px] text-[#99a1af] shrink-0">
-                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt)}
+                      ) : null}
+                      <span className="ml-auto text-[11.5px] text-[#9aa0ae] shrink-0 tabular-nums">
+                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt, mp.yesterday, uiLang)}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between gap-2">
-                      <p className={cx('text-xs truncate flex items-center gap-1', c.lastMessage?.deleted ? 'text-[#99a1af] italic' : 'text-[#4a5565]')}>
+                    <div className="flex items-center justify-between gap-2 mt-0.5">
+                      <p className={cx('text-[13px] truncate flex items-center gap-1 min-w-0', c.lastMessage?.deleted ? 'text-[#99a1af] italic' : c.lastMessage ? (c.unreadCount > 0 ? 'text-[#101828] font-medium' : 'text-[#4a5565]') : 'text-[#9aa0ae]')}>
                         {c.lastMessage?.senderId === user?.id && !c.lastMessage?.deleted && (
                           c.lastMessage?.status === 'read'
-                            ? <CheckCheck className="w-3.5 h-3.5 text-[#7008e7] shrink-0" />
-                            : <Check className="w-3 h-3 text-[#99a1af] shrink-0" />
+                            ? <CheckCheck className="w-3.5 h-3.5 text-g-blue-700 shrink-0" />
+                            : <Check className="w-3.5 h-3.5 text-[#9aa0ae] shrink-0" />
                         )}
-                        <span className="truncate">{c.lastMessage?.body ?? 'No messages yet'}</span>
+                        <span className="truncate">{c.lastMessage?.body ?? (c.peer?.handle ? `@${c.peer.handle.replace(/^@/, '')}` : '')}</span>
                       </p>
                       {c.unreadCount > 0 && (
-                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-[#7008e7] text-white text-[10px] font-extrabold flex items-center justify-center">
+                        <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-g-blue-700 text-g-on-cta text-[11px] font-extrabold flex items-center justify-center shrink-0">
                           {c.unreadCount}
                         </span>
                       )}
                     </div>
                   </div>
-                  </button>
-                </div>
+                </button>
               );
             })
           )}
@@ -1365,79 +1528,167 @@ export default function MessagesPage() {
 
       <section
         className={cx(
-          'flex-1 min-w-0 flex-col bg-[#f9fafb] relative',
+          'flex-1 min-w-0 flex-col bg-[#f6f7fc] relative',
           showThread ? 'flex' : 'hidden',
         )}
       >
         {!selectedId ? (
           <div className="flex-1 flex flex-col items-center justify-center text-center px-6 gap-3">
-            <div className="size-16 rounded-full bg-[#f4efff] grid place-items-center text-[28px]">💬</div>
-            <p className="text-base font-semibold text-[#0f1729]">Select a conversation</p>
-            <p className="text-sm text-[#6b7382] max-w-sm">
-              Choose a chat from the list or search for learners to start messaging.
-            </p>
+            <span className="size-16 rounded-full bg-g-blue-50 grid place-items-center"><MessageSquare className="w-7 h-7 text-g-blue-700" /></span>
+            <p className="text-base font-semibold text-[#0f1729]">{mp.selectConversation}</p>
+            <p className="text-sm text-[#6b7382] max-w-sm">{msg.subtitle}</p>
             {error && <p className="text-xs text-red-500">{error}</p>}
+            {gatedPeer && <FriendGateNotice lang={uiLang} peerId={gatedPeer.id} under13={gatedPeer.under13} />}
           </div>
         ) : !detail ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#99a1af] gap-2">
-            <p className="text-sm">{loadingThread ? 'Loading conversation…' : (error || 'Could not open this chat.')}</p>
+            <p className="text-sm">{loadingThread ? mp.loadingConversation : (error || copy.commonExt.error)}</p>
           </div>
         ) : (
           <>
-            <header className="h-14 bg-white border-b border-[#e5e7eb] px-3 sm:px-5 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-1 min-w-0">
+            <header className="h-[64px] bg-white border-b border-[#eceef5] px-2 sm:px-5 flex items-center justify-between gap-2 shrink-0 relative z-20">
+              <div className="flex items-center gap-1.5 min-w-0">
                 <button
                   type="button"
-                  className="lg:hidden size-9 rounded-lg grid place-items-center text-[#6b7382] hover:bg-[#f4efff] shrink-0"
-                  aria-label="Back to chats"
+                  className="lg:hidden size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50 shrink-0"
+                  aria-label={copy.common.back}
                   onClick={() => setSelectedId(null)}
                 >
-                  <ArrowLeft className="w-5 h-5" />
+                  <ArrowLeft className="w-4 h-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => openPeerProfile(detail.peer?.id)}
-                  className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-[#f5f3ff] px-1 py-0.5"
+                  className="flex items-center gap-3 min-w-0 text-left rounded-xl hover:bg-g-blue-50 px-1.5 py-1"
                 >
-                <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={36} online={detail.peer?.online} />
-                <div className="min-w-0">
-                  <div className="font-bold text-sm text-gray-900 truncate">
-                    {detail.peer?.displayName ?? 'Learner'}
-                  </div>
-                  <div className={cx(
-                    'text-[11px] truncate',
-                    detail.peer?.typing ? 'text-[#7008e7] font-semibold' : detail.peer?.online ? 'text-[#16a34a]' : 'text-[#99a1af]',
-                  )}>
-                    {presenceLabel(detail.peer) || detail.peer?.handle}
-                  </div>
+                  <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={38} online={detail.peer?.online} />
+                  <div className="min-w-0">
+                    <div className="font-bold text-[15px] text-[#101828] truncate">
+                      {peerName(detail.peer, 'Learner')}
+                    </div>
+                    <div className={cx(
+                      'text-xs truncate',
+                      detail.peer?.typing ? 'text-g-blue-700 font-semibold' : detail.peer?.online ? 'text-[#16a34a] font-medium' : 'text-[#8a8fa0]',
+                    )}>
+                      {presenceLabel(detail.peer, mp, copy.commonExt) || (detail.peer?.handle ? `@${detail.peer.handle.replace(/^@/, '')}` : '')}
+                    </div>
                   </div>
                 </button>
               </div>
-              <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} onSelect={persistTo} />
+              <div className="flex items-center gap-1.5 shrink-0">
+                <ToLangPicker selected={toLang} options={toOptions} uiLang={uiLang} nativeLang={nativeLang} onSelect={persistTo} />
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-label={ux.more}
+                    aria-haspopup="menu"
+                    aria-expanded={headerMenu}
+                    onClick={() => setHeaderMenu((v) => !v)}
+                    className={cx('size-9 rounded-[11px] border grid place-items-center text-[#4a5565] hover:bg-gray-50', headerMenu ? 'border-g-blue-200 bg-g-blue-50' : 'border-[#e3e5ee] bg-white')}
+                  >
+                    <MoreHorizontal className="w-[18px] h-[18px]" />
+                  </button>
+                  {headerMenu && <button type="button" className="fixed inset-0 z-20 cursor-default" aria-label={copy.commonExt.close} onClick={() => setHeaderMenu(false)} />}
+                  {/* Kept mounted (only hidden) so the Report / Block dialogs inside survive the menu closing. */}
+                  <div
+                    role="menu"
+                    onClick={() => setHeaderMenu(false)}
+                    className={cx(
+                      'absolute right-0 top-full mt-2 z-30 w-56 rounded-[14px] border border-[#e9ebf3] bg-white p-1.5 shadow-[0_18px_40px_rgba(16,24,40,0.14)] transition-opacity',
+                      headerMenu ? 'opacity-100' : 'opacity-0 pointer-events-none invisible',
+                    )}
+                  >
+                    <button type="button" role="menuitem" className={menuItem} onClick={() => openPeerProfile(detail.peer?.id)}>
+                      <UserIcon className="w-4 h-4 text-[#4a5565]" />{ux.viewProfile}
+                    </button>
+                    {detail.peer?.id && (
+                      <ReportButton
+                        lang={uiLang}
+                        name={peerName(detail.peer, 'Learner')}
+                        icon={<Flag className="w-4 h-4 text-[#4a5565]" />}
+                        className={menuItem}
+                        target={{ kind: 'user', userId: detail.peer.id, conversationId: detail.id }}
+                      />
+                    )}
+                    {detail.peer?.id && (
+                      <BlockButton
+                        lang={uiLang}
+                        name={peerName(detail.peer, 'Learner')}
+                        icon={<Ban className="w-4 h-4" />}
+                        className={cx(menuItem, 'text-red-600 hover:bg-red-50')}
+                        userId={detail.peer.id}
+                        onBlocked={() => { setSelectedId(null); void loadInbox(search.trim() || undefined); }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
             </header>
 
-            {!tipDismissed && (
-              <div className="bg-[#f4efff] border-b border-[#d3c2ff] px-4 sm:px-5 py-2.5 flex items-center justify-between gap-3 shrink-0">
-                <p className="text-[12px] text-[#5b21b6] leading-5">
-                  Tips: Tap underlined words to save them to your vocabulary.
-                </p>
+            {!tipDismissed && detail.messages.length > 0 && (
+              <div className="bg-[#f4f2ff] border-b border-[#e3dcff] px-4 sm:px-5 py-2 flex items-center justify-between gap-3 shrink-0">
+                <p className="text-[12.5px] text-g-blue-800 leading-5 flex items-center gap-2"><Languages className="w-4 h-4 shrink-0" />{mp.chatTip}</p>
                 <button
                   type="button"
-                  className="text-[#7c3aed] hover:text-[#5b21b6] text-sm leading-none px-1"
-                  onClick={() => setTipDismissed(true)}
-                  aria-label="Dismiss tip"
+                  className="size-7 rounded-lg grid place-items-center text-g-blue-700 hover:bg-white/70"
+                  onClick={dismissTip}
+                  aria-label={copy.commonExt.close}
                 >
-                  ×
+                  <X className="w-3.5 h-3.5" />
                 </button>
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto min-h-0 px-4 sm:px-6 py-4 space-y-3 bg-[#f5f3ff]">
+            <div className="flex-1 overflow-y-auto min-h-0 px-3 sm:px-6 py-4 flex flex-col gap-1.5">
               {loadingThread && detail.messages.length === 0 ? (
-                <p className="text-sm text-[#99a1af]">Loading messages…</p>
+                <p className="text-sm text-[#99a1af]">{copy.common.loading}</p>
+              ) : detail.messages.length === 0 ? (
+                <div className="m-auto max-w-md flex flex-col items-center text-center gap-2 py-8">
+                  <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={72} />
+                  <p className="text-lg font-bold text-[#101828] mt-1">{peerName(detail.peer, 'Learner')}</p>
+                  <p className="text-[13px] text-[#6b7080] flex items-center gap-1.5 flex-wrap justify-center">
+                    {detail.peer?.handle ? `@${detail.peer.handle.replace(/^@/, '')}` : null}
+                    {detail.peer?.primaryLanguage ? (
+                      <>
+                        {detail.peer?.handle ? <span aria-hidden>·</span> : null}
+                        <CatalogLanguageFlag code={detail.peer.primaryLanguage.toLowerCase()} className="h-2.5 w-3.5" />
+                        {ux.learning(chatLangName(detail.peer.primaryLanguage, uiLang))}
+                      </>
+                    ) : null}
+                  </p>
+                  <div className="mt-3 flex gap-2.5 text-left rounded-[14px] border border-[#e9ebf3] bg-white px-4 py-3 text-[13px] leading-relaxed text-[#4a5565]">
+                    <Languages className="w-4 h-4 text-g-blue-700 shrink-0 mt-0.5" />{ux.emptyHint}
+                  </div>
+                  {!(detail.peer?.deleted || peerGone || recipientBlocked) && (
+                    <div className="flex flex-wrap justify-center gap-2 mt-2">
+                      {ux.starters.map((line) => (
+                        <button
+                          key={line}
+                          type="button"
+                          onClick={() => setDraft(line.replace(/^\S+\s/, ''))}
+                          className="min-h-9 px-3.5 rounded-full border border-g-blue-100 bg-white text-[13px] font-semibold text-g-blue-700 hover:bg-g-blue-50"
+                        >
+                          {line}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
               ) : (
-                detail.messages.map((m) => {
+                detail.messages.map((m, i) => {
                   const mine = Boolean(m.mine || (user?.id && m.senderId === user.id));
+                  const local = m.id.startsWith('local-');
+                  const failed = m.status === 'failed';
+                  const next = detail.messages[i + 1];
+                  const showAvatar = !mine && (!next || Boolean(next.mine) || next.senderId !== m.senderId);
+                  const prev = detail.messages[i - 1];
+                  const dayKey = tashkentParts(m.createdAt)?.key;
+                  const prevKey = prev ? tashkentParts(prev.createdAt)?.key : null;
+                  const dayLabel = dayKey && dayKey !== prevKey
+                    ? (dayKey === tashkentParts(new Date().toISOString())?.key
+                      ? copy.commonExt.today
+                      : inboxTimestamp(m.createdAt, copy.commonExt.yesterday, uiLang))
+                    : null;
                   const forced = linesById[m.id];
                   const presented = presentBubble({
                     body: m.body,
@@ -1464,103 +1715,111 @@ export default function MessagesPage() {
                     : null;
                   const replyName = m.replyTo
                     ? m.replyTo.senderId === user?.id
-                      ? 'You'
-                      : (detail.peer?.displayName ?? 'Learner')
+                      ? mp.you
+                      : (peerName(detail.peer, copy.nav.library))
                     : null;
+                  const solid = mine && !failed && !m.deleted;
                   return (
                     <div
                       key={m.id}
                       className={cx('group flex w-full flex-col gap-1', mine ? 'items-end' : 'items-start')}
                     >
-                      <div className={cx('flex items-end gap-1.5 max-w-[min(86%,32rem)]', mine && 'flex-row-reverse')}>
+                      {dayLabel ? (
+                        <p className="self-center text-[11.5px] font-semibold text-[#6b7080] bg-[#eceef6] rounded-full px-2.5 py-0.5 my-2">{dayLabel}</p>
+                      ) : null}
+                      <div className={cx('flex items-end gap-2 max-w-[min(88%,34rem)] sm:max-w-[min(72%,34rem)]', mine && 'flex-row-reverse')}>
                         {!mine && (
-                          <button
-                            type="button"
-                            className="hidden sm:block mb-0.5"
-                            onClick={() => openPeerProfile(detail.peer?.id)}
-                            aria-label={detail.peer?.displayName ?? 'Learner'}
-                          >
-                            <UserAvatar name={detail.peer?.displayName} url={detail.peer?.avatarUrl} size={28} />
-                          </button>
+                          showAvatar ? (
+                            <button
+                              type="button"
+                              className="hidden sm:block mb-0.5 shrink-0"
+                              onClick={() => openPeerProfile(detail.peer?.id)}
+                              aria-label={peerName(detail.peer, 'Learner')}
+                            >
+                              <UserAvatar name={peerName(detail.peer, 'Learner')} url={detail.peer?.avatarUrl} size={28} />
+                            </button>
+                          ) : <span className="hidden sm:block w-7 shrink-0" aria-hidden />
                         )}
                         <div
                           className={cx(
-                            'w-fit max-w-full px-3.5 py-2.5 text-[15px] leading-5 shadow-sm',
+                            'w-fit max-w-full px-3.5 py-2.5 text-[15px] leading-[1.4]',
                             m.deleted
-                              ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic shadow-none'
-                              : mine
-                                ? 'rounded-2xl rounded-br-md bg-[#7f22fe] text-white'
-                                : 'rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-gray-900',
+                              ? 'rounded-2xl bg-transparent border border-dashed border-[#d1d5dc] text-[#99a1af] italic'
+                              : failed
+                                ? 'rounded-2xl rounded-br-md bg-white border-[1.5px] border-red-200 text-[#101828]'
+                                : mine
+                                  ? 'rounded-2xl rounded-br-md bg-g-blue-700 text-g-on-cta shadow-[0_4px_12px_rgba(33,7,170,0.18)]'
+                                  : 'rounded-2xl rounded-bl-md bg-white border border-[#eceef5] text-[#101828] shadow-[0_1px_2px_rgba(16,24,40,0.04)]',
                           )}
                         >
                           {m.replyTo && !m.deleted && (
                             <div
                               className={cx(
                                 'mb-2 pl-2 border-l-2 text-[12px] leading-4',
-                                mine ? 'border-white/50 text-white/80' : 'border-[#7008e7] text-[#6a7282]',
+                                solid ? 'border-white/50 text-white/80' : 'border-g-blue-700 text-[#6a7282]',
                               )}
                             >
-                              <div className={cx('font-semibold', mine ? 'text-white' : 'text-[#7008e7]')}>
+                              <div className={cx('font-semibold', solid ? 'text-white' : 'text-g-blue-700')}>
                                 {replyName}
                               </div>
                               <div className="line-clamp-2 break-words">
                                 {replyPresented
-                                  ? (replyPresented.primary || messageSnippet(m.replyTo))
-                                  : messageSnippet(m.replyTo)}
+                                  ? (replyPresented.primary || messageSnippet(m.replyTo, mp.messageDeleted))
+                                  : messageSnippet(m.replyTo, mp.messageDeleted)}
                               </div>
                             </div>
                           )}
                           {m.deleted ? (
-                            <span className="text-[14px]">This message was deleted</span>
+                            <span className="text-[14px]">{mp.messageDeleted}</span>
                           ) : (
                             <>
                               {primary ? (
                                 <TappableMessageText
                                   text={primary}
                                   selectedWord={lookup?.phrase?.trim() || selectedWord}
-                                  mine={mine}
+                                  mine={solid}
+                                  chatTipTitle={mp.chatTipTitle}
                                   onWordTap={(word) => {
                                     setSelectedWord(word);
                                     setSelectedSentence(sentenceAroundPhrase(primary, word));
                                     setSelectedNativeLine(secondary ? sentenceAroundPhrase(secondary, word) : '');
                                     setSelectedLineLang(presented.primaryLang);
                                   }}
-                                  className="text-[15px] leading-5"
+                                  className="text-[15px] leading-[1.4] [overflow-wrap:anywhere]"
                                 />
                               ) : (
-                                <p className={cx('italic text-[13px]', mine ? 'text-white/80' : 'text-[#6a7282]')}>
-                                  {chatTranslatingLabel(uiLang)}
+                                <p className={cx('italic text-[13px] min-h-5', solid ? 'text-white/80' : 'text-[#6a7282]')}>
+                                  {translateFailed[m.id] ? chatTranslateFailedLabel(uiLang) : chatTranslatingLabel(uiLang)}
                                 </p>
                               )}
                               {secondary ? (
-                                <TappableMessageText
-                                  text={secondary}
-                                  selectedWord={lookup?.phrase?.trim() || selectedWord}
-                                  mine={mine}
-                                  onWordTap={(word) => {
-                                    setSelectedWord(word);
-                                    setSelectedSentence(sentenceAroundPhrase(secondary, word));
-                                    setSelectedNativeLine(sentenceAroundPhrase(secondary, word));
-                                    setSelectedLineLang(presented.secondaryLang);
-                                  }}
+                                /* The native-language line is a reading aid only: never tappable (no lookups in your own language). */
+                                <p
                                   className={cx(
-                                    'italic text-[13px] mt-1',
-                                    mine ? 'text-white/80' : 'text-[#6a7282]',
+                                    'flex items-baseline gap-1.5 text-[13px] leading-snug mt-1.5 pt-1.5 border-t break-words [overflow-wrap:anywhere]',
+                                    solid ? 'text-white/75 border-white/15' : 'text-[#6b7080] border-[#f0f1f6]',
                                   )}
-                                />
+                                >
+                                  <span className={cx('shrink-0 text-[9.5px] font-bold tracking-wide px-1 py-px rounded', solid ? 'bg-white/15 text-white/80' : 'bg-[#f1f2f7] text-[#8a8fa0]')}>
+                                    {presented.secondaryLang.slice(0, 2).toUpperCase()}
+                                  </span>
+                                  <span className="min-w-0">{secondary}</span>
+                                </p>
                               ) : null}
                             </>
                           )}
                         </div>
-                        {!m.deleted && (
+                        {!m.deleted && !local && (
                           <div className="relative shrink-0 self-center">
                             <button
                               type="button"
                               className={cx(
-                                'w-7 h-7 rounded-full flex items-center justify-center text-[#99a1af] bg-white/80 border border-[#e5e7eb] shadow-sm hover:bg-white hover:text-[#4a5565] cursor-pointer',
-                                menuId === m.id && 'bg-white text-[#4a5565] border-[#c4b4ff]',
+                                'size-7 rounded-full flex items-center justify-center text-[#9aa0ae] bg-white border border-[#eceef5] hover:text-[#4a5565] cursor-pointer sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 transition-opacity',
+                                menuId === m.id && 'sm:opacity-100 text-[#4a5565] border-g-blue-200',
                               )}
-                              aria-label="Message actions"
+                              aria-label={ux.more}
+                              aria-haspopup="menu"
+                              aria-expanded={menuId === m.id}
                               onClick={() => setMenuId((id) => (id === m.id ? null : m.id))}
                             >
                               <MoreHorizontal className="w-4 h-4" />
@@ -1570,41 +1829,35 @@ export default function MessagesPage() {
                                 <button
                                   type="button"
                                   className="fixed inset-0 z-20 cursor-default"
-                                  aria-label="Close menu"
+                                  aria-label={copy.commonExt.close}
                                   onClick={() => setMenuId(null)}
                                 />
                                 <div
+                                  role="menu"
                                   className={cx(
-                                    'absolute z-30 bottom-8 min-w-[148px] rounded-xl border border-[#e5e7eb] bg-white py-1 shadow-lg',
+                                    'absolute z-30 bottom-9 w-48 rounded-[14px] border border-[#e9ebf3] bg-white p-1.5 shadow-[0_18px_40px_rgba(16,24,40,0.14)]',
                                     mine ? 'right-0' : 'left-0',
                                   )}
                                 >
-                                  <button
-                                    type="button"
-                                    className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
-                                    onClick={() => startReply(m)}
-                                  >
-                                    <CornerUpLeft className="w-3.5 h-3.5 text-[#7008e7]" />
-                                    Reply
+                                  <button type="button" role="menuitem" className={menuItem} onClick={() => startReply(m)}>
+                                    <CornerUpLeft className="w-4 h-4 text-g-blue-700" />
+                                    {mp.reply}
                                   </button>
                                   {canEditMessage(m) && (
-                                    <button
-                                      type="button"
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-gray-800 hover:bg-[#f5f3ff] cursor-pointer"
-                                      onClick={() => startEdit(m)}
-                                    >
-                                      <Pencil className="w-3.5 h-3.5 text-[#6a7282]" />
-                                      Edit
+                                    <button type="button" role="menuitem" className={menuItem} onClick={() => startEdit(m)}>
+                                      <Pencil className="w-4 h-4 text-[#6a7282]" />
+                                      {mp.edit}
                                     </button>
                                   )}
                                   {mine && (
                                     <button
                                       type="button"
-                                      className="w-full flex items-center gap-2 px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 cursor-pointer"
-                                      onClick={() => void deleteMessage(m)}
+                                      role="menuitem"
+                                      className={cx(menuItem, 'text-red-600 hover:bg-red-50')}
+                                      onClick={() => { setMenuId(null); setPendingDelete(m); }}
                                     >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                      Delete
+                                      <Trash2 className="w-4 h-4" />
+                                      {mp.delete}
                                     </button>
                                   )}
                                 </div>
@@ -1613,29 +1866,40 @@ export default function MessagesPage() {
                           </div>
                         )}
                       </div>
-                      <span className="text-[10px] text-[#99a1af] inline-flex items-center gap-1 px-1">
+                      <span className={cx('text-[11px] text-[#9aa0ae] inline-flex items-center gap-1 px-1', !mine && 'sm:pl-10')}>
                         {formatTime(m.createdAt)}
-                        {m.editedAt && !m.deleted ? ' · edited' : ''}
-                        {mine && !m.deleted && (
+                        {m.editedAt && !m.deleted ? ` · ${mp.edited}` : ''}
+                        {mine && !m.deleted && !failed && (
                           m.status === 'sending' ? (
                             <Clock className="w-3 h-3 animate-pulse" />
-                          ) : m.status === 'failed' ? (
-                            <span className="text-red-500">!</span>
                           ) : m.status === 'read' ? (
-                            <CheckCheck className="w-3.5 h-3.5 text-[#7008e7]" />
+                            <CheckCheck className="w-3.5 h-3.5 text-g-blue-700" />
                           ) : (
                             <Check className="w-3 h-3" />
                           )
                         )}
                       </span>
+                      {failed && (
+                        <div className="flex flex-wrap items-center justify-end gap-2 text-xs font-semibold" role="alert">
+                          <span className="inline-flex items-center gap-1 text-red-600"><AlertTriangle className="w-3.5 h-3.5" />{ux.notSent}</span>
+                          {!recipientBlocked && (
+                            <button type="button" onClick={() => retryFailed(m)} disabled={sending} className="inline-flex items-center gap-1 min-h-7 px-2 rounded-md bg-g-blue-50 text-g-blue-700 hover:bg-g-blue-100 disabled:opacity-50">
+                              <RotateCcw className="w-3 h-3" />{ux.retry}
+                            </button>
+                          )}
+                          <button type="button" onClick={() => removeLocal(m.id)} className="min-h-7 px-2 rounded-md bg-[#f1f2f6] text-[#4a5565] hover:bg-[#e8e9ef]">
+                            {ux.remove}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   );
                 })
               )}
               {detail.peer?.typing && (
-                <div className="flex justify-start">
-                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#e5e7eb] text-[13px] text-[#7008e7] font-semibold shadow-sm">
-                    typing…
+                <div className="flex justify-start sm:pl-9">
+                  <div className="px-3.5 py-2 rounded-2xl rounded-bl-md bg-white border border-[#eceef5] text-[13px] text-g-blue-700 font-semibold">
+                    {mp.typing}
                   </div>
                 </div>
               )}
@@ -1643,37 +1907,48 @@ export default function MessagesPage() {
             </div>
 
             {selectedWord && !isXl ? (
-              <div className="absolute inset-0 z-40 flex justify-end bg-black/30">
-                <button type="button" className="flex-1 h-full cursor-default" aria-label="Close word meaning" onClick={closeLookup} />
-                <div className="h-full w-full max-w-[380px] bg-white shadow-2xl">
+              <div className="absolute inset-0 z-40 flex justify-end bg-[rgba(11,12,38,0.45)]">
+                <button type="button" className="flex-1 h-full cursor-default" aria-label={copy.commonExt.close} onClick={closeLookup} />
+                <div className="h-full w-[92%] max-w-[400px] bg-white shadow-2xl">
                   {wordPanel}
                 </div>
               </div>
             ) : null}
 
-            <footer className="bg-white border-t border-[#e5e7eb] p-3 shrink-0">
+            {detail.peer?.deleted || peerGone ? (
+              <footer className="bg-white border-t border-[#eceef5] p-4 shrink-0" data-testid="composer-deleted">
+                <p className="text-center text-sm text-[#6a7282]">{deletedAccountLine(uiLocale)}</p>
+              </footer>
+            ) : recipientBlocked ? (
+              <footer className="bg-[#fffbeb] border-t border-[#fde68a] px-4 sm:px-5 py-4 shrink-0 flex items-start gap-2.5 text-sm font-medium text-[#92400e]" role="status">
+                <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>{mp.recipientNotEligible}</span>
+              </footer>
+            ) : (
+            <footer className="bg-white border-t border-[#eceef5] px-3 sm:px-5 py-3 shrink-0">
               {(replyTo || editing) && (
-                <div className="mb-2 flex items-start gap-2 rounded-xl bg-[#f5f3ff] px-3 py-2">
-                  <div className="min-w-0 flex-1 border-l-2 border-[#7008e7] pl-2">
-                    <p className="text-[11px] font-bold text-[#7008e7]">
-                      {editing ? 'Editing message' : `Reply to ${replyTo?.mine ? 'yourself' : (detail.peer?.displayName ?? 'learner')}`}
+                <div className="mb-2 flex items-start gap-2 rounded-xl bg-g-blue-50 px-3 py-2">
+                  <div className="min-w-0 flex-1 border-l-2 border-g-blue-700 pl-2">
+                    <p className="text-[11px] font-bold text-g-blue-700">
+                      {editing ? mp.editingMessage : mp.replyTo(replyTo?.mine ? mp.you : (peerName(detail.peer, mp.you)))}
                     </p>
                     <p className="text-xs text-[#6a7282] truncate">
-                      {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false })}
+                      {messageSnippet(editing ?? replyTo ?? { body: '', deleted: false }, mp.messageDeleted)}
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={cancelComposerMode}
                     className="text-[#99a1af] hover:text-gray-700"
-                    aria-label="Cancel"
+                    aria-label={copy.common.cancel}
                   >
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               )}
+              {error && <p className="mb-2 text-xs font-medium text-red-600" role="alert">{error}</p>}
               <div className="flex items-center gap-2">
-                <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e5e7eb] bg-[#f9fafb]">
+                <div className="flex-1 min-w-0 flex items-center gap-2 h-11 sm:h-12 pl-4 pr-1.5 rounded-full border border-[#e3e5ee] bg-[#f9faff] focus-within:bg-white focus-within:border-g-blue-600 focus-within:ring-4 focus-within:ring-g-blue-50">
                   <input
                     value={draft}
                     onChange={(e) => {
@@ -1686,34 +1961,53 @@ export default function MessagesPage() {
                         void send();
                       }
                     }}
-                    placeholder={editing ? 'Edit message...' : 'Type a message...'}
-                    className="flex-1 bg-transparent outline-none text-sm text-gray-900 placeholder:text-[#99a1af]"
+                    aria-label={editing ? mp.editingMessage : msg.typeMessage}
+                    placeholder={editing ? mp.editingMessage : msg.typeMessage}
+                    className="flex-1 min-w-0 bg-transparent outline-none text-[15px] text-[#101828] placeholder:text-[#9aa0ae]"
                   />
-                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-md bg-[#f3f4f6] text-[#4a5565]">
-                    {nativeLang.slice(0, 2)}
+                  <span
+                    className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-full border border-[#e3e5ee] bg-white text-[#4a5565]"
+                    title={`${chatLangName(nativeLang, uiLang)} → ${chatLangName(toLang, uiLang)}`}
+                  >
+                    {nativeLang.slice(0, 2).toUpperCase()}<ArrowRight className="w-3 h-3 text-[#9aa0ae]" aria-hidden />{toLang.slice(0, 2).toUpperCase()}
                   </span>
                 </div>
                 <button
                   type="button"
                   disabled={sending || !draft.trim()}
                   onClick={() => void send()}
-                  className="w-10 h-10 rounded-full bg-[#7008e7] text-white flex items-center justify-center disabled:opacity-40 hover:bg-[#5b07c4] transition-colors"
-                  aria-label={editing ? 'Save edit' : 'Send'}
+                  className="size-11 sm:size-12 rounded-full bg-g-blue-700 text-g-on-cta flex items-center justify-center disabled:opacity-40 hover:bg-g-blue-800 transition-colors shrink-0 shadow-[0_6px_16px_rgba(33,7,170,0.25)] disabled:shadow-none"
+                  aria-label={editing ? copy.common.saveChanges : msg.send}
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-[18px] h-[18px]" />
                 </button>
               </div>
             </footer>
-            {error && <p className="px-5 pb-2 text-xs text-red-500">{error}</p>}
+            )}
           </>
         )}
       </section>
 
       {selectedWord && isXl ? (
-        <aside className="w-[min(380px,32vw)] shrink-0 border-l border-[#e4e7ec] bg-white min-h-0 hidden xl:flex flex-col">
+        <aside className="w-[min(380px,32vw)] shrink-0 border-l border-[#eceef5] bg-white min-h-0 hidden xl:flex flex-col">
           {wordPanel}
         </aside>
       ) : null}
+
+      {pendingDelete && (
+        <div className="fixed inset-0 z-[90] bg-[rgba(11,12,38,0.5)] backdrop-blur-[3px] grid place-items-center p-4" role="alertdialog" aria-modal="true" aria-labelledby="chat-del-title"
+          onKeyDown={(e) => { if (e.key === 'Escape') setPendingDelete(null); }}>
+          <div className="bg-white rounded-[20px] w-full max-w-[420px] p-6 shadow-[0_30px_80px_rgba(11,12,38,0.35)]">
+            <div className="size-11 rounded-[12px] bg-red-50 text-red-600 grid place-items-center mb-4"><Trash2 className="w-5 h-5" /></div>
+            <h3 id="chat-del-title" className="text-lg font-bold text-[#101828]">{ux.deleteTitle}</h3>
+            <p className="text-sm text-[#4a5565] mt-1.5 leading-relaxed">{mp.deleteForEveryone}</p>
+            <div className="grid min-[400px]:grid-cols-2 gap-2 mt-5">
+              <button type="button" autoFocus onClick={() => setPendingDelete(null)} className="min-h-[46px] px-3 rounded-xl border border-[#e1e3ec] text-sm font-semibold text-[#101828] hover:bg-gray-50">{ux.keep}</button>
+              <button type="button" onClick={() => void deleteMessage(pendingDelete)} className="min-h-[46px] px-3 rounded-xl bg-red-600 text-white text-sm font-bold">{mp.delete}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <PeerProfileModal
         peerId={profilePeerId}

@@ -76,7 +76,7 @@ try {
   console.log('\n==> Login check');
   await sshExec(
     conn,
-    `curl -sS -X POST http://127.0.0.1:3200/api/v1/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@gotcha.app","password":"GotchaAdmin2026!"}' | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s); console.log('isAdmin:', j.isAdmin, 'email:', j.user?.email);});"`,
+    `curl -sS -X POST http://127.0.0.1:3200/api/v1/auth/login -H 'Content-Type: application/json' -d '${JSON.stringify({ email: 'admin@gotcha.app', password: process.env.ADMIN_PASSWORD ?? '' }).replace(/'/g, "'\\''")}' | node -e "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>{const j=JSON.parse(s); console.log('isAdmin:', j.isAdmin, 'email:', j.user?.email);});"`,
   );
 } finally {
   conn.end();

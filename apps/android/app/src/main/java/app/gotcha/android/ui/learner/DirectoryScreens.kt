@@ -599,7 +599,7 @@ private fun SimilarBookCard(
     }
 }
 
-// Words directory screens live in VocabularyDirectoryScreens.kt (Figma 30:202 / 34:192 / 34:284 / 36:9).
+// Vocabulary tab lives in VocabularyScreen.kt (matches web-learner VocabularyPage).
 
 @Composable
 fun LibraryCategoryScreen(category: String, onBack: () -> Unit, onOpenReader: (String) -> Unit) {
@@ -842,7 +842,11 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
                                 contentFormat = "article",
                                 textLength = 6000,
                             )
-                            if (quote.gatewayEnabled && quote.requiresPayment) {
+                            quote.importBlockingError()?.let {
+                                error = it
+                                return@launch
+                            }
+                            if (quote.needsPaymentWall()) {
                                 pendingQuote = quote
                                 amountLabel = formatSom(quote.amountUzs)
                                 paymentStep = "price"
@@ -905,90 +909,7 @@ fun ImportUrlForm(onImported: () -> Unit, embedded: Boolean = false) {
                 },
             )
         } else {
-            ImportPaymentStepUi(
-                step = paymentStep!!,
-                amountLabel = amountLabel,
-                cardNumber = cardNumber,
-                onCardNumberChange = { cardNumber = it },
-                cardExpiry = cardExpiry,
-                onCardExpiryChange = { cardExpiry = it },
-                otpCode = otpCode,
-                onOtpChange = { otpCode = it },
-                maskedPhone = maskedPhone,
-                loading = loading,
-                error = error,
-                onSubmitCard = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        try {
-                            val result = container.importRepository.preApply(
-                                paymentId!!,
-                                cardNumber.replace(" ", ""),
-                                cardExpiry.replace("/", ""),
-                            )
-                            maskedPhone = result.maskedPhone
-                            otpCode = ""
-                            paymentStep = "otp"
-                        } catch (e: Exception) {
-                            error = e.apiErrorMessage("Card verification failed")
-                        } finally {
-                            loading = false
-                        }
-                    }
-                },
-                onConfirmOtp = {
-                    scope.launch {
-                        loading = true
-                        error = null
-                        try {
-                            val result = container.importRepository.apply(paymentId!!, otpCode)
-                            when {
-                                result.step == "paid" || result.status == "paid" -> {
-                                    val confirmedId = paymentId
-                                    resetPayment()
-                                    finishImport(confirmedId)
-                                }
-                                result.step == "otp" -> {
-                                    otpCode = ""
-                                    error = "Check the SMS code and try again."
-                                }
-                                else -> {
-                                    error = "Payment failed. Please try again with a different card."
-                                    paymentStep = "card"
-                                    cardNumber = ""
-                                    cardExpiry = ""
-                                }
-                            }
-                        } catch (e: Exception) {
-                            error = e.apiErrorMessage("OTP verification failed")
-                        } finally {
-                            loading = false
-                        }
-                    }
-                },
-                onResendOtp = {
-                    scope.launch {
-                        try {
-                            container.importRepository.retryOtp(paymentId!!)
-                            error = null
-                        } catch (e: Exception) {
-                            error = e.apiErrorMessage("Could not resend OTP")
-                        }
-                    }
-                },
-                onCancel = {
-                    if (paymentStep == "otp") {
-                        paymentStep = "card"
-                        otpCode = ""
-                        error = null
-                    } else {
-                        scope.launch { paymentId?.let { runCatching { container.importRepository.cancel(it) } } }
-                        resetPayment()
-                        error = null
-                    }
-                },
-            )
+            Unit // Card checkout removed: in-app purchases go through Google Play (ImportRepository.checkout)
         }
     }
 
@@ -1106,7 +1027,11 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                                         textLength = text.length,
                                         wordCount = words,
                                     )
-                                    if (quote.gatewayEnabled && quote.requiresPayment) {
+                                    quote.importBlockingError()?.let {
+                                        error = it
+                                        return@launch
+                                    }
+                                    if (quote.needsPaymentWall()) {
                                         pendingQuote = quote
                                         amountLabel = formatSom(quote.amountUzs)
                                         paymentStep = "price"
@@ -1170,90 +1095,7 @@ fun ImportPasteForm(onImported: () -> Unit, embedded: Boolean = false) {
                         },
                     )
                 } else {
-                    ImportPaymentStepUi(
-                        step = paymentStep!!,
-                        amountLabel = amountLabel,
-                        cardNumber = cardNumber,
-                        onCardNumberChange = { cardNumber = it },
-                        cardExpiry = cardExpiry,
-                        onCardExpiryChange = { cardExpiry = it },
-                        otpCode = otpCode,
-                        onOtpChange = { otpCode = it },
-                        maskedPhone = maskedPhone,
-                        loading = loading,
-                        error = error,
-                        onSubmitCard = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val result = container.importRepository.preApply(
-                                        paymentId!!,
-                                        cardNumber.replace(" ", ""),
-                                        cardExpiry.replace("/", ""),
-                                    )
-                                    maskedPhone = result.maskedPhone
-                                    otpCode = ""
-                                    paymentStep = "otp"
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Card verification failed")
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        onConfirmOtp = {
-                            scope.launch {
-                                loading = true
-                                error = null
-                                try {
-                                    val result = container.importRepository.apply(paymentId!!, otpCode)
-                                    when {
-                                        result.step == "paid" || result.status == "paid" -> {
-                                            val confirmedId = paymentId
-                                            resetPayment()
-                                            finishImport(confirmedId)
-                                        }
-                                        result.step == "otp" -> {
-                                            otpCode = ""
-                                            error = "Check the SMS code and try again."
-                                        }
-                                        else -> {
-                                            error = "Payment failed. Please try again with a different card."
-                                            paymentStep = "card"
-                                            cardNumber = ""
-                                            cardExpiry = ""
-                                        }
-                                    }
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("OTP verification failed")
-                                } finally {
-                                    loading = false
-                                }
-                            }
-                        },
-                        onResendOtp = {
-                            scope.launch {
-                                try {
-                                    container.importRepository.retryOtp(paymentId!!)
-                                    error = null
-                                } catch (e: Exception) {
-                                    error = e.apiErrorMessage("Could not resend OTP")
-                                }
-                            }
-                        },
-                        onCancel = {
-                            if (paymentStep == "otp") {
-                                paymentStep = "card"
-                                otpCode = ""
-                                error = null
-                            } else {
-                                scope.launch { paymentId?.let { runCatching { container.importRepository.cancel(it) } } }
-                                resetPayment()
-                                error = null
-                            }
-                        },
-                    )
+                    Unit // Card checkout removed: in-app purchases go through Google Play (ImportRepository.checkout)
                 }
     }
 

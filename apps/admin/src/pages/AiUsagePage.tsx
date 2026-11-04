@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Cpu } from 'lucide-react';
 import { HorizontalBars, LineChart } from '../components/charts';
 import { LookupLimitsCard, canEditAiLimits } from '../components/LookupLimitsCard';
-import { Badge, Card, DataTable, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
+import { Badge, Card, DataTable, ErrorBlock, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { formatNumber, initials } from '../lib/utils';
@@ -58,22 +58,27 @@ export default function AiUsagePage() {
   const [data, setData] = useState<AiUsageData | null>(null);
   const [range, setRange] = useState('today');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function load(nextRange = range) {
     setLoading(true);
+    setError(null);
     try {
       const next = await api<AiUsageData>(`/admin/ai-usage?range=${encodeURIComponent(nextRange)}`);
       setData(next);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load AI usage');
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load(range).catch(console.error);
+    void load(range);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [range]);
 
+  if (error && !data) return <ErrorBlock message={error} onRetry={() => void load(range)} />;
   if (!data) return <LoadingBlock />;
 
   const chartData =
@@ -190,7 +195,7 @@ export default function AiUsagePage() {
             </div>
           </div>
           <div className="flex items-center gap-2 text-sm text-slate-600">
-            <span className="size-2.5 rounded-full bg-[#6c1d95]" /> AI Lookups
+            <span className="size-2.5 rounded-full bg-g-blue-700" /> AI Lookups
           </div>
         </div>
         <div className="h-56">
@@ -218,7 +223,7 @@ export default function AiUsagePage() {
                 <tr key={row.user.email}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
-                      <div className="size-7 rounded-full bg-violet-100 text-[#6c1d95] grid place-items-center text-[10px] font-bold">
+                      <div className="size-7 rounded-full bg-violet-100 text-g-blue-700 grid place-items-center text-[10px] font-bold">
                         {initials(row.user.displayName, row.user.email)}
                       </div>
                       <span className="text-sm font-medium">{row.user.displayName || row.user.email}</span>
@@ -244,7 +249,7 @@ export default function AiUsagePage() {
             <HorizontalBars items={data.featureUsage} />
           )}
           <div className="mt-5 rounded-lg border border-violet-200 bg-violet-50 p-3">
-            <div className="text-[11px] font-semibold uppercase text-[#6c1d95]">Latest Insight</div>
+            <div className="text-[11px] font-semibold uppercase text-g-blue-700">Latest Insight</div>
             <p className="text-sm text-slate-700 mt-1">{data.insight}</p>
           </div>
         </Card>

@@ -1,5 +1,7 @@
-import { IsEmail, IsEnum, IsIn, IsOptional, IsString, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
+import { IsBoolean, IsEmail, IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min, MinLength, MaxLength, IsArray, ArrayMinSize } from 'class-validator';
+import { Type } from 'class-transformer';
 import { AppLanguage } from '@prisma/client';
+import { UI_LANGUAGES } from '@gotcha/shared';
 
 export class RegisterDto {
   @IsEmail()
@@ -22,10 +24,38 @@ export class RegisterDto {
   @IsEnum(AppLanguage, { each: true })
   targetLanguages!: AppLanguage[];
 
+  @IsOptional()
+  @IsIn([...UI_LANGUAGES])
+  uiLanguage?: (typeof UI_LANGUAGES)[number];
+
   /** When `android`, auth emails use `gotcha://` deep links that open the mobile app. */
   @IsOptional()
   @IsIn(['android', 'web'])
   clientPlatform?: 'android' | 'web';
+
+  /** Terms + Privacy tick. Must be true on web. */
+  @IsOptional()
+  @IsBoolean()
+  acceptTerms?: boolean;
+
+  /** Separate OpenAI / AI-processing tick. Must be true on web. Stored as an audit row, not a user column. */
+  @IsOptional()
+  @IsBoolean()
+  acceptAiConsent?: boolean;
+
+  /** S3: the tick-box label version the client showed (PAY2-17: absent = the pre-oferta .3 client; unknown = 400). */
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  consentVersion?: string;
+
+  /** W-12: optional birth year (no minimum age). Unknown = AGE_UNKNOWN_BAND limits. */
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(new Date().getUTCFullYear())
+  birthYear?: number;
 }
 
 export class LoginDto {

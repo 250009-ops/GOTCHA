@@ -38,12 +38,16 @@ export interface UserTargetLanguage {
 
 export interface UserProfile {
   id: string;  email: string;
-  displayName: string;
+  displayName: string | null;
   avatarUrl?: string | null;
   nativeLanguage: AppLanguage;
   uiLanguage: AppLanguage;
   streakCount: number;
   streakLastDate?: string | null;
+  emailVerifiedAt?: string | null;
+  birthYear?: number | null;
+  aiDisabled?: boolean;
+  aiDisabledBy?: string | null;
   targetLanguages?: UserTargetLanguage[];
 }
 
@@ -70,6 +74,7 @@ export interface StatsHistoryWeek {
 export interface StatsHeatmapDay {
   date: string;
   count: number;
+  finished?: number;
 }
 
 export interface UserStatsResponse {
@@ -79,6 +84,7 @@ export interface UserStatsResponse {
   contentInProgress: number;
   contentCompleted: number;
   totalReadMinutes: number;
+  todayReadMinutes?: number;
   wordsSaved: number;
   wordsTapped: number;
   streakCount: number;
@@ -93,11 +99,16 @@ export interface UserStatsResponse {
 export interface UserPreferences {
   readerFontScale: number;
   readerTheme: 'light' | 'dark' | 'sepia';
+  appTheme?: 'system' | 'light' | 'dark';
+  dailyGoalXp?: number;
+  dailyNewWords?: number;
   readerLineSpacing: number;
   showKnownWords: boolean;
   ttsEnabled: boolean;
   dailyGoalMinutes: number;
   notificationsEnabled: boolean;
+  showOnlineStatus?: boolean;
+  onboardingDone?: boolean;
 }
 
 export interface ContentItem {
@@ -112,6 +123,8 @@ export interface ContentItem {
   cefrLevel: CefrLevel;
   genre?: string | null;
   coverImageUrl?: string | null;
+  /** covers-01: template | upload | original (API). template ⇒ coverImageUrl is null and the code-drawn cover renders. */
+  coverMode?: 'template' | 'upload' | 'original' | null;
   authorName?: string | null;
   wordCount: number;
   segmentCount?: number;
@@ -196,7 +209,8 @@ export interface SubscriptionPlan {
   priceMonthly?: string | number | null;
   priceLabel?: string;
   priceUnit?: string;
-  aiDailyQuota: number;
+  /** null = no daily lookup cap (Plus, 31 Oct 14:40). */
+  aiDailyQuota: number | null;
   importLimit: number;
   offlineEnabled: boolean;
   popular?: boolean;
@@ -213,7 +227,16 @@ export interface SubscriptionInfo {
   usage: {
     lookupsToday: number;
     quizzesToday: number;
-    quota: number;
+    /** SET-20: present once the Mashq bank ships. Hidden in Settings until then. */
+    mashqToday?: number;
+    mashqQuota?: number | null;
+    /** null = no daily lookup cap (Plus). */
+    quota: number | null;
+    /** final-5: daily quiz cap (null = no cap). */
+    quizQuota?: number | null;
+    /** final-5: next 00:00 Asia/Tashkent. */
+    resetAt?: string;
+    timezone?: string;
     importAllowance?: {
       gatewayEnabled: boolean;
       resetCycle: string;
@@ -225,6 +248,7 @@ export interface SubscriptionInfo {
       monthlyPagesUsed: number;
       monthlyPagesRemaining: number;
     };
+    importDiscountPct?: number;
   };
 }
 
@@ -232,7 +256,7 @@ export type ApiSrsRating = 'again' | 'hard' | 'good' | 'easy';
 
 /** Cover-art gradients matching the Figma book-cover palette (deterministic per content id). */
 export const COVER_GRADIENTS = [
-  'linear-gradient(148deg, #8e51ff 0%, #ad46ff 50%, #4f39f6 100%)',
+  'linear-gradient(148deg, var(--g-blue-500) 0%, var(--g-blue-400) 50%, #4f39f6 100%)',
   'linear-gradient(142deg, #00d492 0%, #00bba7 50%, #0092b8 100%)',
   'linear-gradient(142deg, #fb2c6b 0%, #f6339a 50%, #e60076 100%)',
   'linear-gradient(148deg, #2b7fff 0%, #6a5cff 50%, #4f39f6 100%)',

@@ -1,5 +1,7 @@
 package app.gotcha.android.ui.admin
 
+import app.gotcha.android.ui.theme.GotchaBlue
+
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -2907,7 +2909,7 @@ fun AdminGamificationScreen(onBack: () -> Unit) {
                                     (season.status ?: "active").uppercase(),
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFFEFF6FF))
+                                        .background(GotchaBlue.LearningBg)
                                         .padding(horizontal = 6.dp, vertical = 2.dp),
                                     color = Color(0xFF3B82F6),
                                     fontWeight = FontWeight.Bold,
@@ -3116,14 +3118,7 @@ fun AdminLevelTestsScreen(onBack: () -> Unit) {
                     AdminBackHeader(
                         title = "Level Placements",
                         onBack = onBack,
-                        trailing = {
-                            Text(
-                                "GOTCHA ADMIN",
-                                color = GotchaColors.BrandPurple,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                            )
-                        },
+                        trailing = { app.gotcha.android.ui.components.BrandMark(size = 20) },
                     )
                 }
                 item {
@@ -3184,7 +3179,7 @@ fun AdminLevelTestsScreen(onBack: () -> Unit) {
                                     level,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(6.dp))
-                                        .background(Color(0xFFF0E7FF))
+                                        .background(GotchaBlue.B100)
                                         .padding(horizontal = 8.dp, vertical = 4.dp),
                                     color = GotchaColors.BrandPurple,
                                     fontWeight = FontWeight.ExtraBold,
@@ -3237,7 +3232,7 @@ fun AdminLevelTestsScreen(onBack: () -> Unit) {
                                 modifier = Modifier
                                     .size(28.dp)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(Color(0xFFF0E7FF)),
+                                    .background(GotchaBlue.B100),
                                 contentAlignment = Alignment.Center,
                             ) {
                                 Text(

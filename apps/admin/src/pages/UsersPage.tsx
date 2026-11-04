@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Search, UserMinus, Users, X } from 'lucide-react';
 import { useSearchParams } from 'react-router-dom';
-import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, StatCard } from '../components/ui';
+import { Badge, Button, Card, DataTable, Input, LoadingBlock, PageHeader, Select, StatCard } from '../components/ui';
 import { api } from '../lib/api';
 import { formatNumber, initials, levelBadgeClass, relativeTime } from '../lib/utils';
 
-type FilterChip = 'All' | 'Pay as you go' | 'Free' | 'Suspended';
+type FilterChip = 'All' | 'Plus' | 'Pay as you go' | 'Free' | 'Suspended';
 
 interface ActivityItem {
   id: string;
@@ -28,6 +28,7 @@ interface UserRow {
   streakCount?: number;
   isAdmin: boolean;
   isSuspended?: boolean;
+  plusExpiresAt?: string | null;
   isActiveRecently?: boolean;
   recentActivity?: ActivityItem[];
 }
@@ -38,6 +39,7 @@ interface UsersResponse {
 }
 
 function chipQuery(filter: FilterChip): { tier?: string; status?: string } {
+  if (filter === 'Plus') return { tier: 'plus' };
   if (filter === 'Pay as you go') return { tier: 'payg' };
   if (filter === 'Free') return { tier: 'free' };
   if (filter === 'Suspended') return { status: 'suspended' };
@@ -60,7 +62,10 @@ export default function UsersPage() {
   const [selected, setSelected] = useState<UserRow | null>(null);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
   const [actionErr, setActionErr] = useState<string | null>(null);
+  const [plusDays, setPlusDays] = useState<'7' | '30' | '365'>('30');
+  const [plusUntil, setPlusUntil] = useState('');
   const [confirmHardDelete, setConfirmHardDelete] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   const load = useCallback(
     async (query = q, chip = filter) => {
@@ -91,7 +96,7 @@ export default function UsersPage() {
   useEffect(() => {
     const fromUrl = params.get('q') ?? '';
     if (fromUrl !== q) setQ(fromUrl);
-    load(fromUrl || q, filter).catch(console.error);
+    void load(fromUrl || q, filter);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params, filter]);
 
@@ -139,11 +144,59 @@ export default function UsersPage() {
     }
   }
 
+  async function adjustTier(id: string, tier: 'free' | 'plus', extra?: { days?: number; until?: string }) {
+    setBusyId(id);
+    setActionMsg(null);
+    setActionErr(null);
+    try {
+      const res = await api<{ paidPassActive?: boolean; provider?: string | null; endsAt?: string | null }>(`/admin/users/${id}/adjust-tier`, {
+        method: 'POST',
+        body: JSON.stringify({ tier, ...(extra?.until ? { until: extra.until } : {}), ...(extra?.days ? { days: extra.days } : {}) }),
+      });
+      const ends = res.endsAt ? new Date(res.endsAt).toLocaleDateString() : 'its end date';
+      const where = res.provider === 'google_play' ? 'Play Console' : 'Payments';
+      setActionMsg(
+        tier === 'free'
+          ? res.paidPassActive
+            ? `Paid pass stays active until ${ends} (cancel in ${where} / refund via Payments).`
+            : 'Plus ended.'
+          : extra?.until ? 'Plus end date set.' : `Plus extended by ${extra?.days ?? 30} days.`,
+      );
+      await load();
+      setSelected(await api<UserRow>(`/admin/users/${id}`));
+    } catch (e: unknown) {
+      setActionErr(e instanceof Error ? e.message : 'Plus change failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  /** GDPR-style export: downloads everything we hold about the learner as JSON (audited server-side). */
+  async function exportData(id: string) {
+    setBusyId(id);
+    setActionErr(null);
+    try {
+      const data = await api<unknown>(`/admin/users/${id}/export`);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gotcha-user-${id}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setActionMsg('Export downloaded.');
+    } catch (e: unknown) {
+      setActionErr(e instanceof Error ? e.message : 'Export failed');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function hardDelete(id: string) {
     setBusyId(id);
     setActionErr(null);
     try {
-      await api(`/admin/users/${id}`, { method: 'DELETE' });
+      await api(`/admin/users/${id}?confirm=${encodeURIComponent(id)}`, { method: 'DELETE' });
       setSelected(null);
       setConfirmHardDelete(false);
       await load();
@@ -161,14 +214,14 @@ export default function UsersPage() {
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-6 text-sm text-rose-700">
         <div className="font-semibold mb-2">Could not load users</div>
         <p className="mb-4">{error}</p>
-        <Button onClick={() => load().catch(console.error)}>Retry</Button>
+        <Button onClick={() => void load()}>Retry</Button>
       </div>
     );
   }
 
   if (!data) return <LoadingBlock />;
 
-  const chips: FilterChip[] = ['All', 'Pay as you go', 'Free', 'Suspended'];
+  const chips: FilterChip[] = ['All', 'Plus', 'Pay as you go', 'Free', 'Suspended'];
   const paygCount = data.stats.payAsYouGo ?? data.stats.premium;
   const paygSelected = selected ? isPayAsYouGo(selected) : false;
 
@@ -182,7 +235,7 @@ export default function UsersPage() {
             className="flex gap-2"
             onSubmit={(e) => {
               e.preventDefault();
-              load().catch(console.error);
+              void load();
             }}
           >
             <div className="relative">
@@ -196,7 +249,7 @@ export default function UsersPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
         <StatCard label="Total Users" value={formatNumber(data.stats.total)} icon={<Users className="size-5" />} />
-        <StatCard label="Pay as you go" value={formatNumber(paygCount)} accent="bg-violet-50 text-[#6c1d95]" />
+        <StatCard label="Pay as you go" value={formatNumber(paygCount)} accent="bg-violet-50 text-g-blue-700" />
         <StatCard label="Free" value={formatNumber(data.stats.free)} accent="bg-slate-100 text-slate-600" />
         <StatCard
           label="Suspended"
@@ -211,7 +264,7 @@ export default function UsersPage() {
           const selectedChip = filter === chip;
           const isSuspended = chip === 'Suspended';
           const className = selectedChip
-            ? 'bg-[#7008e7] text-white border-[#7008e7]'
+            ? 'bg-g-blue-700 text-white border-g-blue-700'
             : isSuspended
               ? 'bg-[#fee2e2] text-[#ef4444] border-[#fca5a5]'
               : 'bg-white text-slate-600 border-slate-200';
@@ -240,8 +293,7 @@ export default function UsersPage() {
           ) : (
             <DataTable headers={['User', 'Language', 'Level', 'Plan', 'Vocab', 'Joined', '']}>
               {data.users.map((u) => {
-                const payg = isPayAsYouGo(u);
-                const plan = u.planLabel || (payg ? 'Pay as you go' : 'Free');
+                const plan = u.billingTier || u.planLabel || 'Free';
                 return (
                   <tr
                     key={u.id}
@@ -250,7 +302,7 @@ export default function UsersPage() {
                   >
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-3">
-                        <div className="size-9 rounded-full bg-violet-100 text-[#6c1d95] grid place-items-center text-xs font-bold">
+                        <div className="size-9 rounded-full bg-violet-100 text-g-blue-700 grid place-items-center text-xs font-bold">
                           {initials(u.displayName, u.email)}
                         </div>
                         <div>
@@ -272,7 +324,7 @@ export default function UsersPage() {
                       {u.cefrLevel ? <Badge className={levelBadgeClass(u.cefrLevel)}>{u.cefrLevel.toUpperCase()}</Badge> : '—'}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge className={payg ? 'bg-[#f0e7ff] text-[#7008e7]' : 'bg-slate-100 text-slate-600'}>
+                      <Badge className={plan === 'Free' ? 'bg-slate-100 text-slate-600' : 'bg-g-blue-100 text-g-blue-700'}>
                         {plan}
                       </Badge>
                     </td>
@@ -306,7 +358,7 @@ export default function UsersPage() {
               </button>
             </div>
             <div className="flex items-center gap-3 mb-4">
-              <div className="size-14 rounded-full border-2 border-[#7008e7] bg-violet-100 text-[#6c1d95] grid place-items-center text-lg font-bold">
+              <div className="size-14 rounded-full border-2 border-g-blue-700 bg-violet-100 text-g-blue-700 grid place-items-center text-lg font-bold">
                 {initials(selected.displayName, selected.email)}
               </div>
               <div>
@@ -317,11 +369,11 @@ export default function UsersPage() {
                       selected.isSuspended
                         ? 'bg-rose-50 text-rose-600'
                         : paygSelected
-                          ? 'bg-[#f0e7ff] text-[#7008e7]'
+                          ? 'bg-g-blue-100 text-g-blue-700'
                           : 'bg-slate-100 text-slate-600'
                     }
                   >
-                    {selected.isSuspended ? 'Suspended' : paygSelected ? 'Pay as you go' : 'Free'}
+                    {selected.isSuspended ? 'Suspended' : selected.billingTier || 'Free'}
                   </Badge>
                 </div>
                 <div className="text-xs text-slate-500">{selected.email}</div>
@@ -331,7 +383,7 @@ export default function UsersPage() {
             <div className="grid grid-cols-3 gap-2 mb-4">
               <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
                 <div className="text-[11px] text-slate-500">Words</div>
-                <div className="text-sm font-extrabold text-[#7008e7]">{formatNumber(selected.vocabCount)}</div>
+                <div className="text-sm font-extrabold text-g-blue-700">{formatNumber(selected.vocabCount)}</div>
               </div>
               <div className="rounded-xl border border-slate-200 bg-white p-3 text-center">
                 <div className="text-[11px] text-slate-500">Streak</div>
@@ -391,13 +443,56 @@ export default function UsersPage() {
                       </Button>
                     )}
                   </div>
+                  <div className="rounded-xl border border-slate-200 p-3 space-y-2">
+                    <div className="text-xs font-semibold text-slate-600">
+                      Plus {selected.plusExpiresAt ? `until ${new Date(selected.plusExpiresAt).toLocaleDateString('en-GB', { timeZone: 'Asia/Tashkent', day: 'numeric', month: 'short', year: 'numeric' })}` : selected.billingTier === 'Plus' ? 'is active' : 'is off'}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Select aria-label="Plus length" value={plusDays} onChange={(e) => setPlusDays(e.target.value as '7' | '30' | '365')}>
+                        <option value="7">7 days</option>
+                        <option value="30">30 days</option>
+                        <option value="365">365 days</option>
+                      </Select>
+                      <Button variant="secondary" disabled={busyId === selected.id} onClick={() => void adjustTier(selected.id, 'plus', { days: Number(plusDays) })}>
+                        {selected.billingTier === 'Plus' ? 'Extend' : 'Grant'}
+                      </Button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <Input aria-label="Plus end date" type="date" value={plusUntil} onChange={(e) => setPlusUntil(e.target.value)} />
+                      <Button
+                        variant="secondary"
+                        disabled={busyId === selected.id || !plusUntil}
+                        onClick={() => void adjustTier(selected.id, 'plus', { until: new Date(`${plusUntil}T23:59:59+05:00`).toISOString() })}
+                      >
+                        Set end
+                      </Button>
+                    </div>
+                    {selected.billingTier === 'Plus' && (
+                      <Button variant="danger" disabled={busyId === selected.id} onClick={() => void adjustTier(selected.id, 'free')}>
+                        End Plus
+                      </Button>
+                    )}
+                  </div>
+                  <Button variant="secondary" disabled={busyId === selected.id} onClick={() => exportData(selected.id)}>
+                    Export data
+                  </Button>
                   {confirmHardDelete ? (
                     <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 space-y-2">
                       <p className="text-xs text-rose-700 font-semibold">
-                        Permanently delete this user and all learning data?
+                        Permanently delete this user and all learning data? Type their email to confirm.
                       </p>
+                      <Input
+                        aria-label="Type the user's email to confirm"
+                        value={deleteConfirmText}
+                        onChange={(e) => setDeleteConfirmText(e.target.value)}
+                        placeholder={selected.email ?? ''}
+                      />
                       <div className="flex gap-2">
-                        <Button variant="danger" disabled={busyId === selected.id} onClick={() => hardDelete(selected.id)}>
+                        <Button
+                          variant="danger"
+                          disabled={busyId === selected.id || deleteConfirmText.trim().toLowerCase() !== String(selected.email ?? '').toLowerCase()}
+                          onClick={() => hardDelete(selected.id)}
+                        >
                           {busyId === selected.id ? '…' : 'Confirm delete'}
                         </Button>
                         <Button variant="secondary" disabled={busyId === selected.id} onClick={() => setConfirmHardDelete(false)}>

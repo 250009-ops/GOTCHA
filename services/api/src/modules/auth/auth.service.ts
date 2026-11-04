@@ -1,3 +1,4 @@
+import { consentRequired, recordedConsentVersion } from '../../common/safety/consent';
 import {
   BadRequestException,
   ConflictException,
@@ -6,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { safeAvatarUrl } from '../users/avatar-image';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
@@ -97,7 +99,8 @@ export class AuthService {
     return (
       this.config.get<string>('ADMIN_APP_URL')?.trim() ||
       this.config.get<string>('VITE_ADMIN_APP_URL')?.trim()?.split(',')?.[0]?.trim() ||
-      'http://localhost:5173/'
+      // WLF-09: dev-only default; production refuses to boot without ADMIN_APP_URL (assertProductionUrlConfig).
+      (process.env.NODE_ENV === 'production' ? 'https://gotchaa.uz/admin' : 'http://localhost:5173/')
     ).replace(/\/?$/, '/');
   }
 
@@ -175,8 +178,17 @@ export class AuthService {
     return { accessToken, refreshToken, isAdmin: !!admin, adminRole: admin?.role ?? null };
   }
 
-  async register(dto: RegisterDto, clientPlatformHeader?: string) {
+  async register(dto: RegisterDto, clientPlatformHeader?: string, ip?: string, browserOrigin?: string) {
     const clientPlatform = dto.clientPlatform ?? clientPlatformHeader;
+    // S3: web sign-ups must tick the single consent box (Terms + Privacy + OpenAI transfer).
+    if (consentRequired(clientPlatform, browserOrigin) && (dto.acceptTerms !== true || dto.acceptAiConsent !== true)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        message: 'Please accept the Terms of Use, the Privacy Policy, and AI processing to create an account.',
+        code: 'CONSENT_REQUIRED',
+      });
+    }
     if (isDevAuthEnabled()) {
       return this.devAuth.register(dto);
     }
@@ -210,6 +222,11 @@ export class AuthService {
       }
     }
 
+    // PAY2-17: store the label version the client showed (.3 when it sends none), refuse unknown versions.
+    const consentVersion = dto.acceptTerms === true ? recordedConsentVersion(dto.consentVersion) : null;
+    if (dto.acceptTerms === true && !consentVersion) {
+      throw new BadRequestException({ statusCode: 400, code: 'consent_version_unknown', message: 'Unknown consent version.' });
+    }
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const primaryTarget = dto.targetLanguages[0];
 
@@ -219,7 +236,13 @@ export class AuthService {
         passwordHash,
         displayName: dto.displayName ?? email.split('@')[0],
         nativeLanguage: dto.nativeLanguage,
-        uiLanguage: 'en',
+        birthYear: dto.birthYear ?? null,
+        // W-12: asked at sign-up, so no later one-time prompt.
+        agePromptedAt: new Date(),
+        ...(dto.acceptTerms === true
+          ? { consentVersion, consentAt: new Date(), consentIp: ip?.slice(0, 64) ?? null }
+          : {}),
+        uiLanguage: dto.uiLanguage && (['en', 'ru', 'uz'] as const).includes(dto.uiLanguage) ? dto.uiLanguage : 'uz',
         emailVerifiedAt: null,
         preferences: { create: { dailyGoalMinutes: 15 } },
         targetLanguages: {
@@ -231,6 +254,18 @@ export class AuthService {
       },
       include: { targetLanguages: true },
     });
+
+    if (dto.acceptAiConsent === true) {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId: user.id,
+          action: 'consent.ai',
+          entityType: 'user',
+          entityId: user.id,
+          metadata: { version: consentVersion, at: new Date().toISOString() },
+        },
+      });
+    }
 
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
     if (freePlan) {
@@ -323,6 +358,28 @@ export class AuthService {
       stored.deviceName ?? undefined,
     );
     return { user: this.sanitizeUser(stored.user), ...tokens };
+  }
+
+  /** Idempotent. Unknown tokens still return ok so the client can always clear local state. */
+  async logout(refreshToken: string) {
+    if (isDevAuthEnabled()) this.devAuth.revokeRefresh(refreshToken);
+    if (!this.prisma.dbAvailable || !refreshToken) return { ok: true };
+    const tokenHash = this.hashToken(refreshToken);
+    await this.prisma.authRefreshToken.updateMany({
+      where: { tokenHash, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
+  }
+
+  async logoutAll(userId: string) {
+    if (isDevAuthEnabled()) this.devAuth.revokeAll(userId);
+    if (!this.prisma.dbAvailable) return { ok: true };
+    await this.prisma.authRefreshToken.updateMany({
+      where: { userId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return { ok: true };
   }
 
   async verifyEmail(token: string) {
@@ -498,20 +555,24 @@ export class AuthService {
     id: string;
     email: string;
     displayName: string | null;
+    avatarUrl?: string | null;
     nativeLanguage: string;
     uiLanguage: string;
     streakCount: number;
     emailVerifiedAt?: Date | null;
+    birthYear?: number | null;
     targetLanguages?: unknown[];
   }) {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      avatarUrl: safeAvatarUrl(user.avatarUrl),
       nativeLanguage: user.nativeLanguage,
       uiLanguage: user.uiLanguage,
       streakCount: user.streakCount,
       emailVerified: !!user.emailVerifiedAt,
+      birthYear: user.birthYear ?? null,
       targetLanguages: user.targetLanguages ?? [],
     };
   }

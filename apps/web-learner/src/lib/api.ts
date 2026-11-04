@@ -1,4 +1,16 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api/v1';
+import { localizeApiError } from '@gotcha/shared';
+import { readStoredLearnerLocale, detectLearnerLocale } from './learnerLocale';
+import { announceDailyLimit, dailyLimitText, type DailyLimitInfo } from './dailyLimit';
+
+/** UI language for non-React callers (limit notes). */
+export const learnerLang = (): string => currentUiLang();
+
+import { refreshRejected } from './bootstrapPolicy';
+export function currentUiLang(): string {
+  if (typeof document !== 'undefined' && document.documentElement.lang) return document.documentElement.lang.slice(0, 2);
+  return readStoredLearnerLocale() ?? detectLearnerLocale();
+}
+const API_BASE = import.meta.env.VITE_API_URL ?? (import.meta.env.DEV ? 'http://localhost:3000/api/v1' : '/api/v1');
 
 const ACCESS_KEY = 'gotcha_learner_access';
 const REFRESH_KEY = 'gotcha_learner_refresh';
@@ -12,6 +24,7 @@ const PUBLIC_AUTH_API = new Set([
   '/auth/resend-verification',
   '/auth/forgot-password',
   '/auth/reset-password',
+  '/auth/logout',
 ]);
 
 function isPublicAuthApi(path: string) {
@@ -40,6 +53,8 @@ export function setTokens(tokens: AuthTokens) {
 export function clearTokens() {
   localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem('gotcha.appTheme'); // QA N6: theme is per-account; reset to system after logout
+  document.documentElement.removeAttribute('data-theme');
 }
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -57,15 +72,15 @@ async function refreshAccessToken(): Promise<string | null> {
           body: JSON.stringify({ refreshToken }),
         });
         if (!res.ok) {
-          clearTokens();
+          // WL4-02: only a rejected refresh token ends the session; 5xx keeps tokens for a retry.
+          if (refreshRejected(res.status)) clearTokens();
           return null;
         }
         const data = (await res.json()) as AuthTokens;
         setTokens(data);
         return data.accessToken;
       } catch {
-        clearTokens();
-        return null;
+        return null; // network error: keep the session
       } finally {
         refreshPromise = null;
       }
@@ -110,15 +125,32 @@ export async function api<T>(
       email?: string;
       statusCode?: number;
     };
-    const message = Array.isArray(err.message)
-      ? err.message.join(', ')
-      : (err.message ?? 'Request failed');
+    // BUG-10: never surface raw English server text in RU/UZ.
+    // Daily caps (Free 20/10, Plus 200/200, admin-editable): the server sends uz/ru/en text naming the limit.
+    const capMsg = (err.code === 'lookup_limit' || err.code === 'quiz_limit' || err.code === 'mashq_limit' || err.code === 'fair_use_limit' || err.code === 'lookup_slow_down' || err.code === 'mashq_burst' || err.code === 'quiz_empty' || err.code === 'quiz_pending' || err.code === 'file_too_big') ? (err as { messages?: Record<string, string> }).messages?.[currentUiLang()] : undefined;
+    const message = capMsg ?? localizeApiError(currentUiLang(), {
+      message: err.message,
+      code: err.code,
+      status: err.statusCode ?? res.status,
+    });
     const error = new Error(message) as Error & {
       code?: string;
       email?: string;
       status?: number;
+      body?: Record<string, unknown>;
     };
     if (err.code) error.code = err.code;
+    if (capMsg) (error as { limit?: number }).limit = (err as { limit?: number }).limit;
+    // payments-02: 429 {kind, plan, limit, resetAt} → friendly notice with the reset time (no error toast).
+    const lim = err as Partial<DailyLimitInfo>;
+    if ((err.code === 'lookup_limit' || err.code === 'quiz_limit' || err.code === 'mashq_limit') && lim.kind && lim.plan && typeof lim.limit === 'number' && lim.resetAt) {
+      const info: DailyLimitInfo = { kind: lim.kind, plan: lim.plan, limit: lim.limit, plusLimit: lim.plusLimit === undefined ? lim.limit : lim.plusLimit, resetAt: lim.resetAt };
+      (error as { dailyLimit?: DailyLimitInfo }).dailyLimit = info;
+      error.message = dailyLimitText(info, currentUiLang()).message;
+      announceDailyLimit(info);
+    }
+    // final-5: keep the full 403 body (limit, resetAt, timezone) for the limit screen.
+    error.body = err as Record<string, unknown>;
     if (err.email) error.email = err.email;
     error.status = err.statusCode ?? res.status;
     throw error;
@@ -159,7 +191,7 @@ export async function apiAudio(
     const err = (await res.json().catch(() => ({ message: res.statusText }))) as {
       message?: string | string[];
     };
-    const message = Array.isArray(err.message) ? err.message.join(', ') : (err.message ?? 'Audio failed');
+    const message = localizeApiError(currentUiLang(), { message: err.message, status: res.status });
     throw new Error(message);
   }
   return res.blob();

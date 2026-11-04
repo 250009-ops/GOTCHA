@@ -1,9 +1,11 @@
+import { canReadUserImport } from '../content/user-import-privacy';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { WordStatus } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { buildDevKnownWordStatuses } from '../../common/dev-auth/dev-content.data';
 import { PrismaService } from '../../prisma/prisma.service';
 import { StreakService } from '../../services/streak.service';
+import { recordReadingActivity } from './reading-activity';
 import { EndSessionDto, StartSessionDto, UpdateProgressDto } from './dto/reading.dto';
 
 @Injectable()
@@ -83,7 +85,7 @@ export class ReadingService {
     });
 
     if (dto.durationSeconds && dto.durationSeconds > 0) {
-      await this.streak.recordActivity(userId, Math.round(dto.durationSeconds / 60));
+      await this.streak.recordActivity(userId, dto.durationSeconds ?? 0);
     }
 
     return updated;
@@ -149,6 +151,8 @@ export class ReadingService {
       };
     }
 
+    const target = await this.prisma.contentItem.findUnique({ where: { id: contentId }, select: { contentSource: true, contentType: true, createdById: true } });
+    if (!target || !canReadUserImport(target, userId)) throw new NotFoundException('Content not found');
     const existing = await this.prisma.readingProgress.findUnique({
       where: { userId_contentId: { userId, contentId } },
     });
@@ -174,7 +178,14 @@ export class ReadingService {
     };
 
     if (dto.readSeconds && dto.readSeconds > 0) {
-      await this.streak.recordActivity(userId, Math.round(dto.readSeconds / 60));
+      await this.streak.recordActivity(userId, dto.readSeconds ?? 0);
+      await recordReadingActivity(
+        this.prisma,
+        userId,
+        contentId,
+        dto.segmentId,
+        dto.readSeconds,
+      );
     }
 
     return this.prisma.readingProgress.upsert({

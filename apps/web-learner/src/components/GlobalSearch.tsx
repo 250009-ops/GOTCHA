@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { BookOpen, Brain, Loader2, Search } from 'lucide-react';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { useLearnerCopy } from '../lib/learnerLocaleContext';
 import type { ContentItem, VocabItem } from '../lib/types';
 import { cn } from './ui/utils';
 
@@ -21,6 +22,7 @@ const MAX_PER_SECTION = 5;
 export function GlobalSearch() {
   const navigate = useNavigate();
   const { vocabItems } = useAuth();
+  const copy = useLearnerCopy();
   const inputRef = useRef<HTMLInputElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const listId = useId();
@@ -177,7 +179,7 @@ export function GlobalSearch() {
               if (hit) selectResult(hit);
             }
           }}
-          placeholder="Search library, vocabulary…"
+          placeholder={copy.search.placeholder}
           className="w-full h-9 pl-9 pr-3 sm:pr-4 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-gray-900 placeholder:text-[#99a1af] outline-none focus:ring-2 focus:ring-violet-300 focus:border-violet-300 focus:bg-white"
         />
       </label>
@@ -195,16 +197,16 @@ export function GlobalSearch() {
             {loading && results.length === 0 ? (
               <div className="flex items-center gap-2 px-3 py-4 text-sm text-gray-500">
                 <Loader2 className="w-4 h-4 animate-spin text-violet-500" />
-                Searching…
+                {copy.common.loading}
               </div>
             ) : results.length === 0 ? (
-              <div className="px-3 py-4 text-sm text-gray-500">No results for “{query.trim()}”</div>
+              <div className="px-3 py-4 text-sm text-gray-500">{copy.search.noResults}</div>
             ) : (
               <div className="space-y-2">
                 {contentHits.length > 0 && (
                   <section>
                     <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                      Library
+                      {copy.search.librarySection}
                     </div>
                     <ul className="space-y-0.5">
                       {contentHits.slice(0, MAX_PER_SECTION).map((item, i) => (
@@ -221,7 +223,7 @@ export function GlobalSearch() {
                             )}
                           >
                             <div className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center shrink-0">
-                              <BookOpen className="w-4 h-4 text-[#7f22fe]" />
+                              <BookOpen className="w-4 h-4 text-g-blue-700" />
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="text-sm font-medium text-gray-900 truncate">{item.title}</div>
@@ -239,7 +241,7 @@ export function GlobalSearch() {
                 {vocabHits.length > 0 && (
                   <section>
                     <div className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-gray-400">
-                      Vocabulary
+                      {copy.search.vocabularySection}
                     </div>
                     <ul className="space-y-0.5">
                       {vocabHits.map((item, i) => {

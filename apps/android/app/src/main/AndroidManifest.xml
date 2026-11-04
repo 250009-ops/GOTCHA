@@ -17,7 +17,7 @@
 
     <application
         android:name=".GotchaApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
@@ -30,7 +30,9 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
+            android:documentLaunchMode="never"
+            android:taskAffinity="${applicationId}"
             android:theme="@style/Theme.Gotcha.Splash"
             android:windowSoftInputMode="adjustResize">
             <intent-filter>
@@ -56,6 +58,46 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="gotcha" android:host="verify-email" />
                 <data android:scheme="gotcha" android:host="reset-password" />
+            </intent-filter>
+        </activity>
+        <!-- Telegram / share targets hit this invisible forwarder — never a second MainActivity in recents. -->
+        <activity
+            android:name=".ImportTrampolineActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}"
+            android:theme="@style/Theme.Gotcha.Trampoline">
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub+zip" />
+            </intent-filter>
+            <intent-filter android:label="@string/open_with_gotcha">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/epub" />
             </intent-filter>
         </activity>
     </application>

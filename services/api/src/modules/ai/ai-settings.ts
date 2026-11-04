@@ -8,8 +8,8 @@ export const AI_SETTING_KEYS = {
   defaultUserQuota: 'aiDefaultUserQuota',
 } as const;
 
-/** Paid Premium plans use this threshold for “unlimited” lookups. */
-export const UNLIMITED_AI_QUOTA = 1_000_000;
+/** Unlimited lookups are null, not a large sentinel. */
+export const UNLIMITED_AI_QUOTA = null;
 
 export function coerceNonNegInt(raw: unknown, fallback: number): number {
   const n =
@@ -30,7 +30,9 @@ export function resolveLearnerDailyAiQuota(
   planQuota: number | null | undefined,
   platformDefault: number,
 ): number {
-  if (planQuota != null && planQuota >= UNLIMITED_AI_QUOTA) return planQuota;
+  // payments-02: a plan quota above the platform (Free) default is enforced as-is (Plus = 200/day).
+  // Before this, any plan quota < 1e6 silently fell back to the Free default (Plus would get 50).
+  if (planQuota != null && planQuota > platformDefault) return planQuota;
   return platformDefault;
 }
 
@@ -53,7 +55,7 @@ export function defaultAiPlatformSettings(): AiPlatformSettings {
       process.env.OPENAI_MODEL_IMPORT ??
       process.env.OPENAI_MODEL_LOOKUP ??
       'gpt-4.1-mini',
-    defaultUserQuota: 50,
+    defaultUserQuota: 20,
   };
 }
 

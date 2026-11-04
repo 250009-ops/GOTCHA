@@ -9,9 +9,9 @@
 const BASE = process.env.GOTCHA_BASE || 'https://gotchaa.uz';
 const API = `${BASE}/api/v1`;
 const LEARNER_EMAIL = process.env.SMOKE_LEARNER_EMAIL || 'learner@gotcha.app';
-const LEARNER_PASSWORD = process.env.SMOKE_LEARNER_PASSWORD || 'Learner2026!';
+const LEARNER_PASSWORD = process.env.SMOKE_LEARNER_PASSWORD;
 const ADMIN_EMAIL = process.env.SMOKE_ADMIN_EMAIL || 'admin@gotcha.app';
-const ADMIN_PASSWORD = process.env.SMOKE_ADMIN_PASSWORD || 'GotchaAdmin2026!';
+const ADMIN_PASSWORD = process.env.SMOKE_ADMIN_PASSWORD;
 
 const args = process.argv.slice(2);
 const aabArgIdx = args.indexOf('--aab');

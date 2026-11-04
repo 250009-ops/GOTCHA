@@ -132,6 +132,7 @@ S3_BUCKET=${S3_BUCKET:-gotcha-content}
 S3_REGION=${S3_REGION:-us-east-1}
 S3_FORCE_PATH_STYLE=true
 UPLOADS_DIR=${APP_DIR}/uploads
+PRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
 OPENAI_MODEL_LOOKUP=${OPENAI_MODEL_LOOKUP:-gpt-4.1-mini}
 OPENAI_MODEL_QUIZ=${OPENAI_MODEL_QUIZ:-gpt-4.1-mini}
@@ -166,6 +167,7 @@ SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
 EOF
 chmod 600 "${APP_DIR}/.env"
 mkdir -p "${APP_DIR}/uploads"
+install -d -m 0750 /var/lib/gotcha/private-avatars
 ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/api/.env"
 ln -sfn "${APP_DIR}/.env" "${APP_DIR}/services/worker/.env"
 

@@ -21,8 +21,8 @@ import {
 type Point = { label: string; value: number };
 type ValueFormat = 'number' | 'money' | 'uzs' | 'percent';
 
-const BRAND = '#6c1d95';
-const INK = '#1c1929';
+const BRAND = 'var(--g-blue-700)';
+const INK = 'var(--g-admin-sidebar)';
 const MUTED = '#94a3b8';
 const GRID = '#e2e8f0';
 const TRACK = '#f1f5f9';
@@ -240,7 +240,7 @@ export function BarChart({
           tickFormatter={(v) => formatAxisValue(Number(v), valueFormat)}
         />
         <Tooltip
-          cursor={{ fill: 'rgba(108, 29, 149, 0.06)' }}
+          cursor={{ fill: 'rgba(33, 7, 170, 0.06)' }}
           content={<ChartTooltip valueFormat={valueFormat} />}
         />
         <Bar dataKey="value" radius={[6, 6, 0, 0]} maxBarSize={48} isAnimationActive animationDuration={600}>
@@ -419,7 +419,7 @@ export function HorizontalBars({
           tickLine={false}
         />
         <Tooltip
-          cursor={{ fill: 'rgba(108, 29, 149, 0.05)' }}
+          cursor={{ fill: 'rgba(33, 7, 170, 0.05)' }}
           content={<ChartTooltip valueFormat="percent" />}
         />
         <Bar dataKey="value" radius={[0, 6, 6, 0]} maxBarSize={14} background={{ fill: TRACK }} isAnimationActive>
@@ -483,7 +483,7 @@ export function HourlyBars({
           tickFormatter={(v) => formatAxisValue(Number(v))}
         />
         <Tooltip
-          cursor={{ fill: 'rgba(108, 29, 149, 0.06)' }}
+          cursor={{ fill: 'rgba(33, 7, 170, 0.06)' }}
           content={<ChartTooltip tipLabel="{label} — {value}" />}
         />
         <Bar dataKey="value" fill={BRAND} radius={[3, 3, 0, 0]} maxBarSize={18} isAnimationActive>

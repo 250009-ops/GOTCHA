@@ -1,6 +1,9 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
-import { mkdir, rm, writeFile } from 'fs/promises';
+import { limitDayStart } from '../../common/plan-limits';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { access, mkdir, rename, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
+import { avatarFileName, avatarPublicPath, encodeAvatar, loadSharp, privateAvatarsDir, safeAvatarUrl } from './avatar-image';
 
 import * as bcrypt from 'bcryptjs';
 
@@ -10,10 +13,13 @@ import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 
 import { PrismaService } from '../../prisma/prisma.service';
 
-import { effectiveStreakCount } from '../../services/streak.service';
+import { calendarDateKey, effectiveStreakCount, STREAK_TIMEZONE } from '../../services/streak.service';
 
 import { assertEnabledLanguage } from '../../common/language-catalog';
 import { assertJpegPngOrWebp } from '../../common/upload-magic';
+import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
+import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
+import { toPublicProfile } from './public-profile';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -29,13 +35,32 @@ import {
 
 export class UsersService {
 
-  constructor(
+  private readonly logger = new Logger('UsersService');
 
+  constructor(
     private prisma: PrismaService,
 
     private devAuth: DevAuthService,
 
   ) {}
+
+  async avatarAbsolutePath(file: string) {
+    const name = avatarFileName(file);
+    if (!name) throw new NotFoundException('Avatar not found');
+    const abs = join(privateAvatarsDir(), name);
+    try {
+      await access(abs);
+    } catch {
+      throw new NotFoundException('Avatar not found');
+    }
+    return abs;
+  }
+
+  private async deleteAvatarFile(url: string | null | undefined) {
+    const name = avatarFileName(url);
+    if (!name) return;
+    await rm(join(privateAvatarsDir(), name), { force: true });
+  }
 
   /** Target languages must never equal native — drop conflicts and fix primary if needed. */
   private async removeNativeFromTargets(userId: string, nativeLanguage: string) {
@@ -148,10 +173,13 @@ export class UsersService {
       },
     });
     if (!refreshed) throw new NotFoundException('User not found');
-
-    const { passwordHash: _, ...safe } = refreshed;
-
-    return safe;
+    return toPublicProfile(
+      { ...refreshed, avatarUrl: safeAvatarUrl(refreshed.avatarUrl) },
+      {
+        ageBand: ageBand(refreshed.birthYear),
+        needsAgePrompt: needsAgePrompt(refreshed),
+      },
+    );
 
   }
 
@@ -185,14 +213,28 @@ export class UsersService {
 
 
 
-    const [vocabCount, masteredCount, progress, sessions, dueCount, recentSessions, recentVocab, userStreak] =
+    const [vocabCount, masteredCount, allProgress, recentProgress, sessions, dueCount, recentSessions, recentVocab, userStreak] =
       await Promise.all([
 
       this.prisma.userVocabulary.count({ where: { userId } }),
 
       this.prisma.userVocabulary.count({ where: { userId, mastered: true } }),
 
-      this.prisma.readingProgress.findMany({ where: { userId } }),
+      this.prisma.readingProgress.findMany({
+        where: { userId },
+        select: { totalReadSeconds: true, completedAt: true },
+      }),
+
+      this.prisma.readingProgress.findMany({
+        where: {
+          userId,
+          OR: [
+            { lastReadAt: { gte: historyStart } },
+            { completedAt: { gte: historyStart } },
+          ],
+        },
+        select: { contentId: true, completedAt: true, lastReadAt: true },
+      }),
 
       this.prisma.readingSession.aggregate({
 
@@ -212,7 +254,7 @@ export class UsersService {
 
         where: { userId, startedAt: { gte: historyStart } },
 
-        select: { startedAt: true, durationSeconds: true, wordsSaved: true },
+        select: { startedAt: true, durationSeconds: true, wordsSaved: true, contentId: true },
 
       }),
 
@@ -226,30 +268,29 @@ export class UsersService {
 
       this.prisma.user.findUnique({
         where: { id: userId },
-        select: { streakCount: true, streakLastDate: true },
+        select: { streakCount: true, streakLastDate: true, bestStreak: true },
       }),
 
     ]);
 
 
 
-    const totalReadSeconds = progress.reduce((s, p) => s + p.totalReadSeconds, 0);
+    const totalReadSeconds = allProgress.reduce((s, p) => s + p.totalReadSeconds, 0);
 
-    const completedCount = progress.filter((p) => p.completedAt).length;
-    const inProgressCount = progress.filter((p) => !p.completedAt).length;
+    const completedCount = allProgress.filter((p) => p.completedAt).length;
+    const inProgressCount = allProgress.filter((p) => !p.completedAt).length;
 
-    const history = buildStatsHistory(recentSessions, recentVocab, HEATMAP_DAYS);
+    const historyResult = buildStatsHistory(recentSessions, recentVocab, recentProgress, HEATMAP_DAYS);
     const streakCount = effectiveStreakCount(
       userStreak?.streakCount ?? 0,
       userStreak?.streakLastDate,
     );
-    // Best never below current; heatmap may miss older days outside the window.
-    const bestStreak = Math.max(history.bestStreak, streakCount);
+    const bestStreak = Math.max(userStreak?.bestStreak ?? 0, streakCount);
 
-    const todayKey = dateKey(new Date());
-    const todaySessions = recentSessions.filter((s) => dateKey(s.startedAt) === todayKey);
+    const todayKey = calendarDateKey(new Date());
+    const todaySessions = recentSessions.filter((s) => calendarDateKey(s.startedAt) === todayKey);
     const todayReadMinutes =
-      history.history.daily.find((d) => d.date === todayKey)?.minutes ??
+      historyResult.history.daily.find((d) => d.date === todayKey)?.minutes ??
       Math.round(todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60);
     const todayWordsSaved = todaySessions.reduce((s, row) => s + row.wordsSaved, 0);
 
@@ -279,7 +320,7 @@ export class UsersService {
 
       bestStreak,
 
-      history: history.history,
+      history: historyResult.history,
 
     };
 
@@ -336,6 +377,12 @@ export class UsersService {
       throw new BadRequestException('Photo upload is not available for demo accounts.');
     }
 
+    // Privacy §2/§12: children under 13 cannot upload a profile photo.
+    const ageRow = await this.prisma.user.findUnique({ where: { id: userId }, select: { birthYear: true } });
+    if (ageBand(ageRow?.birthYear) === 'under13') {
+      throw new ForbiddenException({ statusCode: 403, code: 'AVATAR_UNDER13', message: 'Profile photos are not available for this account.' });
+    }
+
     const extByMime: Record<string, string> = {
       'image/jpeg': 'jpg',
       'image/png': 'png',
@@ -348,19 +395,64 @@ export class UsersService {
       throw new BadRequestException('Image must be 2 MB or smaller.');
     }
 
-    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
-    const dir = join(root, 'avatars');
-    await mkdir(dir, { recursive: true });
-    for (const oldExt of ['jpg', 'jpeg', 'png', 'webp']) {
-      await rm(join(dir, `${userId}.${oldExt}`), { force: true });
+    if (!loadSharp()) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        code: 'AVATAR_PROCESSING_UNAVAILABLE',
+        message: 'Photo upload is temporarily unavailable.',
+      });
     }
-    const fileName = `${userId}.${ext}`;
-    await writeFile(join(dir, fileName), file.buffer);
-    const avatarUrl = `/uploads/avatars/${fileName}?v=${Date.now()}`;
+    const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    const dir = privateAvatarsDir();
+    await mkdir(dir, { recursive: true });
+    let encoded: { bytes: Buffer; ext: 'webp' };
+    try {
+      encoded = await encodeAvatar(file.buffer);
+    } catch (err) {
+      if (err instanceof Error && err.message === 'AVATAR_PROCESSING_UNAVAILABLE') {
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          code: 'AVATAR_PROCESSING_UNAVAILABLE',
+          message: 'Photo upload is temporarily unavailable.',
+        });
+      }
+      throw new BadRequestException('Could not process that image.');
+    }
+    const fileName = `${randomUUID()}.${encoded.ext}`;
+    const finalPath = join(dir, fileName);
+    await writeFile(`${finalPath}.tmp`, encoded.bytes);
+    await rename(`${finalPath}.tmp`, finalPath);
+    try {
+      const row = await this.prisma.user.update({
+        where: { id: userId },
+        data: { avatarUrl: `${avatarPublicPath(fileName)}?v=${Date.now()}` },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          uiLanguage: true,
+          nativeLanguage: true,
+          streakCount: true,
+        },
+      });
+      await this.deleteAvatarFile(previous?.avatarUrl);
+      return { ...row, avatarUrl: safeAvatarUrl(row.avatarUrl) };
+    } catch (err) {
+      await rm(finalPath, { force: true });
+      throw err;
+    }
+  }
 
-    return this.prisma.user.update({
+  async removeAvatar(userId: string) {
+    if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
+      throw new BadRequestException('Photo upload is not available for demo accounts.');
+    }
+    const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    await this.deleteAvatarFile(previous?.avatarUrl);
+    const row = await this.prisma.user.update({
       where: { id: userId },
-      data: { avatarUrl },
+      data: { avatarUrl: null },
       select: {
         id: true,
         email: true,
@@ -371,6 +463,7 @@ export class UsersService {
         streakCount: true,
       },
     });
+    return { ...row, avatarUrl: safeAvatarUrl(row.avatarUrl) };
   }
 
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
@@ -381,15 +474,16 @@ export class UsersService {
 
     }
 
-
+    const data = { ...dto };
+    if (data.appTheme === 'dark') data.appTheme = 'system';
 
     return this.prisma.userPreferences.upsert({
 
       where: { userId },
 
-      create: { userId, ...dto },
+      create: { userId, ...data },
 
-      update: dto,
+      update: data,
 
     });
 
@@ -427,7 +521,11 @@ export class UsersService {
       select: { nativeLanguage: true },
     });
     if (user?.nativeLanguage === dto.targetLanguage) {
-      throw new BadRequestException('Target language cannot be the same as your native language.');
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'TARGET_SAME_AS_NATIVE',
+        message: 'Target language cannot be the same as your native language.',
+      });
     }
     const existingCount = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (dto.isPrimary || existingCount === 0) {
@@ -477,7 +575,11 @@ export class UsersService {
   async removeTargetLanguage(userId: string, targetLanguage: string) {
     const total = await this.prisma.userTargetLanguage.count({ where: { userId } });
     if (total <= 1) {
-      throw new BadRequestException('You must keep at least one target language.');
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'KEEP_ONE_TARGET',
+        message: 'You must keep at least one target language.',
+      });
     }
 
     const existing = await this.prisma.userTargetLanguage.findUnique({
@@ -589,6 +691,8 @@ export class UsersService {
           deletedAt: new Date(),
           emailVerificationToken: null,
           passwordResetToken: null,
+          birthYear: null,
+          consentIp: null, // WL4-11: IP dropped; consent version + time kept as the record of acceptance
         },
       }),
       this.prisma.authRefreshToken.updateMany({
@@ -596,70 +700,210 @@ export class UsersService {
         data: { revokedAt: new Date() },
       }),
     ]);
+    const purged = await this.purgeUserData(userId);
+    // LG4-09: a failed purge step must alert (admin health flag + support email/stub), never stay silent.
+    const failedSteps = Object.entries(purged).filter(([, v]) => v === 'error').map(([k]) => k);
+    if (failedSteps.length) await recordJobFailure('account-purge', new Error(`user ${userId}: failed steps ${failedSteps.join(', ')}`));
+    else recordJobSuccess('account-purge', 'last purge complete');
+    return { deleted: true, purged };
+  }
 
-    return { deleted: true };
+  /**
+   * S1 delete-account REAL purge (Privacy §8/§11). Deletes the learner's learning data, imports (with their private
+   * content and uploaded files), avatar, notifications, friend links, blocks and AI usage counters.
+   * Messages the user SENT are kept in the recipients' conversations and show as from "Deleted user" through the
+   * anonymised user row (name, email, photo removed in deleteAccount). Safety reports are kept for safety review and
+   * unlinked from the user: the user's reporter / reported-user id and the report's conversationId are nulled; the
+   * reported message stays attached via messageId (messageSnapshot and details kept). Reports are deleted about 1 year
+   * after closing by ReportRetentionJob. consent_ip is cleared (version + time kept). Still kept: payment and purchase
+   * rows, audit logs. Each step is best-effort and logged.
+   */
+  async purgeUserData(userId: string): Promise<Record<string, number | string>> {
+    const out: Record<string, number | string> = {};
+    const step = async (name: string, fn: () => Promise<{ count: number } | number>) => {
+      try {
+        const r = await fn();
+        out[name] = typeof r === 'number' ? r : r.count;
+      } catch (err) {
+        out[name] = 'error';
+        this.logger.warn(`purge ${name} failed for ${userId}: ${err instanceof Error ? err.message : err}`);
+      }
+    };
+    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+    const p = this.prisma;
+    await step('imports', async () => {
+      const rows = await p.userImport.findMany({ where: { userId } });
+      for (const row of rows) {
+        await p.userImport.delete({ where: { id: row.id } });
+        if (row.contentId) {
+          await p.ingestionJob.updateMany({ where: { contentId: row.contentId }, data: { contentId: null } });
+          await p.contentItem.delete({ where: { id: row.contentId } }).catch(() => undefined);
+        }
+        if (row.fileKey) await rm(join(root, row.fileKey), { force: true }).catch(() => undefined);
+      }
+      return rows.length;
+    });
+    await step('vocabulary', () => p.userVocabulary.deleteMany({ where: { userId } }));
+    await step('knownWords', () => p.userKnownWord.deleteMany({ where: { userId } }));
+    await step('readingProgress', () => p.readingProgress.deleteMany({ where: { userId } }));
+    await step('readingSessions', () => p.readingSession.deleteMany({ where: { userId } }));
+    await step('practiceSessions', () => p.practiceSession.deleteMany({ where: { userId } }));
+    await step('bookmarks', () => p.contentBookmark.deleteMany({ where: { userId } }));
+    await step('placementResults', () => p.placementResult.deleteMany({ where: { userId } }));
+    await step('aiUsageDaily', () => p.aiUsageDaily.deleteMany({ where: { userId } }));
+    await step('notifications', () => p.userNotification.deleteMany({ where: { userId } }));
+    await step('friendRequests', () =>
+      p.friendRequest.deleteMany({ where: { OR: [{ requesterId: userId }, { addresseeId: userId }] } }),
+    );
+    await step('blocks', () => p.userBlock.deleteMany({ where: { OR: [{ blockerId: userId }, { blockedId: userId }] } }));
+    // Privacy §8/§11: sent messages are NOT deleted; they stay, shown as from "Deleted user".
+    // Recipients' stored message notifications may still carry the old name: drop them (they regenerate as "Deleted user").
+    await step('peerMessageNotifications', async () => {
+      const convs = await p.conversationParticipant.findMany({ where: { userId }, select: { conversationId: true } });
+      const ids = convs.map((c) => c.conversationId);
+      if (!ids.length) return 0;
+      return p.userNotification.deleteMany({ where: { kind: 'message', refId: { in: ids }, userId: { not: userId } } });
+    });
+    await step('reportsUnlinked', async () => {
+      const a = await p.userReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null, conversationId: null } });
+      const b = await p.userReport.updateMany({ where: { reportedUserId: userId }, data: { reportedUserId: null, conversationId: null } });
+      const c = await p.contentReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
+      return a.count + b.count + c.count;
+    });
+    await step('targetLanguages', () => p.userTargetLanguage.deleteMany({ where: { userId } }));
+    await step('preferences', () => p.userPreferences.deleteMany({ where: { userId } }));
+    await step('avatarFiles', async () => {
+      for (const ext of ['jpg', 'jpeg', 'png', 'webp']) await rm(join(root, 'avatars', `${userId}.${ext}`), { force: true });
+      return 1;
+    });
+    return out;
+  }
+
+  /** W-12 one-time age prompt. The user sets the year once; later changes go through support. */
+  async setAge(userId: string, birthYear: number | null | undefined) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    const thisYear = new Date().getUTCFullYear();
+    if (birthYear != null && (birthYear > thisYear - 5 || birthYear < thisYear - 100)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'BIRTH_YEAR_INVALID',
+        message: 'Choose a birth year between five and one hundred years ago.',
+      });
+    }
+    if (birthYear != null && user.birthYear != null && user.birthYear !== birthYear) {
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'BIRTH_YEAR_LOCKED',
+        message: 'Your birth year is already set. Contact support@gotchaa.uz to change it.',
+      });
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { agePromptedAt: new Date(), ...(birthYear != null ? { birthYear } : {}) },
+    });
+    return this.getProfile(userId);
+  }
+
+  async setAiPreference(userId: string, aiDisabled: boolean) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, select: { aiDisabled: true, aiDisabledBy: true } });
+    if (!user) throw new NotFoundException('User not found');
+    if (!aiDisabled && user.aiDisabled && user.aiDisabledBy === 'admin') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        code: 'AI_DISABLED_BY_SUPPORT',
+        message: 'AI features were turned off by support. Contact support@gotchaa.uz to turn them back on.',
+      });
+    }
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { aiDisabled, aiDisabledBy: aiDisabled ? 'user' : null },
+    });
+    return this.getProfile(userId);
   }
 
 }
 
-function dateKey(d: Date): string {
-  // Local calendar day — avoid UTC ISO shifting activity off the heatmap.
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+function dayKey(d: Date): string {
+  return calendarDateKey(d, STREAK_TIMEZONE);
 }
 
 function isoWeekStart(d: Date): string {
   const copy = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   const day = copy.getUTCDay() || 7;
   if (day !== 1) copy.setUTCDate(copy.getUTCDate() - (day - 1));
-  return dateKey(copy);
+  return dayKey(copy);
 }
 
+export type StatsHeatmapDay = { date: string; count: number; finished: number };
+
 /**
- * Buckets a user's real reading sessions and saved vocabulary into the
- * daily/weekly/heatmap series consumed by the Statistics page charts.
+ * Buckets reading sessions and progress into daily/weekly/heatmap series for Statistics.
+ * Heatmap count = distinct contents read per day; finished = contents completed that day.
  */
 export function buildStatsHistory(
-  sessions: Array<{ startedAt: Date; durationSeconds: number | null; wordsSaved: number }>,
+  sessions: Array<{ startedAt: Date; durationSeconds: number | null; contentId: string }>,
   vocab: Array<{ createdAt: Date }>,
+  progress: Array<{ contentId: string; completedAt: Date | null; lastReadAt: Date }>,
   heatmapDays: number,
 ) {
   const dailyMinutes = new Map<string, number>();
   const dailyWordsSaved = new Map<string, number>();
-  const dailySessionCount = new Map<string, number>();
+  const dailyContents = new Map<string, Set<string>>();
+  const dailyFinished = new Map<string, number>();
 
   for (const s of sessions) {
-    const key = dateKey(s.startedAt);
+    const key = dayKey(s.startedAt);
     dailyMinutes.set(key, (dailyMinutes.get(key) ?? 0) + Math.round((s.durationSeconds ?? 0) / 60));
-    dailyWordsSaved.set(key, (dailyWordsSaved.get(key) ?? 0) + s.wordsSaved);
-    dailySessionCount.set(key, (dailySessionCount.get(key) ?? 0) + 1);
+    if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+    dailyContents.get(key)!.add(s.contentId);
+  }
+
+  for (const row of progress) {
+    if (row.lastReadAt) {
+      const key = dayKey(row.lastReadAt);
+      if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+      dailyContents.get(key)!.add(row.contentId);
+    }
+    if (row.completedAt) {
+      const key = dayKey(row.completedAt);
+      dailyFinished.set(key, (dailyFinished.get(key) ?? 0) + 1);
+      if (!dailyContents.has(key)) dailyContents.set(key, new Set());
+      dailyContents.get(key)!.add(row.contentId);
+    }
   }
 
   const weeklyVocab = new Map<string, number>();
   for (const v of vocab) {
+    const dayKeyVal = dayKey(v.createdAt);
+    dailyWordsSaved.set(dayKeyVal, (dailyWordsSaved.get(dayKeyVal) ?? 0) + 1);
     const week = isoWeekStart(v.createdAt);
     weeklyVocab.set(week, (weeklyVocab.get(week) ?? 0) + 1);
   }
 
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = limitDayStart();
 
   const daily: Array<{ date: string; minutes: number; wordsSaved: number }> = [];
-  const heatmap: Array<{ date: string; count: number }> = [];
-  for (let i = heatmapDays - 1; i >= 0; i--) {
+  const heatmap: StatsHeatmapDay[] = [];
+  for (let i = heatmapDays - 1; i >= 0; i -= 1) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const key = dateKey(d);
-    heatmap.push({ date: key, count: dailySessionCount.get(key) ?? 0 });
+    const key = dayKey(d);
+    const minutes = dailyMinutes.get(key) ?? 0;
+    const wordsSaved = dailyWordsSaved.get(key) ?? 0;
+    const count = dailyContents.get(key)?.size ?? 0;
+    heatmap.push({
+      date: key,
+      count,
+      finished: dailyFinished.get(key) ?? 0,
+    });
     if (i < 30) {
-      daily.push({ date: key, minutes: dailyMinutes.get(key) ?? 0, wordsSaved: dailyWordsSaved.get(key) ?? 0 });
+      daily.push({ date: key, minutes, wordsSaved });
     }
   }
 
   const weekly: Array<{ weekStart: string; wordsSaved: number }> = [];
-  for (let w = 5; w >= 0; w--) {
+  for (let w = 5; w >= 0; w -= 1) {
     const d = new Date(today);
     d.setDate(d.getDate() - w * 7);
     const weekStart = isoWeekStart(d);
@@ -668,18 +912,7 @@ export function buildStatsHistory(
     }
   }
 
-  let bestStreak = 0;
-  let current = 0;
-  for (const entry of heatmap) {
-    if (entry.count > 0) {
-      current += 1;
-      bestStreak = Math.max(bestStreak, current);
-    } else {
-      current = 0;
-    }
-  }
-
-  return { history: { daily, weekly, heatmap }, bestStreak };
+  return { history: { daily, weekly, heatmap } };
 }
 
 

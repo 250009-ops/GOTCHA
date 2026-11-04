@@ -1,5 +1,6 @@
 import * as assert from 'node:assert/strict';
 import {
+  LOOKUP_CACHE_VERSION,
   classifyLookup,
   displaySentenceHead,
   glossLimitsFor,
@@ -7,7 +8,9 @@ import {
   looksLikeDefinitionGloss,
   looksLikeOffDomainExecute,
   looksLikeSynonymDump,
+  looksLikeWrongScript,
   needsLookupRepair,
+  normalizeUzbekOrthography,
   sanitizeContextualMeaning,
   sanitizeGloss,
   sanitizePhrase,
@@ -111,6 +114,23 @@ assert.equal(
   }),
   false,
 );
+
+assert.equal(
+  sanitizeContextualMeaning('hech ikkilanmasdan, darhol', 'ikkilanish', 'word'),
+  'hech ikkilanmasdan, darhol',
+);
+assert.equal(sanitizeContextualMeaning('bir, ikki, uch', 'nol', 'word'), 'bir');
+assert.equal(looksLikeDefinitionGloss('four words stay here'), false);
+
+assert.equal(LOOKUP_CACHE_VERSION, 'v13');
+assert.equal(normalizeUzbekOrthography("quvib o'tmoq"), 'quvib o\u02BBtmoq');
+assert.equal(normalizeUzbekOrthography("g'alaba"), 'g\u02BBalaba');
+assert.equal(normalizeUzbekOrthography("ma'no"), 'ma\u02BCno');
+assert.equal(normalizeUzbekOrthography('ma\u02BBno'), 'ma\u02BCno');
+assert.equal(normalizeUzbekOrthography('o\u02BBtmoq'), 'o\u02BBtmoq');
+assert.equal(looksLikeWrongScript('колебание', 'uz'), true);
+assert.equal(looksLikeWrongScript('ikkilanish', 'uz'), false);
+assert.equal(looksLikeWrongScript('колебание', 'ru'), false);
 
 assert.ok(displaySentenceHead(sentence).includes('Nothing'));
 assert.ok(displaySentenceHead('one '.repeat(40)).endsWith('…'));

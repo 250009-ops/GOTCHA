@@ -369,5 +369,5 @@ Apply: `cd services/api && npx prisma migrate deploy`
 
 | Role | Email | Password |
 |------|-------|----------|
-| Admin | admin@gotcha.app | GotchaAdmin2026! |
-| Learner | learner@gotcha.app | Learner2026! |
+| Admin | admin@gotcha.app | set via `SEED_ADMIN_PASSWORD` |
+| Learner | learner@gotcha.app | set via `SEED_LEARNER_PASSWORD` |
