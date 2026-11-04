@@ -49,6 +49,7 @@ export async function assertCanMessage(p: GatePrisma, sender: string, recipient:
       statusCode: 403,
       error: 'Forbidden',
       code: BIRTH_YEAR_REQUIRED,
+      who: 'self',
       message: 'Add your birth year before you can message.',
     });
   }
@@ -56,8 +57,8 @@ export async function assertCanMessage(p: GatePrisma, sender: string, recipient:
     throw new ForbiddenException({
       statusCode: 403,
       error: 'Forbidden',
-      code: MESSAGING_NOT_ALLOWED,
-      message: 'Messaging is not available for this account.',
+      code: 'RECIPIENT_NOT_ELIGIBLE',
+      message: "This learner can't receive messages yet.",
     });
   }
   const s = ageBand(senderRow.birthYear);

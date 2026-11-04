@@ -20,6 +20,7 @@ import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EditMessageDto, ReportUserDto, SendMessageDto, StartConversationDto } from './dto/messaging.dto';
 import { assertCanMessage, assertPeerVisible, GatePrisma } from '../safety/friend-gate';
+import { safeAvatarUrl } from '../users/avatar-image';
 import {
   assertNotBlocked,
   blockedPeerIds,
@@ -165,7 +166,7 @@ export class MessagingService {
       id: user.id,
       displayName: user.displayName ?? user.email.split('@')[0] ?? 'Learner',
       handle,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: safeAvatarUrl(user.avatarUrl),
       nativeLanguage: user.nativeLanguage,
       primaryLanguage: primary,
       online: show ? this.presenceOf(user.lastSeenAt).online : false,
@@ -214,7 +215,7 @@ export class MessagingService {
       senderId: m.senderId,
       // email is selected only to detect a deleted account; it never leaves the API.
       sender: m.sender
-        ? { id: m.sender.id, displayName: m.sender.displayName, avatarUrl: m.sender.avatarUrl, deleted: isDeletedAccount(m.sender) }
+        ? { id: m.sender.id, displayName: m.sender.displayName, avatarUrl: safeAvatarUrl(m.sender.avatarUrl), deleted: isDeletedAccount(m.sender) }
         : m.senderId === null
           ? { id: null, displayName: DELETED_USER_NAME, avatarUrl: null, deleted: true } // final-5 WL4-11 B: hard-deleted sender
           : m.sender,
@@ -267,7 +268,7 @@ export class MessagingService {
     return rows.map((r) => ({
       userId: r.blockedId,
       displayName: r.blocked.displayName,
-      avatarUrl: r.blocked.avatarUrl,
+      avatarUrl: safeAvatarUrl(r.blocked.avatarUrl),
       blockedAt: r.createdAt,
     }));
   }

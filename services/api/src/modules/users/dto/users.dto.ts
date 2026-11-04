@@ -130,8 +130,6 @@ export class SetAgeDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
-  @Min(1900)
-  @Max(new Date().getUTCFullYear())
   birthYear?: number | null;
 }
 

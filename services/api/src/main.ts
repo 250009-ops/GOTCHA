@@ -138,4 +138,10 @@ async function bootstrap() {
   }
 }
 
-bootstrap();
+process.on('unhandledRejection', (err) => {
+  console.error(err);
+});
+bootstrap().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

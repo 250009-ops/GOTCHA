@@ -6,10 +6,12 @@ import {
   Get,
   Header,
   Param,
+  Query,
   Res,
   Patch,
   Post,
   StreamableFile,
+  UnauthorizedException,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -18,7 +20,8 @@ import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
-import { CurrentUser, AuthUserPayload } from '../../common/decorators';
+import { CurrentUser, AuthUserPayload, Public } from '../../common/decorators';
+import { verifyAvatar } from './avatar-sign';
 import { UsersService } from './users.service';
 import {
   AddTargetLanguageDto,
@@ -35,11 +38,18 @@ import {
 export class UsersController {
   constructor(private users: UsersService) {}
 
-  /** Logged-out requests are rejected by the global auth guard (401). */
+  /** <img> cannot send a Bearer token, so the link itself is signed and expires. */
+  @Public()
   @Get('avatars/:file')
-  @Header('Cache-Control', 'private, max-age=60')
+  @Header('Cache-Control', 'private, max-age=600')
   @Header('X-Content-Type-Options', 'nosniff')
-  async avatar(@Param('file') file: string, @Res({ passthrough: true }) res: Response) {
+  async avatar(
+    @Param('file') file: string,
+    @Query('exp') exp = '',
+    @Query('sig') sig = '',
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!verifyAvatar(file, String(exp), String(sig))) throw new UnauthorizedException();
     const abs = await this.users.avatarAbsolutePath(file);
     const lower = file.toLowerCase();
     res.setHeader('Content-Type', lower.endsWith('.png') ? 'image/png' : lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'image/webp');

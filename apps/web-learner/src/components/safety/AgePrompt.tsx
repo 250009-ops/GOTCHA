@@ -13,14 +13,14 @@ const store = (): Storage | null => { try { return window.localStorage; } catch 
  * S3b (final-6.1): a small dismissible card, NOT a modal: it never blocks Library, Import or Vocabulary,
  * and once dismissed (✕ / Esc / prefer not to say) it is not shown again on this device.
  */
-export function AgePrompt() {
+export function AgePrompt({ force = false, onDone }: { force?: boolean; onDone?: () => void } = {}) {
   const { user, refreshProfile } = useAuth();
   const { locale } = useLearnerLocale();
   const [year, setYear] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
   const u = user as { id?: string; needsAgePrompt?: boolean } | null;
-  const show = !done && shouldShowAgePrompt(u, store());
+  const show = force ? !done : !done && shouldShowAgePrompt(u, store());
   const dismiss = () => { rememberAgePromptDismissed(u?.id, store()); setDone(true); };
   useEffect(() => {
     if (!show) return;
@@ -36,6 +36,7 @@ export function AgePrompt() {
     try {
       await api('/users/me/age', { method: 'POST', body: JSON.stringify({ birthYear }) });
       dismiss();
+      onDone?.();
       await refreshProfile().catch(() => undefined);
     } catch {
       dismiss(); // never trap the learner behind a failed save

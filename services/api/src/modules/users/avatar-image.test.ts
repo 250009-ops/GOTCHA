@@ -10,7 +10,9 @@ const id = '11111111-1111-4111-8111-111111111111';
 
 assert.equal(safeAvatarUrl('https://images.unsplash.com/photo-1'), null);
 assert.equal(safeAvatarUrl(`/uploads/avatars/${id}.jpg`), null);
-assert.equal(safeAvatarUrl(`/api/v1/users/avatars/${id}.webp?v=1`), `/api/v1/users/avatars/${id}.webp?v=1`);
+const signed = safeAvatarUrl(`/api/v1/users/avatars/${id}.webp?v=1`);
+assert.ok(signed?.includes(`/users/avatars/${id}.webp`));
+assert.ok(signed?.includes('sig='));
 
 void (async () => {
   const input = await sharp({

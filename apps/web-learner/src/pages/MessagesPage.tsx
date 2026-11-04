@@ -2,7 +2,9 @@ import { deletedAccountLine, isUserDeletedError, shownName } from '../lib/delete
 import { handleLimitError } from '../lib/limits';
 import { BlockButton, FriendGateNotice, ReportButton } from '../components/safety/SafetyActions';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { AgePrompt } from '../components/safety/AgePrompt';
+import { withAppBase } from '../lib/authRoutes';
 import { isDailyLimitError } from '../lib/dailyLimit';
 import { ArrowLeft, Check, CheckCheck, ChevronDown, Clock, CornerUpLeft, Languages, MessageSquare, MoreHorizontal, Pencil, Search, Send, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
@@ -603,6 +605,8 @@ export default function MessagesPage() {
   const [loadingThread, setLoadingThread] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [askAge, setAskAge] = useState(false);
+  const [recipientBlocked, setRecipientBlocked] = useState(false);
   const [tipDismissed, setTipDismissed] = useState(false);
   const [toLangOverride, setToLangOverride] = useState<string | null>(null);
   const [linesById, setLinesById] = useState<Record<string, LinePair>>({});
@@ -1119,7 +1123,16 @@ export default function MessagesPage() {
         setDraft(text);
         setEditing(editingMsg);
       }
-      setError(friendlyError(e, copy));
+      const code = (e as { code?: string }).code;
+      if (code === 'BIRTH_YEAR_REQUIRED') {
+        setAskAge(true);
+        setError(mp.birthYearBanner);
+      } else if (code === 'RECIPIENT_NOT_ELIGIBLE') {
+        setRecipientBlocked(true);
+        setError(mp.recipientNotEligible);
+      } else {
+        setError(friendlyError(e, copy));
+      }
     } finally {
       setSending(false);
     }
@@ -1313,6 +1326,7 @@ export default function MessagesPage() {
 
   return (
     <div className="absolute inset-0 flex bg-white overflow-hidden">
+      {askAge ? <AgePrompt force onDone={() => setAskAge(false)} /> : null}
       <aside
         className={cx(
           'shrink-0 border-r border-[#e5e7eb] flex-col min-h-0 bg-white w-full lg:w-[360px]',
@@ -1366,6 +1380,11 @@ export default function MessagesPage() {
           </div>
         )}
 
+        {user?.birthYear == null ? (
+          <Link to={`${withAppBase('/app/settings')}#birth-year`} className="mx-4 mt-3 block rounded-xl bg-[#f3f0ff] px-3 py-2 text-sm font-medium text-[#2107AA]">
+            {mp.birthYearBanner}
+          </Link>
+        ) : null}
         <div className="px-4 pt-2 pb-1 text-[11px] font-bold tracking-wide text-[#99a1af]">
           {mp.recentChats}
         </div>
@@ -1773,10 +1792,12 @@ export default function MessagesPage() {
                   </button>
                 </div>
               )}
+              {recipientBlocked ? <p className="mb-2 text-sm text-[#6a7282]">{mp.recipientNotEligible}</p> : null}
               <div className="flex items-center gap-2">
                 <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full border border-[#e5e7eb] bg-[#f9fafb]">
                   <input
                     value={draft}
+                    disabled={recipientBlocked}
                     onChange={(e) => {
                       setDraft(e.target.value);
                       if (e.target.value.trim()) notifyTyping();

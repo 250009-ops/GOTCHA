@@ -117,7 +117,12 @@ try {
       `APP=${APP_DIR}`,
       `tar -xzf /tmp/gotcha-api-up/${tarName} -C "$APP"`,
       'ln -sfn "$APP/.env" "$APP/services/api/.env"',
+      'install -d -m 0750 /var/lib/gotcha/private-avatars',
+      `python3 -c 'from pathlib import Path; p=Path("/var/www/gotcha/.env"); t=p.read_text() if p.exists() else "";
+p.write_text(t if "PRIVATE_AVATARS_DIR=" in t else t.rstrip()+"\\nPRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars\\n")'`,
       'cd "$APP"',
+      'npm install sharp@0.32.6 --no-audit --no-fund',
+      'cd "$APP/services/api" && node -e "require(\'sharp\')" && cd "$APP"',
       'npm run build --workspace=packages/shared --if-present',
       'npm run db:generate',
       'rm -rf services/api/dist',
@@ -131,6 +136,8 @@ try {
       `python3 -c 'from pathlib import Path; p=Path("/etc/nginx/sites-available/gotcha"); t=p.read_text() if p.exists() else ""; n="location ^~ /uploads/avatars/"; a="    location /uploads/ {"; b="    location ^~ /uploads/avatars/ {\\n        default_type application/json;\\n        return 401;\\n    }\\n\\n";
 print("skip") if (not t or n in t or a not in t) else p.write_text(t.replace(a, b.encode().decode("unicode_escape")+a, 1)) or print("denied")'`,
       'nginx -t && systemctl reload nginx',
+      'sleep 4',
+      'curl -fsS http://127.0.0.1:3200/api/v1/health',
     ].join(' && '),
     900_000,
   );

@@ -75,6 +75,7 @@ S3_BUCKET=gotcha-content
 S3_REGION=us-east-1
 S3_FORCE_PATH_STYLE=true
 UPLOADS_DIR=/var/www/gotcha/uploads
+PRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars
 
 OPENAI_API_KEY=${openai}
 OPENAI_MODEL_LOOKUP=gpt-4.1-mini

@@ -197,6 +197,8 @@ export interface LearnerCopyExt {
     emptyTitle: string;
     emptyBody: string;
     sendFriend: string;
+    birthYearBanner: string;
+    recipientNotEligible: string;
     you: string;
     wordMeaning: string;
     editingMessage: string;
@@ -585,6 +587,8 @@ const EXT_EN: LearnerCopyExt = {
     emptyTitle: 'No conversations yet',
     emptyBody: 'Messaging is for friends. Send a friend request to start.',
     sendFriend: 'Send friend request',
+    birthYearBanner: 'Add your birth year to send messages',
+    recipientNotEligible: "This learner can't receive messages yet.",
     you: 'You',
     wordMeaning: 'Word Meaning',
     editingMessage: 'Editing message',
@@ -977,6 +981,8 @@ const EXT_RU: LearnerCopyExt = {
     emptyTitle: 'Пока нет разговоров',
     emptyBody: 'Писать можно друзьям. Отправьте запрос в друзья.',
     sendFriend: 'Отправить запрос в друзья',
+    birthYearBanner: 'Укажите год рождения, чтобы писать сообщения',
+    recipientNotEligible: 'Этот ученик пока не может получать сообщения.',
     you: 'Вы',
     wordMeaning: 'Значение слова',
     editingMessage: 'Редактирование',
@@ -1369,6 +1375,8 @@ const EXT_UZ: LearnerCopyExt = {
     emptyTitle: 'Hali suhbat yoʻq',
     emptyBody: 'Xabar yozish doʻstlar uchun. Boshlash uchun doʻstlik soʻrovi yuboring.',
     sendFriend: 'Doʻstlik soʻrovi',
+    birthYearBanner: 'Xabar yozish uchun tugʻilgan yilingizni kiriting',
+    recipientNotEligible: 'Bu oʻquvchi hozircha xabar qabul qila olmaydi.',
     you: 'Siz',
     wordMeaning: 'Soʻz maʼnosi',
     editingMessage: 'Xabar tahrirlanmoqda',

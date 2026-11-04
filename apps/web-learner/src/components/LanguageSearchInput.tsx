@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X } from 'lucide-react';
 import { cn } from './ui/utils';
 import { useLearnerCopy } from '../lib/learnerLocaleContext';
-import { languageFlag, languageLabel } from '../lib/types';
+import { languageLabel } from '../lib/types';
+import { CatalogLanguageFlag } from './CatalogLanguageFlag';
 
 export type LanguageOption = {
   code: string;
@@ -23,7 +24,7 @@ function matchesQuery(lang: LanguageOption, query: string) {
 
 function display(lang?: LanguageOption, code?: string) {
   return {
-    flag: lang?.flagEmoji ?? languageFlag(code ?? lang?.code),
+    code: code ?? lang?.code ?? '',
     // WL4-06: a language is shown by its own name (Oʻzbekcha, Русский…), never only the English one.
     name: lang?.nativeName || lang?.name || languageLabel(code ?? lang?.code),
   };
@@ -137,13 +138,13 @@ export function LanguageSearchInput({
         onClick={() => inputRef.current?.focus()}
       >
         {selected.map((lang) => {
-          const { flag, name } = display(lang, lang.code);
+          const { code, name } = display(lang, lang.code);
           return (
             <span
               key={lang.code}
               className="inline-flex items-center gap-1 max-w-full h-7 pl-1.5 pr-1 rounded-lg bg-g-blue-50 border border-g-blue-200 text-xs font-semibold text-g-blue-700"
             >
-              <span className="leading-none">{flag}</span>
+              <CatalogLanguageFlag code={code} />
               <span className="truncate">{name}</span>
               <button
                 type="button"
@@ -192,7 +193,7 @@ export function LanguageSearchInput({
             <div className="px-3 py-2.5 text-sm text-[#9ca3af]">{copy.languageInput.noMatch}</div>
           ) : (
             suggestions.map((lang, idx) => {
-              const { flag, name } = display(lang, lang.code);
+              const { code, name } = display(lang, lang.code);
               return (
                 <button
                   key={lang.code}
@@ -205,7 +206,7 @@ export function LanguageSearchInput({
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => add(lang.code)}
                 >
-                  <span className="text-base leading-none">{flag}</span>
+                  <CatalogLanguageFlag code={code} />
                   <span className="font-medium">{name}</span>
                   {lang.name && lang.name !== name ? (
                     <span className="text-xs text-[#9ca3af] truncate">{lang.name}</span>

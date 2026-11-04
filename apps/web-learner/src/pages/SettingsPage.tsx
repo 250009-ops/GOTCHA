@@ -24,6 +24,7 @@ import { Button } from '../components/ui/button';
 import { Dialog } from '../components/ui/dialog';
 import { UserAvatar } from '../components/UserAvatar';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
+import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
 import { cn } from '../components/ui/utils';
 import { api, clearTokens } from '../lib/api';
 import { withAppBase } from '../lib/authRoutes';
@@ -38,7 +39,6 @@ import {
   LANGUAGE_META,
   LIVE_LANGUAGES,
   UI_LANGUAGES,
-  languageFlag,
   languageLabel,
   type AppLanguage,
   type CatalogLanguage,
@@ -368,8 +368,8 @@ function TargetLanguageModal({
               placeholder={copy.auth.targetLanguagesPlaceholder}
             />
           ) : (
-            <div id="settings-target-language" className="h-11 px-3 flex items-center bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
-              {languageFlag(existing?.targetLanguage)} {languageUiName(existing?.targetLanguage, locale)}
+            <div id="settings-target-language" className="h-11 px-3 flex items-center gap-2 bg-gray-50 border border-[#e5e7eb] rounded-[14px] text-sm text-gray-600">
+              <CatalogLanguageFlag code={existing?.targetLanguage ?? ''} /> {languageUiName(existing?.targetLanguage, locale)}
             </div>
           )}
         </div>
@@ -471,6 +471,8 @@ export default function SettingsPage() {
 
   const [displayName, setDisplayName] = useState(user?.displayName ?? '');
   const [nativeLanguage, setNativeLanguage] = useState<AppLanguage>(user?.nativeLanguage ?? 'en');
+  const [birthYearDraft, setBirthYearDraft] = useState('');
+  const [birthYearSaving, setBirthYearSaving] = useState(false);
   const [avatarBusy, setAvatarBusy] = useState<'upload' | 'remove' | null>(null);
   const [nameStatus, setNameStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [exporting, setExporting] = useState(false);
@@ -893,6 +895,8 @@ export default function SettingsPage() {
           </form>
         </Row>
         <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
+          <div className="flex items-center gap-2">
+            <CatalogLanguageFlag code={nativeLanguage} />
           <select
             aria-label={copy.settings.nativeLanguage}
             value={nativeLanguage}
@@ -905,10 +909,44 @@ export default function SettingsPage() {
           >
             {languageOptions.map((l) => (
               <option key={l.code} value={l.code}>
-                {l.flagEmoji} {(l as { nativeName?: string }).nativeName || l.name}
+                {(l as { nativeName?: string }).nativeName || l.name}
               </option>
             ))}
           </select>
+          </div>
+        </Row>
+        <Row label={copy.settings.birthYear} description={user?.birthYear != null ? copy.settings.birthYearLocked : copy.settings.birthYearHint}>
+          {user?.birthYear != null ? (
+            <span id="birth-year" className="text-sm text-[#364153]">{user.birthYear}</span>
+          ) : (
+            <form
+              id="birth-year"
+              className="flex items-center gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                const year = Number(birthYearDraft);
+                if (!Number.isInteger(year)) return;
+                setBirthYearSaving(true);
+                void api('/users/me/age', { method: 'POST', body: JSON.stringify({ birthYear: year }) })
+                  .then(() => refreshProfile())
+                  .then(() => toast.success(copy.settings.saved))
+                  .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed))
+                  .finally(() => setBirthYearSaving(false));
+              }}
+            >
+              <input
+                inputMode="numeric"
+                maxLength={4}
+                value={birthYearDraft}
+                onChange={(e) => setBirthYearDraft(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                aria-label={copy.settings.birthYear}
+                className={cn(fieldClass, 'w-24')}
+              />
+              <button type="submit" disabled={birthYearDraft.length !== 4 || birthYearSaving} className="min-h-11 px-3 rounded-[14px] bg-g-blue-700 disabled:opacity-50 text-g-on-cta text-sm font-medium">
+                {birthYearSaving ? copy.common.saving : copy.common.saveChanges}
+              </button>
+            </form>
+          )}
         </Row>
         <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
           <select
@@ -924,7 +962,7 @@ export default function SettingsPage() {
           >
             {UI_LANGUAGES.map((code) => (
               <option key={code} value={code}>
-                {LANGUAGE_META[code].flag} {LANGUAGE_META[code].nativeName}
+                {LANGUAGE_META[code].nativeName}
               </option>
             ))}
           </select>
@@ -1088,10 +1126,9 @@ export default function SettingsPage() {
           </div>
         ) : (
           visibleTargetLanguages.map((tl) => {
-            const catalog = languageOptions.find((l) => l.code === tl.targetLanguage);
             return (
               <div key={tl.targetLanguage} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0">
-                <span className="text-xl leading-none">{catalog?.flagEmoji ?? languageFlag(tl.targetLanguage)}</span>
+                <CatalogLanguageFlag code={tl.targetLanguage} className="h-4 w-6" />
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-[#1e2939] min-w-0 truncate">{languageUiName(tl.targetLanguage, locale)}</div>
                   <div className="text-xs text-[#99a1af] mt-0.5">

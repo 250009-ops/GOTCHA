@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { signAvatar } from './avatar-sign';
 type SharpChain = {
   rotate: () => SharpChain;
   resize: (w: number, h: number, opts: { fit: 'inside'; withoutEnlargement: boolean }) => SharpChain;
@@ -10,7 +10,7 @@ type SharpChain = {
   jpeg: () => { toBuffer: () => Promise<Buffer> };
 };
 
-function loadSharp(): ((input?: unknown, options?: unknown) => SharpChain) | null {
+export function loadSharp(): ((input?: unknown, options?: unknown) => SharpChain) | null {
   try {
     const impl = require('sharp') as { default?: unknown };
     const fn = (impl?.default ?? impl) as (input?: unknown, options?: unknown) => SharpChain;
@@ -24,10 +24,14 @@ const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[
 
 /** Avatars live outside the nginx `/uploads/` alias so a logged-out GET cannot read them. */
 export function privateAvatarsDir() {
-  return (
-    process.env.PRIVATE_AVATARS_DIR ??
-    join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), '..', 'private-avatars')
-  );
+  const configured = process.env.PRIVATE_AVATARS_DIR;
+  if (!configured) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('PRIVATE_AVATARS_DIR is required in production');
+    }
+    return join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), '..', 'private-avatars');
+  }
+  return configured;
 }
 
 export function avatarPublicPath(fileName: string) {
@@ -41,13 +45,17 @@ export function avatarFileName(url: string | null | undefined): string | null {
   return FILE_NAME.test(name) ? name : null;
 }
 
-/** Drop hotlinked and legacy public paths. Only the authenticated avatar route is returned. */
+/** Sign a private avatar, or drop a legacy public path (logged, never rewritten here). */
 export function safeAvatarUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  const path = url.split('?')[0] ?? '';
+  if (path.includes('/uploads/avatars/')) {
+    console.warn(`avatar-legacy left unmigrated ${path.split('/').pop()}`);
+    return null;
+  }
   const name = avatarFileName(url);
-  if (!name) return null;
-  const path = (url ?? '').split('?')[0];
-  if (!path.endsWith(`/users/avatars/${name}`)) return null;
-  return url ?? null;
+  if (!name || !path.endsWith(`/users/avatars/${name}`)) return null;
+  return signAvatar(name);
 }
 
 /** Drop JPEG APP1 (EXIF/GPS) and APP13 when this host cannot run sharp. */
@@ -70,76 +78,104 @@ export function stripJpegMetadata(input: Buffer): Buffer {
   return Buffer.concat(parts);
 }
 
-/** Re-encode to WebP, max 512px, no EXIF/GPS when sharp loads. Otherwise strip JPEG metadata only. */
-export async function encodeAvatar(input: Buffer): Promise<{ bytes: Buffer; ext: 'webp' | 'jpg' | 'png' }> {
+/** Re-encode to WebP, max 512px, no EXIF. Throws when sharp cannot load — callers must not store the original. */
+export async function encodeAvatar(input: Buffer): Promise<{ bytes: Buffer; ext: 'webp' }> {
   const sharp = loadSharp();
-  if (sharp) {
-    const bytes = await sharp(input, { failOn: 'none', unlimited: false })
-      .rotate()
-      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-      .webp({ quality: 80 })
-      .toBuffer();
-    return { bytes, ext: 'webp' };
+  if (!sharp) {
+    const err = new Error('AVATAR_PROCESSING_UNAVAILABLE');
+    throw err;
   }
-  if (input[0] === 0x89 && input[1] === 0x50) return { bytes: input, ext: 'png' };
-  if (input[0] === 0xff && input[1] === 0xd8) return { bytes: stripJpegMetadata(input), ext: 'jpg' };
-  return { bytes: input, ext: 'webp' };
+  const inputMeta = await sharp(input, { failOn: 'none', limitInputPixels: 4096 * 4096 }).metadata();
+  if ((inputMeta.width ?? 0) < 64 || (inputMeta.height ?? 0) < 64) {
+    throw new Error('Image must be at least 64 pixels on each side.');
+  }
+  const bytes = await sharp(input, { failOn: 'none', limitInputPixels: 4096 * 4096 })
+    .rotate()
+    .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toBuffer();
+  const meta = await sharp(bytes).metadata();
+  if (meta.format !== 'webp' || (meta.width ?? 0) > 512 || meta.exif) {
+    throw new Error('Could not process that image.');
+  }
+  return { bytes, ext: 'webp' };
 }
 
-type AvatarDb = {
+const LEGACY_FILE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(webp|jpe?g|png)$/i;
+
+export type AvatarMigrateDb = {
   user: {
-    updateMany(args: unknown): Promise<unknown>;
-    findMany(args: unknown): Promise<Array<{ id: string; avatarUrl: string | null }>>;
+    findFirst(args: unknown): Promise<{ id: string; avatarUrl: string | null } | null>;
     update(args: unknown): Promise<unknown>;
   };
 };
 
-/** One-shot: drop stock-photo URLs and re-encode files that still sit in the public uploads folder. */
-export async function reprocessAvatarsOnce(db: AvatarDb) {
-  const dir = privateAvatarsDir();
-  await mkdir(dir, { recursive: true });
-  const marker = join(dir, '.reprocessed-v1');
-  if (existsSync(marker)) return;
-  await db.user.updateMany({
-    where: {
-      OR: [
-        { avatarUrl: { startsWith: 'https://images.unsplash.com/' } },
-        { avatarUrl: { startsWith: 'http://' } },
-        { avatarUrl: { startsWith: 'https://' } },
-      ],
-    },
-    data: { avatarUrl: null },
-  });
-  const publicDir = join(process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'), 'avatars');
+/**
+ * Move public `uploads/avatars/<userId>.<ext>` files into the private dir.
+ * A missing or unreadable file is a failure: the database URL is left as it is.
+ * The marker is written only when nothing failed.
+ */
+export async function migratePublicAvatars(opts: {
+  db: AvatarMigrateDb;
+  publicDir: string;
+  privateDir: string;
+  dryRun?: boolean;
+  encode?: (input: Buffer) => Promise<Buffer>;
+}): Promise<{ ok: number; skipped: number; failed: number }> {
+  const { db, publicDir, privateDir, dryRun } = opts;
+  const encode = opts.encode ?? (async (input: Buffer) => (await encodeAvatar(input)).bytes);
   let names: string[] = [];
   try {
-    names = await readdir(publicDir);
-  } catch {
-    names = [];
+    names = (await readdir(publicDir, { withFileTypes: true })).filter((d) => d.isFile()).map((d) => d.name);
+  } catch (err) {
+    console.error(`avatar-migrate fail readdir ${(err as Error).message}`);
+    return { ok: 0, skipped: 0, failed: 1 };
   }
-  const users = await db.user.findMany({
-    where: { avatarUrl: { contains: '/uploads/avatars/' } },
-    select: { id: true, avatarUrl: true },
-  });
-  for (const user of users) {
-    const oldName = (user.avatarUrl ?? '').split('?')[0]?.split('/').pop();
-    if (!oldName || !names.includes(oldName)) {
-      await db.user.update({ where: { id: user.id }, data: { avatarUrl: null } });
+  await mkdir(privateDir, { recursive: true });
+  await mkdir(join(publicDir, '.migrated'), { recursive: true });
+  let ok = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (const name of names) {
+    if (!LEGACY_FILE.test(name)) {
+      skipped++;
+      console.log(`avatar-migrate skip ${name} not-a-user-file`);
+      continue;
+    }
+    const id = name.replace(/\.(jpe?g|png|webp)$/i, '');
+    const user = await db.user.findFirst({ where: { id, deletedAt: null }, select: { id: true, avatarUrl: true } }).catch(() => null);
+    if (!user) {
+      skipped++;
+      console.log(`avatar-migrate skip ${name} no-live-user`);
+      continue;
+    }
+    if (user.avatarUrl && user.avatarUrl.includes('/users/avatars/')) {
+      skipped++;
+      console.log(`avatar-migrate skip ${name} user-has-new-avatar`);
       continue;
     }
     try {
-      const raw = await readFile(join(publicDir, oldName));
-      const encoded = await encodeAvatar(raw);
-      const fileName = `${randomUUID()}.${encoded.ext}`;
-      await writeFile(join(dir, fileName), encoded.bytes);
-      await db.user.update({
-        where: { id: user.id },
-        data: { avatarUrl: `${avatarPublicPath(fileName)}?v=${Date.now()}` },
-      });
-      await rm(join(publicDir, oldName), { force: true });
-    } catch {
-      await db.user.update({ where: { id: user.id }, data: { avatarUrl: null } });
+      const raw = await readFile(join(publicDir, name));
+      const out = await encode(raw);
+      const fn = `${randomUUID()}.webp`;
+      if (!dryRun) {
+        await writeFile(join(privateDir, `${fn}.tmp`), out);
+        await rename(join(privateDir, `${fn}.tmp`), join(privateDir, fn));
+        await db.user.update({ where: { id }, data: { avatarUrl: `${avatarPublicPath(fn)}?v=${Date.now()}` } });
+        await rename(join(publicDir, name), join(publicDir, '.migrated', name));
+      }
+      ok++;
+      console.log(`avatar-migrate ok user=${id} src=${name} -> ${fn}${dryRun ? ' dry' : ''}`);
+    } catch (err) {
+      failed++;
+      console.error(`avatar-migrate fail user=${id} src=${name} ${(err as Error).message}`);
     }
   }
-  await writeFile(marker, new Date().toISOString());
+  if (!dryRun && failed === 0) {
+    await writeFile(
+      join(privateDir, '.reprocessed-v2'),
+      JSON.stringify({ at: new Date().toISOString(), ok, skipped, failed }),
+    );
+  }
+  return { ok, skipped, failed };
 }

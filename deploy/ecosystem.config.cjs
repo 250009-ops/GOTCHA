@@ -15,6 +15,9 @@ module.exports = {
       },
       // PDF screenshot + OCR needs headroom; 512M was restarting mid-scan and leaving imports stuck at 0/N.
       max_memory_restart: '1024M',
+      exp_backoff_restart_delay: 200,
+      max_restarts: 20,
+      min_uptime: '20s',
     },
     {
       // Postgres import queue. The old Bull worker in services/worker stays on disk and is not started.
@@ -28,6 +31,9 @@ module.exports = {
         NODE_ENV: 'production',
       },
       max_memory_restart: '1024M',
+      exp_backoff_restart_delay: 200,
+      max_restarts: 20,
+      min_uptime: '20s',
     },
   ],
 };

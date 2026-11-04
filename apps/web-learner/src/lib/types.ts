@@ -45,6 +45,7 @@ export interface UserProfile {
   streakCount: number;
   streakLastDate?: string | null;
   emailVerifiedAt?: string | null;
+  birthYear?: number | null;
   aiDisabled?: boolean;
   aiDisabledBy?: string | null;
   targetLanguages?: UserTargetLanguage[];

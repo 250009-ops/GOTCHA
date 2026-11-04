@@ -1,9 +1,9 @@
 import { limitDayStart } from '../../common/plan-limits';
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException, ForbiddenException } from '@nestjs/common';
-import { access, mkdir, rm, writeFile } from 'fs/promises';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, ServiceUnavailableException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { access, mkdir, rename, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
-import { avatarFileName, avatarPublicPath, encodeAvatar, privateAvatarsDir, reprocessAvatarsOnce, safeAvatarUrl } from './avatar-image';
+import { avatarFileName, avatarPublicPath, encodeAvatar, loadSharp, privateAvatarsDir, safeAvatarUrl } from './avatar-image';
 
 import * as bcrypt from 'bcryptjs';
 
@@ -33,7 +33,7 @@ import {
 
 @Injectable()
 
-export class UsersService implements OnModuleInit {
+export class UsersService {
 
   private readonly logger = new Logger('UsersService');
 
@@ -43,15 +43,6 @@ export class UsersService implements OnModuleInit {
     private devAuth: DevAuthService,
 
   ) {}
-
-  async onModuleInit() {
-    if (!this.prisma.dbAvailable) return;
-    try {
-      await reprocessAvatarsOnce(this.prisma);
-    } catch (err) {
-      this.logger.warn(`Avatar reprocess skipped: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
 
   async avatarAbsolutePath(file: string) {
     const name = avatarFileName(file);
@@ -404,33 +395,53 @@ export class UsersService implements OnModuleInit {
       throw new BadRequestException('Image must be 2 MB or smaller.');
     }
 
+    if (!loadSharp()) {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        code: 'AVATAR_PROCESSING_UNAVAILABLE',
+        message: 'Photo upload is temporarily unavailable.',
+      });
+    }
     const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
-    await this.deleteAvatarFile(previous?.avatarUrl);
     const dir = privateAvatarsDir();
     await mkdir(dir, { recursive: true });
-    let encoded: { bytes: Buffer; ext: 'webp' | 'jpg' | 'png' };
+    let encoded: { bytes: Buffer; ext: 'webp' };
     try {
       encoded = await encodeAvatar(file.buffer);
-    } catch {
+    } catch (err) {
+      if (err instanceof Error && err.message === 'AVATAR_PROCESSING_UNAVAILABLE') {
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          code: 'AVATAR_PROCESSING_UNAVAILABLE',
+          message: 'Photo upload is temporarily unavailable.',
+        });
+      }
       throw new BadRequestException('Could not process that image.');
     }
     const fileName = `${randomUUID()}.${encoded.ext}`;
-    await writeFile(join(dir, fileName), encoded.bytes);
-    const avatarUrl = `${avatarPublicPath(fileName)}?v=${Date.now()}`;
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { avatarUrl },
-      select: {
-        id: true,
-        email: true,
-        displayName: true,
-        avatarUrl: true,
-        uiLanguage: true,
-        nativeLanguage: true,
-        streakCount: true,
-      },
-    });
+    const finalPath = join(dir, fileName);
+    await writeFile(`${finalPath}.tmp`, encoded.bytes);
+    await rename(`${finalPath}.tmp`, finalPath);
+    try {
+      const row = await this.prisma.user.update({
+        where: { id: userId },
+        data: { avatarUrl: `${avatarPublicPath(fileName)}?v=${Date.now()}` },
+        select: {
+          id: true,
+          email: true,
+          displayName: true,
+          avatarUrl: true,
+          uiLanguage: true,
+          nativeLanguage: true,
+          streakCount: true,
+        },
+      });
+      await this.deleteAvatarFile(previous?.avatarUrl);
+      return { ...row, avatarUrl: safeAvatarUrl(row.avatarUrl) };
+    } catch (err) {
+      await rm(finalPath, { force: true });
+      throw err;
+    }
   }
 
   async removeAvatar(userId: string) {
@@ -439,7 +450,7 @@ export class UsersService implements OnModuleInit {
     }
     const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
     await this.deleteAvatarFile(previous?.avatarUrl);
-    return this.prisma.user.update({
+    const row = await this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl: null },
       select: {
@@ -452,6 +463,7 @@ export class UsersService implements OnModuleInit {
         streakCount: true,
       },
     });
+    return { ...row, avatarUrl: safeAvatarUrl(row.avatarUrl) };
   }
 
   async updatePreferences(userId: string, dto: UpdatePreferencesDto) {
@@ -771,8 +783,20 @@ export class UsersService implements OnModuleInit {
   async setAge(userId: string, birthYear: number | null | undefined) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
+    const thisYear = new Date().getUTCFullYear();
+    if (birthYear != null && (birthYear > thisYear - 5 || birthYear < thisYear - 100)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'BIRTH_YEAR_INVALID',
+        message: 'Choose a birth year between five and one hundred years ago.',
+      });
+    }
     if (birthYear != null && user.birthYear != null && user.birthYear !== birthYear) {
-      throw new ConflictException('Your birth year is already set. Contact support@gotchaa.uz to change it.');
+      throw new ConflictException({
+        statusCode: 409,
+        code: 'BIRTH_YEAR_LOCKED',
+        message: 'Your birth year is already set. Contact support@gotchaa.uz to change it.',
+      });
     }
     await this.prisma.user.update({
       where: { id: userId },

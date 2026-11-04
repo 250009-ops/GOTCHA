@@ -4,6 +4,7 @@ import { BadRequestException, HttpException, Injectable, Logger, NotFoundExcepti
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizeReport } from '../messaging/messaging-safety';
 import { removeFriend, respondFriendRequest, sendFriendRequest } from './friend-gate';
+import { safeAvatarUrl } from '../users/avatar-image';
 
 @Injectable()
 export class SafetyService {
@@ -22,12 +23,15 @@ export class SafetyService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    const view = (r: (typeof rows)[0]) => ({
-      id: r.id,
-      status: r.status,
-      createdAt: r.createdAt,
-      user: r.requesterId === userId ? r.addressee : r.requester,
-    });
+    const view = (r: (typeof rows)[0]) => {
+      const user = r.requesterId === userId ? r.addressee : r.requester;
+      return {
+        id: r.id,
+        status: r.status,
+        createdAt: r.createdAt,
+        user: { ...user, avatarUrl: safeAvatarUrl(user.avatarUrl) },
+      };
+    };
     return {
       friends: rows.filter((r) => r.status === 'accepted').map(view),
       incoming: rows.filter((r) => r.status === 'pending' && r.addresseeId === userId).map(view),

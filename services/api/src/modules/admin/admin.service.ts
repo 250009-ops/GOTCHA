@@ -10,6 +10,7 @@ import { PLUS_DEFAULT_PRICES, PLUS_SETTING_KEYS, adminGrantEnd, plusPassConfig }
 import { projectPlus } from '../billing/entitlements.service';
 import { fairUseCap } from '../../common/plan-active';
 import { UsersService } from '../users/users.service';
+import { safeAvatarUrl } from '../users/avatar-image';
 import { getPlanCaps, resetPlanCapsCache, usageDayOffset, usageDayStart } from '../../common/plan-caps';
 import {
   AppLanguage,
@@ -3168,7 +3169,7 @@ export class AdminService {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: safeAvatarUrl(user.avatarUrl),
       role: user.adminProfile?.role ?? null,
     };
   }
@@ -3206,7 +3207,7 @@ export class AdminService {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
-      avatarUrl: user.avatarUrl,
+      avatarUrl: safeAvatarUrl(user.avatarUrl),
       role: user.adminProfile?.role ?? null,
     };
   }
@@ -3246,7 +3247,7 @@ export class AdminService {
       id: u.id,
       email: u.email,
       displayName: u.displayName,
-      avatarUrl: u.avatarUrl,
+      avatarUrl: safeAvatarUrl(u.avatarUrl),
       createdAt: u.createdAt,
       streakCount: u.streakCount,
       targetLanguage: primary ? this.langLabel(primary.targetLanguage) : '—',

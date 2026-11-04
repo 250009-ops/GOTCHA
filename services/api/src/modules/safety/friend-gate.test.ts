@@ -32,6 +32,7 @@ function fake(users: Record<string, number | null>) {
   await assert.rejects(assertCanMessage(p as any, 'teen', 'adult'), /cannot message/);
   await assert.rejects(assertCanMessage(p as any, 'adult', 'teen'), /cannot message/);
   await assert.rejects(assertCanMessage(p as any, 'unknown', 'adult'), /birth year/);
+  await assert.rejects(assertCanMessage(p as any, 'adult', 'unknown'), /can't receive/);
   await assert.rejects(sendFriendRequest(p as any, 'kid', 'teen'), /not available/);
   await assert.rejects(sendFriendRequest(p as any, 'unknown', 'teen'), /birth year/);
   const r = await sendFriendRequest(p as any, 'teen', 'teen2');

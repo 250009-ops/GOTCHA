@@ -20,7 +20,8 @@ export function UserAvatar({
   const [failedUrl, setFailedUrl] = useState<string | null>(null);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const resolved = resolveMediaUrl(url);
-  const authed = Boolean(resolved && resolved.includes('/users/avatars/'));
+  const signed = Boolean(resolved && /[?&]sig=/.test(resolved));
+  const authed = Boolean(resolved && resolved.includes('/users/avatars/') && !signed);
   useEffect(() => {
     if (!authed || !resolved) {
       setBlobUrl(null);

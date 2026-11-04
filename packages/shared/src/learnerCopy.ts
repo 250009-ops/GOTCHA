@@ -125,6 +125,9 @@ export interface LearnerCopy {
     displayNamePlaceholder: string;
     nativeLanguage: string;
     nativeLanguageHint: string;
+    birthYear: string;
+    birthYearHint: string;
+    birthYearLocked: string;
     appLanguage: string;
     appLanguageHint: string;
     email: string;
@@ -477,6 +480,9 @@ const EN: LearnerCopy = {
     displayNamePlaceholder: 'Your name',
     nativeLanguage: 'Native language',
     nativeLanguageHint: 'Used for translations and lookups',
+    birthYear: 'Birth year',
+    birthYearHint: 'Needed for messages and friends. You can set it once.',
+    birthYearLocked: 'Contact support@gotchaa.uz to change it.',
     appLanguage: 'App language',
     appLanguageHint: 'Interface language on web and mobile. Same account value.',
     email: 'Email',
@@ -833,6 +839,9 @@ const RU: LearnerCopy = {
     displayNamePlaceholder: 'Ваше имя',
     nativeLanguage: 'Родной язык',
     nativeLanguageHint: 'Для переводов и поиска слов',
+    birthYear: 'Год рождения',
+    birthYearHint: 'Нужен для сообщений и друзей. Указать можно один раз.',
+    birthYearLocked: 'Чтобы изменить, напишите на support@gotchaa.uz.',
     appLanguage: 'Язык приложения',
     appLanguageHint: 'Язык интерфейса на веб и в приложении.',
     email: 'Email',
@@ -1192,6 +1201,9 @@ const UZ: LearnerCopy = {
     displayNamePlaceholder: 'Ismingiz',
     nativeLanguage: 'Ona tili',
     nativeLanguageHint: 'Tarjima va soʻz qidirish uchun',
+    birthYear: 'Tugʻilgan yil',
+    birthYearHint: 'Xabar va doʻstlar uchun kerak. Bir marta kiritiladi.',
+    birthYearLocked: 'Oʻzgartirish uchun support@gotchaa.uz ga yozing.',
     appLanguage: 'Ilova tili',
     appLanguageHint: 'Veb va mobil interfeys tili. Bir xil sozlama.',
     email: 'Email',
