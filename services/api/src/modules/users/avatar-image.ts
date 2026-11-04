@@ -2,18 +2,23 @@ import { randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import sharpImpl = require('sharp');
-
 type SharpChain = {
   rotate: () => SharpChain;
   resize: (w: number, h: number, opts: { fit: 'inside'; withoutEnlargement: boolean }) => SharpChain;
   webp: (opts: { quality: number }) => { toBuffer: () => Promise<Buffer> };
+  metadata: () => Promise<{ format?: string; width?: number; height?: number; exif?: unknown }>;
+  jpeg: () => { toBuffer: () => Promise<Buffer> };
 };
 
-const sharp = (((sharpImpl as unknown as { default?: unknown }).default ?? sharpImpl) as unknown) as (
-  input?: unknown,
-  options?: unknown,
-) => SharpChain;
+function loadSharp(): ((input?: unknown, options?: unknown) => SharpChain) | null {
+  try {
+    const impl = require('sharp') as { default?: unknown };
+    const fn = (impl?.default ?? impl) as (input?: unknown, options?: unknown) => SharpChain;
+    return typeof fn === 'function' ? fn : null;
+  } catch {
+    return null;
+  }
+}
 
 const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/i;
 
@@ -47,6 +52,8 @@ export function safeAvatarUrl(url: string | null | undefined): string | null {
 
 /** Re-encode to WebP, max 512px, no EXIF/GPS (sharp does not copy metadata unless asked). */
 export async function encodeAvatar(input: Buffer): Promise<Buffer> {
+  const sharp = loadSharp();
+  if (!sharp) throw new Error('Image processing is unavailable');
   return sharp(input, { failOn: 'none', unlimited: false })
     .rotate()
     .resize(512, 512, { fit: 'inside', withoutEnlargement: true })

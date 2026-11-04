@@ -408,7 +408,12 @@ export class UsersService implements OnModuleInit {
     await this.deleteAvatarFile(previous?.avatarUrl);
     const dir = privateAvatarsDir();
     await mkdir(dir, { recursive: true });
-    const encoded = await encodeAvatar(file.buffer);
+    let encoded: Buffer;
+    try {
+      encoded = await encodeAvatar(file.buffer);
+    } catch {
+      throw new BadRequestException('Could not process that image.');
+    }
     const fileName = `${randomUUID()}.webp`;
     await writeFile(join(dir, fileName), encoded);
     const avatarUrl = `${avatarPublicPath(fileName)}?v=${Date.now()}`;
