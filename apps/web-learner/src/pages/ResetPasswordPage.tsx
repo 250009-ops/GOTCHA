@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, CheckCircle2, Eye, EyeOff } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Eye, EyeOff, Lock } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
@@ -75,13 +75,13 @@ export default function ResetPasswordPage() {
     return (
       <AuthShell>
         <div className="w-full max-w-[448px] min-w-0">
-          <div className="bg-white border border-[#e5e7eb] rounded-2xl p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)] text-center">
-            <h2 className="text-2xl font-extrabold text-[#101828] leading-8">{copy.authPages.openAppTitle}</h2>
+          <div className="bg-white border border-[#e6e8f0] rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 shadow-[0_24px_48px_-24px_rgba(16,24,40,0.18)] text-center">
+            <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">{copy.authPages.openAppTitle}</h2>
             <p className="text-[#6b7280] text-sm leading-5">{copy.authPages.openAppBody}</p>
             <Button
               type="button"
               onClick={() => tryOpenGotchaAuthApp('reset-password', token, searchParams)}
-              className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+              className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
             >
               {copy.authPages.openGotchaApp}
             </Button>
@@ -101,14 +101,14 @@ export default function ResetPasswordPage() {
   return (
     <AuthShell>
       <div className="w-full max-w-[448px] min-w-0">
-        <div className="bg-white border border-[#e5e7eb] rounded-2xl p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
+        <div className="bg-white border border-[#e6e8f0] rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 shadow-[0_24px_48px_-24px_rgba(16,24,40,0.18)]">
           {done ? (
             <>
               <div className="flex flex-col gap-1.5 text-center">
                 <div className="flex justify-center mb-2">
-                  <CheckCircle2 className="w-12 h-12 text-emerald-500" />
+                  <span className="grid place-items-center size-[72px] rounded-[22px] bg-emerald-50"><CheckCircle2 className="w-9 h-9 text-emerald-600" strokeWidth={1.8} /></span>
                 </div>
-                <h2 className="text-2xl font-extrabold text-[#101828] leading-8">{copy.authPages.resetUpdatedTitle}</h2>
+                <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">{copy.authPages.resetUpdatedTitle}</h2>
                 <p className="text-[#6b7280] text-sm leading-5">
                   {adminReturnUrl ? copy.authPages.resetUpdatedAdminBody : copy.authPages.resetUpdatedBody}
                 </p>
@@ -116,7 +116,7 @@ export default function ResetPasswordPage() {
               <Button
                 type="button"
                 onClick={() => navigate(loginPath)}
-                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+                className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
               >
                 {copy.auth.signIn}
               </Button>
@@ -124,13 +124,13 @@ export default function ResetPasswordPage() {
           ) : missingToken ? (
             <>
               <div className="flex flex-col gap-1.5">
-                <h2 className="text-2xl font-extrabold text-[#101828] leading-8">{copy.authPages.linkInvalidTitle}</h2>
+                <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">{copy.authPages.linkInvalidTitle}</h2>
                 <p className="text-[#6b7280] text-sm leading-5">{copy.authPages.linkInvalidBody}</p>
               </div>
               <Button
                 type="button"
                 onClick={() => navigate('/forgot-password')}
-                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+                className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
               >
                 {copy.authPages.forgotTitle}
               </Button>
@@ -144,7 +144,7 @@ export default function ResetPasswordPage() {
           ) : (
             <>
               <div className="flex flex-col gap-1.5">
-                <h2 className="text-2xl font-extrabold text-[#101828] leading-8">{copy.authPages.resetChooseTitle}</h2>
+                <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">{copy.authPages.resetChooseTitle}</h2>
                 <p className="text-[#6b7280] text-sm leading-5">{copy.authPages.resetChooseSubtitle}</p>
               </div>
 
@@ -152,13 +152,14 @@ export default function ResetPasswordPage() {
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-[#4a5565]">{copy.settings.newPassword}</label>
                   <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                     <input
                       type={showPass ? 'text' : 'password'}
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={copy.auth.passwordPlaceholderRegister}
                       autoComplete="new-password"
-                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
+                      className="w-full h-12 pl-11 pr-12 bg-white border border-[#dfe2ec] rounded-xl text-[15px] text-[#101828] placeholder:text-[#9aa0ae] hover:border-[#c5cafd] outline-none focus:border-g-blue-700 focus:ring-4 focus:ring-g-blue-700/10 transition-all"
                     />
                     <button
                       type="button"
@@ -173,13 +174,14 @@ export default function ResetPasswordPage() {
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-semibold text-[#4a5565]">{copy.settings.confirmPassword}</label>
                   <div className="relative">
+                    <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                     <input
                       type={showConfirm ? 'text' : 'password'}
                       value={confirm}
                       onChange={(e) => setConfirm(e.target.value)}
                       placeholder={copy.authPages.resetConfirmPlaceholder}
                       autoComplete="new-password"
-                      className="w-full h-11 pl-3.5 pr-11 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#9ca3af] outline-none focus:ring-2 focus:ring-g-blue-700/20 focus:border-g-blue-700 focus:bg-white transition-all"
+                      className="w-full h-12 pl-11 pr-12 bg-white border border-[#dfe2ec] rounded-xl text-[15px] text-[#101828] placeholder:text-[#9aa0ae] hover:border-[#c5cafd] outline-none focus:border-g-blue-700 focus:ring-4 focus:ring-g-blue-700/10 transition-all"
                     />
                     <button
                       type="button"
@@ -198,7 +200,7 @@ export default function ResetPasswordPage() {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+                  className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
