@@ -128,7 +128,8 @@ try {
       'cd services/api && npx prisma migrate deploy && cd "$APP"',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',
-      'python3 "$APP/scripts/deny-public-avatars.py"',
+      `python3 -c 'from pathlib import Path; p=Path("/etc/nginx/sites-available/gotcha"); t=p.read_text() if p.exists() else ""; n="location ^~ /uploads/avatars/"; a="    location /uploads/ {"; b="    location ^~ /uploads/avatars/ {\\n        default_type application/json;\\n        return 401;\\n    }\\n\\n";
+print("skip") if (not t or n in t or a not in t) else p.write_text(t.replace(a, b.encode().decode("unicode_escape")+a, 1)) or print("denied")'`,
       'nginx -t && systemctl reload nginx',
     ].join(' && '),
     900_000,
