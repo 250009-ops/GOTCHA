@@ -1430,7 +1430,7 @@ const EXT_UZ: LearnerCopyExt = {
   peerProfile: {
     title: 'Profil',
     loading: 'Yuklanmoqda…',
-    message: (name) => `${name} ga yozish`,
+    message: (name) => `${name}ga yozish`,
     memberSince: (date) => `${date} dan aʼzo`,
     booksRead: 'Oʻqilgan kitoblar',
     wordsLearned: 'Oʻrganilgan soʻzlar',

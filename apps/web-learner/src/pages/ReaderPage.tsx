@@ -11,9 +11,12 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
+  Flag,
   GraduationCap,
   Loader2,
   Minus,
+  MoreHorizontal,
+  Type,
   PanelLeftClose,
   PanelLeftOpen,
   Plus,
@@ -105,6 +108,56 @@ const STATUS_STYLES: Record<WordStatus, string> = {
   known: 'border-b-[1.6px] border-solid border-emerald-400 cursor-pointer hover:bg-emerald-50/80 rounded-[6px]',
   ignored: 'text-gray-400 cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
 };
+
+/** Dark reading theme needs lighter status colours for contrast. */
+const STATUS_STYLES_DARK: Record<WordStatus, string> = {
+  unknown: 'border-b-[1.6px] border-dashed border-[#fbbf24] text-[#fcd34d] cursor-pointer hover:bg-white/10 rounded-[6px]',
+  learning: 'border-b-[1.6px] border-solid border-[#60a5fa] text-[#bfdbfe] cursor-pointer hover:bg-white/10 rounded-[6px]',
+  known: 'border-b-[1.6px] border-solid border-emerald-400 cursor-pointer hover:bg-white/10 rounded-[6px]',
+  ignored: 'text-stone-500 cursor-pointer hover:bg-white/10 rounded-[6px]',
+};
+
+/** Reader strings not in the shared copy yet (uz / ru / en). */
+const RX = {
+  en: {
+    display: 'Text & display', textSize: 'Text size', lineSpacing: 'Line spacing', theme: 'Page colour',
+    themes: { light: 'Light', sepia: 'Sepia', dark: 'Dark' }, pronounce: 'Pronounce words', on: 'On', off: 'Off',
+    more: 'More', report: 'Report this book', onPage: 'on this page',
+    pageOfBook: (n: number, total: number, pct: number) => `Page ${n} of ${total} · ${pct}% of the book`,
+    spacing: ['Compact', 'Normal', 'Relaxed', 'Wide'],
+    aiOff: 'AI lookups are temporarily disabled. Please try again later.',
+    aiPaused: 'AI lookups are paused for today. Try again tomorrow.',
+    aiLimit: 'Daily AI lookup limit reached. Try again tomorrow.',
+    aiUnavailable: 'AI lookup is unavailable right now. Please try again later.',
+    aiFailed: 'AI lookup failed. Please try again in a moment.',
+  },
+  ru: {
+    display: 'Текст и вид', textSize: 'Размер текста', lineSpacing: 'Межстрочный интервал', theme: 'Цвет страницы',
+    themes: { light: 'Светлая', sepia: 'Сепия', dark: 'Тёмная' }, pronounce: 'Произношение слов', on: 'Вкл', off: 'Выкл',
+    more: 'Ещё', report: 'Пожаловаться на книгу', onPage: 'на этой странице',
+    pageOfBook: (n: number, total: number, pct: number) => `Страница ${n} из ${total} · ${pct}% книги`,
+    spacing: ['Плотно', 'Обычно', 'Свободно', 'Широко'],
+    aiOff: 'ИИ-перевод временно отключён. Попробуйте позже.',
+    aiPaused: 'ИИ-перевод на сегодня приостановлен. Попробуйте завтра.',
+    aiLimit: 'Дневной лимит ИИ-переводов исчерпан. Попробуйте завтра.',
+    aiUnavailable: 'ИИ-перевод сейчас недоступен. Попробуйте позже.',
+    aiFailed: 'Не удалось получить перевод. Попробуйте ещё раз.',
+  },
+  uz: {
+    display: 'Matn va koʻrinish', textSize: 'Matn oʻlchami', lineSpacing: 'Qatorlar oraligʻi', theme: 'Sahifa rangi',
+    themes: { light: 'Oq', sepia: 'Sepiya', dark: 'Tungi' }, pronounce: 'Soʻzlarni talaffuz qilish', on: 'Yoqilgan', off: 'Oʻchiq',
+    more: 'Boshqa', report: 'Kitob haqida shikoyat', onPage: 'shu sahifada',
+    pageOfBook: (n: number, total: number, pct: number) => `${n}-sahifa, jami ${total} · kitobning ${pct}%`,
+    spacing: ['Zich', 'Oʻrtacha', 'Keng', 'Juda keng'],
+    aiOff: 'AI izohlar vaqtincha oʻchirilgan. Keyinroq urinib koʻring.',
+    aiPaused: 'AI izohlar bugun uchun toʻxtatildi. Ertaga urinib koʻring.',
+    aiLimit: 'Bugungi AI izohlar limiti tugadi. Ertaga urinib koʻring.',
+    aiUnavailable: 'AI izoh hozir mavjud emas. Keyinroq urinib koʻring.',
+    aiFailed: 'AI izoh olinmadi. Birozdan soʻng qayta urinib koʻring.',
+  },
+};
+const LINE_SPACINGS = [1.3, 1.6, 1.9, 2.2] as const;
+const READER_THEMES = ['light', 'sepia', 'dark'] as const;
 
 const LONG_PRESS_MS = 380;
 const DRAG_CANCEL_PX = 10;
@@ -301,6 +354,11 @@ export default function ReaderPage() {
   const [pageDraft, setPageDraft] = useState('1');
   const [accessNonce, setAccessNonce] = useState(0);
   const [paywallOpen, setPaywallOpen] = useState(false);
+  const [displayOpen, setDisplayOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const displayRef = useRef<HTMLDivElement>(null);
+  const moreRef = useRef<HTMLDivElement>(null);
+  const rx = RX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
   const readingPaneRef = useRef<HTMLDivElement>(null);
   const readerBodyRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{
@@ -523,10 +581,11 @@ export default function ReaderPage() {
     [wordStatuses],
   );
 
+  // Counts describe the page on screen (prefetched neighbours used to inflate them as you paged).
   const { unknownCount, learningCount } = useMemo(() => {
     const unknown = new Set<string>();
     const learning = new Set<string>();
-    for (const seg of Object.values(pageCache)) {
+    for (const seg of segment ? [segment] : []) {
       for (const t of seg.tokenMap ?? []) {
         if (!t.isWord) continue;
         const key = (t.lemma ?? t.surface).toLowerCase();
@@ -536,7 +595,7 @@ export default function ReaderPage() {
       }
     }
     return { unknownCount: unknown.size, learningCount: learning.size };
-  }, [pageCache, lemmaStatus]);
+  }, [segment, lemmaStatus]);
 
   const persistFontScale = (next: number) => {
     setFontScale(next);
@@ -599,22 +658,22 @@ export default function ReaderPage() {
         } else if ((e as { code?: string } | null)?.code === 'lookup_limit') {
           message = raw;
         } else if (/disabled by an administrator/i.test(raw)) {
-          message = 'AI lookups are temporarily disabled. Please try again later.';
+          message = rx.aiOff;
         } else if (/platform ai daily limit/i.test(raw)) {
-          message = 'AI lookups are paused for today (platform daily limit). Try again tomorrow.';
+          message = rx.aiPaused;
         } else if (/quota exceeded|daily limit reached|lookup limit reached/i.test(raw)) {
-          message = 'Daily AI lookup limit reached. Try again tomorrow.';
+          message = rx.aiLimit;
         } else if (/not configured|OPENAI_API_KEY/i.test(raw)) {
-          message = 'AI lookup is unavailable right now. Please try again later.';
+          message = rx.aiUnavailable;
         } else if (/AI lookup failed/i.test(raw)) {
-          message = 'AI lookup failed. Please try again in a moment.';
+          message = rx.aiFailed;
         }
         if (message) toast.error(message);
       } finally {
         setLookupLoading(false);
       }
     },
-    [sourceLang, targetLang, copy.errors.lookupFailed],
+    [sourceLang, targetLang, copy.errors.lookupFailed, rx],
   );
 
   const markStatus = async (status: WordStatus) => {
@@ -766,6 +825,47 @@ export default function ReaderPage() {
     setLockedSpan(null);
     setLiveSpan(null);
     setActiveLookup(null);
+  };
+
+  // Close the header popovers on outside click / Esc.
+  useEffect(() => {
+    if (!displayOpen && !moreOpen) return;
+    const onDown = (e: PointerEvent) => {
+      const t = e.target as Node;
+      if (displayOpen && displayRef.current && !displayRef.current.contains(t)) setDisplayOpen(false);
+      // Report dialog is portaled; keep the menu mounted while it is open.
+      if (moreOpen && moreRef.current && !moreRef.current.contains(t) && !(t as HTMLElement).closest?.('[role="dialog"]')) setMoreOpen(false);
+    };
+    document.addEventListener('pointerdown', onDown);
+    return () => document.removeEventListener('pointerdown', onDown);
+  }, [displayOpen, moreOpen]);
+
+  // ← / → turn pages, Esc closes the dictionary or a popover (not while typing).
+  const keyNav = useRef({ prev: () => {}, next: () => {}, esc: () => {} });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
+      if (e.altKey || e.ctrlKey || e.metaKey || document.querySelector('[role="dialog"],[role="alertdialog"]')) return;
+      if (e.key === 'ArrowRight') keyNav.current.next();
+      else if (e.key === 'ArrowLeft') keyNav.current.prev();
+      else if (e.key === 'Escape') keyNav.current.esc();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  keyNav.current = {
+    prev: () => goPrev(),
+    next: () => {
+      if (isTrial && segmentIndex >= trialLimit - 1) setPaywallOpen(true);
+      else goNext();
+    },
+    esc: () => {
+      if (displayOpen || moreOpen) {
+        setDisplayOpen(false);
+        setMoreOpen(false);
+      } else if (activeWord || dictOpen) closeDict();
+    },
   };
 
   if (loading) {
@@ -949,6 +1049,13 @@ export default function ReaderPage() {
       : readerTheme === 'dark'
         ? 'bg-[#1C1917] text-[#F5F5F4]'
         : 'bg-g-reader-bg';
+  const darkPage = readerTheme === 'dark';
+  const bodyTone = darkPage ? 'text-[#e7e5e4]' : readerTheme === 'sepia' ? 'text-[#3D2B1F]' : 'text-[#1e2939]';
+  const titleTone = darkPage ? 'text-[#fafaf9]' : readerTheme === 'sepia' ? 'text-[#2a1d14]' : 'text-[#101828]';
+  const statusStyles = darkPage ? STATUS_STYLES_DARK : STATUS_STYLES;
+  const lineSpacing = preferences?.readerLineSpacing ?? 1.5;
+  const bookPct = Math.max(1, Math.round(((segmentIndex + 1) / Math.max(1, pageCount)) * 100));
+  const ttsOn = preferences?.ttsEnabled !== false;
 
   return (
     <div className={cn('flex flex-col h-screen max-h-dvh overflow-hidden', pageTone)}>
@@ -967,91 +1074,97 @@ export default function ReaderPage() {
           <span className="font-semibold text-[#1e2939] text-sm truncate">{content.title}</span>
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
         </div>
-        {/* AI-1 / Play UGC: report a book or imported text. */}
-        <ReportButton lang={locale} target={{ kind: 'content', contentId: content.id }} />
-
-        <div className="hidden lg:flex items-center gap-2 shrink-0">
-          <div className="flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 py-1">
-            <span className="size-2 rounded bg-[#ffb900]" />
+        <div className="hidden lg:flex items-center gap-1.5 shrink-0" title={rx.onPage}>
+          <span className="inline-flex items-center gap-1.5 bg-[#fffbeb] border border-[#fee685] rounded-full px-2.5 h-7">
+            <span className="size-2 rounded-full bg-[#ffb900]" />
             <span className="text-xs font-medium text-[#bb4d00] whitespace-nowrap">{unknownCount} {copy.reader.unknown}</span>
-          </div>
-          <div className="flex items-center gap-1.5 bg-g-learning-bg border border-[#bedbff] rounded-full px-2.5 py-1">
-            <span className="size-2 rounded bg-[#51a2ff]" />
+          </span>
+          <span className="inline-flex items-center gap-1.5 bg-g-learning-bg border border-[#bedbff] rounded-full px-2.5 h-7">
+            <span className="size-2 rounded-full bg-[#51a2ff]" />
             <span className="text-xs font-medium text-g-learning-text whitespace-nowrap">{learningCount} {copy.reader.learning}</span>
-          </div>
-          <span className="bg-[#dbeafe] text-g-learning-text text-[10px] font-semibold rounded-lg px-1.5 py-0.5 leading-[15px]">
+          </span>
+          <span className="bg-[#eef0ff] text-g-blue-700 text-[11px] font-bold rounded-md px-1.5 h-6 inline-flex items-center">
             {content.cefrLevel.toUpperCase()}
           </span>
         </div>
+        <div className="hidden lg:block w-px h-5 bg-[#e5e7eb] shrink-0" />
 
-        <div className="flex items-center gap-0.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => {
-              const order = [1.3, 1.6, 1.9, 2.2] as const;
-              const cur = preferences?.readerLineSpacing ?? 1.5;
-              const next = order.find((n) => n > cur + 0.05) ?? order[0];
-              void updatePreferences({ readerLineSpacing: next });
-            }}
-            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
-            aria-label={copy.settings.lineSpacing}
-          >
-            Aa
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              const order = ['light', 'sepia', 'dark'] as const;
-              const cur = preferences?.readerTheme ?? 'light';
-              const next = order[(order.indexOf(cur as typeof order[number]) + 1) % order.length];
-              void updatePreferences({ readerTheme: next });
-            }}
-            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
-            aria-label={copy.settings.readerTheme}
-          >
-            {readerTheme === 'dark' ? '☾' : readerTheme === 'sepia' ? '◑' : '☼'}
-          </button>
-          <button
-            type="button"
-            aria-pressed={preferences?.ttsEnabled !== false}
-            onClick={() => { void updatePreferences({ ttsEnabled: preferences?.ttsEnabled === false }); }}
-            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] text-xs font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
-            aria-label={copy.settings.tts}
-          >
-            ♪
-          </button>
-          <button
-            type="button"
-            onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))}
-            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
-            aria-label={copy.reader.zoomOut}
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="text-xs text-[#99a1af] w-8 text-center tabular-nums">{zoomPct}%</span>
-          <button
-            type="button"
-            onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))}
-            className="min-h-11 min-w-11 rounded-[10px] hover:bg-gray-100 text-[#6a7282] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
-            aria-label={copy.reader.zoomIn}
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-          <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
+        <div className="flex items-center gap-1 shrink-0">
           <button
             type="button"
             onClick={() => setShowUnknownOnly((v) => !v)}
             className={cn(
-              'flex items-center gap-1.5 p-1.5 rounded-[10px] text-xs font-medium transition-colors',
-              showUnknownOnly ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#6a7282]',
+              'inline-flex items-center gap-1.5 h-9 px-2.5 rounded-[10px] text-xs font-semibold transition-colors',
+              showUnknownOnly ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#4a5565]',
             )}
             aria-pressed={showUnknownOnly}
             title={copy.reader.unknownOnlyTitle}
           >
-            <Eye className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{copy.reader.unknownOnly}</span>
+            <Eye className="w-4 h-4" />
+            <span className="hidden xl:inline">{copy.reader.unknownOnly}</span>
           </button>
-          <div className="w-px h-4 bg-[#e5e7eb] mx-1" />
+
+          <div ref={displayRef} className="relative">
+            <button
+              type="button"
+              onClick={() => { setDisplayOpen((v) => !v); setMoreOpen(false); }}
+              aria-expanded={displayOpen}
+              aria-haspopup="dialog"
+              aria-label={rx.display}
+              title={rx.display}
+              className={cn('inline-flex items-center justify-center h-9 min-w-9 px-2 rounded-[10px] transition-colors', displayOpen ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#4a5565]')}
+              data-testid="reader-display"
+            >
+              <Type className="w-4 h-4" />
+            </button>
+            {displayOpen && (
+              <div className="absolute right-0 top-11 z-40 w-[300px] bg-white border border-[#e9ebf3] rounded-2xl shadow-[0_18px_40px_rgba(16,24,40,.14)] p-4 space-y-4" role="group" aria-label={rx.display}>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.textSize}</div>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => persistFontScale(Math.max(0.75, Math.round((fontScale - 0.1) * 10) / 10))} disabled={fontScale <= 0.75} className="size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50 disabled:opacity-40" aria-label={copy.reader.zoomOut}>
+                      <Minus className="w-4 h-4" />
+                    </button>
+                    <div className="flex-1 h-9 rounded-[10px] bg-[#f6f7fb] grid place-items-center text-sm font-semibold text-[#101828] tabular-nums">{zoomPct}%</div>
+                    <button type="button" onClick={() => persistFontScale(Math.min(1.5, Math.round((fontScale + 0.1) * 10) / 10))} disabled={fontScale >= 1.5} className="size-9 rounded-[10px] border border-[#e3e5ee] grid place-items-center text-[#4a5565] hover:bg-gray-50 disabled:opacity-40" aria-label={copy.reader.zoomIn}>
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.lineSpacing}</div>
+                  <div className="grid grid-cols-4 gap-1 bg-[#f1f2f7] p-1 rounded-xl" role="radiogroup" aria-label={copy.settings.lineSpacing}>
+                    {LINE_SPACINGS.map((v, i) => {
+                      const on = Math.abs(lineSpacing - v) < 0.15 || (i === 1 && !LINE_SPACINGS.some((x) => Math.abs(lineSpacing - x) < 0.15));
+                      return (
+                        <button key={v} type="button" role="radio" aria-checked={on} onClick={() => void updatePreferences({ readerLineSpacing: v })} className={cn('h-8 rounded-[9px] text-[11.5px] font-semibold', on ? 'bg-white text-g-blue-700 shadow-sm' : 'text-[#6b7080] hover:text-[#101828]')}>
+                          {rx.spacing[i]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-semibold text-[#6b7080] mb-2">{rx.theme}</div>
+                  <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={copy.settings.readerTheme}>
+                    {READER_THEMES.map((th) => (
+                      <button key={th} type="button" role="radio" aria-checked={readerTheme === th} onClick={() => void updatePreferences({ readerTheme: th })} className={cn('h-14 rounded-xl border-2 flex flex-col items-center justify-center gap-0.5 text-[11.5px] font-semibold', th === 'light' ? 'bg-white text-[#101828]' : th === 'sepia' ? 'bg-[#F4E8D0] text-[#3D2B1F]' : 'bg-[#1C1917] text-[#F5F5F4]', readerTheme === th ? 'border-g-blue-700' : 'border-[#e3e5ee]')}>
+                        <span className="text-base font-serif leading-none">Aa</span>
+                        {rx.themes[th]}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="flex items-center justify-between gap-3 pt-3 border-t border-[#f0f1f6]">
+                  <span className="text-sm font-medium text-[#101828] inline-flex items-center gap-2"><Volume2 className="w-4 h-4 text-[#6b7080]" />{rx.pronounce}</span>
+                  <button type="button" role="switch" aria-checked={ttsOn} aria-label={copy.settings.tts} onClick={() => void updatePreferences({ ttsEnabled: !ttsOn })} className={cn('relative w-10 h-6 rounded-full transition-colors shrink-0', ttsOn ? 'bg-g-blue-700' : 'bg-[#d6d9e3]')}>
+                    <span className={cn('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', ttsOn ? 'left-[18px]' : 'left-0.5')} />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -1064,12 +1177,34 @@ export default function ReaderPage() {
               }
               navigate(`/app/practice?contentId=${id}&segmentId=${pageId}`);
             }}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded-[10px] text-xs font-medium text-g-blue-700 hover:bg-g-blue-50 transition-colors"
+            className="inline-flex items-center gap-1.5 h-9 px-2.5 sm:px-3 rounded-[10px] text-xs font-semibold text-white bg-g-blue-700 hover:bg-g-blue-800 transition-colors"
             title={(segment?.wordCount ?? 0) >= 60 ? mashqCopy(locale).pill : copy.reader.practiceTitle}
           >
-            <GraduationCap className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">{(segment?.wordCount ?? 0) >= 60 ? mashqCopy(locale).pill : copy.reader.practice}</span>
+            <GraduationCap className="w-4 h-4" />
+            <span className="hidden sm:inline">{copy.reader.practice}</span>
           </button>
+
+          {/* Report stays reachable (Play policy for AI / user content) but out of the toolbar. */}
+          <div ref={moreRef} className="relative">
+            <button
+              type="button"
+              onClick={() => { setMoreOpen((v) => !v); setDisplayOpen(false); }}
+              aria-expanded={moreOpen}
+              aria-haspopup="menu"
+              aria-label={rx.more}
+              className="inline-flex items-center justify-center size-9 rounded-[10px] hover:bg-gray-100 text-[#6b7080]"
+            >
+              <MoreHorizontal className="w-4 h-4" />
+            </button>
+            <div className={cn('absolute right-0 top-11 z-40 w-56 bg-white border border-[#e9ebf3] rounded-xl shadow-[0_18px_40px_rgba(16,24,40,.14)] p-1.5', !moreOpen && 'hidden')} role="menu">
+              <ReportButton lang={locale}
+                target={{ kind: 'content', contentId: content.id }}
+                icon={<Flag className="w-4 h-4" />}
+                name={content.title}
+                className="w-full flex items-center gap-2.5 h-10 px-3 rounded-lg text-sm font-medium text-[#101828] hover:bg-[#f6f7fb]"
+              />
+            </div>
+          </div>
         </div>
       </header>
 
@@ -1187,7 +1322,7 @@ export default function ReaderPage() {
             dir={['ar', 'fa', 'he', 'ur'].includes(String(content.language || '').toLowerCase()) ? 'rtl' : 'ltr'}
             lang={String(content.language || 'en').toLowerCase()}
             className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6 text-start"
-            style={{ fontSize: `${fontScale}rem`, lineHeight: preferences?.readerLineSpacing ?? 1.5 }}
+            style={{ fontSize: `${fontScale}rem`, lineHeight: lineSpacing }}
           >
             {isTrial ? (
               <div className="mb-6 rounded-xl border border-violet-200 bg-g-blue-50 px-4 py-3 text-sm text-g-blue-900">
@@ -1195,19 +1330,19 @@ export default function ReaderPage() {
               </div>
             ) : null}
             <div className="mb-8">
-              <div className="text-xs font-semibold text-g-blue-500 uppercase tracking-[1.2px] mb-1">
+              <div className={cn('text-xs font-semibold uppercase tracking-[1.2px] mb-1', darkPage ? 'text-[#a5b4fc]' : 'text-g-blue-500')}>
                 {chapterGroups
-                  ? copy.reader.chapterOf((chapterGroups.findIndex((g) => g.key === currentChapter?.key) + 1) || 1, chapterGroups.length)
-                  : copy.reader.pageOf(segmentIndex + 1, pageCount)}
+                  ? rx.pageOfBook(pageInChapter.current, pageInChapter.total, bookPct)
+                  : rx.pageOfBook(segmentIndex + 1, pageCount, bookPct)}
               </div>
-              <h1 className="text-2xl font-bold text-[#101828] font-serif leading-8">
+              <h1 className={cn('text-2xl font-bold font-serif leading-8', titleTone)}>
                 {currentChapterLabel}
               </h1>
             </div>
 
             <div
               ref={readerBodyRef}
-              className="text-[#1e2939] leading-[1.9] font-serif select-none touch-pan-y whitespace-pre-wrap"
+              className={cn('font-serif select-none touch-pan-y whitespace-pre-wrap', bodyTone)}
               onPointerDown={(e) => {
                 if (e.button !== 0 || !segment) return;
                 const el = (e.target as HTMLElement | null)?.closest?.('[data-token-i]');
@@ -1360,7 +1495,7 @@ export default function ReaderPage() {
                       }}
                       className={cn(
                         'px-px py-0.5',
-                        highlightStatus ? STATUS_STYLES[highlightStatus] : 'cursor-pointer hover:bg-gray-100/80 rounded-[6px]',
+                        highlightStatus ? statusStyles[highlightStatus] : cn('cursor-pointer rounded-[6px]', darkPage ? 'hover:bg-white/10' : 'hover:bg-gray-100/80'),
                         selected && 'ring-2 ring-g-blue-500/60 bg-g-blue-50',
                       )}
                     >

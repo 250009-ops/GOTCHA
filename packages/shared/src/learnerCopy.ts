@@ -437,8 +437,8 @@ const EN: LearnerCopy = {
     legalAnd: 'and',
     privacyPolicy: 'Privacy Policy',
     legalSuffix: '.',
-    readYourWay: 'Read your way',
-    readYourWayBold: 'from the stories you read.',
+    readYourWay: 'Learn a language',
+    readYourWayBold: 'by reading what you love.',
     authTagline: 'The reading-first language app that makes every page a lesson.',
     authFeatures: [
       { title: 'Read real content', desc: 'Books, articles, and news in the languages you want to learn' },
@@ -795,8 +795,8 @@ const RU: LearnerCopy = {
     legalAnd: 'и',
     privacyPolicy: 'Политикой конфиденциальности',
     legalSuffix: ' GOTCHA.',
-    readYourWay: 'Читайте',
-    readYourWayBold: 'и учите язык.',
+    readYourWay: 'Учите язык,',
+    readYourWayBold: 'читая то, что нравится.',
     authTagline: 'Приложение для изучения языка через чтение.',
     authFeatures: [
       { title: 'Настоящие тексты', desc: 'Книги, статьи и новости на изучаемых языках' },
@@ -1157,8 +1157,8 @@ const UZ: LearnerCopy = {
     legalAnd: 'va',
     privacyPolicy: 'Maxfiylik siyosati',
     legalSuffix: 'ga rozilik bildirasiz.',
-    readYourWay: 'Oʻqib',
-    readYourWayBold: 'oʻqigan hikoyalaringizdan.',
+    readYourWay: 'Til oʻrganing —',
+    readYourWayBold: 'sevgan kitoblaringizni oʻqib.',
     authTagline: 'Har bir sahifa dars boʻladigan oʻqishga asoslangan til ilovasi.',
     authFeatures: [
       { title: 'Haqiqiy kontent', desc: 'Oʻrganmoqchi boʻlgan tillarda kitoblar, maqolalar va yangiliklar' },

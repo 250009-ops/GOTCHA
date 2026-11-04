@@ -30,16 +30,18 @@ const muted = { color: 'var(--g-text-2)' } as const;
 export function PayTrust({ refund = true, plus = false }: { refund?: boolean; plus?: boolean }) {
   const { t, locale } = usePay();
   return (
-    <div className="w-full text-[13px] leading-5 space-y-1.5" style={muted} data-testid="pay-trust">
-      <p className="flex items-start gap-1.5"><Lock className="w-3.5 h-3.5 mt-0.5 shrink-0" aria-hidden />{t('trust.secure')}</p>
-      <p><span className="inline-block px-2 py-0.5 rounded-md border border-dashed text-[12px] font-semibold" style={{ borderColor: 'var(--g-line-input)', color: 'var(--g-text)' }}>{t('trust.cards')}</span></p>
+    <div className="w-full rounded-2xl border px-4 py-3.5 text-[12.5px] leading-5 space-y-2" style={{ ...muted, borderColor: 'var(--g-line)', background: 'var(--g-card)' }} data-testid="pay-trust">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <p className="flex items-center gap-1.5 font-semibold" style={{ color: 'var(--g-text)' }}><Lock className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--g-ok)' }} aria-hidden />{t('trust.secure')}</p>
+        <span className="inline-block px-2 py-0.5 rounded-md text-[11px] font-bold tracking-wide" style={{ background: 'var(--g-accent-soft)', color: 'var(--g-accent)' }}>{t('trust.cards')}</span>
+      </div>
       <p>
         {t('trust.support')}
         {PAY_OFERTA_URL && <>{' · '}<a href={PAY_OFERTA_URL} target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--g-accent)' }}>{t('oferta')}</a></>}
       </p>
       <p data-testid="pay-seller">{t('rc.seller')}: {PAY_SELLER[locale as keyof typeof PAY_SELLER] ?? PAY_SELLER.en}</p>
-      {refund && <p>{t(plus ? 'trust.refundPlus' : 'trust.refund')}</p>}
-      <p data-testid="pay-no-refund">{t('trust.noRefund')}</p>
+      {refund && <p className="text-[12px]" style={{ color: 'var(--g-text-3)' }}>{t(plus ? 'trust.refundPlus' : 'trust.refund')}</p>}
+      <p data-testid="pay-no-refund" className="text-[12px]" style={{ color: 'var(--g-text-3)' }}>{t('trust.noRefund')}</p>
     </div>
   );
 }
@@ -55,7 +57,7 @@ export function PriceTag({ amountUzs, listUzs, big }: { amountUzs: number; listU
   );
 }
 
-const inputCls = 'w-full px-3 h-12 rounded-[14px] border text-base outline-none focus:ring-2 disabled:opacity-50';
+const inputCls = 'w-full px-4 h-12 rounded-[12px] border text-base outline-none focus:ring-4 focus:ring-[var(--g-accent-soft)] focus:border-[var(--g-focus)] disabled:opacity-50';
 const inputStyle = { background: 'var(--g-input)', color: 'var(--g-text)', borderColor: 'var(--g-line-input)' } as const;
 
 export const formatPan = (v: string) => v.replace(/\D/g, '').slice(0, 19).replace(/(.{4})/g, '$1 ').trim();
@@ -84,14 +86,14 @@ export function CardForm({ pan, exp, onPan, onExp, onSubmit, amountUzs, loading,
   const ok = cardFormOk(pan, exp);
   return (
     <form className="w-full space-y-4" onSubmit={(e) => { e.preventDefault(); if (ok && !loading) onSubmit(); }}>
-      <p className="text-sm text-center" style={muted}>{t('card.noCvv')}</p>
+      <p className="text-sm" style={muted}>{t('card.noCvv')}</p>
       <div>
         <label htmlFor="pay-pan" className="block text-xs font-semibold mb-1.5" style={muted}>{t('card.number')}</label>
         <div className="relative">
           <input id="pay-pan" type="text" inputMode="numeric" autoComplete="cc-number" value={pan} disabled={loading}
             onChange={(e) => onPan(formatPan(e.target.value))} placeholder="0000 0000 0000 0000"
             className={`${inputCls} font-mono tracking-wider pr-20`} style={inputStyle} />
-          {brand && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold px-2 py-0.5 rounded-md border border-dashed" style={{ borderColor: 'var(--g-line-input)' }}>{brand === 'humo' ? t('card.detectedHumo') : t('card.detected')}</span>}
+          {brand && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] font-extrabold tracking-wide px-2 py-1 rounded-md" style={{ background: 'var(--g-accent-soft)', color: 'var(--g-accent)' }}>{brand === 'humo' ? t('card.detectedHumo') : t('card.detected')}</span>}
         </div>
       </div>
       <div>
@@ -99,7 +101,7 @@ export function CardForm({ pan, exp, onPan, onExp, onSubmit, amountUzs, loading,
         <input id="pay-exp" type="text" inputMode="numeric" autoComplete="cc-exp" value={exp} disabled={loading}
           onChange={(e) => onExp(formatExp(e.target.value))} placeholder="MM/YY" className={`${inputCls} font-mono`} style={inputStyle} />
       </div>
-      <p className="text-[13px]" style={muted}>{t('card.handoff')}</p>
+      <p className="text-[13px] rounded-xl px-3.5 py-3" style={{ background: 'var(--g-accent-soft)', color: 'var(--g-text)' }}>{t('card.handoff')}</p>
       {error && <p role="alert" className="text-sm" style={{ color: 'var(--g-bad)' }}>{error}</p>}
       <PayButton disabled={!ok} loading={loading} label={`${t('pay.amount')} ${som(amountUzs)}`} />
       <CancelLink onCancel={onCancel} disabled={loading} />
@@ -110,7 +112,7 @@ export function CardForm({ pan, exp, onPan, onExp, onSubmit, amountUzs, loading,
 export function PayButton({ label, disabled, loading, onClick, type = 'submit' }: { label: string; disabled?: boolean; loading?: boolean; onClick?: () => void; type?: 'submit' | 'button' }) {
   return (
     <button type={type} onClick={onClick} disabled={disabled || loading} aria-busy={loading}
-      className="w-full min-h-[48px] rounded-[14px] font-bold text-[var(--g-on-cta)] disabled:opacity-50 flex items-center justify-center gap-2"
+      className="w-full min-h-[50px] rounded-[13px] font-bold text-[var(--g-on-cta)] disabled:opacity-50 flex items-center justify-center gap-2 shadow-[0_8px_20px_var(--g-brand-shadow)] disabled:shadow-none"
       style={{ background: 'var(--g-cta)' }}>
       {loading && <Loader2 className="w-4 h-4 animate-spin" aria-hidden />}{label}
     </button>
@@ -127,7 +129,7 @@ export function OtpForm({ cardMask, otp, onOtp, onSubmit, onResend, loading, err
   const ok = /^\d{4,8}$/.test(otp);
   return (
     <form className="w-full space-y-4" onSubmit={(e) => { e.preventDefault(); if (ok && !loading) onSubmit(); }}>
-      <p className="text-sm text-center" style={muted}>{payFill(t('otp.sentTo'), { mask: cardMask })}</p>
+      <p className="text-sm" style={muted}>{payFill(t('otp.sentTo'), { mask: cardMask })}</p>
       <label htmlFor="pay-otp" className="block text-xs font-semibold" style={muted}>{t('otp.code')}</label>
       <input id="pay-otp" type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={otp} disabled={loading}
         onChange={(e) => onOtp(e.target.value.replace(/\D/g, '').slice(0, 8))}
@@ -149,7 +151,9 @@ export function PayResult({ tone, title, body, reference, children }: { tone: 'o
   const color = tone === 'ok' ? 'var(--g-ok)' : tone === 'bad' ? 'var(--g-bad)' : 'var(--g-text-3)';
   return (
     <div className="flex flex-col items-center text-center gap-3 w-full" role={tone === 'bad' ? 'alert' : 'status'} aria-live="polite">
-      <Icon className="w-16 h-16" strokeWidth={2.5} style={{ color }} aria-hidden data-testid={`pay-result-icon-${tone}`} />
+      <span className="size-16 rounded-full grid place-items-center" style={{ background: tone === 'ok' ? 'var(--g-ok-bg)' : tone === 'bad' ? 'var(--g-bad-bg)' : 'var(--g-card-2)' }}>
+        <Icon className="w-8 h-8" strokeWidth={2.5} style={{ color }} aria-hidden data-testid={`pay-result-icon-${tone}`} />
+      </span>
       <h2 className="text-xl font-bold" style={{ color: 'var(--g-text)' }}>{title}</h2>
       {body && <div className="text-sm" style={muted}>{body}</div>}
       {reference && <p className="text-xs" style={{ color: 'var(--g-text-3)' }}>{t('pending.ref')}: <span className="font-mono">{reference}</span></p>}
@@ -211,17 +215,27 @@ export function PayPending({ slow, reference, needsAttention, onCheckAgain }: { 
 }
 
 /** "Cancel this payment?" confirm step before POST cancel. */
-export function CancelConfirm({ open, onKeep, onConfirm, busy }: { open: boolean; onKeep: () => void; onConfirm: () => void; busy?: boolean }) {
+export function CancelConfirm({ open, onKeep, onConfirm, busy, summary }: { open: boolean; onKeep: () => void; onConfirm: () => void; busy?: boolean; summary?: ReactNode }) {
   const { t } = usePay();
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onKeep(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open, onKeep]);
   if (!open) return null;
   return (
-    <div role="alertdialog" aria-modal="true" aria-labelledby="pay-cancel-q" className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'var(--g-overlay)' }}>
-      <div className="w-full max-w-sm rounded-[20px] border p-5 space-y-3" style={card}>
+    <div role="alertdialog" aria-modal="true" aria-labelledby="pay-cancel-q" aria-describedby="pay-cancel-body" className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-[rgba(11,12,38,0.5)] backdrop-blur-[3px]">
+      <div className="w-full max-w-[480px] rounded-[20px] border p-6 shadow-[0_30px_80px_rgba(11,12,38,0.35)]" style={card}>
+        <div className="size-11 rounded-[12px] grid place-items-center mb-4" style={{ background: 'var(--g-bad-bg)' }}>
+          <AlertTriangle className="w-5 h-5" style={{ color: 'var(--g-bad)' }} aria-hidden />
+        </div>
         <h3 id="pay-cancel-q" className="text-lg font-bold">{t('cancel.confirmQ')}</h3>
-        <p className="text-sm" style={muted}>{t('cancel.reversed')}</p>
-        <div className="flex gap-2">
-          <button type="button" onClick={onKeep} className="flex-1 min-h-[44px] rounded-xl border font-semibold" style={card}>{t('cancel.keep')}</button>
-          <button type="button" onClick={onConfirm} disabled={busy} className="flex-1 min-h-[44px] rounded-xl font-bold disabled:opacity-50" style={{ background: 'var(--g-bad)', color: 'var(--g-on-fill)' }}>{t('cancel.yes')}</button>
+        <p id="pay-cancel-body" className="text-sm mt-1.5 leading-relaxed" style={muted}>{t('cancel.reversed')}</p>
+        {summary && <div className="mt-4 rounded-xl px-3.5 py-3 text-sm flex items-center justify-between gap-3" style={{ background: 'var(--g-card-2)', color: 'var(--g-text)' }}>{summary}</div>}
+        <div className="grid min-[480px]:grid-cols-2 gap-2 mt-5">
+          <button type="button" onClick={onKeep} autoFocus className="min-h-[46px] px-3 rounded-xl border text-sm font-semibold" style={card}>{t('cancel.keep')}</button>
+          <button type="button" onClick={onConfirm} disabled={busy} className="min-h-[46px] px-3 rounded-xl text-sm font-bold disabled:opacity-50" style={{ background: 'var(--g-bad)', color: 'var(--g-on-fill)' }}>{t('cancel.yes')}</button>
         </div>
       </div>
     </div>

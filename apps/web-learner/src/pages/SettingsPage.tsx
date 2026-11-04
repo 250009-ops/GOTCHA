@@ -3,21 +3,35 @@ import { buildLabel } from '../lib/buildInfo';
 import { DeleteAccount } from '../components/safety/DeleteAccount';
 import { AVATAR_UNDER13_NOTE, isUnder13 } from '../lib/agePolicy';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
+  Bell,
   BookOpen,
+  Camera,
   Check,
   ChevronRight,
+  Clock,
   Download,
   Eye,
   EyeOff,
+  Globe,
+  GraduationCap,
   Loader2,
+  Lock,
   LogOut,
   Moon,
+  Pencil,
   Plus,
+  Receipt,
+  Search,
+  Shield,
   Sun,
+  Target,
   Trash2,
+  Upload,
+  User,
   Zap,
 } from 'lucide-react';
 import { Button } from '../components/ui/button';
@@ -59,16 +73,16 @@ function nearestChoice(value: number, choices: readonly number[]): number {
 function Stepper({ value, min, max, step, onChange, label }: { value: number; min: number; max: number; step: number; onChange: (n: number) => void; label: string }) {
   const clamp = (n: number) => Math.min(max, Math.max(min, n));
   return (
-    <div className="inline-flex items-center gap-1" role="group" aria-label={label}>
-      <button type="button" className="min-h-11 min-w-11 rounded-[14px] border border-[#e5e7eb] text-lg font-semibold text-[#364153] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} −`} disabled={value <= min} onClick={() => onChange(clamp(value - step))}>−</button>
-      <span className="min-w-12 text-center text-sm font-semibold tabular-nums text-[#101828]">{value}</span>
-      <button type="button" className="min-h-11 min-w-11 rounded-[14px] border border-[#e5e7eb] text-lg font-semibold text-[#364153] focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} +`} disabled={value >= max} onClick={() => onChange(clamp(value + step))}>+</button>
+    <div className="inline-flex items-stretch rounded-[11px] border border-[#e1e3ec] bg-white overflow-hidden" role="group" aria-label={label}>
+      <button type="button" className="min-h-10 min-w-10 text-lg font-semibold text-[#4a5565] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} −`} disabled={value <= min} onClick={() => onChange(clamp(value - step))}>−</button>
+      <span className="min-w-14 grid place-items-center border-x border-[#eceef4] text-sm font-bold tabular-nums text-[#101828]">{value}</span>
+      <button type="button" className="min-h-10 min-w-10 text-lg font-semibold text-[#4a5565] hover:bg-gray-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-g-blue-700 disabled:opacity-40" aria-label={`${label} +`} disabled={value >= max} onClick={() => onChange(clamp(value + step))}>+</button>
     </div>
   );
 }
 const DISPLAY_NAME_RE = /^(?!.*(?:https?:\/\/|www\.))[^\u0000-\u001F\u007F\u2028\u2029]*$/u;
 
-const fieldClass = 'w-full h-11 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm outline-none focus:ring-2 focus:ring-violet-200 focus:border-g-blue-700';
+const fieldClass = 'w-full h-10 px-3 bg-[#f9faff] border border-[#e4e7f0] rounded-[11px] text-sm text-[#101828] outline-none focus:ring-4 focus:ring-g-blue-50 focus:border-g-blue-600';
 
 function displayNameError(value: string, tooLong: string, invalid: string): string | null {
   const trimmed = value.trim();
@@ -94,33 +108,51 @@ function isPlusActive(sub: SubscriptionInfo['subscription']): boolean {
   return true;
 }
 
-function Section({ title, children, danger }: { title: string; children: React.ReactNode; danger?: boolean }) {
+type SectionId = 'account' | 'plan' | 'languages' | 'reading' | 'goals' | 'notifications' | 'privacy' | 'danger';
+
+function Section({ id, title, icon: Icon, action, children, danger }: {
+  id: SectionId; title: string; icon: React.ElementType; action?: React.ReactNode; children: React.ReactNode; danger?: boolean;
+}) {
   return (
-    <div className={cn('bg-white rounded-2xl border overflow-hidden', danger ? 'border-red-300' : 'border-[#f3f4f6]')}>
-      <div className="px-4 sm:px-5 py-4 border-b border-[#f9fafb]">
-        <h2 className="font-bold text-gray-900 text-xl">{title}</h2>
+    <section
+      id={id}
+      data-settings-section={id}
+      aria-labelledby={`settings-${id}-title`}
+      className={cn('bg-white rounded-2xl border overflow-hidden scroll-mt-24 shadow-[0_1px_2px_rgba(16,24,40,0.04)]', danger ? 'border-red-200' : 'border-[#e9ebf3]')}
+    >
+      <div className={cn('flex items-center gap-3 px-4 sm:px-5 py-3.5 border-b', danger ? 'border-red-100' : 'border-[#f0f1f6]')}>
+        <span className={cn('size-8 rounded-[9px] grid place-items-center shrink-0', danger ? 'bg-red-50 text-red-600' : 'bg-g-blue-50 text-g-blue-700')}>
+          <Icon className="w-4 h-4" />
+        </span>
+        <h2 id={`settings-${id}-title`} className="flex-1 min-w-0 font-bold text-[#101828] text-base truncate">{title}</h2>
+        {action}
       </div>
-      <div className="divide-y divide-[#f9fafb]">{children}</div>
-    </div>
+      <div className="divide-y divide-[#f0f1f6]">{children}</div>
+    </section>
   );
 }
 
 const RowLabel = createContext<string | undefined>(undefined);
 
-function Row({ label, description, children }: { label: string; description?: string; children: React.ReactNode }) {
+function Row({ label, description, children, stack }: { label: string; description?: string; children: React.ReactNode; stack?: boolean }) {
   return (
     <RowLabel.Provider value={label}>
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
-      <div className="min-w-0 sm:flex-1">
-        <div className="text-sm font-medium text-[#364153]">{label}</div>
-        {description && <div className="text-xs text-[#99a1af] mt-0.5 leading-relaxed">{description}</div>}
+    <div className={cn('flex flex-col gap-2.5 px-4 sm:px-5 py-3.5 min-w-0 min-h-[60px]', !stack && 'sm:flex-row sm:items-center sm:gap-4')}>
+      <div className={cn('min-w-0', !stack && 'sm:flex-1')}>
+        <div className="text-sm font-semibold text-[#101828]">{label}</div>
+        {description && <div className="text-[12.5px] text-[#6b7080] mt-0.5 leading-snug">{description}</div>}
       </div>
-      <div className="min-w-0 w-full sm:w-auto sm:shrink-0 flex sm:justify-end">
+      <div className={cn('min-w-0 w-full flex', !stack && 'sm:w-auto sm:shrink-0 sm:justify-end')}>
         {children}
       </div>
     </div>
     </RowLabel.Provider>
   );
+}
+
+/** Two short rows side by side from sm up (stacked on phones). */
+function RowPair({ children }: { children: React.ReactNode }) {
+  return <div className="grid sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-[#f0f1f6]">{children}</div>;
 }
 
 function RangeSlider({ value, min, max, step, onChange }: { value: number; min: number; max: number; step: number; onChange: (v: number) => void }) {
@@ -135,7 +167,7 @@ function RangeSlider({ value, min, max, step, onChange }: { value: number; min: 
       step={step}
       value={value}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="range-slider w-full sm:w-28 max-w-full min-h-11"
+      className="range-slider w-full sm:w-40 max-w-full min-h-11"
       style={{ '--range-progress': `${pct}%` } as React.CSSProperties}
     />
   );
@@ -150,12 +182,21 @@ function Toggle({ checked, onChange }: { checked: boolean; onChange: (v: boolean
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className="relative inline-flex h-11 w-11 shrink-0 items-center justify-center"
+      className="relative inline-flex h-11 w-12 shrink-0 items-center justify-end focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 rounded-full"
     >
-      <span className={cn('relative inline-flex h-6 w-11 items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#cbced4]')}>
-        <span className={cn('inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[22px]' : 'translate-x-0.5')} />
+      <span className={cn('relative inline-flex h-6 w-[42px] items-center rounded-full transition-colors', checked ? 'bg-g-blue-700' : 'bg-[#d8dbe5]')}>
+        <span className={cn('inline-block h-[18px] w-[18px] transform rounded-full bg-white shadow transition-transform', checked ? 'translate-x-[21px]' : 'translate-x-[3px]')} />
       </span>
     </button>
+  );
+}
+
+/** Segmented control: one rounded track, the selected option is a raised white chip. */
+function Segmented({ label, full, children }: { label: string; full?: boolean; children: React.ReactNode }) {
+  return (
+    <div role="radiogroup" aria-label={label} className={cn('bg-[#f1f2f7] rounded-[11px] p-[3px] gap-0.5 max-w-full overflow-x-auto', full ? 'flex w-full' : 'inline-flex')}>
+      {children}
+    </div>
   );
 }
 
@@ -167,14 +208,37 @@ function ChoiceButton({ selected, onClick, children }: { selected: boolean; onCl
       aria-checked={selected}
       onClick={onClick}
       className={cn(
-        'min-h-11 min-w-11 px-3 rounded-[10px] border text-xs font-semibold',
-        selected ? 'border-g-blue-200 bg-g-blue-50 text-g-blue-700' : 'border-[#e5e7eb] text-[#4a5565] hover:border-gray-300',
+        'flex-1 min-h-10 min-w-10 px-3 rounded-[9px] text-[13px] font-semibold whitespace-nowrap inline-flex items-center justify-center gap-1.5 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700',
+        selected ? 'bg-white text-g-blue-700 shadow-[0_1px_2px_rgba(16,24,40,0.12)]' : 'text-[#4a5565] hover:text-[#101828]',
       )}
     >
       {children}
     </button>
   );
 }
+
+/** Usage meter: the existing localized line, plus a bar for how much of today's allowance is used. */
+function Meter({ icon: Icon, text, used, total, tone = 'blue' }: { icon: React.ElementType; text: string; used?: number; total?: number; tone?: 'blue' | 'teal' }) {
+  const pct = typeof used === 'number' && typeof total === 'number' && total > 0 ? Math.min(100, Math.round((used / total) * 100)) : null;
+  return (
+    <div className="rounded-xl border border-[#eceef5] px-3.5 py-3 min-w-0">
+      <div className="flex items-start gap-2.5">
+        <span className={cn('size-7 rounded-[8px] grid place-items-center shrink-0', tone === 'teal' ? 'bg-[#ecfeff] text-[#0e7490]' : 'bg-g-blue-50 text-g-blue-700')}>
+          <Icon className="w-3.5 h-3.5" />
+        </span>
+        <span className="text-[13px] font-medium text-[#101828] leading-snug break-words min-w-0 pt-1">{text}</span>
+      </div>
+      {pct !== null && (
+        <div className={cn('h-1.5 rounded-full mt-2.5 overflow-hidden', tone === 'teal' ? 'bg-[#e3f8fb]' : 'bg-g-blue-50')}>
+          <div className={cn('h-full rounded-full transition-all', tone === 'teal' ? 'bg-[#0e7490]' : 'bg-g-blue-700')} style={{ width: `${pct}%` }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+const btnOutline = 'min-h-10 px-3.5 rounded-[11px] border border-[#e1e3ec] bg-white text-sm font-semibold text-[#101828] hover:bg-gray-50 inline-flex items-center justify-center gap-2 disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700';
+const btnPrimary = 'min-h-10 px-3.5 rounded-[11px] bg-g-blue-700 text-g-on-cta text-sm font-semibold inline-flex items-center justify-center gap-2 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700 focus-visible:ring-offset-2';
 
 function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const copy = useLearnerCopy();
@@ -776,8 +840,42 @@ export default function SettingsPage() {
       .finally(() => setAvatarBusy(null));
   };
 
+  const [activeSection, setActiveSection] = useState<SectionId>('account');
+  const { hash } = useLocation();
+  useEffect(() => {
+    const id = hash.replace(/^#/, '');
+    if (!id) return;
+    document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, [hash, subLoading]);
+  useEffect(() => {
+    const els = Array.from(document.querySelectorAll<HTMLElement>('[data-settings-section]'));
+    if (!els.length || typeof IntersectionObserver === 'undefined') return;
+    const io = new IntersectionObserver((entries) => {
+      const top = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)[0];
+      if (top) setActiveSection(top.target.getAttribute('data-settings-section') as SectionId);
+    }, { rootMargin: '-15% 0px -70% 0px' });
+    els.forEach((el) => io.observe(el));
+    return () => io.disconnect();
+  }, [subLoading]);
+  const jumpTo = (id: SectionId) => {
+    setActiveSection(id);
+    document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+  const sections: Array<{ id: SectionId; label: string; icon: React.ElementType }> = [
+    { id: 'account', label: copy.settings.account, icon: User },
+    { id: 'plan', label: copy.settings.planAndUsage, icon: Zap },
+    { id: 'languages', label: copy.settings.targetLanguages, icon: Globe },
+    { id: 'reading', label: copy.settings.readingPreferences, icon: BookOpen },
+    { id: 'goals', label: copy.settings.learningGoals, icon: Target },
+    { id: 'notifications', label: copy.settings.notifications, icon: Bell },
+    { id: 'privacy', label: copy.settings.privacyAi, icon: Shield },
+    { id: 'danger', label: copy.settings.dangerZone, icon: AlertTriangle },
+  ];
+  const onlineLabel = locale === 'ru' ? 'Показывать, что я в сети' : locale === 'en' ? 'Show when I am online' : 'Onlayn ekanimni koʻrsatish';
+  const onlineHint = locale === 'ru' ? 'Скрыто, пока вы не включите. Для младше 18 по умолчанию выключено.' : locale === 'en' ? 'Hidden until you turn this on. Off by default for under-18 accounts.' : 'Yoqmaguningizcha yashirin. 18 yoshgacha sukut boʻyicha oʻchiq.';
+
   return (
-    <div className="max-w-3xl mx-auto px-3 sm:px-6 py-6 lg:py-8 space-y-5 min-w-0 overflow-x-hidden">
+    <div className="max-w-6xl mx-auto px-3 sm:px-6 py-5 lg:py-8 min-w-0">
       {pwModalOpen && <ChangePasswordModal onClose={() => setPwModalOpen(false)} />}
       {langModal && (
         <TargetLanguageModal
@@ -826,494 +924,577 @@ export default function SettingsPage() {
         />
       )}
 
-      <div className="min-w-0">
-        <h1 className="text-2xl font-bold text-gray-900">{copy.settings.title}</h1>
-        <p className="text-[#99a1af] text-sm mt-0.5">{copy.settings.subtitle}</p>
+      <div className="min-w-0 mb-4 lg:mb-6">
+        <h1 className="text-2xl font-bold tracking-tight text-[#101828]">{copy.settings.title}</h1>
+        <p className="text-[#6b7080] text-sm mt-0.5">{copy.settings.subtitle}</p>
       </div>
 
-      <Section title={copy.settings.account}>
-        <Row label={copy.settings.photo} description={copy.settings.photoHint}>
-          <div className="flex items-center gap-3 min-w-0 flex-wrap">
-            <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={48} />
-            {isUnder13(user) ? (
-              <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[locale === 'ru' || locale === 'uz' ? locale : 'en']}</span>
-            ) : (
-            <>
-            <label className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center cursor-pointer shrink-0">
-              {avatarBusy === 'upload' ? copy.settings.uploading : copy.settings.changePhoto}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                disabled={avatarBusy !== null}
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  e.target.value = '';
-                  if (file) onPhoto(file);
-                }}
-              />
-            </label>
-            {user?.avatarUrl && (
-              <button
-                type="button"
-                disabled={avatarBusy !== null}
-                onClick={removePhoto}
-                className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
-              >
-                {avatarBusy === 'remove' ? copy.settings.removingPhoto : copy.settings.removePhoto}
-              </button>
-            )}
-            </>
-            )}
-          </div>
-        </Row>
-        <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
-          <form className="flex flex-col items-stretch sm:items-end gap-1.5 w-full sm:w-56" onSubmit={(e) => { e.preventDefault(); void saveName(); }}>
-            <input
-              type="text"
-              value={displayName}
-              maxLength={50}
-              id="settings-display-name"
-              aria-label={copy.settings.displayName}
-              aria-invalid={nameProblem ? true : undefined}
-              onChange={(e) => { setDisplayName(e.target.value); setNameStatus('idle'); }}
-              placeholder={copy.settings.displayNamePlaceholder}
-              className={cn(fieldClass, 'sm:w-56')}
-            />
-            <div className="flex items-center justify-between gap-2 w-full">
-              <span className={cn('text-xs', nameProblem ? 'text-red-600' : 'text-[#99a1af]')}>
-                {nameProblem || `${displayName.trim().length}/50`}
-              </span>
-              <button
-                type="submit"
-                disabled={!nameDirty || !!nameProblem || nameStatus === 'saving'}
-                className="min-h-11 px-3 rounded-[14px] bg-g-blue-700 disabled:opacity-50 text-g-on-cta text-sm font-medium"
-              >
-                {nameStatus === 'saving' ? copy.common.saving : copy.common.saveChanges}
-              </button>
-            </div>
-          </form>
-        </Row>
-        <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
-          <div className="flex items-center gap-2">
-            <CatalogLanguageFlag code={nativeLanguage} />
-          <select
-            aria-label={copy.settings.nativeLanguage}
-            value={nativeLanguage}
-            onChange={(e) => {
-              const next = e.target.value as AppLanguage;
-              if (next === (user?.nativeLanguage ?? nativeLanguage)) return;
-              setPendingNative(next);
-            }}
-            className={cn(fieldClass, 'sm:w-48')}
-          >
-            {languageOptions.map((l) => (
-              <option key={l.code} value={l.code}>
-                {(l as { nativeName?: string }).nativeName || l.name}
-              </option>
-            ))}
-          </select>
-          </div>
-        </Row>
-        <Row label={copy.settings.birthYear} description={user?.birthYear != null ? copy.settings.birthYearLocked : copy.settings.birthYearHint}>
-          {user?.birthYear != null ? (
-            <span id="birth-year" className="text-sm text-[#364153]">{user.birthYear}</span>
-          ) : (
-            <form
-              id="birth-year"
-              className="flex items-center gap-2"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const year = Number(birthYearDraft);
-                if (!Number.isInteger(year)) return;
-                setBirthYearSaving(true);
-                void api('/users/me/age', { method: 'POST', body: JSON.stringify({ birthYear: year }) })
-                  .then(() => refreshProfile())
-                  .then(() => toast.success(copy.settings.saved))
-                  .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed))
-                  .finally(() => setBirthYearSaving(false));
-              }}
+      {/* Below lg: section shortcuts as a sticky, horizontally scrollable chip row (web pattern, no app tab bar). */}
+      <nav aria-label={copy.settings.title} className="lg:hidden sticky top-0 z-10 -mx-3 sm:-mx-6 px-3 sm:px-6 py-2 mb-3 bg-g-blue-50/95 backdrop-blur">
+        <div className="flex gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          {sections.map((sec) => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => jumpTo(sec.id)}
+              aria-current={activeSection === sec.id ? 'true' : undefined}
+              className={cn(
+                'shrink-0 min-h-9 px-3.5 rounded-full border text-[13px] font-semibold whitespace-nowrap',
+                activeSection === sec.id
+                  ? 'bg-g-blue-700 border-g-blue-700 text-g-on-cta'
+                  : sec.id === 'danger' ? 'bg-white border-[#e3e5ee] text-red-600' : 'bg-white border-[#e3e5ee] text-[#4a5565]',
+              )}
             >
-              <input
-                inputMode="numeric"
-                maxLength={4}
-                value={birthYearDraft}
-                onChange={(e) => setBirthYearDraft(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                aria-label={copy.settings.birthYear}
-                className={cn(fieldClass, 'w-24')}
-              />
-              <button type="submit" disabled={birthYearDraft.length !== 4 || birthYearSaving} className="min-h-11 px-3 rounded-[14px] bg-g-blue-700 disabled:opacity-50 text-g-on-cta text-sm font-medium">
-                {birthYearSaving ? copy.common.saving : copy.common.saveChanges}
-              </button>
-            </form>
-          )}
-        </Row>
-        <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
-          <select
-            aria-label={copy.settings.appLanguage}
-            value={locale}
-            onChange={(e) => {
-              const next = e.target.value as UiLanguage;
-              void setLocale(next)
-                .then(() => toast.success(copy.settings.saved))
-                .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed));
-            }}
-            className={cn(fieldClass, 'sm:w-48')}
-          >
-            {UI_LANGUAGES.map((code) => (
-              <option key={code} value={code}>
-                {LANGUAGE_META[code].nativeName}
-              </option>
-            ))}
-          </select>
-        </Row>
-        <Row label={copy.settings.email} description={copy.settings.emailHint}>
-          <div className="flex flex-col items-stretch sm:items-end gap-2 min-w-0 max-w-full">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-sm text-[#6a7282] truncate">{user?.email}</span>
-              {user && (verified ? (
-                <span className="text-[11px] font-semibold text-[#007a55] bg-[#d0fae5] rounded-full px-1.5 py-0.5 shrink-0">{copy.common.verified}</span>
-              ) : (
-                <span className="text-[11px] font-semibold text-[#b45309] bg-[#fef3c7] rounded-full px-1.5 py-0.5 shrink-0">{copy.settings.notVerified}</span>
-              ))}
-            </div>
-            {user && !verified && (
+              {sec.label}
+            </button>
+          ))}
+        </div>
+      </nav>
+
+      <div className="lg:grid lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-7 min-w-0">
+        <nav aria-label={copy.settings.title} className="hidden lg:flex flex-col gap-0.5 sticky top-4 self-start">
+          {sections.map((sec) => (
+            <button
+              key={sec.id}
+              type="button"
+              onClick={() => jumpTo(sec.id)}
+              aria-current={activeSection === sec.id ? 'true' : undefined}
+              className={cn(
+                'flex items-center gap-2.5 min-h-10 px-3 rounded-[10px] text-sm text-left transition-colors',
+                activeSection === sec.id
+                  ? 'bg-white text-g-blue-700 font-semibold shadow-[0_1px_2px_rgba(16,24,40,0.06)] ring-1 ring-g-blue-100'
+                  : sec.id === 'danger' ? 'text-red-600 font-medium hover:bg-white/70' : 'text-[#4a5565] font-medium hover:bg-white/70',
+              )}
+            >
+              <sec.icon className="w-4 h-4 shrink-0" />
+              <span className="truncate">{sec.label}</span>
+            </button>
+          ))}
+        </nav>
+
+        <div className="space-y-4 min-w-0">
+          <Section id="account" title={copy.settings.account} icon={User}>
+            <RowLabel.Provider value={copy.settings.photo}>
+              <div className="flex flex-wrap items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
+                <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={52} />
+                <div className="min-w-0 flex-1 basis-48">
+                  <div className="text-base font-bold text-[#101828] truncate">{user?.displayName || user?.email}</div>
+                  <div className="text-[12.5px] text-[#6b7080] mt-0.5 leading-snug">{copy.settings.photoHint}</div>
+                </div>
+                {isUnder13(user) ? (
+                  <span className="text-xs text-[#6b7382]" data-testid="avatar-under13">{AVATAR_UNDER13_NOTE[locale === 'ru' || locale === 'uz' ? locale : 'en']}</span>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className={cn(btnOutline, 'cursor-pointer shrink-0')}>
+                      <Camera className="w-4 h-4" />
+                      {avatarBusy === 'upload' ? copy.settings.uploading : copy.settings.changePhoto}
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        className="hidden"
+                        disabled={avatarBusy !== null}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = '';
+                          if (file) onPhoto(file);
+                        }}
+                      />
+                    </label>
+                    {user?.avatarUrl && (
+                      <button
+                        type="button"
+                        disabled={avatarBusy !== null}
+                        onClick={removePhoto}
+                        className="min-h-10 px-3 rounded-[11px] text-sm font-semibold text-red-600 hover:bg-red-50 disabled:opacity-60"
+                      >
+                        {avatarBusy === 'remove' ? copy.settings.removingPhoto : copy.settings.removePhoto}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            </RowLabel.Provider>
+            <Row label={copy.settings.displayName} description={copy.settings.displayNameHint}>
+              <form className="flex flex-col gap-1 w-full sm:w-auto" onSubmit={(e) => { e.preventDefault(); void saveName(); }}>
+                <div className="flex items-center gap-2">
+                  <div className="relative flex-1 sm:flex-none min-w-0">
+                    <input
+                      type="text"
+                      value={displayName}
+                      maxLength={50}
+                      id="settings-display-name"
+                      aria-label={copy.settings.displayName}
+                      aria-invalid={nameProblem ? true : undefined}
+                      onChange={(e) => { setDisplayName(e.target.value); setNameStatus('idle'); }}
+                      placeholder={copy.settings.displayNamePlaceholder}
+                      className={cn(fieldClass, 'sm:w-64 pr-14')}
+                    />
+                    <span className={cn('absolute right-3 top-1/2 -translate-y-1/2 text-xs tabular-nums pointer-events-none', nameProblem ? 'text-red-600' : 'text-[#9aa0ae]')}>
+                      {displayName.trim().length}/50
+                    </span>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={!nameDirty || !!nameProblem || nameStatus === 'saving'}
+                    className={cn(btnPrimary, 'shrink-0')}
+                  >
+                    {nameStatus === 'saving' ? copy.common.saving : copy.common.saveChanges}
+                  </button>
+                </div>
+                {nameProblem && <span className="text-xs text-red-600">{nameProblem}</span>}
+              </form>
+            </Row>
+            <RowPair>
+              <Row label={copy.settings.nativeLanguage} description={copy.settings.nativeLanguageHint}>
+                <div className="relative w-full sm:w-48">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"><CatalogLanguageFlag code={nativeLanguage} /></span>
+                  <select
+                    aria-label={copy.settings.nativeLanguage}
+                    value={nativeLanguage}
+                    onChange={(e) => {
+                      const next = e.target.value as AppLanguage;
+                      if (next === (user?.nativeLanguage ?? nativeLanguage)) return;
+                      setPendingNative(next);
+                    }}
+                    className={cn(fieldClass, 'pl-10 bg-white')}
+                  >
+                    {languageOptions.map((l) => (
+                      <option key={l.code} value={l.code}>
+                        {(l as { nativeName?: string }).nativeName || l.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </Row>
+              <Row label={copy.settings.appLanguage} description={copy.settings.appLanguageHint}>
+                <select
+                  aria-label={copy.settings.appLanguage}
+                  value={locale}
+                  onChange={(e) => {
+                    const next = e.target.value as UiLanguage;
+                    void setLocale(next)
+                      .then(() => toast.success(copy.settings.saved))
+                      .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed));
+                  }}
+                  className={cn(fieldClass, 'sm:w-48 bg-white')}
+                >
+                  {UI_LANGUAGES.map((code) => (
+                    <option key={code} value={code}>
+                      {LANGUAGE_META[code].nativeName}
+                    </option>
+                  ))}
+                </select>
+              </Row>
+            </RowPair>
+            <RowPair>
+              <Row label={copy.settings.birthYear} description={user?.birthYear != null ? copy.settings.birthYearLocked : copy.settings.birthYearHint}>
+                {user?.birthYear != null ? (
+                  <span id="birth-year" className="inline-flex items-center gap-2 min-h-9 px-3 rounded-[9px] bg-[#f4f5f9] text-sm font-semibold text-[#4a5565] tabular-nums">
+                    <Lock className="w-3.5 h-3.5 text-[#9aa0ae]" />{user.birthYear}
+                  </span>
+                ) : (
+                  <form
+                    id="birth-year"
+                    className="flex items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const year = Number(birthYearDraft);
+                      if (!Number.isInteger(year)) return;
+                      setBirthYearSaving(true);
+                      void api('/users/me/age', { method: 'POST', body: JSON.stringify({ birthYear: year }) })
+                        .then(() => refreshProfile())
+                        .then(() => toast.success(copy.settings.saved))
+                        .catch((err) => toast.error(err instanceof Error ? err.message : copy.settings.saveFailed))
+                        .finally(() => setBirthYearSaving(false));
+                    }}
+                  >
+                    <input
+                      inputMode="numeric"
+                      maxLength={4}
+                      value={birthYearDraft}
+                      onChange={(e) => setBirthYearDraft(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                      aria-label={copy.settings.birthYear}
+                      className={cn(fieldClass, 'w-24')}
+                    />
+                    <button type="submit" disabled={birthYearDraft.length !== 4 || birthYearSaving} className={btnPrimary}>
+                      {birthYearSaving ? copy.common.saving : copy.common.saveChanges}
+                    </button>
+                  </form>
+                )}
+              </Row>
+              <Row label={copy.settings.password}>
+                <button type="button" onClick={() => setPwModalOpen(true)} className={cn(btnOutline, 'w-full sm:w-auto')}>
+                  <Pencil className="w-4 h-4" />{copy.settings.changePassword}
+                </button>
+              </Row>
+            </RowPair>
+            <Row label={copy.settings.email} description={copy.settings.emailHint}>
+              <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full sm:justify-end">
+                <span className="text-sm text-[#4a5565] truncate min-w-0">{user?.email}</span>
+                {user && (verified ? (
+                  <span className="inline-flex items-center gap-1 text-[11.5px] font-semibold text-[#047857] bg-[#ecfdf5] rounded-[7px] px-2 py-0.5 shrink-0"><Check className="w-3 h-3" />{copy.common.verified}</span>
+                ) : (
+                  <span className="text-[11.5px] font-semibold text-[#b45309] bg-[#fef3c7] rounded-[7px] px-2 py-0.5 shrink-0">{copy.settings.notVerified}</span>
+                ))}
+                {user && !verified && (
+                  <button
+                    type="button"
+                    disabled={resendIn > 0}
+                    onClick={() => { void resendVerification(); }}
+                    className={btnOutline}
+                  >
+                    {resendIn > 0 ? copy.settings.resendWait(resendIn) : copy.settings.resendEmail}
+                  </button>
+                )}
+              </div>
+            </Row>
+          </Section>
+
+          <Section
+            id="plan"
+            title={copy.settings.planAndUsage}
+            icon={Zap}
+            action={payments && (
               <button
                 type="button"
-                disabled={resendIn > 0}
-                onClick={() => { void resendVerification(); }}
-                className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 disabled:opacity-60"
+                onClick={() => navigate('/app/import')}
+                className={cn(btnOutline, 'hidden sm:inline-flex shrink-0')}
               >
-                {resendIn > 0 ? copy.settings.resendWait(resendIn) : copy.settings.resendEmail}
+                <Upload className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
               </button>
             )}
-          </div>
-        </Row>
-        <Row label={copy.settings.password}>
-          <button
-            type="button"
-            onClick={() => setPwModalOpen(true)}
-            className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 w-full sm:w-auto"
           >
-            {copy.settings.changePassword}
-          </button>
-        </Row>
-      </Section>
-
-      <Section title={copy.settings.planAndUsage}>
-        <div className="p-4 sm:p-5 min-w-0 space-y-4">
-          {subLoading ? (
-            <div className="h-20 flex items-center justify-center text-gray-400 text-sm">{copy.settings.loadingUsage}</div>
-          ) : (
-            <>
-              <div
-                className="rounded-[14px] p-4 sm:p-5 min-w-0"
-                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #2107AA 100%)' }}
-              >
-                <div className="text-g-on-cta min-w-0">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      {!plusActive && (
-                        <div className="text-xs font-semibold uppercase tracking-wide text-g-blue-200">{copy.settings.freeAllowance}</div>
-                      )}
-                      <div className="text-xl sm:text-2xl font-bold mt-1">
-                        {plusActive
-                          ? (periodEnd ? copy.settings.plusUntil(plusLabel, tashkentDate(periodEnd, limitLang(locale))) : plusLabel)
-                          : limitCopy.freePlan}
-                      </div>
-                      {plusActive && periodEnd && (
-                        <span className="inline-flex mt-2 min-h-7 items-center rounded-full bg-white/15 px-2.5 text-xs font-semibold">
-                          {copy.settings.daysLeft(tashkentDaysLeft(periodEnd))}
-                        </span>
-                      )}
+            {subLoading ? (
+              <div className="h-24 flex items-center justify-center text-gray-400 text-sm">{copy.settings.loadingUsage}</div>
+            ) : (
+              <div className="p-4 sm:p-5 space-y-4 min-w-0">
+                <div
+                  className="rounded-[14px] px-4 py-4 sm:px-5 flex flex-col sm:flex-row sm:items-center gap-4 min-w-0 text-g-on-cta"
+                  style={{ backgroundImage: 'radial-gradient(120% 140% at 100% 0%, var(--g-blue-600) 0%, var(--g-blue-700) 45%, var(--g-blue-900) 100%)' }}
+                >
+                  <div className="min-w-0 flex-1">
+                    {!plusActive && (
+                      <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-g-blue-300">{copy.settings.freeAllowance}</div>
+                    )}
+                    <div className="text-xl sm:text-[22px] font-bold mt-0.5 leading-tight">
+                      {plusActive
+                        ? (periodEnd ? copy.settings.plusUntil(plusLabel, tashkentDate(periodEnd, limitLang(locale))) : plusLabel)
+                        : limitCopy.freePlan}
                     </div>
-                    <Zap className="w-6 h-6 text-white shrink-0" />
+                    {plusActive && periodEnd && (
+                      <span className="inline-flex mt-2 min-h-7 items-center rounded-full bg-white/15 px-2.5 text-xs font-semibold">
+                        {copy.settings.daysLeft(tashkentDaysLeft(periodEnd))}
+                      </span>
+                    )}
                   </div>
                   <button
                     type="button"
                     onClick={() => navigate('/app/plus')}
-                    className="mt-4 w-full min-h-11 px-3 rounded-[14px] bg-white text-g-blue-700 text-sm font-semibold"
+                    className="min-h-11 px-5 rounded-[12px] bg-white text-g-blue-700 text-sm font-bold inline-flex items-center justify-center gap-2 shrink-0 shadow-[0_6px_16px_rgba(12,3,66,0.25)]"
                   >
-                    {plusActive || plusExpired ? copy.settings.renew : copy.settings.upgrade}
+                    <Zap className="w-4 h-4" />{plusActive || plusExpired ? copy.settings.renew : copy.settings.upgrade}
                   </button>
                 </div>
-              </div>
 
-              <div>
-                <h3 className="text-sm font-semibold text-[#364153] mb-2">{copy.settings.usageToday}</h3>
-                <div className="space-y-1.5">
+                <div>
+                  <h3 className="text-[13px] font-semibold text-[#4a5565] mb-2">{copy.settings.usageToday}</h3>
+                  <div className="grid sm:grid-cols-2 gap-2.5">
+                    <Meter
+                      icon={Search}
+                      text={quota !== null
+                        ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
+                        : copy.settings.aiLookupsLine(lookupsToday, null)}
+                      used={quota !== null ? lookupsToday : undefined}
+                      total={quota ?? undefined}
+                    />
+                    <Meter
+                      icon={GraduationCap}
+                      text={copy.settings.mashqLine(
+                        subscription?.usage.mashqToday ?? 0,
+                        plusActive ? (subscription?.usage.mashqQuota ?? null) : (subscription?.usage.mashqQuota ?? 20),
+                      )}
+                      used={subscription?.usage.mashqToday ?? 0}
+                      total={(plusActive ? (subscription?.usage.mashqQuota ?? null) : (subscription?.usage.mashqQuota ?? 20)) ?? undefined}
+                    />
+                    {importAllowance && (
+                      <Meter
+                        icon={Upload}
+                        text={limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)}
+                        used={importAllowance.dailyFreeUsed}
+                        total={importAllowance.dailyFreeImportsPerUser}
+                      />
+                    )}
+                    {importAllowance && (
+                      <Meter
+                        icon={BookOpen}
+                        tone="teal"
+                        text={limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)}
+                        used={Math.max(0, importAllowance.monthlyFreePageLimit - importAllowance.monthlyPagesRemaining)}
+                        total={importAllowance.monthlyFreePageLimit}
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <ul className="space-y-1.5 text-[12.5px] text-[#6b7080]">
                   {[
-                    quota !== null
-                      ? limitCopy.lookupsLeft(Math.max(0, quota - lookupsToday), quota)
-                      : copy.settings.aiLookupsLine(lookupsToday, null),
-                    copy.settings.mashqLine(
-                      subscription?.usage.mashqToday ?? 0,
-                      plusActive ? (subscription?.usage.mashqQuota ?? null) : (subscription?.usage.mashqQuota ?? 20),
-                    ),
-                    importAllowance
-                      ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
-                      : null,
                     plusActive && typeof subscription?.usage.importDiscountPct === 'number'
                       ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: subscription.usage.importDiscountPct })
                       : null,
-                    importAllowance
-                      ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
-                      : null,
-                    limitCopy.dailyReset,
-                    importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
                     copy.settings.publicLibraryAccess,
                   ].filter(Boolean).map((f) => (
-                    <div key={f as string} className="flex items-start gap-2 text-sm text-[#364153]">
-                      <Check className="w-3.5 h-3.5 shrink-0 text-g-blue-700 mt-0.5" />
+                    <li key={f as string} className="flex items-start gap-2">
+                      <Check className="w-3.5 h-3.5 shrink-0 text-[#047857] mt-0.5" />
                       <span className="break-words">{f}</span>
-                    </div>
+                    </li>
                   ))}
-                </div>
-              </div>
+                  {[
+                    limitCopy.dailyReset,
+                    importAllowance ? limitCopy.monthlyReset(tashkentDate(nextTashkentMonthStart().toISOString(), limitLang(locale))) : null,
+                  ].filter(Boolean).map((f) => (
+                    <li key={f as string} className="flex items-start gap-2">
+                      <Clock className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span className="break-words">{f}</span>
+                    </li>
+                  ))}
+                </ul>
 
-              {payments && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/app/import')}
-                  className="w-full min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-semibold text-[#0a0a0a] flex items-center justify-center gap-2"
-                >
-                  <Zap className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
-                </button>
-              )}
-              {payments && (
-                <button
-                  type="button"
-                  onClick={() => navigate('/app/payments')}
-                  className="w-full min-h-11 px-3 rounded-[14px] text-g-blue-700 text-sm font-medium underline"
-                >
-                  {payCopyFor(locale)['history.title']}
-                </button>
-              )}
-
-              <div className="space-y-3">
-                {importAllowance ? (
-                  <div>
-                    <div className="flex items-center justify-between text-xs text-[#6a7282] mb-1.5">
-                      <span>{copy.settings.freeImportsToday}</span>
-                      <span>{importAllowance.dailyFreeUsed}/{importAllowance.dailyFreeImportsPerUser}</span>
-                    </div>
-                    <div className="h-2 bg-[#f3f4f6] rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-g-blue-700 transition-all"
-                        style={{
-                          width: `${
-                            importAllowance.dailyFreeImportsPerUser > 0
-                              ? Math.min(100, Math.round((importAllowance.dailyFreeUsed / importAllowance.dailyFreeImportsPerUser) * 100))
-                              : 0
-                          }%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                ) : null}
-              </div>
-            </>
-          )}
-        </div>
-      </Section>
-
-      <Section title={copy.settings.targetLanguages}>
-        {visibleTargetLanguages.length === 0 ? (
-          <div className="px-5 py-6 text-center text-sm text-gray-400">
-            {targetLanguages.some((tl) => tl.targetLanguage === nativeLanguage)
-              ? copy.settings.nativeCannotBeTarget
-              : copy.settings.noTargetLanguages}
-          </div>
-        ) : (
-          visibleTargetLanguages.map((tl) => {
-            return (
-              <div key={tl.targetLanguage} className="flex items-center gap-3 px-4 sm:px-5 py-3.5 min-w-0">
-                <CatalogLanguageFlag code={tl.targetLanguage} className="h-4 w-6" />
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-[#1e2939] min-w-0 truncate">{languageUiName(tl.targetLanguage, locale)}</div>
-                  <div className="text-xs text-[#99a1af] mt-0.5">
-                    {copy.common.level(tl.cefrLevel)}
-                    {tl.placementScore != null ? ` · ${copy.common.score(tl.placementScore)}` : ''}
-                  </div>
-                </div>
-                {tl.isPrimary && (
-                  <span className="text-[11px] font-semibold text-g-blue-700 bg-g-blue-50 rounded-full px-2 py-0.5 shrink-0">{copy.common.primary}</span>
-                )}
-                {visibleTargetLanguages.length > 1 && (
+                {payments && (
                   <button
                     type="button"
-                    disabled={langBusy === tl.targetLanguage}
-                    onClick={() => setPendingRemove(tl.targetLanguage)}
-                    className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
-                    title={copy.settings.removeLanguage}
-                    aria-label={copy.settings.removeLanguage}
+                    onClick={() => navigate('/app/import')}
+                    className={cn(btnOutline, 'w-full sm:hidden')}
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Upload className="w-4 h-4 shrink-0" />{copy.settings.importMoreContent}
                   </button>
                 )}
+              </div>
+            )}
+            {payments && (
+              <button
+                type="button"
+                onClick={() => navigate('/app/payments')}
+                className="w-full flex items-center gap-2.5 px-4 sm:px-5 min-h-12 bg-[#fafbff] text-sm font-semibold text-[#101828] hover:bg-g-blue-50 text-left"
+              >
+                <Receipt className="w-4 h-4 text-[#4a5565] shrink-0" />
+                <span className="flex-1">{payCopyFor(locale)['history.title']}</span>
+                <ChevronRight className="w-4 h-4 text-g-blue-700" />
+              </button>
+            )}
+          </Section>
+
+          <Section id="languages" title={copy.settings.targetLanguages} icon={Globe}>
+            <div className="p-4 sm:p-5">
+              {visibleTargetLanguages.length === 0 && (
+                <div className="pb-4 text-center text-sm text-gray-400">
+                  {targetLanguages.some((tl) => tl.targetLanguage === nativeLanguage)
+                    ? copy.settings.nativeCannotBeTarget
+                    : copy.settings.noTargetLanguages}
+                </div>
+              )}
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-2.5">
+                {visibleTargetLanguages.map((tl) => (
+                  <div
+                    key={tl.targetLanguage}
+                    className={cn(
+                      'flex items-center gap-1 rounded-xl border min-w-0 pl-3.5',
+                      tl.isPrimary ? 'border-g-blue-200 bg-g-blue-50/60' : 'border-[#eceef5] bg-white',
+                    )}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setLangModal({ mode: 'edit', existing: tl })}
+                      aria-label={`${copy.settings.editTargetLanguage}: ${languageUiName(tl.targetLanguage, locale)}`}
+                      className="flex-1 min-w-0 flex items-center gap-3 py-3 text-left"
+                    >
+                      <CatalogLanguageFlag code={tl.targetLanguage} className="h-4 w-6 shrink-0" />
+                      <span className="min-w-0">
+                        <span className="block text-sm font-semibold text-[#101828] truncate">{languageUiName(tl.targetLanguage, locale)}</span>
+                        <span className="block text-xs text-[#6b7080] mt-0.5 truncate">
+                          {copy.common.level(tl.cefrLevel)}
+                          {tl.placementScore != null ? ` · ${copy.common.score(tl.placementScore)}` : ''}
+                        </span>
+                      </span>
+                      {tl.isPrimary && (
+                        <span className="ml-auto text-[11px] font-semibold text-g-blue-700 bg-white border border-g-blue-100 rounded-[7px] px-2 py-0.5 shrink-0">{copy.common.primary}</span>
+                      )}
+                    </button>
+                    {visibleTargetLanguages.length > 1 && (
+                      <button
+                        type="button"
+                        disabled={langBusy === tl.targetLanguage}
+                        onClick={() => setPendingRemove(tl.targetLanguage)}
+                        className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-[10px] text-gray-400 hover:text-red-500 hover:bg-red-50 shrink-0 disabled:opacity-40"
+                        title={copy.settings.removeLanguage}
+                        aria-label={copy.settings.removeLanguage}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
                 <button
                   type="button"
-                  onClick={() => setLangModal({ mode: 'edit', existing: tl })}
-                  aria-label={copy.settings.editTargetLanguage}
-                  className="min-h-11 min-w-11 inline-flex items-center justify-center rounded-[10px] text-gray-400 hover:text-gray-600 hover:bg-gray-50 shrink-0"
+                  onClick={() => setLangModal({ mode: 'add' })}
+                  className="min-h-[60px] rounded-xl border border-dashed border-g-blue-200 text-g-blue-700 text-sm font-semibold inline-flex items-center justify-center gap-2 hover:bg-g-blue-50"
                 >
-                  <ChevronRight className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />{copy.settings.addLanguage}
                 </button>
               </div>
-            );
-          })
-        )}
-        <div className="px-5 py-3">
-          <button
-            type="button"
-            onClick={() => setLangModal({ mode: 'add' })}
-            className="inline-flex items-center gap-1.5 min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50"
-          >
-            <Plus className="w-4 h-4" />{copy.settings.addLanguage}
-          </button>
-        </div>
-      </Section>
+            </div>
+          </Section>
 
-      <Section title={copy.settings.readingPreferences}>
-        <div className="px-5 py-4">
-          <div className="text-[11px] font-semibold text-[#99a1af] uppercase tracking-[0.6px] mb-3">{copy.settings.preview}</div>
-          <div
-            className="font-serif text-[#1e2939] bg-white rounded-[14px] p-4"
-            style={{ fontSize: `${14 * fontScale}px`, lineHeight: lineSpacing }}
-          >
-            {preview.before}
-            <span className="border-b-[1.6px] border-dashed border-[#ffb900]">{preview.known}</span>
-            {preview.middle}
-            <span className="border-b-[1.6px] border-[#51a2ff]">{preview.learning}</span>
-            {preview.after}
-          </div>
-        </div>
+          <Section id="reading" title={copy.settings.readingPreferences} icon={BookOpen}>
+            <div className="lg:grid lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)] lg:divide-x divide-[#f0f1f6]">
+              <div className="p-4 sm:p-5">
+                <div className="flex items-center gap-1.5 text-[10.5px] font-bold text-[#9aa0ae] uppercase tracking-[0.12em] mb-2.5"><Eye className="w-3.5 h-3.5" />{copy.settings.preview}</div>
+                <div
+                  className="font-serif text-[#1e2939] bg-[#fbfaf7] border border-[#eeebe3] rounded-xl p-4"
+                  style={{ fontSize: `${14 * fontScale}px`, lineHeight: lineSpacing }}
+                >
+                  {preview.before}
+                  <span className="border-b-[1.6px] border-dashed border-[#ffb900]">{preview.known}</span>
+                  {preview.middle}
+                  <span className="border-b-[1.6px] border-[#51a2ff]">{preview.learning}</span>
+                  {preview.after}
+                </div>
+              </div>
+              <div className="divide-y divide-[#f0f1f6] border-t lg:border-t-0 border-[#f0f1f6]">
+                <Row label={copy.settings.fontSize} description={copy.settings.fontSizeHint(Math.round(fontScale * 100))}>
+                  <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
+                    <span className="text-xs text-[#99a1af] shrink-0">A</span>
+                    <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={(v) => { setFontScale(v); queuePref({ readerFontScale: v }); }} />
+                    <span className="text-base font-bold text-[#0a0a0a] shrink-0">A</span>
+                  </div>
+                </Row>
+                <Row label={copy.settings.lineSpacing} description={copy.settings.lineSpacingHint(lineSpacing.toFixed(1))}>
+                  <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={(v) => { setLineSpacing(v); queuePref({ readerLineSpacing: v }); }} />
+                </Row>
+                <Row label={copy.settings.readerTheme}>
+                  <Segmented label={copy.settings.readerTheme}>
+                    {readerThemes.map((t) => (
+                      <ChoiceButton
+                        key={t.value}
+                        selected={theme === t.value}
+                        onClick={() => { setTheme(t.value); queuePref({ readerTheme: t.value }); }}
+                      >
+                        <t.icon className="w-3.5 h-3.5" />
+                        {t.label}
+                      </ChoiceButton>
+                    ))}
+                  </Segmented>
+                </Row>
+                <Row label={practiceCopy.appTheme}>
+                  <Segmented label={practiceCopy.appTheme}>
+                    {(['system', 'light'] as const).map((t) => (
+                      <ChoiceButton
+                        key={t}
+                        selected={appTheme === t}
+                        onClick={() => {
+                          setAppTheme(t);
+                          applyAppTheme(t);
+                          queuePref({ appTheme: t }, 0);
+                        }}
+                      >
+                        {t === 'system' ? practiceCopy.themeSystem : practiceCopy.themeLight}
+                      </ChoiceButton>
+                    ))}
+                  </Segmented>
+                </Row>
+              </div>
+            </div>
+            <RowPair>
+              <Row label={copy.settings.showKnownWords} description={copy.settings.showKnownWordsHint}>
+                <Toggle checked={showKnownWords} onChange={(v) => { setShowKnownWords(v); queuePref({ showKnownWords: v }); }} />
+              </Row>
+              <Row label={copy.settings.tts} description={copy.settings.ttsHint}>
+                <Toggle checked={ttsEnabled} onChange={(v) => { setTtsEnabled(v); queuePref({ ttsEnabled: v }); }} />
+              </Row>
+            </RowPair>
+          </Section>
 
-        <Row label={copy.settings.fontSize} description={copy.settings.fontSizeHint(Math.round(fontScale * 100))}>
-          <div className="flex items-center gap-3 w-full sm:w-auto min-w-0">
-            <span className="text-xs text-[#99a1af] shrink-0">A</span>
-            <RangeSlider value={fontScale} min={0.8} max={1.6} step={0.05} onChange={(v) => { setFontScale(v); queuePref({ readerFontScale: v }); }} />
-            <span className="text-sm font-semibold text-[#0a0a0a] shrink-0">A</span>
-          </div>
-        </Row>
-        <Row label={copy.settings.lineSpacing} description={copy.settings.lineSpacingHint(lineSpacing.toFixed(1))}>
-          <RangeSlider value={lineSpacing} min={1} max={2.5} step={0.1} onChange={(v) => { setLineSpacing(v); queuePref({ readerLineSpacing: v }); }} />
-        </Row>
-        <Row label={practiceCopy.appTheme}>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={practiceCopy.appTheme}>
-            {(['system', 'light'] as const).map((t) => (
-              <ChoiceButton
-                key={t}
-                selected={appTheme === t}
-                onClick={() => {
-                  setAppTheme(t);
-                  applyAppTheme(t);
-                  queuePref({ appTheme: t }, 0);
-                }}
+          <Section id="goals" title={copy.settings.learningGoals} icon={Target}>
+            <Row label={copy.stats.dailyGoal} description={copy.settings.minutesLabel(dailyGoal)}>
+              <Segmented label={copy.stats.dailyGoal}>
+                {minuteChoices.map((minutes) => (
+                  <ChoiceButton key={minutes} selected={dailyGoal === minutes} onClick={() => { setDailyGoal(minutes); queuePref({ dailyGoalMinutes: minutes }); }}>
+                    {minutes}
+                  </ChoiceButton>
+                ))}
+              </Segmented>
+            </Row>
+            <RowPair>
+              <Row label={copy.settings.dailyXpGoal} description={(practiceCopy.goalNames as Record<number, string>)[dailyGoalXp] ?? copy.settings.dailyXpGoal}>
+                <Stepper label={copy.settings.dailyXpGoal} value={dailyGoalXp} min={10} max={500} step={10} onChange={(xp) => { setDailyGoalXp(xp); queuePref({ dailyGoalXp: xp }); }} />
+              </Row>
+              <Row label={copy.settings.dailyNewWords} description={copy.settings.dailyNewWordsHint}>
+                <Stepper label={copy.settings.dailyNewWords} value={dailyNewWords} min={0} max={50} step={1} onChange={(n) => { setDailyNewWords(n); queuePref({ dailyNewWords: n }); }} />
+              </Row>
+            </RowPair>
+          </Section>
+
+          <Section id="notifications" title={copy.settings.notifications} icon={Bell}>
+            <RowPair>
+              <Row label={copy.settings.emailNotifications} description={copy.settings.emailNotificationsHint}>
+                <Toggle checked={notificationsEnabled} onChange={(v) => { setNotificationsEnabled(v); queuePref({ notificationsEnabled: v }); }} />
+              </Row>
+              <Row label={onlineLabel} description={onlineHint}>
+                <Toggle checked={showOnlineStatus} onChange={(v) => { setShowOnlineStatus(v); queuePref({ showOnlineStatus: v }); }} />
+              </Row>
+            </RowPair>
+          </Section>
+
+          <Section id="privacy" title={copy.settings.privacyAi} icon={Shield}>
+            <AiSwitch lang={locale} aiDisabled={user?.aiDisabled} aiDisabledBy={user?.aiDisabledBy} onChanged={refreshProfile} />
+            <Row label={copy.settings.downloadData} description={exporting ? copy.settings.downloadingData : undefined}>
+              <button
+                type="button"
+                disabled={exporting}
+                aria-label={copy.settings.downloadData}
+                onClick={() => { void downloadData(); }}
+                className={cn(btnOutline, 'min-w-10 px-3')}
               >
-                {t === 'system' ? practiceCopy.themeSystem : practiceCopy.themeLight}
-              </ChoiceButton>
-            ))}
-          </div>
-        </Row>
-        <Row label={copy.settings.readerTheme}>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.settings.readerTheme}>
-            {readerThemes.map((t) => (
-              <ChoiceButton
-                key={t.value}
-                selected={theme === t.value}
-                onClick={() => { setTheme(t.value); queuePref({ readerTheme: t.value }); }}
-              >
-                <span className="inline-flex items-center gap-1">
-                  <t.icon className="w-3.5 h-3.5" />
-                  {t.label}
+                {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+                <span className="text-xs font-bold tracking-wide text-[#6b7080]">JSON</span>
+              </button>
+            </Row>
+          </Section>
+
+          <Section id="danger" title={copy.settings.dangerZone} icon={AlertTriangle} danger>
+            <DeleteAccount lang={locale} onDeleted={() => { logout(); window.location.assign('/'); }} />
+          </Section>
+
+          <div className="bg-white rounded-2xl border border-[#e9ebf3] px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3 min-w-0">
+            <div className="flex items-center gap-3 min-w-0 flex-1">
+              <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={32} />
+              <span className="min-w-0 truncate text-[13px] text-[#6b7080]">
+                {copy.settings.signedInAs}{' '}
+                <span className="font-semibold text-[#101828]">
+                  {user?.displayName || user?.email}
                 </span>
-              </ChoiceButton>
-            ))}
-          </div>
-        </Row>
-        <Row label={copy.settings.showKnownWords} description={copy.settings.showKnownWordsHint}>
-          <Toggle checked={showKnownWords} onChange={(v) => { setShowKnownWords(v); queuePref({ showKnownWords: v }); }} />
-        </Row>
-        <Row label={copy.settings.tts} description={copy.settings.ttsHint}>
-          <Toggle checked={ttsEnabled} onChange={(v) => { setTtsEnabled(v); queuePref({ ttsEnabled: v }); }} />
-        </Row>
-      </Section>
-
-      <Section title={copy.settings.learningGoals}>
-        <Row label={copy.stats.dailyGoal} description={copy.settings.minutesLabel(dailyGoal)}>
-          <div className="flex flex-wrap gap-2" role="radiogroup" aria-label={copy.stats.dailyGoal}>
-            {minuteChoices.map((minutes) => (
-              <ChoiceButton key={minutes} selected={dailyGoal === minutes} onClick={() => { setDailyGoal(minutes); queuePref({ dailyGoalMinutes: minutes }); }}>
-                {minutes}
-              </ChoiceButton>
-            ))}
-          </div>
-        </Row>
-        <Row label={copy.settings.dailyXpGoal} description={(practiceCopy.goalNames as Record<number, string>)[dailyGoalXp] ?? copy.settings.dailyXpGoal}>
-          <Stepper label={copy.settings.dailyXpGoal} value={dailyGoalXp} min={10} max={500} step={10} onChange={(xp) => { setDailyGoalXp(xp); queuePref({ dailyGoalXp: xp }); }} />
-        </Row>
-        <Row label={copy.settings.dailyNewWords} description={copy.settings.dailyNewWordsHint}>
-          <Stepper label={copy.settings.dailyNewWords} value={dailyNewWords} min={0} max={50} step={1} onChange={(n) => { setDailyNewWords(n); queuePref({ dailyNewWords: n }); }} />
-        </Row>
-      </Section>
-
-      <Section title={copy.settings.notifications}>
-        <Row label={copy.settings.emailNotifications} description={copy.settings.emailNotificationsHint}>
-          <Toggle checked={notificationsEnabled} onChange={(v) => { setNotificationsEnabled(v); queuePref({ notificationsEnabled: v }); }} />
-        </Row>
-        <Row label={locale === 'ru' ? 'Показывать, что я в сети' : locale === 'en' ? 'Show when I am online' : 'Onlayn ekanimni koʻrsatish'} description={locale === 'ru' ? 'Скрыто, пока вы не включите. Для младше 18 по умолчанию выключено.' : locale === 'en' ? 'Hidden until you turn this on. Off by default for under-18 accounts.' : 'Yoqmaguningizcha yashirin. 18 yoshgacha sukut boʻyicha oʻchiq.'}>
-          <Toggle checked={showOnlineStatus} onChange={(v) => { setShowOnlineStatus(v); queuePref({ showOnlineStatus: v }); }} />
-        </Row>
-      </Section>
-
-      <Section title={copy.settings.privacyAi}>
-        <AiSwitch lang={locale} aiDisabled={user?.aiDisabled} aiDisabledBy={user?.aiDisabledBy} onChanged={refreshProfile} />
-        <Row label={copy.settings.downloadData} description={exporting ? copy.settings.downloadingData : undefined}>
-          <button
-            type="button"
-            disabled={exporting}
-            onClick={() => { void downloadData(); }}
-            className="min-h-11 px-3 rounded-[14px] border border-black/10 bg-white text-sm font-medium text-[#0a0a0a] hover:bg-gray-50 inline-flex items-center gap-2 disabled:opacity-60"
-          >
-            {exporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-          </button>
-        </Row>
-      </Section>
-
-      <Section title={copy.settings.dangerZone} danger>
-        <DeleteAccount lang={locale} onDeleted={() => { logout(); window.location.assign('/'); }} />
-      </Section>
-
-      <div className="bg-white rounded-2xl border border-[#f3f4f6] p-4 sm:p-5 flex flex-col gap-3 min-w-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 min-w-0">
-          <div className="flex items-center gap-2 text-xs text-gray-400 min-w-0">
-            <UserAvatar name={user?.displayName ?? user?.email} url={user?.avatarUrl} size={28} />
-            <span className="min-w-0 truncate">
-              {copy.settings.signedInAs}{' '}
-              <span className="font-medium text-gray-600">
-                {user?.displayName || user?.email}
               </span>
-            </span>
+            </div>
+            <div className="flex flex-col-reverse sm:flex-row gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => setSignOutAllOpen(true)}
+                className="min-h-10 px-3 rounded-[11px] text-sm font-semibold text-red-600 hover:bg-red-50"
+              >
+                {copy.settings.signOutAll}
+              </button>
+              <Button
+                variant="outline"
+                onClick={() => { logout(); navigate('/login'); }}
+                className="rounded-[11px] border-[#e1e3ec] text-[#101828] hover:bg-gray-50 gap-2 min-h-10"
+              >
+                <LogOut className="w-4 h-4" />
+                {copy.settings.signOut}
+              </Button>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            onClick={() => { logout(); navigate('/login'); }}
-            className="rounded-xl text-red-600 border-red-200 hover:bg-red-50 gap-2 w-full sm:w-auto shrink-0 min-h-11"
-          >
-            <LogOut className="w-4 h-4" />
-            {copy.settings.signOut}
-          </Button>
+          <p data-testid="build-id" className="text-center text-[11px] text-[#99a1af] select-all">{buildLabel()}</p>
         </div>
-        <button
-          type="button"
-          onClick={() => setSignOutAllOpen(true)}
-          className="min-h-11 px-3 rounded-[14px] border border-red-200 text-sm font-medium text-red-600 hover:bg-red-50 w-full sm:w-auto self-start"
-        >
-          {copy.settings.signOutAll}
-        </button>
       </div>
-      <p data-testid="build-id" className="text-center text-[11px] text-[#99a1af] select-all">{buildLabel()}</p>
 
       {prefStatus !== 'idle' && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-40" role="status">

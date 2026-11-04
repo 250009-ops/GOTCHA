@@ -18,12 +18,13 @@ export function AiSwitch({ lang, aiDisabled, aiDisabledBy, onChanged }: {
   const enabled = !aiDisabled;
   const locked = !!aiDisabled && aiDisabledBy === 'admin';
   return (
-    <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4 px-4 sm:px-5 py-4 min-w-0">
-      <div className="min-w-0 sm:flex-1">
-        <p className="text-sm font-medium text-[#0a0a0a]">{t.title}</p>
-        <p className="text-xs text-[#99a1af] mt-0.5">{locked ? t.locked : t.hint}</p>
+    <div className="flex items-center gap-4 px-4 sm:px-5 py-3.5 min-w-0 min-h-[60px]">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-semibold text-[#101828]">{t.title}</p>
+        <p className="text-[12.5px] text-[#6b7080] mt-0.5 leading-snug">{locked ? t.locked : t.hint}</p>
         {err && <p className="text-xs text-red-600 mt-1">{err}</p>}
       </div>
+      <span aria-hidden className={`hidden sm:inline text-[12.5px] font-semibold shrink-0 ${enabled ? 'text-[#047857]' : 'text-[#6b7080]'}`}>{enabled ? t.on : t.off}</span>
       <button
         type="button"
         role="switch"
@@ -40,9 +41,11 @@ export function AiSwitch({ lang, aiDisabled, aiDisabledBy, onChanged }: {
             setErr(code === 'AI_DISABLED_BY_SUPPORT' || code === 'AI_DISABLED' ? t.locked : (e instanceof Error ? e.message : t.saveFailed));
           } finally { setBusy(false); }
         }}
-        className={`min-h-11 px-4 rounded-full text-sm font-medium shrink-0 disabled:opacity-60 ${enabled ? 'bg-g-blue-700 text-g-on-cta' : 'bg-gray-200 text-gray-700'}`}
+        className="relative inline-flex h-11 w-12 shrink-0 items-center justify-end rounded-full disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-g-blue-700"
       >
-        {enabled ? t.on : t.off}
+        <span className={`relative inline-flex h-6 w-[42px] items-center rounded-full transition-colors ${enabled ? 'bg-g-blue-700' : 'bg-[#d8dbe5]'}`}>
+          <span className={`inline-block h-[18px] w-[18px] rounded-full bg-white shadow transition-transform ${enabled ? 'translate-x-[21px]' : 'translate-x-[3px]'}`} />
+        </span>
       </button>
     </div>
   );

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import '../landing-premium.css';
 import { GotchaLogo } from './GotchaLogo';
 import { LandingLangSwitch, LP_LANGS, type LpLang } from './LandingLangSwitch';
@@ -52,8 +52,20 @@ export function LandingHeader({ onLanding = false }: { onLanding?: boolean }) {
   const startHref = registerUrl({ plan: 'free', from: onLanding ? 'landing' : 'site', ui: L });
   const loginHref = loginUrl({ ui: L });
 
+  const { pathname, hash } = useLocation();
+  const navigate = useNavigate();
+  // /ru, /en, /uz pages: the path segment decides the language (WebLocaleProvider), so a pick must
+  // rewrite the segment too — otherwise the header/burger switch silently snaps back to the path language.
+  const segs = pathname.split('/').filter(Boolean);
+  const pathLang = ['uz', 'ru', 'en'].includes((segs[0] ?? '').toLowerCase()) ? segs[0].toLowerCase() : null;
+  const langPath = (c: LpLang) => (pathLang ? `/${[c, ...segs.slice(1)].join('/')}` : pathname);
+  const langHref = (c: LpLang) => `${langPath(c)}?${queryWithLocale(params, c).toString()}`;
   const onLang = (c: LpLang) => {
     setLocale(c);
+    if (pathLang && pathLang !== c) {
+      navigate({ pathname: langPath(c), search: `?${queryWithLocale(params, c).toString()}`, hash }, { replace: true });
+      return;
+    }
     setParams(queryWithLocale(params, c), { replace: true });
   };
 
@@ -112,10 +124,10 @@ export function LandingHeader({ onLanding = false }: { onLanding?: boolean }) {
           <h3 id="bm-lh">{T.lang}</h3>
           <div className="seg" role="group" aria-labelledby="bm-lh">
             {LP_LANGS.map((l) => (
-              <a key={l.code} href={`?lang=${l.code}`} lang={l.code} hrefLang={l.code} aria-label={l.name} title={l.name}
+              <a key={l.code} href={langHref(l.code)} lang={l.code} hrefLang={l.code} aria-label={l.name} title={l.name}
                 aria-current={l.code === L ? 'true' : undefined}
                 onClick={(e) => { e.preventDefault(); setMenuOpen(false); onLang(l.code); }}>
-                <span className="flag" aria-hidden="true"><img src={l.flag} alt="" width={20} height={14} style={l.pos ? { objectPosition: l.pos } : undefined} /></span>{l.short}
+                <span className="flag" aria-hidden="true"><img src={l.flag} alt="" width={20} height={14} style={l.pos ? { objectPosition: l.pos } : undefined} /></span><span className="seg-name">{l.name}</span>
               </a>
             ))}
           </div>

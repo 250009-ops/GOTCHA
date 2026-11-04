@@ -7,5 +7,5 @@ export const UI_LANGUAGE_PICKER: Record<
 > = {
   en: { nativeName: 'English', shortName: 'Eng' },
   ru: { nativeName: 'Русский', shortName: 'Ru' },
-  uz: { nativeName: "Oʻzbekcha", shortName: 'Uzb' },
+  uz: { nativeName: 'Oʻzbekcha', shortName: 'Uzb' },
 };

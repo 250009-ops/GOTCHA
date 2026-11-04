@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Trash2 } from 'lucide-react';
 import { api } from '../../lib/api';
 
 /** Privacy §11: Settings → Delete account, confirmed with the password (DELETE /users/me).
@@ -17,11 +18,22 @@ export function DeleteAccount({ lang, onDeleted }: { lang?: string | null; onDel
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const cut = t.hint.search(/[.!?]\s/);
+  const hintHead = cut >= 0 ? t.hint.slice(0, cut + 1) : t.hint;
+  const hintRest = cut >= 0 ? t.hint.slice(cut + 2) : '';
   return (
     <div id="delete-account" className="px-4 sm:px-5 py-4 space-y-3">
-      <p className="text-xs text-[#6b7382]">{t.hint}</p>
+      {/* The full legal text stays one tap away: first sentence visible, the rest folds out. */}
+      <details className="group text-[12.5px] text-[#6b7382] leading-relaxed">
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+          <span className="text-sm font-semibold text-[#101828] block mb-0.5">{t.title}</span>
+          <span>{hintHead}</span>
+          <span aria-hidden className="ml-1 inline-block text-[#2107aa] font-bold transition-transform group-open:rotate-180">⌄</span>
+        </summary>
+        {hintRest && <p className="mt-1">{hintRest}</p>}
+      </details>
       {!open ? (
-        <button type="button" className="min-h-11 px-4 rounded-[14px] border border-red-200 text-red-600 text-sm font-medium hover:bg-red-50" onClick={() => setOpen(true)}>{t.open}</button>
+        <button type="button" className="min-h-10 px-4 rounded-[11px] border border-red-200 bg-white text-red-600 text-sm font-semibold hover:bg-red-50 inline-flex items-center gap-2" onClick={() => setOpen(true)}><Trash2 className="w-4 h-4" />{t.open}</button>
       ) : (
         <form className="flex flex-col sm:flex-row gap-2" onSubmit={async (e) => {
           e.preventDefault();
@@ -36,9 +48,9 @@ export function DeleteAccount({ lang, onDeleted }: { lang?: string | null; onDel
           } finally { setBusy(false); }
         }}>
           <input type="password" autoComplete="current-password" required aria-label={t.pw} placeholder={t.pw} value={pw} onChange={(e) => setPw(e.target.value)}
-            className="h-9 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#6b7080] caret-[#101828] flex-1 min-w-0" />
-          <button type="submit" disabled={busy || !pw} className="h-9 px-4 rounded-[14px] bg-red-600 text-white text-sm font-medium disabled:opacity-50">{t.confirm}</button>
-          <button type="button" className="h-9 px-4 rounded-[14px] border border-[#d1d5dc] bg-white text-[#364153] text-sm font-medium hover:bg-[#f9fafb]" onClick={() => { setOpen(false); setPw(''); setErr(null); }}>{t.cancel}</button>
+            className="h-10 px-3 bg-[#f9fafb] border border-[#e5e7eb] rounded-[11px] text-sm text-[#101828] placeholder:text-[#6b7080] caret-[#101828] flex-1 min-w-0" />
+          <button type="submit" disabled={busy || !pw} className="h-10 px-4 rounded-[11px] bg-red-600 text-white text-sm font-semibold disabled:opacity-50">{t.confirm}</button>
+          <button type="button" className="h-10 px-4 rounded-[11px] border border-[#d1d5dc] bg-white text-[#364153] text-sm font-medium hover:bg-[#f9fafb]" onClick={() => { setOpen(false); setPw(''); setErr(null); }}>{t.cancel}</button>
         </form>
       )}
       {err && <p className="text-xs text-red-600">{err}</p>}

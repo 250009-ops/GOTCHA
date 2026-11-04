@@ -1,11 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft,
+  AlertTriangle,
   BookOpen,
   Check,
+  ChevronRight,
+  Clock,
   Flame,
   GraduationCap,
+  Info,
+  Play,
+  Plus,
   Headphones,
   Keyboard,
   Lightbulb,
@@ -16,6 +21,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import { createPortal } from 'react-dom';
 import { toast } from 'sonner';
 import { isDailyLimitError } from '../../lib/dailyLimit';
 import { DAILY_GOAL_OPTIONS, localizeApiError, practiceCopyFor, type ExerciseType, type PracticeCopy, type SrsRatingValue } from '@gotcha/shared';
@@ -23,7 +29,7 @@ import { Button } from '../ui/button';
 import { cn } from '../ui/utils';
 import { useLearnerLocale } from '../../lib/learnerLocaleContext';
 import { useAuth } from '../../lib/auth';
-import { BrandMark, GotchaLogo } from '../GotchaLogo';
+import { BrandMark } from '../GotchaLogo';
 import { speakText, stopSpeaking } from '../../lib/tts';
 import {
   newAnswerId,
@@ -41,6 +47,41 @@ const MCQ: ExerciseType[] = ['mcq_meaning', 'cloze_mcq', 'listening_mcq'];
 const TYPED: ExerciseType[] = ['typed_recall', 'cloze', 'dictation'];
 
 type Phase = 'hub' | 'loading' | 'play' | 'summary';
+
+/** Hub / exit-dialog strings not in the shared practice copy yet (uz / ru / en). */
+const PX = {
+  en: {
+    today: 'Today', toGoal: (n: number) => `${n} XP to your goal`, goalDone: 'Daily goal reached',
+    dueLabel: 'due for review', newLabel: 'new words', streakLabel: 'streak', days: (n: number) => `${n} ${n === 1 ? 'day' : 'days'}`,
+    freezeLabel: 'streak freezes',
+    sessionHas: 'This session:', reviews: (n: number) => `${n} reviews`, fresh: (n: number) => `${n} new`, words: 'words',
+    forecastSub: 'Words coming up for review in the next 7 days', openVocab: 'Open vocabulary', tomorrow: 'Tomorrow',
+    goalSub: 'Same goal as in Settings',
+    exitTitle: 'Leave this session?', keep: 'Keep going', leave: 'Finish now',
+    week: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
+  },
+  ru: {
+    today: 'Сегодня', toGoal: (n: number) => `До цели ${n} XP`, goalDone: 'Цель дня выполнена',
+    dueLabel: 'пора повторить', newLabel: 'новых слов', streakLabel: 'серия', days: (n: number) => `${n} дн.`,
+    freezeLabel: 'заморозки серии',
+    sessionHas: 'В этой сессии:', reviews: (n: number) => `${n} повтор.`, fresh: (n: number) => `${n} новых`, words: 'слов',
+    forecastSub: 'Слова к повторению в ближайшие 7 дней', openVocab: 'Открыть словарь', tomorrow: 'Завтра',
+    goalSub: 'Та же цель, что в настройках',
+    exitTitle: 'Выйти из сессии?', keep: 'Продолжить', leave: 'Завершить',
+    week: ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'],
+  },
+  uz: {
+    today: 'Bugun', toGoal: (n: number) => `Maqsadga ${n} XP qoldi`, goalDone: 'Bugungi maqsad bajarildi',
+    dueLabel: 'takrorlash vaqti keldi', newLabel: 'yangi soʻz', streakLabel: 'seriya', days: (n: number) => `${n} kun`,
+    freezeLabel: 'seriya muzlatgichi',
+    sessionHas: 'Bu mashqda:', reviews: (n: number) => `${n} takrorlash`, fresh: (n: number) => `${n} yangi`, words: 'soʻz',
+    forecastSub: 'Kelgusi 7 kunda takrorlanadigan soʻzlar', openVocab: 'Lugʻatni ochish', tomorrow: 'Ertaga',
+    goalSub: 'Sozlamalardagi maqsad bilan bir xil',
+    exitTitle: 'Mashqdan chiqasizmi?', keep: 'Davom etish', leave: 'Yakunlash',
+    week: ['Ya', 'Du', 'Se', 'Ch', 'Pa', 'Ju', 'Sh'],
+  },
+};
+type PracticeExtra = (typeof PX)['en'];
 
 function listeningMuted() {
   const until = Number(localStorage.getItem(MUTE_KEY) ?? 0);
@@ -76,6 +117,8 @@ export default function DailyPractice() {
   const [stats, setStats] = useState({ xpToday: 0, dailyGoalXp: 60, streakCount: 0, streakFreezes: 0 });
   const [summary, setSummary] = useState<SessionSummary | null>(null);
   const [mistakeIds, setMistakeIds] = useState<string[]>([]);
+  const [confirmExit, setConfirmExit] = useState(false);
+  const px = PX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
 
   const loadOverview = useCallback(() => {
     practiceApi
@@ -88,6 +131,13 @@ export default function DailyPractice() {
   }, []);
 
   useEffect(loadOverview, [loadOverview]);
+
+  /** Back to the practice home inside the app (never forces the Library). */
+  const toHub = () => {
+    setSummary(null);
+    loadOverview();
+    setPhase('hub');
+  };
 
   const start = async (opts: { focus?: string[]; extra?: boolean } = {}) => {
     setPhase('loading');
@@ -127,10 +177,18 @@ export default function DailyPractice() {
   };
 
   const exit = () => {
-    if (phase === 'play' && idx > 0 && !window.confirm(t.exitConfirm)) return;
+    // Mid-session: ask in-app (progress so far is saved by finishing the session).
+    if (phase === 'play' && idx > 0) {
+      setConfirmExit(true);
+      return;
+    }
     stopSpeaking();
-    if (phase === 'play' && idx > 0) void finish();
-    else navigate('/app');
+    toHub();
+  };
+  const leaveSession = () => {
+    setConfirmExit(false);
+    stopSpeaking();
+    void finish();
   };
 
   const onAnswered = (item: PracticeItem, res: AnswerResult | null) => {
@@ -170,6 +228,7 @@ export default function DailyPractice() {
   if (phase === 'play' && queue[idx]) {
     return (
       <Shell t={t} onExit={exit} stats={stats} progress={{ done: idx, total: queue.length }}>
+        {confirmExit && <ExitDialog t={t} px={px} onKeep={() => setConfirmExit(false)} onLeave={leaveSession} />}
         <ExercisePlayer
           key={queue[idx].key}
           item={queue[idx]}
@@ -186,17 +245,13 @@ export default function DailyPractice() {
 
   if (phase === 'summary' && summary) {
     return (
-      <Shell t={t} onExit={() => navigate('/app')} stats={stats}>
+      <Shell t={t} onExit={toHub} stats={stats}>
         <Summary
           t={t}
           s={summary}
           canRetry={mistakeIds.length > 0}
           onRetry={() => void start({ focus: mistakeIds })}
-          onNew={() => {
-            setSummary(null);
-            loadOverview();
-            setPhase('hub');
-          }}
+          onNew={toHub}
           onRead={() => navigate('/app')}
         />
       </Shell>
@@ -204,9 +259,9 @@ export default function DailyPractice() {
   }
 
   return (
-    <Shell t={t} onExit={() => navigate('/app')} stats={stats}>
-      <Hub
+    <Hub
         t={t}
+        px={px}
         o={overview}
         size={size}
         setSize={setSize}
@@ -224,7 +279,6 @@ export default function DailyPractice() {
         onLibrary={() => navigate('/app')}
         onVocabulary={() => navigate('/app/vocabulary')}
       />
-    </Shell>
   );
 }
 
@@ -244,20 +298,18 @@ function Shell({
   progress?: { done: number; total: number };
 }) {
   const pct = Math.min(100, stats.dailyGoalXp ? (stats.xpToday / stats.dailyGoalXp) * 100 : 0);
-  return (
-    <div className="min-h-screen flex flex-col bg-g-bg">
-      <header className="h-14 bg-g-topbar backdrop-blur border-b border-g-line flex items-center gap-3 px-3 sm:px-4 shrink-0 sticky top-0 z-20">
-        <span className="hidden lg:inline-flex">
-          <GotchaLogo size={28} tone="ink" />
-        </span>
-        <span className="hidden lg:block w-px h-6 bg-g-line" aria-hidden />
+  // Portaled to <body> so the shell's own layers (sidebar, header, scroll container) can't clip or cover it.
+  return createPortal(
+    // Focused session screen: covers the app shell while a session runs (hub lives inside the shell).
+    <div className="fixed inset-0 z-[70] flex flex-col bg-g-bg" role="dialog" aria-modal="true" aria-label={t.title} data-testid="practice-session">
+      <header className="h-14 sm:h-16 bg-g-card border-b border-g-line flex items-center gap-3 px-3 sm:px-5 shrink-0">
         <button
           type="button"
           onClick={onExit}
           aria-label="Close"
-          className="w-11 h-11 -ml-1 flex items-center justify-center rounded-xl text-g-text-2 hover:bg-g-accent-soft hover:text-g-text"
+          className="w-10 h-10 flex items-center justify-center rounded-xl border border-g-line text-g-text-2 hover:bg-g-accent-soft hover:text-g-text"
         >
-          {progress ? <X className="w-5 h-5" /> : <ArrowLeft className="w-5 h-5" />}
+          <X className="w-5 h-5" />
         </button>
         {progress ? (
           <div className="flex-1 flex items-center gap-3 min-w-0">
@@ -294,7 +346,8 @@ function Shell({
         </div>
       </header>
       {children}
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -307,7 +360,7 @@ function GoalRing({ value, goal, size = 96 }: { value: number; goal: number; siz
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`${value} / ${goal} XP`}>
       <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--g-accent-soft)" strokeWidth={8} />
-      <circle
+      {pct > 0 && <circle
         cx={size / 2}
         cy={size / 2}
         r={r}
@@ -318,7 +371,7 @@ function GoalRing({ value, goal, size = 96 }: { value: number; goal: number; siz
         strokeDasharray={`${c * pct} ${c}`}
         transform={`rotate(-90 ${size / 2} ${size / 2})`}
         style={{ transition: 'stroke-dasharray 320ms cubic-bezier(.2,0,0,1)' }}
-      />
+      />}
       <text x="50%" y="48%" textAnchor="middle" className="fill-g-text" style={{ font: '800 18px Inter, sans-serif' }}>
         {value}
       </text>
@@ -329,8 +382,55 @@ function GoalRing({ value, goal, size = 96 }: { value: number; goal: number; siz
   );
 }
 
+function ExitDialog({ t, px, onKeep, onLeave }: { t: PracticeCopy; px: PracticeExtra; onKeep: () => void; onLeave: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        // Same-target listeners (the player's own Esc → exit) must not also fire.
+        e.stopImmediatePropagation();
+        onKeep();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [onKeep]);
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4" style={{ background: 'rgba(11,12,38,.5)' }} onClick={onKeep}>
+      <div
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="practice-exit-title"
+        className="w-full max-w-[400px] bg-g-card rounded-2xl p-5 sm:p-6 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <span className="size-11 rounded-xl bg-g-warn-bg text-g-warn grid place-items-center mb-3">
+          <AlertTriangle className="w-5 h-5" />
+        </span>
+        <h2 id="practice-exit-title" className="text-lg font-bold text-g-text">{px.exitTitle}</h2>
+        <p className="text-sm text-g-text-2 mt-1.5 leading-relaxed">{t.exitConfirm}</p>
+        <div className="grid grid-cols-2 gap-2 mt-5">
+          <button type="button" autoFocus onClick={onKeep} className="min-h-11 rounded-xl border border-g-line text-sm font-semibold text-g-text hover:bg-g-card-2">
+            {px.keep}
+          </button>
+          <button type="button" onClick={onLeave} className="min-h-11 rounded-xl bg-g-cta hover:bg-g-cta-hover text-white text-sm font-semibold">
+            {px.leave}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function forecastLabel(iso: string, i: number, px: PracticeExtra) {
+  if (i === 0) return px.today;
+  if (i === 1) return px.tomorrow;
+  const d = new Date(`${iso}T00:00:00`);
+  return Number.isNaN(d.getTime()) ? iso.slice(5) : px.week[d.getDay()];
+}
+
 function Hub({
   t,
+  px,
   o,
   size,
   setSize,
@@ -341,6 +441,7 @@ function Hub({
   onVocabulary,
 }: {
   t: PracticeCopy;
+  px: PracticeExtra;
   o: Overview | null;
   size: number;
   setSize: (n: number) => void;
@@ -350,10 +451,17 @@ function Hub({
   onLibrary: () => void;
   onVocabulary: () => void;
 }) {
+  const head = (
+    <div className="mb-4">
+      <h1 className="text-[22px] sm:text-2xl font-bold tracking-tight text-[#101828]">{t.title}</h1>
+      <p className="text-sm text-[#6b7080] mt-0.5">{t.subtitle}</p>
+    </div>
+  );
   if (!o) {
     return (
-      <div className="flex-1 flex items-center justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-g-accent" />
+      <div className="max-w-[1180px] mx-auto px-3 sm:px-6 py-5 lg:py-8">
+        {head}
+        <div className="h-48 bg-white border border-[#e9ebf3] rounded-2xl animate-pulse" />
       </div>
     );
   }
@@ -362,13 +470,14 @@ function Hub({
 
   if (o.totalWords === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center p-6">
-        <div className="text-center max-w-sm">
+      <div className="max-w-[1180px] mx-auto px-3 sm:px-6 py-5 lg:py-8">
+        {head}
+        <div className="bg-white border border-[#e9ebf3] rounded-2xl px-6 py-14 text-center">
           <div className="w-14 h-14 rounded-2xl bg-g-accent-soft flex items-center justify-center mx-auto mb-4">
             <GraduationCap className="w-7 h-7 text-g-accent" />
           </div>
-          <h1 className="text-lg font-bold text-g-text mb-1.5">{t.emptyTitle}</h1>
-          <p className="text-sm text-g-text-2 mb-5">{t.emptyBody}</p>
+          <h2 className="text-lg font-bold text-g-text mb-1.5">{t.emptyTitle}</h2>
+          <p className="text-sm text-g-text-2 mb-5 max-w-sm mx-auto">{t.emptyBody}</p>
           <Button onClick={onLibrary} className="rounded-xl bg-g-cta hover:bg-g-cta-hover text-white">
             <BookOpen className="w-4 h-4 mr-1.5" />
             {t.goToLibrary}
@@ -378,109 +487,149 @@ function Hub({
     );
   }
 
-  return (
-    <div className="flex-1 overflow-y-auto p-4 sm:p-6">
-      <div className="max-w-2xl mx-auto flex flex-col gap-4">
-        <section className="bg-g-card border border-g-line rounded-2xl p-5 sm:p-6 flex flex-col sm:flex-row gap-5 sm:items-center">
-          <GoalRing value={o.xpToday} goal={o.dailyGoalXp} />
-          <div className="flex-1 min-w-0">
-            <h1 className="text-xl font-extrabold text-g-text">{t.title}</h1>
-            <p className="text-sm text-g-text-2 mt-1">{t.subtitle}</p>
-            <div className="flex flex-wrap gap-2 mt-3">
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-g-warn-bg text-g-warn text-xs font-bold">{t.dueNow(o.dueCount)}</span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-g-info-bg text-g-info text-xs font-bold">{t.newWords(o.newCount)}</span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-g-streak-bg border border-g-streak-line text-g-streak-text text-xs font-bold">
-                <Flame className="w-3 h-3 text-g-streak-icon" />
-                {t.streakDays(o.streakCount)}
-              </span>
-              {o.streakFreezes > 0 && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-g-info-bg text-g-info text-xs font-bold">
-                  <Snowflake className="w-3 h-3" />
-                  {t.freezes(o.streakFreezes)}
-                </span>
-              )}
-            </div>
-          </div>
-        </section>
+  // What the next session will roughly contain: reviews first, then new words up to the daily cap.
+  const reviews = Math.min(o.dueCount, size);
+  const newCap = o.dailyNewWords > 0 ? o.dailyNewWords : size;
+  const fresh = Math.max(0, Math.min(o.newCount, size - reviews, newCap));
+  const left = Math.max(0, o.dailyGoalXp - o.xpToday);
+  const fmax = Math.max(1, ...o.forecast.map((f) => f.count));
 
-        <section className="bg-g-card border border-g-line rounded-2xl p-5 sm:p-6 flex flex-col gap-4">
-          <div>
-            <div className="text-xs font-bold uppercase tracking-wider text-g-text-2 mb-2">{t.sessionLength}</div>
-            <div className="grid grid-cols-3 gap-2" role="radiogroup" aria-label={t.sessionLength}>
-              {SIZES.map((n) => (
-                <button
-                  key={n}
-                  type="button"
-                  role="radio"
-                  aria-checked={size === n}
-                  onClick={() => setSize(n)}
-                  className={cn(
-                    'min-h-11 px-2 rounded-[14px] border text-sm font-semibold transition-all',
-                    size === n ? 'border-g-accent bg-g-accent-soft text-g-accent' : 'border-g-line-input text-g-text hover:border-g-accent-line',
-                  )}
-                >
-                  {sizeLabels[n]}
-                </button>
-              ))}
+  return (
+    <div className="max-w-[1180px] mx-auto px-3 sm:px-6 py-5 lg:py-8">
+      {head}
+      <section className="bg-white border border-[#e9ebf3] rounded-2xl p-4 sm:p-5 grid gap-4 lg:gap-0 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.9fr)_minmax(0,1.25fr)] mb-3.5">
+        <div className="flex items-center gap-4 lg:pr-5 lg:border-r border-[#f0f1f6]">
+          <GoalRing value={o.xpToday} goal={o.dailyGoalXp} size={96} />
+          <div className="min-w-0">
+            <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8a8fa0]">{px.today}</div>
+            <div className="text-2xl font-bold tracking-tight text-[#101828] mt-0.5 tabular-nums">{o.xpToday} / {o.dailyGoalXp} XP</div>
+            <div className={cn('text-sm mt-0.5', left === 0 ? 'text-g-ok font-semibold' : 'text-[#6b7080]')}>{left === 0 ? px.goalDone : px.toGoal(left)}</div>
+          </div>
+        </div>
+        <div className="grid grid-cols-3 lg:grid-cols-1 gap-2 lg:gap-2.5 lg:px-5 lg:border-r border-[#f0f1f6]">
+          {[
+            { icon: Clock, tone: 'bg-[#fef3c7] text-[#b45309]', v: String(o.dueCount), l: px.dueLabel },
+            { icon: Plus, tone: 'bg-g-blue-50 text-g-blue-700', v: String(o.newCount), l: px.newLabel },
+            { icon: Flame, tone: 'bg-[#fff7ed] text-[#c2410c]', v: px.days(o.streakCount), l: o.streakFreezes > 0 ? `${px.streakLabel} · ${t.freezes(o.streakFreezes)}` : px.streakLabel },
+          ].map((s) => (
+            <div key={s.l} className="flex flex-col lg:flex-row lg:items-center gap-1.5 lg:gap-3 min-w-0 bg-[#f7f8fc] lg:bg-transparent rounded-xl p-2.5 lg:p-0">
+              <span className={cn('size-8 lg:size-9 rounded-[10px] grid place-items-center shrink-0', s.tone)}>
+                <s.icon className="w-4 h-4" />
+              </span>
+              <div className="min-w-0">
+                <b className="block text-base lg:text-lg font-bold text-[#101828] leading-tight">{s.v}</b>
+                <span className="block text-[11.5px] lg:text-[12.5px] text-[#6b7080] leading-snug">{s.l}</span>
+              </div>
             </div>
+          ))}
+        </div>
+        <div className="lg:pl-5 flex flex-col gap-2.5">
+          <div className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#8a8fa0]">{t.sessionLength}</div>
+          <div className="grid grid-cols-3 gap-1 bg-[#f1f2f7] p-1 rounded-xl" role="radiogroup" aria-label={t.sessionLength}>
+            {SIZES.map((n) => (
+              <button
+                key={n}
+                type="button"
+                role="radio"
+                aria-checked={size === n}
+                onClick={() => setSize(n)}
+                className={cn(
+                  'min-h-9 px-1.5 rounded-[9px] text-[13px] font-semibold transition-colors whitespace-nowrap',
+                  size === n ? 'bg-white text-g-blue-700 shadow-sm' : 'text-[#6b7080] hover:text-[#101828]',
+                )}
+              >
+                {sizeLabels[n]}
+              </button>
+            ))}
           </div>
           {nothingDue ? (
-            <div className="flex flex-col gap-2">
+            <>
               <p className="text-sm font-semibold text-g-ok flex items-center gap-1.5">
                 <Check className="w-4 h-4" /> {t.allCaughtUp}
               </p>
-              <Button onClick={onExtra} className="w-full h-12 rounded-[14px] bg-g-cta hover:bg-g-cta-hover text-white font-bold">
+              <Button onClick={onExtra} className="w-full h-12 rounded-xl bg-g-cta hover:bg-g-cta-hover text-white font-bold">
                 <Sparkles className="w-4 h-4 mr-1.5" />
                 {t.practiceExtra}
               </Button>
               <p className="text-xs text-g-text-2 text-center">{t.extraNote}</p>
-            </div>
+            </>
           ) : (
-            <Button onClick={onStart} className="w-full h-12 rounded-[14px] bg-g-cta hover:bg-g-cta-hover text-white font-bold text-base">
-              {o.practicedToday ? t.continueSession : t.startSession}
-            </Button>
+            <>
+              <p className="text-[13px] text-[#4a5565] flex items-center gap-1.5 flex-wrap" data-testid="practice-preview">
+                <Info className="w-3.5 h-3.5 text-[#8a8fa0] shrink-0" />
+                {px.sessionHas}
+                {reviews > 0 && <b className="text-[#101828]">{px.reviews(reviews)}</b>}
+                {reviews > 0 && fresh > 0 && <span>+</span>}
+                {fresh > 0 && <b className="text-[#101828]">{px.fresh(fresh)}</b>}
+                <span>{px.words}</span>
+              </p>
+              <Button onClick={onStart} className="w-full h-12 rounded-xl bg-g-cta hover:bg-g-cta-hover text-white font-bold text-base">
+                <Play className="w-4 h-4 mr-1.5" />
+                {o.practicedToday ? t.continueSession : t.startSession}
+              </Button>
+            </>
           )}
           <p className="hidden sm:block text-xs text-g-text-3 text-center">{t.shortcuts}</p>
+        </div>
+      </section>
+
+      <div className="grid gap-3.5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+        <section className="bg-white border border-[#e9ebf3] rounded-2xl p-4 sm:p-5">
+          <div className="flex items-start justify-between gap-3 mb-3">
+            <div>
+              <h2 className="text-base font-bold text-[#101828]">{t.nextReview}</h2>
+              <p className="text-xs text-[#8a8fa0] mt-0.5">{px.forecastSub}</p>
+            </div>
+            <button type="button" onClick={onVocabulary} className="shrink-0 inline-flex items-center gap-0.5 text-sm font-semibold text-g-blue-700 hover:underline">
+              {px.openVocab} <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+          {o.forecast.length > 0 ? (
+            <div className="flex items-end gap-2 sm:gap-3 h-[150px]" role="img" aria-label={t.dueTomorrow(o.forecast[1]?.count ?? 0)}>
+              {o.forecast.slice(0, 7).map((d, i) => (
+                <div key={d.date} className="flex-1 flex flex-col items-center justify-end gap-1.5 h-full" title={`${d.date}: ${d.count}`}>
+                  <span className="text-xs font-bold text-[#101828] tabular-nums">{d.count || ''}</span>
+                  <div
+                    className={cn('w-full max-w-[56px] rounded-md', d.count === 0 ? 'bg-[#eceef5]' : i === 0 ? 'bg-g-blue-700' : 'bg-[#c5cafd]')}
+                    style={{ height: `${d.count === 0 ? 4 : Math.max(8, (d.count / fmax) * 96)}px` }}
+                  />
+                  <span className="text-[11px] font-semibold text-[#8a8fa0] whitespace-nowrap">{forecastLabel(d.date, i, px)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-[#8a8fa0]">{t.allCaughtUp}</p>
+          )}
         </section>
 
-        <section className="bg-g-card border border-g-line rounded-2xl p-5 sm:p-6">
-          <div className="text-xs font-bold uppercase tracking-wider text-g-text-2 mb-2">{t.goalPicker}</div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" role="radiogroup" aria-label={t.goalPicker}>
-            {DAILY_GOAL_OPTIONS.map((g) => (
-              <button
-                key={g}
-                type="button"
-                role="radio"
-                aria-checked={o.dailyGoalXp === g}
-                onClick={() => onGoal(g)}
-                className={cn(
-                  'min-h-11 px-2 rounded-[14px] border text-xs sm:text-sm font-semibold transition-all',
-                  o.dailyGoalXp === g ? 'border-g-accent bg-g-accent-soft text-g-accent' : 'border-g-line-input text-g-text hover:border-g-accent-line',
-                )}
-              >
-                {t.goalNames[g]}
-              </button>
-            ))}
+        <section className="bg-white border border-[#e9ebf3] rounded-2xl p-4 sm:p-5">
+          <h2 className="text-base font-bold text-[#101828]">{t.goalPicker}</h2>
+          <p className="text-xs text-[#8a8fa0] mt-0.5 mb-3">{px.goalSub}</p>
+          <div className="grid grid-cols-2 lg:grid-cols-1 gap-2" role="radiogroup" aria-label={t.goalPicker}>
+            {DAILY_GOAL_OPTIONS.map((g) => {
+              const [name, xp] = t.goalNames[g].split(' · ');
+              const on = o.dailyGoalXp === g;
+              return (
+                <button
+                  key={g}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  onClick={() => onGoal(g)}
+                  className={cn(
+                    'min-h-11 px-3 rounded-xl border flex items-center gap-2.5 text-left transition-colors',
+                    on ? 'border-g-blue-700 bg-g-blue-50/60' : 'border-[#e3e5ee] hover:border-[#c5cafd]',
+                  )}
+                >
+                  <span className={cn('size-[18px] rounded-full border-2 grid place-items-center shrink-0', on ? 'border-g-blue-700' : 'border-[#c3c7d4]')}>
+                    {on && <span className="size-2 rounded-full bg-g-blue-700" />}
+                  </span>
+                  <span className="text-sm font-semibold text-[#101828] flex-1 min-w-0 truncate">{name}</span>
+                  {xp && <span className="text-xs font-semibold text-[#6b7080] shrink-0">{xp}</span>}
+                </button>
+              );
+            })}
           </div>
-          {o.forecast.length > 0 && (
-            <div className="mt-4">
-              <div className="text-xs font-bold uppercase tracking-wider text-g-text-2 mb-2">{t.nextReview}</div>
-              <div className="flex items-end gap-1.5 h-16" aria-label={t.dueTomorrow(o.forecast[0].count)}>
-                {o.forecast.map((d) => {
-                  const max = Math.max(1, ...o.forecast.map((f) => f.count));
-                  return (
-                    <div key={d.date} className="flex-1 flex flex-col items-center gap-1" title={`${d.date}: ${d.count}`}>
-                      <div className="w-full rounded-md bg-g-progress/80" style={{ height: `${Math.max(4, (d.count / max) * 44)}px` }} />
-                      <span className="text-[10px] text-g-text-2 tabular-nums">{d.count}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <button type="button" onClick={onVocabulary} className="mt-4 text-sm font-semibold text-g-accent hover:underline">
-            {t.backToVocabulary} →
-          </button>
         </section>
       </div>
     </div>

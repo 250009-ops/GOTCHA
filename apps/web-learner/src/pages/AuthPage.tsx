@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
-import { Eye, EyeOff, ArrowLeft } from 'lucide-react';
+import { Check, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
 import { clearTokens } from '../lib/api';
-import { adminAppUrl, isAllowedAdminReturnUrl, MARKETING_URL } from '../lib/links';
+import { adminAppUrl, isAllowedAdminReturnUrl } from '../lib/links';
 import { authSwitchSearch, authFlowSearch } from '../lib/authRoutes';
 import { AuthIcon, authAssets as a } from '../assets/auth';
 import { APP_LANGUAGES, type AppLanguage } from '../lib/types';
@@ -17,6 +17,16 @@ import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
 import { CONSENT_VERSION } from '../components/safety/signupConsent';
 import { LegalLinksLine } from '../components/safety/LegalLinksLine';
 import { safeLearnerReturnPath } from '../lib/learnerReturn';
+
+/** Sign-up step labels and the password hint (uz / ru / en). */
+const SX = {
+  en: { step1: 'Account', step2: 'Languages', stepOf: (n: number) => `Step ${n} of 2`, pwRule: 'At least 8 characters' },
+  ru: { step1: 'Аккаунт', step2: 'Языки', stepOf: (n: number) => `Шаг ${n} из 2`, pwRule: 'Минимум 8 символов' },
+  uz: { step1: 'Hisob', step2: 'Tillar', stepOf: (n: number) => `${n}-qadam, jami 2`, pwRule: 'Kamida 8 ta belgi' },
+};
+
+const inputCls =
+  'w-full h-12 pl-11 pr-3.5 bg-white border border-[#dfe2ec] rounded-xl text-[15px] text-[#101828] placeholder:text-[#9aa0ae] hover:border-[#c5cafd] focus-visible:outline-none focus-visible:border-[#2107AA] focus-visible:ring-4 focus-visible:ring-[#2107AA]/10 transition-all';
 
 function isAppLanguage(code: string | null): code is AppLanguage {
   return !!code && (APP_LANGUAGES as readonly string[]).includes(code);
@@ -35,7 +45,6 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [acceptAi, setAcceptAi] = useState(false);
   const [birthYear, setBirthYear] = useState<number | null>(null);
   const isLogin = mode === 'login';
-  const plan = searchParams.get('plan');
   const langParam = searchParams.get('lang');
   const landingLang = isAppLanguage(langParam) ? langParam : null;
   const adminReturnUrl = isAllowedAdminReturnUrl(searchParams.get('returnUrl'));
@@ -215,10 +224,6 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     }
   };
 
-  const goHome = () => {
-    window.location.assign(MARKETING_URL);
-  };
-
   const goingTo = isLogin ? 'register' : 'login';
   const switchSearch = authSwitchSearch(searchParams, goingTo);
   const switchTo = {
@@ -227,13 +232,33 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   };
 
   const showLanguageStep = !isLogin && step === 'languages';
+  const sx = SX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
+  const pwOk = password.length >= 8;
 
   return (
     <AuthShell>
       <div className="w-full max-w-[448px] min-w-0">
-        <div className="bg-white border-[0.8px] border-[#e5e7eb] rounded-2xl p-5 sm:p-8 flex flex-col gap-5 shadow-[0_18px_20px_rgba(0,0,0,0.08),0_2px_4px_rgba(0,0,0,0.06)]">
+        <div className="bg-white border border-[#e6e8f0] rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 shadow-[0_24px_48px_-24px_rgba(16,24,40,0.18)]">
+          {!isLogin && (
+            <div className="flex items-center gap-3" aria-label={sx.stepOf(showLanguageStep ? 2 : 1)}>
+              {[sx.step1, sx.step2].map((label, i) => {
+                const n = i + 1;
+                const current = (showLanguageStep ? 2 : 1) === n;
+                const done = showLanguageStep && n === 1;
+                return (
+                  <div key={label} className="flex items-center gap-2 flex-1 min-w-0">
+                    <span className={`size-6 shrink-0 rounded-full grid place-items-center text-xs font-bold ${done ? 'bg-emerald-500 text-white' : current ? 'bg-g-blue-700 text-white' : 'bg-[#eef0f5] text-[#8a8fa0]'}`}>
+                      {done ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : n}
+                    </span>
+                    <span className={`text-[13px] font-semibold truncate ${current ? 'text-[#101828]' : 'text-[#8a8fa0]'}`}>{label}</span>
+                    {n === 1 && <span className={`h-px flex-1 ${showLanguageStep ? 'bg-emerald-300' : 'bg-[#e6e8f0]'}`} />}
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div className="flex flex-col gap-1.5">
-            <h2 className="text-2xl font-extrabold text-[#101828] leading-8">
+            <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">
               {isLogin ? copy.auth.welcomeBack : showLanguageStep ? copy.auth.whatToLearn : copy.auth.createAccount}
             </h2>
             <p className="text-[#6b7280] text-sm leading-5">
@@ -243,9 +268,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   : copy.auth.signInSubtitle
                 : showLanguageStep
                   ? copy.auth.languageStepSubtitle
-                  : plan === 'pay-per-import'
-                    ? copy.auth.signUpSubtitle
-                    : copy.auth.signUpSubtitle}
+                  : copy.auth.signUpSubtitle}
             </p>
             {!isLogin && !showLanguageStep && (
               <div className="mt-1 flex flex-wrap gap-1.5">
@@ -264,7 +287,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           {showLanguageStep ? (
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <label id="auth-native-label" className="text-xs font-semibold text-[#4a5565]">{copy.auth.nativeLanguage}</label>
+                <label id="auth-native-label" className="text-[13px] font-semibold text-[#344054]">{copy.auth.nativeLanguage}</label>
                 <LanguageSearchInput
                   labelledBy="auth-native-label"
                   options={catalogLangs}
@@ -275,7 +298,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 />
               </div>
               <div className="flex flex-col gap-2">
-                <label id="auth-target-label" className="text-xs font-semibold text-[#4a5565]">
+                <label id="auth-target-label" className="text-[13px] font-semibold text-[#344054]">
                   {copy.auth.targetLanguages}{' '}
                   <span className="text-[#4a5565] font-normal">{copy.auth.targetLanguagesHint}</span>
                 </label>
@@ -303,14 +326,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   type="button"
                   variant="outline"
                   onClick={() => setStep('credentials')}
-                  className="h-11 rounded-[14px] font-bold text-sm px-4"
+                  className="h-12 rounded-xl font-bold text-sm px-5"
                 >
                   {copy.common.back}
                 </Button>
                 <Button
                   type="submit"
                   disabled={loading || !nativeLanguage || targetLanguages.length === 0 || !acceptTerms || !acceptAi}
-                  className="flex-1 h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+                  className="flex-1 h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
                 >
                   {loading ? (
                     <span className="flex items-center gap-2">
@@ -327,7 +350,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             <form onSubmit={isLogin ? handleSubmit : goToLanguageStep} className="flex flex-col gap-4">
               {!isLogin && (
                 <div className="flex flex-col gap-2">
-                  <label htmlFor="auth-name" className="text-xs font-semibold text-[#4a5565]">{copy.auth.fullName}</label>
+                  <label htmlFor="auth-name" className="text-[13px] font-semibold text-[#344054]">{copy.auth.fullName}</label>
+                  <div className="relative">
+                  <UserRound className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                   <input
                     id="auth-name"
                     name="name"
@@ -336,12 +361,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={copy.auth.namePlaceholder}
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                    className={inputCls}
                   />
+                  </div>
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label htmlFor="auth-email" className="text-xs font-semibold text-[#4a5565]">{copy.auth.email}</label>
+                <label htmlFor="auth-email" className="text-[13px] font-semibold text-[#344054]">{copy.auth.email}</label>
+                <div className="relative">
+                <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                 <input
                   id="auth-email"
                   name="email"
@@ -353,12 +381,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={copy.auth.emailPlaceholder}
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                  className={inputCls}
                 />
+                </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label htmlFor="auth-password" className="text-xs font-semibold text-[#4a5565]">{copy.auth.password}</label>
+                <label htmlFor="auth-password" className="text-[13px] font-semibold text-[#344054]">{copy.auth.password}</label>
                 <div className="relative">
+                  <Lock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                   <input
                     id="auth-password"
                     name="password"
@@ -367,7 +397,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={isLogin ? copy.auth.passwordPlaceholderLogin : copy.auth.passwordPlaceholderRegister}
-                    className="w-full h-11 pl-3.5 pr-12 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                    className={`${inputCls} !pr-12`}
                   />
                   <button
                     type="button"
@@ -378,6 +408,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     {showPass ? <EyeOff className="w-[18px] h-[18px]" /> : <Eye className="w-[18px] h-[18px]" />}
                   </button>
                 </div>
+                {!isLogin && (
+                  <p className={`flex items-center gap-1.5 text-xs font-medium ${pwOk ? 'text-emerald-600' : 'text-[#8a8fa0]'}`}>
+                    <Check className="w-3.5 h-3.5" strokeWidth={pwOk ? 3 : 2} />
+                    {sx.pwRule}
+                  </p>
+                )}
               </div>
               {isLogin && (
                 <div className="flex items-center justify-end">
@@ -392,7 +428,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-11 rounded-[14px] bg-g-blue-700 hover:bg-g-blue-800 font-bold text-sm shadow-[0_10px_12px_rgba(33, 7, 170,0.2)]"
+                className="w-full h-12 rounded-xl bg-g-blue-700 hover:bg-g-blue-800 font-bold text-[15px] shadow-[0_10px_20px_-8px_rgba(33,7,170,0.45)]"
               >
                 {loading ? (
                     <span className="flex items-center gap-2">
@@ -410,18 +446,9 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             </form>
           )}
 
-          {/* Admin sign-in has no second option, so the divider would sit above an empty gap. */}
-          {!adminReturnUrl && (
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-[#e5e7eb]" />
-            <span className="text-xs font-medium text-[#4a5565]">{copy.common.or}</span>
-            <div className="flex-1 h-px bg-[#e5e7eb]" />
-          </div>
-          )}
-
           {/* final-5: admin sign-in never offers 'Sign up free'. */}
           {!adminReturnUrl && (
-          <div className="flex items-center justify-between gap-3 text-[13px] whitespace-nowrap">
+          <div className="flex items-center justify-center gap-1.5 text-sm flex-wrap border-t border-[#eef0f5] pt-5">
             <span className="text-[#6b7280]">
               {isLogin ? copy.auth.noAccount : copy.auth.hasAccount}
             </span>
@@ -437,14 +464,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           )}
         </div>
 
-        <button
-          type="button"
-          onClick={goHome}
-          className="mt-3 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-sm font-medium text-[#4a5565] hover:text-[#101828] mx-auto focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA]"
-        >
-          <ArrowLeft className="w-3.5 h-3.5" />
-          {copy.auth.backToHomepage}
-        </button>
+
       </div>
     </AuthShell>
   );

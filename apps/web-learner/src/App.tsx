@@ -52,6 +52,8 @@ export default function App() {
         <Route path="messages" element={<MessagesPage />} />
         <Route path="notifications" element={<NotificationsPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        {/* Mashq home lives in the shell (sidebar + top bar); a running session opens as a focused full-screen layer. */}
+        <Route path="practice" element={<PracticePage />} />
         {/* S3a: /app/<legacy> → new route; unknown → 404 page inside the shell */}
         <Route path="*" element={<NotFoundPage />} />
       </Route>
@@ -60,14 +62,6 @@ export default function App() {
         element={
           <ProtectedRoute>
             <ReaderPage />
-          </ProtectedRoute>
-        }
-      />
-      <Route
-        path="/app/practice"
-        element={
-          <ProtectedRoute>
-            <PracticePage />
           </ProtectedRoute>
         }
       />

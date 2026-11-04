@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Search, Upload } from 'lucide-react';
+import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Newspaper, Search, Upload, X } from 'lucide-react';
+import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/EmptyState';
 import { LibrarySkeleton } from '../components/LibrarySkeleton';
@@ -26,6 +27,41 @@ const cefrStyle: Record<string, string> = {
 const staticFilterIds = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1–C2'] as const;
 type StaticFilterId = (typeof staticFilterIds)[number];
 type FilterTab = 'All' | StaticFilterId | string;
+type KindFilter = 'All' | 'Fiction' | 'News' | 'Imports';
+type LevelFilter = '' | 'A1–A2' | 'B1–B2' | 'C1–C2';
+const KINDS: KindFilter[] = ['All', 'Fiction', 'News', 'Imports'];
+const LEVELS: Exclude<LevelFilter, ''>[] = ['A1–A2', 'B1–B2', 'C1–C2'];
+
+/** Browse filter strings not in the shared copy yet (uz / ru / en). */
+const LX = {
+  en: { allLangs: 'All languages', level: 'Level', anyLevel: 'Any', myImports: 'My imports', clear: 'Clear filters', results: (n: number) => `${n} ${n === 1 ? 'title' : 'titles'}`, language: 'Language' },
+  ru: { allLangs: 'Все языки', level: 'Уровень', anyLevel: 'Любой', myImports: 'Мои импорты', clear: 'Сбросить фильтры', results: (n: number) => `Найдено: ${n}`, language: 'Язык' },
+  uz: { allLangs: 'Barcha tillar', level: 'Daraja', anyLevel: 'Hammasi', myImports: 'Importlarim', clear: 'Filtrlarni tozalash', results: (n: number) => `${n} ta natija`, language: 'Til' },
+};
+
+/** Legacy single `?filter=` plus the newer `?lang=` / `?level=` → three independent filters. */
+function splitFilters(params: URLSearchParams, languageTabs: string[], nativeCode: string | null) {
+  const legacy = parseFilterParam(params.get('filter') ?? params.get('genre'), languageTabs, nativeCode);
+  let kind: KindFilter = 'All';
+  let lang = '';
+  let level: LevelFilter = '';
+  if ((KINDS as string[]).includes(legacy)) kind = legacy as KindFilter;
+  else if ((LEVELS as string[]).includes(legacy)) level = legacy as LevelFilter;
+  else if (legacy !== 'All') lang = legacy.toLowerCase();
+  const l = params.get('lang')?.trim().toLowerCase();
+  if (l && l !== nativeCode && languageTabs.includes(l.toUpperCase())) lang = l;
+  const lv = parseFilterParam(params.get('level'), [], nativeCode);
+  if ((LEVELS as string[]).includes(lv)) level = lv as LevelFilter;
+  return { kind, lang, level };
+}
+
+function matchesLevel(item: ContentItem, level: LevelFilter) {
+  if (!level) return true;
+  const c = (item.cefrLevel ?? '').toLowerCase();
+  if (level === 'A1–A2') return c === 'a1' || c === 'a2';
+  if (level === 'B1–B2') return c === 'b1' || c === 'b2';
+  return c === 'c1' || c === 'c2';
+}
 
 const CHIP_UZ: Record<string, string> = {
   de: 'Nemischa', ar: 'Arabcha', ko: 'Koreyscha', tr: 'Turkcha', ru: 'Ruscha', uz: 'Oʻzbekcha', en: 'Inglizcha',
@@ -428,10 +464,6 @@ export default function LibraryPage() {
     () => learnableLangCodes.map((code) => code.toUpperCase()),
     [learnableLangCodes],
   );
-  const filterTabs = useMemo(
-    () => ['All', ...languageTabs, ...staticFilterIds] as FilterTab[],
-    [languageTabs],
-  );
   const langFlags = useMemo(
     () => Object.fromEntries(catalogLangs.map((l) => [l.code, l.flagEmoji])),
     [catalogLangs],
@@ -470,34 +502,39 @@ export default function LibraryPage() {
     };
   }, [user, nativeCode, targetScopeKey, reloadKey]);
 
-  const initialFilter = useMemo(
-    () => parseFilterParam(searchParams.get('filter') ?? searchParams.get('genre'), languageTabs, nativeCode),
+  const initialFilters = useMemo(
+    () => splitFilters(searchParams, languageTabs, nativeCode),
     [searchParams, languageTabs, nativeCode],
   );
 
   const [search, setSearch] = useState(() => searchParams.get('q') ?? '');
-  const [activeFilter, setActiveFilter] = useState<FilterTab>(initialFilter);
+  const [kindFilter, setKindFilter] = useState<KindFilter>(initialFilters.kind);
+  const [langFilter, setLangFilter] = useState(initialFilters.lang);
+  const [levelFilter, setLevelFilter] = useState<LevelFilter>(initialFilters.level);
+  const lx = LX[locale === 'ru' || locale === 'uz' ? locale : 'en'];
 
+  // A language that is the learner's native one, or no longer in the catalogue, is dropped.
   useEffect(() => {
-    const isStatic =
-      activeFilter === 'All' || (staticFilterIds as readonly string[]).includes(activeFilter as StaticFilterId);
-    const isNativeChip = Boolean(nativeCode && activeFilter.toLowerCase() === nativeCode);
-    const isOrphanLang =
-      /^[a-z]{2}$/i.test(activeFilter) && languageTabs.length > 0 && !languageTabs.includes(activeFilter);
-    if (!isNativeChip && (isStatic || !isOrphanLang)) return;
-    setActiveFilter('All');
+    if (!langFilter) return;
+    const isNative = Boolean(nativeCode && langFilter === nativeCode);
+    const isOrphan = languageTabs.length > 0 && !languageTabs.includes(langFilter.toUpperCase());
+    if (!isNative && !isOrphan) return;
+    setLangFilter('');
     if (!isBrowse) return;
     const params = new URLSearchParams(searchParams);
-    params.delete('filter');
+    params.delete('lang');
+    if ((params.get('filter') ?? '').toLowerCase() === langFilter) params.delete('filter');
     params.delete('genre');
     setSearchParams(params, { replace: true });
-  }, [activeFilter, languageTabs, nativeCode, isBrowse, searchParams, setSearchParams]);
+  }, [langFilter, languageTabs, nativeCode, isBrowse, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!isBrowse) return;
     setSearch(searchParams.get('q') ?? '');
-    setActiveFilter(initialFilter);
-  }, [isBrowse, searchParams, initialFilter]);
+    setKindFilter(initialFilters.kind);
+    setLangFilter(initialFilters.lang);
+    setLevelFilter(initialFilters.level);
+  }, [isBrowse, searchParams, initialFilters]);
 
   const collectionSlug = searchParams.get('collection');
   const activeCollection = useMemo(
@@ -506,11 +543,10 @@ export default function LibraryPage() {
   );
 
   const catalogLangQuery = useMemo(() => {
-    if (!languageTabs.includes(activeFilter)) return '';
-    const code = activeFilter.toLowerCase();
-    if (nativeCode && code === nativeCode) return '';
-    return code;
-  }, [activeFilter, languageTabs, nativeCode]);
+    if (!langFilter || !languageTabs.includes(langFilter.toUpperCase())) return '';
+    if (nativeCode && langFilter === nativeCode) return '';
+    return langFilter;
+  }, [langFilter, languageTabs, nativeCode]);
 
   useEffect(() => {
     if (!isBrowse || !user || !getAccessToken() || collectionSlug) {
@@ -574,12 +610,12 @@ export default function LibraryPage() {
     if (activeCollection) {
       return dedupeItems(activeCollection.items.map((i) => i.content).filter(Boolean));
     }
-    if (isBrowse && activeFilter === 'Imports') {
+    if (isBrowse && kindFilter === 'Imports') {
       return feed?.myImports ?? [];
     }
     if (isBrowse) return catalogItems;
     return uniqueItems;
-  }, [activeCollection, isBrowse, activeFilter, feed, catalogItems, uniqueItems]);
+  }, [activeCollection, isBrowse, kindFilter, feed, catalogItems, uniqueItems]);
 
   const allowedLangs = useMemo(() => new Set(learnableLangCodes), [learnableLangCodes]);
   const filtered = browseBaseItems.filter((item) => {
@@ -588,8 +624,21 @@ export default function LibraryPage() {
       if (nativeCode && lang === nativeCode) return false;
       if (allowedLangs.size > 0 && !allowedLangs.has(lang)) return false;
     }
-    return matchesSearch(item, search) && matchesFilter(item, activeFilter, languageTabs);
+    return (
+      matchesSearch(item, search) &&
+      matchesFilter(item, kindFilter, languageTabs) &&
+      (!langFilter || itemLanguage(item) === langFilter) &&
+      matchesLevel(item, levelFilter)
+    );
   });
+  // Learner's own target languages first, then the rest of the catalogue.
+  const targetOrder = (user?.targetLanguages ?? []).map((t) => t.targetLanguage.toLowerCase());
+  const langOptions = [...learnableLangCodes].sort((a, b) => {
+    const ia = targetOrder.indexOf(a);
+    const ib = targetOrder.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+  const filtersActive = kindFilter !== 'All' || Boolean(langFilter) || Boolean(levelFilter);
 
   const hero = feed?.continueReading?.[0];
   // `??` does not fall through empty arrays — fill from recently published when continue-reading has ≤1 item
@@ -611,12 +660,21 @@ export default function LibraryPage() {
       ? !loading && !catalogLoading && !catalogError && browseBaseItems.length === 0
       : !loading && !feedError && uniqueItems.length === 0;
 
-  const setFilter = (next: FilterTab) => {
-    setActiveFilter(next);
+  const writeFilters = (next: { kind?: KindFilter; lang?: string; level?: LevelFilter }) => {
+    const kind = next.kind ?? kindFilter;
+    const lang = next.lang ?? langFilter;
+    const level = next.level ?? levelFilter;
+    setKindFilter(kind);
+    setLangFilter(lang);
+    setLevelFilter(level);
     if (!isBrowse) return;
     const params = new URLSearchParams(searchParams);
-    if (next === 'All') params.delete('filter');
-    else params.set('filter', next);
+    if (kind === 'All') params.delete('filter');
+    else params.set('filter', kind);
+    if (lang) params.set('lang', lang);
+    else params.delete('lang');
+    if (level) params.set('level', level);
+    else params.delete('level');
     params.delete('genre');
     setSearchParams(params, { replace: true });
   };
@@ -691,20 +749,94 @@ export default function LibraryPage() {
         </div>
 
         {!search && (
-          <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
-            {filterTabs.map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => setFilter(f)}
-                className={cn(
-                  'shrink-0 px-3.5 py-1.5 rounded-full text-xs font-medium border transition-all',
-                  activeFilter === f ? 'bg-g-blue-700 text-g-on-cta border-g-blue-700 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
+          <div className="space-y-3" data-testid="library-filters">
+            <div className="flex items-end justify-between gap-3 border-b border-[#e6e8f0]">
+              <div className="flex gap-1 overflow-x-auto scrollbar-hide -mb-px" role="tablist" aria-label={copy.libraryPage.browseTitle}>
+                {KINDS.map((k) => {
+                  const Icon = k === 'All' ? BookOpen : k === 'Fiction' ? BookOpen : k === 'News' ? Newspaper : Upload;
+                  return (
+                    <button
+                      key={k}
+                      type="button"
+                      role="tab"
+                      aria-selected={kindFilter === k}
+                      onClick={() => writeFilters({ kind: k })}
+                      className={cn(
+                        'shrink-0 inline-flex items-center gap-2 h-11 px-3 sm:px-4 border-b-2 text-sm font-semibold transition-colors',
+                        kindFilter === k ? 'border-g-blue-700 text-g-blue-700' : 'border-transparent text-[#6b7080] hover:text-[#101828]',
+                      )}
+                    >
+                      {k !== 'All' && <Icon className="w-4 h-4" />}
+                      {k === 'Imports' ? lx.myImports : filterLabel(k, copy, locale)}
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="hidden sm:block shrink-0 pb-3 text-xs text-[#8a8fa0]">{lx.results(filtered.length)}</span>
+            </div>
+
+            <div className="flex flex-col lg:flex-row lg:items-center gap-3">
+              <div className="flex gap-1.5 overflow-x-auto scrollbar-hide flex-1 min-w-0" role="radiogroup" aria-label={lx.language}>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!langFilter}
+                  onClick={() => writeFilters({ lang: '' })}
+                  className={cn(
+                    'shrink-0 h-9 px-3.5 rounded-full border text-[13px] font-semibold transition-colors',
+                    !langFilter ? 'bg-[#101828] border-[#101828] text-white' : 'bg-white border-[#e3e5ee] text-[#4a5565] hover:border-[#c5cafd]',
+                  )}
+                >
+                  {lx.allLangs}
+                </button>
+                {langOptions.map((code) => (
+                  <button
+                    key={code}
+                    type="button"
+                    role="radio"
+                    aria-checked={langFilter === code}
+                    onClick={() => writeFilters({ lang: langFilter === code ? '' : code })}
+                    className={cn(
+                      'shrink-0 inline-flex items-center gap-2 h-9 pl-2.5 pr-3.5 rounded-full border text-[13px] font-semibold transition-colors',
+                      langFilter === code ? 'bg-g-blue-50 border-g-blue-700 text-g-blue-700' : 'bg-white border-[#e3e5ee] text-[#4a5565] hover:border-[#c5cafd]',
+                    )}
+                  >
+                    <CatalogLanguageFlag code={code} className="h-3.5 w-5 rounded-[3px]" />
+                    {filterLabel(code.toUpperCase(), copy, locale)}
+                  </button>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-semibold text-[#8a8fa0]">{lx.level}</span>
+                <div className="inline-flex bg-[#f1f2f7] p-1 rounded-xl" role="radiogroup" aria-label={lx.level}>
+                  {(['', ...LEVELS] as LevelFilter[]).map((lv) => (
+                    <button
+                      key={lv || 'any'}
+                      type="button"
+                      role="radio"
+                      aria-checked={levelFilter === lv}
+                      onClick={() => writeFilters({ level: lv })}
+                      className={cn(
+                        'h-7 px-2.5 rounded-[9px] text-xs font-semibold whitespace-nowrap transition-colors',
+                        levelFilter === lv ? 'bg-white text-g-blue-700 shadow-sm' : 'text-[#6b7080] hover:text-[#101828]',
+                      )}
+                    >
+                      {lv || lx.anyLevel}
+                    </button>
+                  ))}
+                </div>
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => writeFilters({ kind: 'All', lang: '', level: '' })}
+                    className="inline-flex items-center gap-1 h-8 px-2 rounded-lg text-xs font-semibold text-[#6b7080] hover:text-[#101828] hover:bg-gray-100"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{lx.clear}</span>
+                  </button>
                 )}
-              >
-                {filterLabel(f, copy, locale)}
-              </button>
-            ))}
+              </div>
+            </div>
           </div>
         )}
 
