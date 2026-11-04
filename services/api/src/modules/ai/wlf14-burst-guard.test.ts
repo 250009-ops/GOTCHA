@@ -3,7 +3,7 @@
  * (QA: a Plus user made 40 lookups in 57 s, all 200, on final-5). The guard runs before any cache / AI / quota step.
  * The cross-process Postgres variant (lookup_burst_hits) is covered by qa/payments-02-wlive.db.ts.
  */
-import assert from 'node:assert/strict';
+import * as assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { AiService } from './ai.service';
