@@ -52,7 +52,9 @@ import {
   lookupMaxTokens,
   lookupWordCount,
   looksLikeDefinitionGloss,
+  looksLikeWrongScript,
   needsLookupRepair,
+  normalizeUzbekOrthography,
   normalizeLemmaKey,
   normalizePartOfSpeech,
   normalizeSentenceForHash,
@@ -115,10 +117,23 @@ export class AiService {
     return this.client;
   }
 
+  /** Lookups are short. The SDK default is a 10-minute timeout and 2 retries, which left the reader spinner up.
+   *  Quiz, import cleanup, and speech keep the SDK default — import cleanup already aborts at 55s. */
+  private lookupRequestOptions(): { timeout: number; maxRetries: number } {
+    const raw = Number(process.env.OPENAI_TIMEOUT_MS ?? 20_000);
+    const timeout = Number.isFinite(raw) && raw > 0 ? raw : 20_000;
+    return { timeout, maxRetries: 1 };
+  }
+
+  private settingsCache: { at: number; value: AiPlatformSettings } | null = null;
+  private platformUsageCache: { at: number; day: number; used: number } | null = null;
+
   async getPlatformAiSettings(): Promise<AiPlatformSettings> {
     if (this.useMemory()) {
       return defaultAiPlatformSettings();
     }
+    // Speed: read on every lookup miss before; admin changes still apply within 30 s.
+    if (this.settingsCache && Date.now() - this.settingsCache.at < 30_000) return this.settingsCache.value;
 
     const rows = await this.prisma.platformSetting.findMany({
       where: {
@@ -131,7 +146,9 @@ export class AiService {
     for (const row of rows) {
       map[row.key] = row.value;
     }
-    return parseAiPlatformSettings(map);
+    const value = parseAiPlatformSettings(map);
+    this.settingsCache = { at: Date.now(), value };
+    return value;
   }
 
   private readonly ttsCounter = new DailyCounter(ttsDailyLimit);
@@ -205,11 +222,20 @@ export class AiService {
     }
 
     const today = usageDayStart(); // Tashkent calendar day (resets 00:00 Asia/Tashkent)
-    const agg = await this.prisma.aiUsageDaily.aggregate({
-      where: { usageDate: today },
-      _sum: { lookupCount: true, quizCount: true },
-    });
-    const used = (agg._sum.lookupCount ?? 0) + (agg._sum.quizCount ?? 0);
+    // Speed: platform-wide SUM over every learner's usage row ran on every lookup miss.
+    // A 15 s old total is plenty for a daily budget guard.
+    let used: number;
+    const pc = this.platformUsageCache;
+    if (pc && pc.day === today.getTime() && Date.now() - pc.at < 15_000) {
+      used = pc.used;
+    } else {
+      const agg = await this.prisma.aiUsageDaily.aggregate({
+        where: { usageDate: today },
+        _sum: { lookupCount: true, quizCount: true },
+      });
+      used = (agg._sum.lookupCount ?? 0) + (agg._sum.quizCount ?? 0);
+      this.platformUsageCache = { at: Date.now(), day: today.getTime(), used };
+    }
     if (settings.dailyLimit > 0 && used >= settings.dailyLimit) {
       throw new ForbiddenException('Platform AI daily limit reached. Try again tomorrow.');
     }
@@ -409,8 +435,11 @@ export class AiService {
 
     // Miss path only: enforce platform + user quota before spending OpenAI.
     const settings = await this.getPlatformAiSettings();
-    await this.assertAiAvailable(settings);
-    const quota = await this.checkQuota(userId, settings.defaultUserQuota);
+    // Speed: the platform budget check and the learner quota read are independent — run them together.
+    const [, quota] = await Promise.all([
+      this.assertAiAvailable(settings),
+      this.checkQuota(userId, settings.defaultUserQuota),
+    ]);
     const { today, memoryKey } = quota;
     let mode = quota.mode;
     // PAY2-09: claim the slot atomically BEFORE spending OpenAI (DB mode); released below if unused.
@@ -464,7 +493,7 @@ export class AiService {
                 .join('\n'),
             },
           ],
-        });
+        }, this.lookupRequestOptions());
         usedOpenAi = true;
         meta.model = model;
         meta.promptTokens = response.usage?.prompt_tokens ?? 0;
@@ -505,6 +534,8 @@ export class AiService {
               translation,
               contextualMeaning,
             })
+            || looksLikeWrongScript(translation, dto.targetLang)
+            || looksLikeWrongScript(contextualMeaning, dto.targetLang)
           ) {
             const repaired = await this.repairContextualLookup(client, model, {
               surface,
@@ -548,6 +579,10 @@ export class AiService {
     }
 
     translation = sanitizeGloss(translation, surface, limits, kind);
+    if (dto.targetLang === 'uz') {
+      translation = normalizeUzbekOrthography(translation);
+      if (contextualMeaning) contextualMeaning = normalizeUzbekOrthography(contextualMeaning);
+    }
     phrase = sanitizePhrase(phrase, context, surface, kind)
       ?? (kind === 'phrase' ? surface.trim() : null);
     if (kind === 'sentence') {
@@ -574,8 +609,9 @@ export class AiService {
     this.memorySet(hash, payload);
 
     if (!this.useMemory()) {
+      // Speed: the shared cache write no longer delays the response (memory cache serves repeats meanwhile).
       try {
-        await this.prisma.lemmaCache.upsert({
+        void Promise.resolve(this.prisma.lemmaCache.upsert({
           where: {
             lemma_sourceLang_targetLang_contentHash: {
               lemma: cacheKeyLemma,
@@ -600,7 +636,7 @@ export class AiService {
             partOfSpeech,
             modelVersion: client ? model : 'offline',
           },
-        });
+        })).catch(() => undefined);
       } catch {
         // Race or transient DB error — memory cache still serves the hit path.
       }
@@ -644,7 +680,7 @@ export class AiService {
             content: `Word: ${word}\nGLOSS LANGUAGE: ${languagePromptLabel(glossLang)}${partOfSpeech && partOfSpeech !== 'phrase' ? `\nPart of speech: ${partOfSpeech} (the gloss must be a ${partOfSpeech} too)` : ''}`,
           },
         ],
-      });
+      }, this.lookupRequestOptions());
       const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as { translation?: string };
       const next = typeof parsed.translation === 'string' ? parsed.translation.trim() : '';
       return next || null;
@@ -691,11 +727,12 @@ export class AiService {
               'If have/has/had + verb, gloss the verb + particle as used here (run him by = overtake/pass), not "have".',
               'contextualMeaning = ONE natural meaning HERE. No comma-joined synonym lists.',
               'translation = short gloss of the whole phrase/word as used here.',
+              opts.targetLang === 'uz' ? 'Uzbek must be in the LATIN alphabet (oʻ, gʻ, ʼ), never Cyrillic.' : null,
               `MODE=${opts.kind.toUpperCase()}.`,
-            ].join('\n'),
+            ].filter(Boolean).join('\n'),
           },
         ],
-      });
+      }, this.lookupRequestOptions());
       return JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
         lemma?: string;
         translation?: string;
@@ -920,7 +957,7 @@ export class AiService {
             {
               role: 'system',
               content: withChildSafe(
-                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Translate the ENTIRE message into the target language. Keep every clause, meaning, and tone. Do not summarize, omit, add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged.',
+                'You are a precise translator for a language-learning chat. Return ONLY JSON: {"translation":""}. Translate the ENTIRE message into the target language. Keep every clause, meaning, and tone. Do not summarize, omit, add quotes, labels, or explanations. When source and target languages differ, you MUST rewrite the message into the target language — never return the source text unchanged. Sound like a native speaker texting a friend, not a word-by-word translation. Uzbek (uz) is always the Latin alphabet with oʻ, gʻ (U+02BB) and ʼ (U+02BC), never Cyrillic.',
                 band,
               ),
             },
@@ -940,6 +977,7 @@ export class AiService {
           const raw = response.choices[0]?.message?.content?.trim();
           if (raw) translation = raw;
         }
+        if (dto.targetLang === 'uz') translation = normalizeUzbekOrthography(translation);
       } catch (err) {
         const detail = err instanceof Error ? err.message : 'OpenAI request failed';
         throw new ServiceUnavailableException(
