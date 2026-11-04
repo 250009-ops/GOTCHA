@@ -551,6 +551,31 @@ export function stripRepeatedPdfHeadersFooters(pages: string[]): string[] {
 }
 
 /**
+ * Join PDF page texts with a blank line, except when a word is split on the boundary.
+ * Previous page ends with letters plus a hyphen, and the next page starts with a
+ * lowercase letter → drop the hyphen and the blank line ("agi-" + "tated" → "agitated").
+ * An uppercase continuation stays hyphenated ("Anglo-" + "Saxon").
+ */
+export function joinPdfPages(pages: string[]): string {
+  const chunks: string[] = [];
+  for (const page of pages) {
+    if (chunks.length === 0) {
+      chunks.push(page);
+      continue;
+    }
+    const prevIndex = chunks.length - 1;
+    const prev = chunks[prevIndex].trimEnd();
+    const next = page.trimStart();
+    if (/(\p{L}*\p{Ll})[-\u00AD]$/u.test(prev) && /^\p{Ll}/u.test(next)) {
+      chunks[prevIndex] = prev.slice(0, -1) + next;
+    } else {
+      chunks.push(page);
+    }
+  }
+  return chunks.join('\n\n');
+}
+
+/**
  * Normalize PDF/OCR table-ish spacing so chapters stay readable for vocabulary tapping.
  */
 export function cleanPdfPageText(text: string): string {

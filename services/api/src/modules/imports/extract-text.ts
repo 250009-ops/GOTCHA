@@ -9,6 +9,7 @@ import {
   cleanImportPlainText,
   cleanPdfPageText,
   htmlToCleanText,
+  joinPdfPages,
   normalizeImportWhitespace,
   stripRepeatedPdfHeadersFooters,
 } from './import-text-cleaner';
@@ -793,7 +794,7 @@ function chaptersFromPdfPages(
     return [];
   }
 
-  const joined = nonEmpty.map((p) => p.text).join('\n\n');
+  const joined = joinPdfPages(nonEmpty.map((p) => p.text));
   const headed = splitAccurateChapters(joined, fallbackTitle);
   const fromOutline =
     outlineTitles.length >= 2 ? splitByOutlineTitles(joined, outlineTitles, fallbackTitle) : null;
@@ -828,7 +829,7 @@ function chaptersFromPdfPages(
     const title = start === end ? `Page ${start}` : `Pages ${start}–${end}`;
     chapters.push({
       title,
-      text: slice.map((p) => p.text).join('\n\n'),
+      text: joinPdfPages(slice.map((p) => p.text)),
     });
   }
   return chapters;
@@ -956,7 +957,7 @@ export async function extractTextFromPdf(
 
   // Normalize header/footer again after OCR merges.
   const finalPages = stripRepeatedPdfHeadersFooters(pageTexts);
-  const text = clampText(cleanImportPlainText(finalPages.join('\n\n')));
+  const text = clampText(cleanImportPlainText(joinPdfPages(finalPages)));
   const words = countWords(text);
 
   if (words < MIN_IMPORT_WORDS) {

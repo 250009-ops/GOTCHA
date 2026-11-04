@@ -289,9 +289,8 @@ export class UsersService {
 
     const todayKey = calendarDateKey(new Date());
     const todaySessions = recentSessions.filter((s) => calendarDateKey(s.startedAt) === todayKey);
-    const todayReadMinutes =
-      historyResult.history.daily.find((d) => d.date === todayKey)?.minutes ??
-      Math.round(todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0) / 60);
+    const todayReadSeconds = todaySessions.reduce((s, row) => s + (row.durationSeconds ?? 0), 0);
+    const todayReadMinutes = minutesFromDailySeconds(todayReadSeconds);
     const todayWordsSaved = todaySessions.reduce((s, row) => s + row.wordsSaved, 0);
 
     return {
@@ -837,6 +836,11 @@ function isoWeekStart(d: Date): string {
 
 export type StatsHeatmapDay = { date: string; count: number; finished: number };
 
+/** Sum a day's seconds first, then round once. Any positive total is at least one minute. */
+export function minutesFromDailySeconds(seconds: number): number {
+  return seconds > 0 ? Math.max(1, Math.round(seconds / 60)) : 0;
+}
+
 /**
  * Buckets reading sessions and progress into daily/weekly/heatmap series for Statistics.
  * Heatmap count = distinct contents read per day; finished = contents completed that day.
@@ -847,14 +851,14 @@ export function buildStatsHistory(
   progress: Array<{ contentId: string; completedAt: Date | null; lastReadAt: Date }>,
   heatmapDays: number,
 ) {
-  const dailyMinutes = new Map<string, number>();
+  const dailySeconds = new Map<string, number>();
   const dailyWordsSaved = new Map<string, number>();
   const dailyContents = new Map<string, Set<string>>();
   const dailyFinished = new Map<string, number>();
 
   for (const s of sessions) {
     const key = dayKey(s.startedAt);
-    dailyMinutes.set(key, (dailyMinutes.get(key) ?? 0) + Math.round((s.durationSeconds ?? 0) / 60));
+    dailySeconds.set(key, (dailySeconds.get(key) ?? 0) + (s.durationSeconds ?? 0));
     if (!dailyContents.has(key)) dailyContents.set(key, new Set());
     dailyContents.get(key)!.add(s.contentId);
   }
@@ -889,7 +893,7 @@ export function buildStatsHistory(
     const d = new Date(today);
     d.setDate(d.getDate() - i);
     const key = dayKey(d);
-    const minutes = dailyMinutes.get(key) ?? 0;
+    const minutes = minutesFromDailySeconds(dailySeconds.get(key) ?? 0);
     const wordsSaved = dailyWordsSaved.get(key) ?? 0;
     const count = dailyContents.get(key)?.size ?? 0;
     heatmap.push({

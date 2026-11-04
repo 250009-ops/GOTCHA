@@ -43,6 +43,24 @@ assert.equal(heatByDate.get(D1)?.count, 1, 'duplicate session slices dedupe to o
 assert.equal(heatByDate.get(D2)?.count, 1);
 assert.equal(heatByDate.get(D1)?.finished, 1);
 
+// Short sessions are summed in seconds, then converted once. Three 20s slices are 1 minute; 0s stays 0.
+const shortDay = isoDaysAgo(2);
+const zeroDay = isoDaysAgo(1);
+const { history: minuteHistory } = buildStatsHistory(
+  [
+    { startedAt: day(shortDay), durationSeconds: 20, contentId: contentA },
+    { startedAt: day(shortDay), durationSeconds: 20, contentId: contentA },
+    { startedAt: day(shortDay), durationSeconds: 20, contentId: contentA },
+    { startedAt: day(zeroDay), durationSeconds: 0, contentId: contentB },
+  ],
+  [],
+  [],
+  30,
+);
+const minutesByDate = new Map(minuteHistory.daily.map((d) => [d.date, d]));
+assert.equal(minutesByDate.get(shortDay)?.minutes, 1, 'three 20-second sessions are one minute');
+assert.equal(minutesByDate.get(zeroDay)?.minutes, 0, 'zero seconds stay zero minutes');
+
 assert.equal(streakQualifyingMinutes(15), 15);
 assert.equal(streakQualifyingMinutes(undefined), 15);
 assert.equal(streakQualifyingMinutes(5), 5);
