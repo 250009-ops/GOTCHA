@@ -218,7 +218,7 @@ private fun StatsAxisChart(
                     )
                 }
             }
-            BoxWithConstraints(Modifier.weight(1f).fillMaxHeight()) {
+            Box(Modifier.weight(1f).fillMaxHeight()) {
                 val maxY = domain.second
                 Canvas(Modifier.fillMaxSize()) {
                     val topPad = 4.dp.toPx()
