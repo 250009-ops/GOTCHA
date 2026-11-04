@@ -336,7 +336,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={name}
                     onChange={(e) => setName(e.target.value)}
                     placeholder={copy.auth.namePlaceholder}
-                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                    className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                   />
                 </div>
               )}
@@ -353,7 +353,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={copy.auth.emailPlaceholder}
-                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                  className="w-full h-11 px-3.5 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                 />
               </div>
               <div className="flex flex-col gap-2">
@@ -367,7 +367,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={isLogin ? copy.auth.passwordPlaceholderLogin : copy.auth.passwordPlaceholderRegister}
-                    className="w-full h-11 pl-3.5 pr-12 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] outline-none focus-visible:ring-2 focus-visible:ring-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
+                    className="w-full h-11 pl-3.5 pr-12 bg-[#f9fafb] border border-[#e5e7eb] rounded-[14px] text-sm text-[#101828] placeholder:text-[#4a5565] focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#2107AA] focus-visible:border-[#2107AA] focus:bg-white transition-all"
                   />
                   <button
                     type="button"
@@ -410,11 +410,14 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
             </form>
           )}
 
+          {/* Admin sign-in has no second option, so the divider would sit above an empty gap. */}
+          {!adminReturnUrl && (
           <div className="flex items-center gap-3">
             <div className="flex-1 h-px bg-[#e5e7eb]" />
             <span className="text-xs font-medium text-[#4a5565]">{copy.common.or}</span>
             <div className="flex-1 h-px bg-[#e5e7eb]" />
           </div>
+          )}
 
           {/* final-5: admin sign-in never offers 'Sign up free'. */}
           {!adminReturnUrl && (

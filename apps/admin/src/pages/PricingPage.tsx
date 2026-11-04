@@ -11,7 +11,7 @@ type Plan = {
   nameI18n: { en?: string; ru?: string; uz?: string } | null;
   priceUzs: number;
   period: 'month' | 'year' | 'one_time';
-  aiDailyQuota: number;
+  aiDailyQuota: number | null;
   importLimit: number;
   offlineEnabled: boolean;
   features: string[] | null;
@@ -123,6 +123,11 @@ function PlusPassCard({ onSaved }: { onSaved: (text: string) => void }) {
   );
 }
 
+const PLAN_NAMES: Record<string, { en: string; ru: string; uz: string }> = {
+  free: { en: 'Free', ru: 'Бесплатный', uz: 'Bepul' },
+  premium: { en: 'Plus', ru: 'Plus', uz: 'Plus' },
+};
+
 const tashkentDate = (iso: string | null) =>
   iso ? new Date(iso).toLocaleDateString('en-GB', { timeZone: 'Asia/Tashkent', day: '2-digit', month: 'short', year: 'numeric' }) : '—';
 
@@ -190,7 +195,15 @@ export default function PricingPage() {
         <div className="grid gap-4 md:grid-cols-2">
           {data.plans.map((p) => {
             const e = edits[p.tier] ?? {};
-            const names = { ...p.nameI18n, ...e.nameI18n };
+            const storedNames = { ...p.nameI18n, ...e.nameI18n };
+            const defaults = PLAN_NAMES[p.tier];
+            const names = {
+              en: storedNames.en?.trim() || defaults?.en || '',
+              ru: storedNames.ru?.trim() || defaults?.ru || '',
+              uz: storedNames.uz?.trim() || defaults?.uz || '',
+            };
+            const quota = e.aiDailyQuota !== undefined ? e.aiDailyQuota : p.aiDailyQuota;
+            const unlimitedLookups = p.tier !== 'free' && (quota == null || quota >= 1e6);
             return (
               <div key={p.id} className="space-y-2 rounded-xl border border-slate-200 p-3">
                 <div className="flex items-center justify-between">
@@ -221,7 +234,11 @@ export default function PricingPage() {
                   </label>
                   <label className="text-xs font-semibold text-slate-600">
                     AI lookups / day
-                    <Input inputMode="numeric" value={String(e.aiDailyQuota ?? p.aiDailyQuota)} onChange={(ev) => setPlan(p.tier, { aiDailyQuota: Number(ev.target.value.replace(/\D/g, '') || 0) })} />
+                    {unlimitedLookups ? (
+                      <Input readOnly value="Unlimited" title="Plus has no daily lookup cap" />
+                    ) : (
+                      <Input inputMode="numeric" value={String(quota ?? '')} onChange={(ev) => setPlan(p.tier, { aiDailyQuota: Number(ev.target.value.replace(/\D/g, '') || 0) })} />
+                    )}
                   </label>
                 </div>
                 <label className="block text-xs font-semibold text-slate-600">

@@ -1013,7 +1013,9 @@ export default function SettingsPage() {
                     importAllowance
                       ? limitCopy.importsLeft(importAllowance.dailyFreeRemaining, importAllowance.dailyFreeImportsPerUser)
                       : null,
-                    plusActive ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: subscription?.usage.importDiscountPct ?? 50 }) : null,
+                    plusActive && typeof subscription?.usage.importDiscountPct === 'number'
+                      ? plusFill(payCopyFor(locale)['plus.bImp'], { plus: 0, free: 0, pct: subscription.usage.importDiscountPct })
+                      : null,
                     importAllowance
                       ? limitCopy.pagesLeft(importAllowance.monthlyPagesRemaining, importAllowance.monthlyFreePageLimit)
                       : null,

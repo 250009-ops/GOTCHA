@@ -848,7 +848,7 @@ export default function ReaderPage() {
       }, wait);
     };
     if (attempt > 0 && !mashqOpenRef.current) return;
-    if (Date.now() - startedAt >= 120_000) {
+    if (Date.now() - startedAt >= 60_000) {
       giveUp();
       return;
     }
@@ -874,7 +874,7 @@ export default function ReaderPage() {
       });
       if (stale()) return;
       if (started.state === 'pending' || !started.id) {
-        if (Date.now() - startedAt >= 120_000 || !mashqOpenRef.current) {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }
@@ -888,7 +888,7 @@ export default function ReaderPage() {
       const code = e && typeof e === 'object' && 'code' in e ? String((e as { code?: string }).code) : '';
       const message = e instanceof Error ? e.message : copy.commonExt.error;
       if (code === 'quiz_pending') {
-        if (Date.now() - startedAt >= 120_000 || !mashqOpenRef.current) {
+        if (Date.now() - startedAt >= 60_000 || !mashqOpenRef.current) {
           giveUp();
           return;
         }

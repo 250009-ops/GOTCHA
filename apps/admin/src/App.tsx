@@ -41,8 +41,6 @@ export default function App() {
           <Route path="import-pricing/:directory" element={<ImportPricingPage />} />
           <Route path="payments" element={<PaymentsPage />} />
           <Route path="payments/pricing" element={<PricingPage />} />
-          {/* Analytics merged into Overview */}
-          <Route path="analytics" element={<Navigate to="/" replace />} />
           <Route path="settings" element={<SettingsPage />} />
           <Route path="deletions" element={<DeletionRequestsPage />} />
           <Route path="safety" element={<SafetyReportsPage />} />
