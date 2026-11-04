@@ -17,7 +17,8 @@ void (async () => {
     create: { width: 800, height: 400, channels: 3, background: { r: 20, g: 40, b: 200 } },
   }).jpeg().toBuffer();
   const out = await encodeAvatar(input);
-  const meta = await sharp(out).metadata();
+  const meta = await sharp(out.bytes).metadata();
+  assert.equal(out.ext, 'webp');
   assert.equal(meta.format, 'webp');
   assert.ok((meta.width ?? 0) <= 512);
   assert.ok((meta.height ?? 0) <= 512);

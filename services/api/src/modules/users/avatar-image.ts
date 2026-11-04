@@ -20,7 +20,7 @@ function loadSharp(): ((input?: unknown, options?: unknown) => SharpChain) | nul
   }
 }
 
-const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.webp$/i;
+const FILE_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\.(webp|jpe?g|png)$/i;
 
 /** Avatars live outside the nginx `/uploads/` alias so a logged-out GET cannot read them. */
 export function privateAvatarsDir() {
@@ -50,15 +50,40 @@ export function safeAvatarUrl(url: string | null | undefined): string | null {
   return url ?? null;
 }
 
-/** Re-encode to WebP, max 512px, no EXIF/GPS (sharp does not copy metadata unless asked). */
-export async function encodeAvatar(input: Buffer): Promise<Buffer> {
+/** Drop JPEG APP1 (EXIF/GPS) and APP13 when this host cannot run sharp. */
+export function stripJpegMetadata(input: Buffer): Buffer {
+  if (input.length < 4 || input[0] !== 0xff || input[1] !== 0xd8) return input;
+  const parts: Buffer[] = [input.subarray(0, 2)];
+  let i = 2;
+  while (i + 4 < input.length && input[i] === 0xff) {
+    const marker = input[i + 1];
+    if (marker === 0xda || marker === 0xd9) {
+      parts.push(input.subarray(i));
+      break;
+    }
+    const len = input.readUInt16BE(i + 2);
+    const start = i;
+    i += 2 + len;
+    if (marker === 0xe1 || marker === 0xed) continue;
+    parts.push(input.subarray(start, i));
+  }
+  return Buffer.concat(parts);
+}
+
+/** Re-encode to WebP, max 512px, no EXIF/GPS when sharp loads. Otherwise strip JPEG metadata only. */
+export async function encodeAvatar(input: Buffer): Promise<{ bytes: Buffer; ext: 'webp' | 'jpg' | 'png' }> {
   const sharp = loadSharp();
-  if (!sharp) throw new Error('Image processing is unavailable');
-  return sharp(input, { failOn: 'none', unlimited: false })
-    .rotate()
-    .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
-    .webp({ quality: 80 })
-    .toBuffer();
+  if (sharp) {
+    const bytes = await sharp(input, { failOn: 'none', unlimited: false })
+      .rotate()
+      .resize(512, 512, { fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 80 })
+      .toBuffer();
+    return { bytes, ext: 'webp' };
+  }
+  if (input[0] === 0x89 && input[1] === 0x50) return { bytes: input, ext: 'png' };
+  if (input[0] === 0xff && input[1] === 0xd8) return { bytes: stripJpegMetadata(input), ext: 'jpg' };
+  return { bytes: input, ext: 'webp' };
 }
 
 type AvatarDb = {
@@ -105,8 +130,8 @@ export async function reprocessAvatarsOnce(db: AvatarDb) {
     try {
       const raw = await readFile(join(publicDir, oldName));
       const encoded = await encodeAvatar(raw);
-      const fileName = `${randomUUID()}.webp`;
-      await writeFile(join(dir, fileName), encoded);
+      const fileName = `${randomUUID()}.${encoded.ext}`;
+      await writeFile(join(dir, fileName), encoded.bytes);
       await db.user.update({
         where: { id: user.id },
         data: { avatarUrl: `${avatarPublicPath(fileName)}?v=${Date.now()}` },

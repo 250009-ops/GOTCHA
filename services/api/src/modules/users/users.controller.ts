@@ -6,6 +6,7 @@ import {
   Get,
   Header,
   Param,
+  Res,
   Patch,
   Post,
   StreamableFile,
@@ -13,6 +14,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { createReadStream } from 'fs';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
@@ -37,9 +39,11 @@ export class UsersController {
   @Get('avatars/:file')
   @Header('Cache-Control', 'private, max-age=60')
   @Header('X-Content-Type-Options', 'nosniff')
-  async avatar(@Param('file') file: string) {
+  async avatar(@Param('file') file: string, @Res({ passthrough: true }) res: Response) {
     const abs = await this.users.avatarAbsolutePath(file);
-    return new StreamableFile(createReadStream(abs), { type: 'image/webp' });
+    const lower = file.toLowerCase();
+    res.setHeader('Content-Type', lower.endsWith('.png') ? 'image/png' : lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'image/webp');
+    return new StreamableFile(createReadStream(abs));
   }
 
   @Get('me')
