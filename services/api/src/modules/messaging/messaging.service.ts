@@ -4,6 +4,7 @@ import { notifyNewReport } from '../../common/safety/report-notify';
 import {
   BadRequestException,
   ForbiddenException,
+  HttpException,
   Injectable,
   Logger,
   NotFoundException,
@@ -23,10 +24,15 @@ import {
   assertNotBlocked,
   blockedPeerIds,
   blockUser,
+  isBlockedEitherWay,
   reportUser,
   SafetyPrisma,
   unblockUser,
 } from './messaging-safety';
+
+const MESSAGE_PAGE = 50;
+const INBOX_PAGE = 30;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
 const ONLINE_WINDOW_MS = 90 * 1000;
@@ -54,6 +60,8 @@ type PeerUser = {
   avatarUrl: string | null;
   nativeLanguage: AppLanguage;
   lastSeenAt?: Date | null;
+  birthYear?: number | null;
+  preferences?: { showOnlineStatus: boolean } | null;
   targetLanguages: Array<{ targetLanguage: AppLanguage; isPrimary: boolean; cefrLevel: string }>;
   adminProfile?: { userId: string } | null;
 };
@@ -90,7 +98,6 @@ function cardContent<T extends { coverImageKey: string | null; coverMode: string
 @Injectable()
 export class MessagingService {
   private readonly logger = new Logger(MessagingService.name);
-  private typingUntil = new Map<string, number>();
   private lastMessageEmailAt = new Map<string, number>();
 
   constructor(
@@ -107,12 +114,12 @@ export class MessagingService {
     };
   }
 
-  private typingKey(conversationId: string, userId: string) {
-    return `${conversationId}:${userId}`;
+  private typingActive(until?: Date | null) {
+    return !!until && until.getTime() > Date.now();
   }
 
-  private isTyping(conversationId: string, userId: string) {
-    return (this.typingUntil.get(this.typingKey(conversationId, userId)) ?? 0) > Date.now();
+  private assertUuid(id: string, label: string) {
+    if (!UUID_RE.test(id)) throw new BadRequestException(`Invalid ${label}`);
   }
 
   private messageStatus(mine: boolean, createdAt: Date, peerLastReadAt?: Date | null) {
@@ -125,7 +132,7 @@ export class MessagingService {
     return [a, b].sort().join(':');
   }
 
-  private peerSummary(user: PeerUser) {
+  private peerSummary(user: PeerUser, opts?: { hidePresence?: boolean }) {
     if (isDeletedAccount(user)) {
       // Privacy §11: shown as "Deleted user"; no name, email, photo, languages or presence.
       return {
@@ -141,10 +148,12 @@ export class MessagingService {
         deleted: true,
       };
     }
-    const primary =
-      user.targetLanguages.find((t) => t.isPrimary)?.targetLanguage ??
-      user.targetLanguages[0]?.targetLanguage ??
-      user.nativeLanguage;
+    const show = !opts?.hidePresence && user.preferences?.showOnlineStatus === true;
+    const primary = show
+      ? (user.targetLanguages.find((t) => t.isPrimary)?.targetLanguage ??
+        user.targetLanguages[0]?.targetLanguage ??
+        user.nativeLanguage)
+      : user.nativeLanguage;
     const handle =
       '@' +
       (user.displayName ?? user.email.split('@')[0] ?? 'learner')
@@ -159,12 +168,15 @@ export class MessagingService {
       avatarUrl: user.avatarUrl,
       nativeLanguage: user.nativeLanguage,
       primaryLanguage: primary,
-      ...this.presenceOf(user.lastSeenAt),
-      targetLanguages: user.targetLanguages.map((t) => ({
-        language: t.targetLanguage,
-        cefrLevel: t.cefrLevel,
-        isPrimary: t.isPrimary,
-      })),
+      online: show ? this.presenceOf(user.lastSeenAt).online : false,
+      lastSeenAt: show ? this.presenceOf(user.lastSeenAt).lastSeenAt : null,
+      targetLanguages: show
+        ? user.targetLanguages.map((t) => ({
+            language: t.targetLanguage,
+            cefrLevel: t.cefrLevel,
+            isPrimary: t.isPrimary,
+          }))
+        : [],
     };
   }
 
@@ -269,24 +281,63 @@ export class MessagingService {
   }
 
   async report(userId: string, dto: ReportUserDto) {
-    const r = await reportUser(this.safety, userId, dto);
-    notifyNewReport(this.mail, { id: r.id, kind: 'user', reason: dto.reason });
-    return r;
+    if (dto.messageId) {
+      const existing = await this.prisma.userReport.findFirst({
+        where: { reporterId: userId, messageId: dto.messageId },
+      });
+      if (existing) return existing;
+    }
+    try {
+      const r = await reportUser(this.safety, userId, dto);
+      notifyNewReport(this.mail, { id: r.id, kind: 'user', reason: dto.reason });
+      return r;
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002' && dto.messageId) {
+        const existing = await this.prisma.userReport.findFirst({
+          where: { reporterId: userId, messageId: dto.messageId },
+        });
+        if (existing) return existing;
+      }
+      throw err;
+    }
   }
 
-  async listConversations(userId: string, q?: string) {
+  private async assertSendRate(userId: string) {
+    const minuteAgo = new Date(Date.now() - 60_000);
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [minute, day] = await Promise.all([
+      this.prisma.message.count({ where: { senderId: userId, createdAt: { gte: minuteAgo } } }),
+      this.prisma.message.count({ where: { senderId: userId, createdAt: { gte: dayAgo } } }),
+    ]);
+    if (minute >= 20 || day >= 300) {
+      throw new HttpException(
+        {
+          statusCode: 429,
+          code: 'RATE_LIMITED',
+          message: minute >= 20 ? 'You can send 20 messages a minute.' : 'You can send 300 messages a day.',
+        },
+        429,
+      );
+    }
+  }
+
+  async listConversations(userId: string, q?: string, before?: string) {
+    if (before) this.assertUuid(before, 'cursor');
     const hidden = await blockedPeerIds(this.safety, userId);
     const rows = await this.prisma.conversation.findMany({
       where: {
         participants: { some: { userId } },
         ...(hidden.length ? { NOT: { participants: { some: { userId: { in: hidden } } } } } : {}),
       },
+      take: INBOX_PAGE,
+      ...(before ? { cursor: { id: before }, skip: 1 } : {}),
       include: {
         participants: {
           include: {
             user: {
               include: {
                 targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } },
                 adminProfile: { select: { userId: true } },
               },
             },
@@ -298,7 +349,7 @@ export class MessagingService {
         },
         content: { select: CONTENT_CARD_SELECT },
       },
-      orderBy: [{ lastMessageAt: 'desc' }, { updatedAt: 'desc' }],
+      orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }],
     });
 
     const query = q?.trim().toLowerCase();
@@ -306,20 +357,23 @@ export class MessagingService {
       const peer = c.participants.find((p) => p.userId !== userId)?.user;
       return !peer || isLiveMessagingPeer(peer);
     });
-    const withUnread = await Promise.all(
-      liveRows.map(async (c) => {
+    const unreadRows = await this.prisma.$queryRaw<Array<{ conversationId: string; unread: number }>>`
+      SELECT m.conversation_id::text AS "conversationId", COUNT(*)::int AS unread
+      FROM messages m
+      JOIN conversation_participants me
+        ON me.conversation_id = m.conversation_id AND me.user_id = ${userId}::uuid
+      LEFT JOIN messages seen ON seen.id = me.last_read_message_id
+      WHERE (m.sender_id IS DISTINCT FROM ${userId}::uuid)
+        AND (seen.id IS NULL OR m.created_at > seen.created_at)
+      GROUP BY m.conversation_id
+    `;
+    const unreadById = new Map(unreadRows.map((row) => [row.conversationId, Number(row.unread)]));
+    const withUnread = liveRows.map((c) => {
         const peerPart = c.participants.find((p) => p.userId !== userId);
-        const me = c.participants.find((p) => p.userId === userId);
         const peer = peerPart ? this.peerSummary(peerPart.user) : null;
         const last = c.messages[0] ?? null;
         const peerLastReadAt = peerPart?.lastReadAt ?? null;
-        const unreadCount = await this.prisma.message.count({
-          where: {
-            conversationId: c.id,
-            OR: [{ senderId: { not: userId } }, { senderId: null }], // final-5: messages from hard-deleted users still count as unread
-            ...(me?.lastReadAt ? { createdAt: { gt: me.lastReadAt } } : {}),
-          },
-        });
+        const unreadCount = unreadById.get(c.id) ?? 0;
         return {
           id: c.id,
           language: c.language,
@@ -340,8 +394,7 @@ export class MessagingService {
           lastMessageAt: c.lastMessageAt,
           updatedAt: c.updatedAt,
         };
-      }),
-    );
+    });
 
     if (!query) return withUnread;
     return withUnread.filter((item) => {
@@ -358,40 +411,82 @@ export class MessagingService {
     });
   }
 
-  async getConversation(userId: string, conversationId: string) {
+  async unreadTotal(userId: string) {
+    const rows = await this.prisma.$queryRaw<Array<{ unread: number }>>`
+      SELECT COUNT(*)::int AS unread
+      FROM messages m
+      JOIN conversation_participants me
+        ON me.conversation_id = m.conversation_id AND me.user_id = ${userId}::uuid
+      LEFT JOIN messages seen ON seen.id = me.last_read_message_id
+      WHERE (m.sender_id IS DISTINCT FROM ${userId}::uuid)
+        AND (seen.id IS NULL OR m.created_at > seen.created_at)
+    `;
+    return { unreadCount: Number(rows[0]?.unread ?? 0) };
+  }
+
+  async getConversation(userId: string, conversationId: string, cursor?: { before?: string; after?: string }) {
+    this.assertUuid(conversationId, 'conversation');
+    if (cursor?.before) this.assertUuid(cursor.before, 'cursor');
+    if (cursor?.after) this.assertUuid(cursor.after, 'cursor');
+    if (cursor?.before && cursor?.after) throw new BadRequestException('Pass only one cursor');
     await this.assertParticipant(conversationId, userId);
     const c = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
       include: {
         participants: {
-          include: { user: { include: { targetLanguages: true } } },
+          include: { user: { include: { targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } }, } } },
         },
         content: { select: CONTENT_CARD_SELECT },
-        messages: {
-          orderBy: { createdAt: 'asc' },
-          take: 200,
-          include: messageInclude,
-        },
       },
     });
     if (!c) throw new NotFoundException('Conversation not found');
 
     const peerPart = c.participants.find((p) => p.userId !== userId);
-    const peerLastReadAt = peerPart?.lastReadAt ?? null;
+    const peerLastReadAt = await this.seenAt(peerPart?.lastReadMessageId, peerPart?.lastReadAt);
+    const hidePresence = peerPart ? await isBlockedEitherWay(this.safety, userId, peerPart.userId) : false;
+    let cursorAt: Date | undefined;
+    if (cursor?.before || cursor?.after) {
+      const row = await this.prisma.message.findFirst({
+        where: { id: (cursor.before ?? cursor.after)!, conversationId },
+        select: { createdAt: true },
+      });
+      if (!row) throw new BadRequestException('Invalid cursor');
+      cursorAt = row.createdAt;
+    }
+    const newer = !!cursor?.after;
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId,
+        ...(cursor?.before ? { createdAt: { lt: cursorAt } } : {}),
+        ...(cursor?.after ? { createdAt: { gt: cursorAt } } : {}),
+      },
+      orderBy: { createdAt: newer ? 'asc' : 'desc' },
+      take: MESSAGE_PAGE,
+      include: messageInclude,
+    });
+    const ordered = newer ? messages : [...messages].reverse();
     return {
       id: c.id,
       language: c.language,
       content: cardContent(c.content),
       peer: peerPart
         ? {
-            ...this.peerSummary(peerPart.user),
-            typing: this.isTyping(conversationId, peerPart.userId),
+            ...this.peerSummary(peerPart.user, { hidePresence }),
+            typing: hidePresence ? false : this.typingActive(peerPart.typingUntil),
           }
         : null,
       peerLastReadAt,
-      messages: c.messages.map((m) => this.presentMessage(m, userId, peerLastReadAt)),
+      messages: ordered.map((m) => this.presentMessage(m, userId, peerLastReadAt)),
+      hasOlder: !newer && messages.length === MESSAGE_PAGE,
       lastMessageAt: c.lastMessageAt,
     };
+  }
+
+  private async seenAt(messageId?: string | null, fallback?: Date | null) {
+    if (!messageId) return fallback ?? null;
+    const row = await this.prisma.message.findUnique({ where: { id: messageId }, select: { createdAt: true } });
+    return row?.createdAt ?? fallback ?? null;
   }
 
   async startConversation(userId: string, dto: StartConversationDto) {
@@ -401,7 +496,8 @@ export class MessagingService {
     await assertNotDeletedUser(this.prisma as never, dto.peerUserId);
     const peer = await this.prisma.user.findFirst({
       where: { id: dto.peerUserId, deletedAt: null },
-      include: { targetLanguages: true, adminProfile: { select: { userId: true } } },
+      include: { targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } }, adminProfile: { select: { userId: true } } },
     });
     if (!peer || !isLiveMessagingPeer(peer)) throw new NotFoundException('User not found');
     await assertNotBlocked(this.safety, userId, dto.peerUserId);
@@ -413,16 +509,22 @@ export class MessagingService {
     });
 
     if (!conversation) {
-      conversation = await this.prisma.conversation.create({
-        data: {
-          pairKey: key,
-          language: dto.language ?? peer.nativeLanguage,
-          contentId: dto.contentId,
-          participants: {
-            create: [{ userId }, { userId: dto.peerUserId }],
+      try {
+        conversation = await this.prisma.conversation.create({
+          data: {
+            pairKey: key,
+            language: dto.language ?? peer.nativeLanguage,
+            contentId: dto.contentId,
+            participants: {
+              create: [{ userId }, { userId: dto.peerUserId }],
+            },
           },
-        },
-      });
+        });
+      } catch (err) {
+        if (!(err instanceof Prisma.PrismaClientKnownRequestError) || err.code !== 'P2002') throw err;
+        conversation = await this.prisma.conversation.findUnique({ where: { pairKey: key } });
+        if (!conversation) throw err;
+      }
     } else if (dto.contentId && !conversation.contentId) {
       conversation = await this.prisma.conversation.update({
         where: { id: conversation.id },
@@ -442,8 +544,10 @@ export class MessagingService {
     if (other) await assertNotDeletedUser(this.prisma as never, other.userId);
     if (other) await assertNotBlocked(this.safety, userId, other.userId);
     if (other) await assertCanMessage(this.prisma as never, userId, other.userId);
+    await this.assertSendRate(userId);
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('Message body required');
+    if (body.length > 4000) throw new BadRequestException('Message is too long');
 
     let replyToId: string | undefined;
     if (dto.replyToId) {
@@ -459,6 +563,7 @@ export class MessagingService {
         conversationId,
         senderId: userId,
         body,
+        originalBody: body,
         translation: dto.translation?.trim() || null,
         bodyLang: dto.bodyLang,
         replyToId,
@@ -466,16 +571,10 @@ export class MessagingService {
       include: messageInclude,
     });
 
-    await this.prisma.$transaction([
-      this.prisma.conversation.update({
-        where: { id: conversationId },
-        data: { lastMessageAt: message.createdAt },
-      }),
-      this.prisma.conversationParticipant.update({
-        where: { conversationId_userId: { conversationId, userId } },
-        data: { lastReadAt: message.createdAt },
-      }),
-    ]);
+    await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { lastMessageAt: message.createdAt },
+    });
 
     const presented = this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
     void this.notifyRecipientsByEmail(userId, conversationId, presented.body).catch((err) => {
@@ -501,15 +600,19 @@ export class MessagingService {
     const body = dto.body.trim();
     if (!body) throw new BadRequestException('Message body required');
 
-    const message = await this.prisma.message.update({
-      where: { id: messageId },
-      data: {
-        body,
-        translation: dto.translation?.trim() || null,
-        bodyLang: dto.bodyLang ?? existing.bodyLang,
-        editedAt: new Date(),
-      },
-      include: messageInclude,
+    const message = await this.prisma.$transaction(async (tx) => {
+      await tx.messageEdit.create({ data: { messageId, body: existing.body } });
+      return tx.message.update({
+        where: { id: messageId },
+        data: {
+          body,
+          originalBody: existing.originalBody ?? existing.body,
+          translation: dto.translation?.trim() || null,
+          bodyLang: dto.bodyLang ?? existing.bodyLang,
+          editedAt: new Date(),
+        },
+        include: messageInclude,
+      });
     });
 
     return this.presentMessage(message, userId, await this.peerLastReadAt(conversationId, userId));
@@ -534,6 +637,7 @@ export class MessagingService {
       where: { id: messageId },
       data: {
         deletedAt: new Date(),
+        originalBody: existing.originalBody ?? existing.body,
         body: '',
         translation: null,
       },
@@ -554,9 +658,10 @@ export class MessagingService {
 
   async setTyping(userId: string, conversationId: string, typing: boolean) {
     await this.assertParticipant(conversationId, userId);
-    const key = this.typingKey(conversationId, userId);
-    if (typing) this.typingUntil.set(key, Date.now() + TYPING_WINDOW_MS);
-    else this.typingUntil.delete(key);
+    await this.prisma.conversationParticipant.update({
+      where: { conversationId_userId: { conversationId, userId } },
+      data: { typingUntil: typing ? new Date(Date.now() + TYPING_WINDOW_MS) : null },
+    });
     return { ok: true };
   }
 
@@ -567,23 +672,41 @@ export class MessagingService {
       include: { user: { select: { id: true, lastSeenAt: true } } },
     });
     const peer = parts.find((p) => p.userId !== userId);
+    const hidePresence = peer ? await isBlockedEitherWay(this.safety, userId, peer.userId) : false;
+    const prefs = peer && !hidePresence
+      ? await this.prisma.userPreferences.findUnique({
+          where: { userId: peer.userId },
+          select: { showOnlineStatus: true },
+        })
+      : null;
+    const show = prefs?.showOnlineStatus === true;
     return {
-      peerLastReadAt: peer?.lastReadAt ?? null,
+      peerLastReadAt: await this.seenAt(peer?.lastReadMessageId, peer?.lastReadAt),
       peer: peer
         ? {
             id: peer.userId,
-            ...this.presenceOf(peer.user.lastSeenAt),
-            typing: this.isTyping(conversationId, peer.userId),
+            online: show ? this.presenceOf(peer.user.lastSeenAt).online : false,
+            lastSeenAt: show ? this.presenceOf(peer.user.lastSeenAt).lastSeenAt : null,
+            typing: show && this.typingActive(peer.typingUntil),
           }
         : null,
     };
   }
 
-  async markRead(userId: string, conversationId: string) {
+  async markRead(userId: string, conversationId: string, messageId?: string) {
     await this.assertParticipant(conversationId, userId);
+    const message = messageId
+      ? await this.prisma.message.findFirst({ where: { id: messageId, conversationId }, select: { id: true, createdAt: true } })
+      : await this.prisma.message.findFirst({
+          where: { conversationId },
+          orderBy: { createdAt: 'desc' },
+          select: { id: true, createdAt: true },
+        });
+    if (messageId && !message) throw new BadRequestException('Message not found');
+    if (!message) return { ok: true };
     await this.prisma.conversationParticipant.update({
       where: { conversationId_userId: { conversationId, userId } },
-      data: { lastReadAt: new Date() },
+      data: { lastReadMessageId: message.id, lastReadAt: message.createdAt },
     });
     return { ok: true };
   }
@@ -606,6 +729,7 @@ export class MessagingService {
         },
         include: {
           targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } },
           readingProgress: {
             take: 1,
             orderBy: { lastReadAt: 'desc' },
@@ -630,6 +754,7 @@ export class MessagingService {
       },
       include: {
         targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } },
         readingProgress: {
           where: { contentId: { in: contentIds } },
           take: 1,
@@ -665,16 +790,20 @@ export class MessagingService {
     if (query) {
       searchAnd.push({
         OR: [
-          { displayName: { contains: query, mode: 'insensitive' } },
-          { email: { contains: query, mode: 'insensitive' } },
+          { displayName: { equals: query, mode: 'insensitive' } },
+          { email: { startsWith: `${query}@`, mode: 'insensitive' } },
         ],
       });
     }
     if (lang) {
+      if (!Object.values(AppLanguage).includes(lang as AppLanguage)) {
+        throw new BadRequestException('Invalid language');
+      }
+      const language = lang as AppLanguage;
       searchAnd.push({
         OR: [
-          { nativeLanguage: lang as AppLanguage },
-          { targetLanguages: { some: { targetLanguage: lang as AppLanguage } } },
+          { nativeLanguage: language },
+          { targetLanguages: { some: { targetLanguage: language } } },
         ],
       });
     }
@@ -690,6 +819,7 @@ export class MessagingService {
       },
       include: {
         targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } },
         readingProgress: {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
@@ -714,8 +844,8 @@ export class MessagingService {
       where: { id: peerUserId, deletedAt: null },
       include: {
         targetLanguages: true,
+                preferences: { select: { showOnlineStatus: true } },
         adminProfile: { select: { userId: true } },
-        preferences: true,
         readingProgress: {
           take: 1,
           orderBy: { lastReadAt: 'desc' },
@@ -752,9 +882,11 @@ export class MessagingService {
             },
           });
 
+    const showPresence = peer.preferences?.showOnlineStatus === true
+      && !(await isBlockedEitherWay(this.safety, userId, peerUserId));
     return {
-      ...this.peerSummary(peer),
-      createdAt: peer.createdAt,
+      ...this.peerSummary(peer, { hidePresence: !showPresence }),
+      ...(showPresence ? { createdAt: peer.createdAt } : {}),
       // P3b: lets the client show Block vs Unblock.
       blockedByMe: !!(await this.prisma.userBlock.findUnique({
         where: { blockerId_blockedId: { blockerId: userId, blockedId: peerUserId } },

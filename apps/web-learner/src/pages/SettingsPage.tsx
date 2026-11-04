@@ -483,6 +483,7 @@ export default function SettingsPage() {
   const [showKnownWords, setShowKnownWords] = useState(preferences?.showKnownWords ?? false);
   const [ttsEnabled, setTtsEnabled] = useState(preferences?.ttsEnabled ?? true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(preferences?.notificationsEnabled ?? true);
+  const [showOnlineStatus, setShowOnlineStatus] = useState(preferences?.showOnlineStatus ?? false);
   const [dailyGoal, setDailyGoal] = useState(preferences?.dailyGoalMinutes ?? 15);
   const [dailyGoalXp, setDailyGoalXp] = useState(preferences?.dailyGoalXp ?? 60);
   const [dailyNewWords, setDailyNewWords] = useState(preferences?.dailyNewWords ?? 10);
@@ -550,6 +551,7 @@ export default function SettingsPage() {
     setShowKnownWords(preferences.showKnownWords ?? false);
     setTtsEnabled(preferences.ttsEnabled ?? true);
     setNotificationsEnabled(preferences.notificationsEnabled ?? true);
+    setShowOnlineStatus(preferences.showOnlineStatus ?? false);
     const minutes = preferences.dailyGoalMinutes ?? 15;
     const snapped = (MINUTE_CHOICES as readonly number[]).includes(minutes) ? minutes : nearestChoice(minutes, MINUTE_CHOICES);
     setDailyGoal(snapped);
@@ -968,7 +970,7 @@ export default function SettingsPage() {
             <>
               <div
                 className="rounded-[14px] p-4 sm:p-5 min-w-0"
-                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #432dd7 100%)' }}
+                style={{ backgroundImage: 'linear-gradient(161deg, var(--g-blue-700) 0%, #2107AA 100%)' }}
               >
                 <div className="text-g-on-cta min-w-0">
                   <div className="flex items-start justify-between gap-3">
@@ -1222,6 +1224,9 @@ export default function SettingsPage() {
       <Section title={copy.settings.notifications}>
         <Row label={copy.settings.emailNotifications} description={copy.settings.emailNotificationsHint}>
           <Toggle checked={notificationsEnabled} onChange={(v) => { setNotificationsEnabled(v); queuePref({ notificationsEnabled: v }); }} />
+        </Row>
+        <Row label={locale === 'ru' ? 'Показывать, что я в сети' : locale === 'en' ? 'Show when I am online' : 'Onlayn ekanimni koʻrsatish'} description={locale === 'ru' ? 'Скрыто, пока вы не включите. Для младше 18 по умолчанию выключено.' : locale === 'en' ? 'Hidden until you turn this on. Off by default for under-18 accounts.' : 'Yoqmaguningizcha yashirin. 18 yoshgacha sukut boʻyicha oʻchiq.'}>
+          <Toggle checked={showOnlineStatus} onChange={(v) => { setShowOnlineStatus(v); queuePref({ showOnlineStatus: v }); }} />
         </Row>
       </Section>
 

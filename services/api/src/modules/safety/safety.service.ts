@@ -1,6 +1,6 @@
 import { MailService } from '../../common/mail/mail.service';
 import { notifyNewReport } from '../../common/safety/report-notify';
-import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, HttpException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizeReport } from '../messaging/messaging-safety';
 import { removeFriend, respondFriendRequest, sendFriendRequest } from './friend-gate';
@@ -34,7 +34,17 @@ export class SafetyService {
       outgoing: rows.filter((r) => r.status === 'pending' && r.requesterId === userId).map(view),
     };
   }
-  sendRequest(userId: string, peer: string) {
+  async sendRequest(userId: string, peer: string) {
+    const dayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const sent = await this.prisma.friendRequest.count({
+      where: { requesterId: userId, createdAt: { gte: dayAgo } },
+    });
+    if (sent >= 20) {
+      throw new HttpException(
+        { statusCode: 429, code: 'RATE_LIMITED', message: 'You can send 20 friend requests a day.' },
+        429,
+      );
+    }
     return sendFriendRequest(this.p, userId, peer);
   }
   respond(userId: string, id: string, accept: boolean) {
@@ -74,6 +84,47 @@ export class SafetyService {
         reportedUser: { select: { id: true, displayName: true, email: true, birthYear: true } },
       },
     });
+  }
+
+  async messageContext(id: string) {
+    const report = await this.prisma.userReport.findUnique({ where: { id } });
+    if (!report) throw new NotFoundException('Report not found');
+    const anchor = report.messageId
+      ? await this.prisma.message.findUnique({
+          where: { id: report.messageId },
+          select: { id: true, conversationId: true, body: true, originalBody: true, senderId: true, createdAt: true, deletedAt: true, editedAt: true },
+        })
+      : null;
+    const conversationId = anchor?.conversationId ?? report.conversationId;
+    if (!conversationId) return { reportId: id, messages: [] };
+    const at = anchor?.createdAt ?? new Date();
+    const [older, newer] = await Promise.all([
+      this.prisma.message.findMany({
+        where: { conversationId, createdAt: { lt: at } },
+        orderBy: { createdAt: 'desc' },
+        take: 5,
+        select: { id: true, body: true, originalBody: true, senderId: true, createdAt: true, deletedAt: true, editedAt: true },
+      }),
+      this.prisma.message.findMany({
+        where: { conversationId, createdAt: { gt: at } },
+        orderBy: { createdAt: 'asc' },
+        take: 5,
+        select: { id: true, body: true, originalBody: true, senderId: true, createdAt: true, deletedAt: true, editedAt: true },
+      }),
+    ]);
+    const rows = [...older.reverse(), ...(anchor ? [anchor] : []), ...newer];
+    return {
+      reportId: id,
+      messages: rows.map((m) => ({
+        id: m.id,
+        senderId: m.senderId,
+        createdAt: m.createdAt,
+        deleted: !!m.deletedAt,
+        edited: !!m.editedAt,
+        reported: m.id === report.messageId,
+        body: m.originalBody || m.body,
+      })),
+    };
   }
 
   async resolve(adminId: string, kind: 'user' | 'content', id: string, status: 'reviewed' | 'actioned' | 'dismissed') {

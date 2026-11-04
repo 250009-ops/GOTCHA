@@ -72,6 +72,9 @@ async function bootstrap() {
   });
 
   const uploadsDir = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
+  app.use('/uploads/avatars', (_req: Request, res: Response) => {
+    res.status(401).json({ statusCode: 401, message: 'Unauthorized' });
+  });
   app.useStaticAssets(uploadsDir, {
     prefix: '/uploads/',
     setHeaders: (res) => {

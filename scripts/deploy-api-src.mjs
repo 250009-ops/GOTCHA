@@ -128,6 +128,8 @@ try {
       'cd services/api && npx prisma migrate deploy && cd "$APP"',
       'VPS_APP_DIR="$APP" pm2 startOrReload deploy/ecosystem.config.cjs --update-env',
       'pm2 save',
+      'python3 "$APP/scripts/deny-public-avatars.py"',
+      'nginx -t && systemctl reload nginx',
     ].join(' && '),
     900_000,
   );

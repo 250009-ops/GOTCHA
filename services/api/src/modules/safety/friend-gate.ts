@@ -7,6 +7,7 @@ import { ageBand, AgeBand, canMessage } from '../../common/safety/age-policy';
  * adults → open. Unknown age = AGE_UNKNOWN_BAND (default teen). Kept DI-free for unit tests.
  */
 export const MESSAGING_NOT_ALLOWED = 'MESSAGING_NOT_ALLOWED';
+export const BIRTH_YEAR_REQUIRED = 'BIRTH_YEAR_REQUIRED';
 
 type Row = { id: string; birthYear: number | null; deletedAt?: Date | null };
 export type GatePrisma = {
@@ -40,9 +41,27 @@ export async function bandsOf(p: GatePrisma, ids: string[]): Promise<Map<string,
 }
 
 export async function assertCanMessage(p: GatePrisma, sender: string, recipient: string): Promise<void> {
-  const bands = await bandsOf(p, [sender, recipient]);
-  const s = bands.get(sender) ?? ageBand(null);
-  const r = bands.get(recipient) ?? ageBand(null);
+  const rows = await p.user.findMany({ where: { id: { in: [sender, recipient] } }, select: { id: true, birthYear: true } });
+  const senderRow = rows.find((row) => row.id === sender);
+  const recipientRow = rows.find((row) => row.id === recipient);
+  if (!senderRow || senderRow.birthYear == null) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: BIRTH_YEAR_REQUIRED,
+      message: 'Add your birth year before you can message.',
+    });
+  }
+  if (!recipientRow || recipientRow.birthYear == null) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: MESSAGING_NOT_ALLOWED,
+      message: 'Messaging is not available for this account.',
+    });
+  }
+  const s = ageBand(senderRow.birthYear);
+  const r = ageBand(recipientRow.birthYear);
   const friends = s === 'adult' && r === 'adult' ? true : await areFriends(p, sender, recipient);
   if (!canMessage(s, r, friends)) {
     throw new ForbiddenException({
@@ -52,7 +71,9 @@ export async function assertCanMessage(p: GatePrisma, sender: string, recipient:
       message:
         s === 'under13' || r === 'under13'
           ? 'Messaging is not available for this account.'
-          : 'You can message this learner once you are friends. Send a friend request first.',
+          : s === 'adult' || r === 'adult'
+            ? 'Adults and under-18 learners cannot message each other.'
+            : 'You can message this learner once you are friends. Send a friend request first.',
     });
   }
 }
@@ -77,9 +98,25 @@ export async function assertPeerVisible(p: GatePrisma, viewerId: string, targetI
 /** Under-13 accounts cannot send or receive friend requests (messaging is off for them). */
 export async function sendFriendRequest(p: GatePrisma, from: string, to: string) {
   if (from === to) throw new BadRequestException('Cannot add yourself');
+  const fromRow = await p.user.findFirst({ where: { id: from }, select: { id: true, birthYear: true } });
+  if (!fromRow || fromRow.birthYear == null) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: BIRTH_YEAR_REQUIRED,
+      message: 'Add your birth year before you can send a friend request.',
+    });
+  }
   await assertNotDeletedUser(p as never, to);
   const target = await p.user.findFirst({ where: { id: to, deletedAt: null }, select: { id: true, birthYear: true } });
   if (!target) throw new NotFoundException('User not found');
+  if (target.birthYear == null) {
+    if (ageBand(fromRow.birthYear) === 'adult') throw new NotFoundException('User not found');
+    throw new ForbiddenException({
+      statusCode: 403,
+      code: MESSAGING_NOT_ALLOWED,
+      message: 'Friends are not available for this account.',
+    });
+  }
   const blocked = await p.userBlock.findFirst({
     where: { OR: [{ blockerId: from, blockedId: to }, { blockerId: to, blockedId: from }] },
   });

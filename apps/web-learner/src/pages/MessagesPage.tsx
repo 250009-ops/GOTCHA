@@ -16,6 +16,7 @@ import {
   chatLangName,
   chatToLabel,
   chatTranslatingLabel,
+  chatTranslateFailedLabel,
   coerceToLang,
   inferComposerSource,
   composeChatPair,
@@ -110,38 +111,45 @@ type Suggestion = Peer & { reading?: ContentRef | null };
 
 type LinePair = { to: string; native: string };
 
-const TEMPLATE_PEER_NAMES = new Set([
-  'john doe',
-  'yuki t.',
-  'yuki t',
-  'marc l.',
-  'marc l',
-  'elena r.',
-  'elena r',
-  'elena read',
-]);
-
-function isTemplatePeerName(name?: string | null) {
-  return TEMPLATE_PEER_NAMES.has((name ?? '').trim().toLowerCase());
-}
-
 function langBadge(_code?: string | null) {
   return 'bg-[#f3f4f6] text-[#4a5565]';
 }
 
-function inboxTimestamp(iso: string | undefined | null, yesterdayLabel: string) {
-  if (!iso) return '';
+const CHAT_TZ = 'Asia/Tashkent';
+const UZ_MONTHS = ['yan', 'fev', 'mar', 'apr', 'may', 'iyn', 'iyl', 'avg', 'sen', 'okt', 'noy', 'dek'];
+
+function chatDateLocale(code?: string | null) {
+  if (code === 'ru') return 'ru-RU';
+  if (code === 'en') return 'en-GB';
+  return 'uz-UZ';
+}
+
+function tashkentParts(iso: string) {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return '';
-  const now = new Date();
-  const startToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-  const startThat = new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime();
-  const diffDays = Math.round((startToday - startThat) / 86_400_000);
-  if (diffDays === 0) {
-    return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  }
-  if (diffDays === 1) return yesterdayLabel;
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+  if (Number.isNaN(date.getTime())) return null;
+  const bag = new Intl.DateTimeFormat('en-GB', {
+    timeZone: CHAT_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+  const get = (type: string) => bag.find((part) => part.type === type)?.value ?? '';
+  return { key: `${get('year')}-${get('month')}-${get('day')}`, day: Number(get('day')), month: Number(get('month')), time: `${get('hour')}:${get('minute')}` };
+}
+
+function inboxTimestamp(iso: string | undefined | null, yesterdayLabel: string, locale?: string | null) {
+  if (!iso) return '';
+  const parts = tashkentParts(iso);
+  if (!parts) return '';
+  const today = tashkentParts(new Date().toISOString());
+  const yesterday = tashkentParts(new Date(Date.now() - 86_400_000).toISOString());
+  if (today && parts.key === today.key) return parts.time;
+  if (yesterday && parts.key === yesterday.key) return yesterdayLabel;
+  if ((locale ?? 'uz') === 'uz') return `${parts.day}-${UZ_MONTHS[parts.month - 1] ?? ''}`;
+  return new Intl.DateTimeFormat(chatDateLocale(locale), { timeZone: CHAT_TZ, day: 'numeric', month: 'short' }).format(new Date(iso));
 }
 
 function useMinWidth(px: number) {
@@ -158,8 +166,16 @@ function useMinWidth(px: number) {
   return matches;
 }
 
+function friendlyError(e: unknown, copy: { commonExt: { error: string; offline: string; tooLong: string } }) {
+  const status = (e as { status?: number })?.status;
+  const msg = e instanceof Error ? e.message : '';
+  if (status === 400 && /long|4000|maxlength/i.test(msg)) return copy.commonExt.tooLong;
+  if (status == null || status === 0 || /failed to fetch|network|load failed/i.test(msg)) return copy.commonExt.offline;
+  return copy.commonExt.error;
+}
+
 function formatTime(iso: string) {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return tashkentParts(iso)?.time ?? '';
 }
 
 const EDIT_WINDOW_MS = 48 * 60 * 60 * 1000;
@@ -540,7 +556,7 @@ function WordMeaningPanel({
           type="button"
           disabled={!canAct}
           onClick={onSave}
-          className="h-10 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-semibold disabled:opacity-40 hover:bg-[#6d1ce0]"
+          className="h-10 rounded-xl bg-g-blue-700 text-g-on-cta text-sm font-semibold disabled:opacity-40 hover:bg-[#2107AA]"
         >
           {reader.save}
         </button>
@@ -590,6 +606,7 @@ export default function MessagesPage() {
   const [tipDismissed, setTipDismissed] = useState(false);
   const [toLangOverride, setToLangOverride] = useState<string | null>(null);
   const [linesById, setLinesById] = useState<Record<string, LinePair>>({});
+  const [translateFailed, setTranslateFailed] = useState<Record<string, boolean>>({});
   const [selectedWord, setSelectedWord] = useState<string | null>(null);
   const [selectedSentence, setSelectedSentence] = useState('');
   const [selectedNativeLine, setSelectedNativeLine] = useState('');
@@ -604,12 +621,16 @@ export default function MessagesPage() {
   const [menuId, setMenuId] = useState<string | null>(null);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const backfillFailRef = useRef<Map<string, number>>(new Map());
+  const lastMessageIdRef = useRef<string | null>(null);
   const typingSentAt = useRef(0);
   const isDesktop = useMinWidth(1024);
   const isXl = useMinWidth(1280);
 
   const nativeLang = normalizeChatLang(user?.nativeLanguage);
   const uiLang = user?.uiLanguage ?? nativeLang;
+  useEffect(() => {
+    lastMessageIdRef.current = detail?.messages[detail.messages.length - 1]?.id ?? null;
+  }, [detail]);
   const toOptions = useMemo(() => otherChatLangs(nativeLang), [nativeLang]);
   const toLang = useMemo(
     () =>
@@ -641,10 +662,10 @@ export default function MessagesPage() {
         api<ConversationRow[]>(`/messaging/conversations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
         api<Suggestion[]>('/messaging/suggestions'),
       ]);
-      setConversations(inbox.filter((c) => !isTemplatePeerName(c.peer?.displayName)));
-      setSuggestions(suggested.filter((s) => !isTemplatePeerName(s.displayName)));
+      setConversations(inbox);
+      setSuggestions(suggested);
     } catch (e) {
-      if (!silent) setError(e instanceof Error ? e.message : copy.commonExt.error);
+      if (!silent) setError(friendlyError(e, copy));
     } finally {
       if (!silent) setLoadingList(false);
     }
@@ -695,12 +716,17 @@ export default function MessagesPage() {
         const d = await api<ConversationDetail>(`/messaging/conversations/${selectedId}`);
         if (cancelled) return;
         setDetail(d);
-        await api(`/messaging/conversations/${selectedId}/read`, { method: 'POST' });
+        const seenId = d.messages[d.messages.length - 1]?.id;
+        lastMessageIdRef.current = seenId ?? null;
+        await api(`/messaging/conversations/${selectedId}/read`, {
+          method: 'POST',
+          body: JSON.stringify(seenId ? { messageId: seenId } : {}),
+        });
         setConversations((prev) =>
           prev.map((c) => (c.id === selectedId ? { ...c, unreadCount: 0 } : c)),
         );
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : copy.commonExt.error);
+        if (!cancelled) setError(friendlyError(e, copy));
       } finally {
         if (!cancelled) setLoadingThread(false);
       }
@@ -738,9 +764,16 @@ export default function MessagesPage() {
           peerLastReadAt?: string | null;
           peer?: { id: string; online: boolean; lastSeenAt?: string | null; typing?: boolean } | null;
         }>(`/messaging/conversations/${selectedId}/status`);
+        const after = lastMessageIdRef.current;
+        const page = after
+          ? await api<{ messages?: ChatMessage[] }>(`/messaging/conversations/${selectedId}?after=${encodeURIComponent(after)}`)
+          : null;
         if (cancelled) return;
         setDetail((prev) => {
           if (!prev || prev.id !== selectedId) return prev;
+          const known = new Set(prev.messages.map((item) => item.id));
+          const extra = (page?.messages ?? []).filter((item) => item.id && !known.has(item.id));
+          const messages = extra.length ? [...prev.messages, ...extra] : prev.messages;
           return {
             ...prev,
             peerLastReadAt: status.peerLastReadAt ?? prev.peerLastReadAt,
@@ -752,7 +785,7 @@ export default function MessagesPage() {
                   typing: !!status.peer.typing,
                 }
               : prev.peer,
-            messages: applyReadReceipts(prev.messages, status.peerLastReadAt),
+            messages: applyReadReceipts(messages, status.peerLastReadAt),
           };
         });
         setConversations((prev) =>
@@ -807,7 +840,7 @@ export default function MessagesPage() {
         setProfilePeerId(null);
         return;
       }
-      setError(e instanceof Error ? e.message : copy.commonExt.error);
+      setError(friendlyError(e, copy));
     }
   };
 
@@ -929,7 +962,7 @@ export default function MessagesPage() {
       );
       replaceMessage(updated);
     } catch (e) {
-      setError(e instanceof Error ? e.message : copy.commonExt.error);
+      setError(friendlyError(e, copy));
     }
   };
 
@@ -1086,7 +1119,7 @@ export default function MessagesPage() {
         setDraft(text);
         setEditing(editingMsg);
       }
-      setError(e instanceof Error ? e.message : copy.commonExt.error);
+      setError(friendlyError(e, copy));
     } finally {
       setSending(false);
     }
@@ -1107,12 +1140,13 @@ export default function MessagesPage() {
         const topOk = !!existing?.to?.trim();
         const botOk = !!existing?.native?.trim()
           && (!sameChatText(existing.native, existing.to) || to === native);
+        const settleKey = `${msg.id}:${to}:${native}`;
         if (topOk && botOk) {
-          backfillFailRef.current.delete(msg.id);
+          backfillFailRef.current.set(settleKey, 1);
           continue;
         }
-        const fails = backfillFailRef.current.get(msg.id) ?? 0;
-        if (fails >= 5) continue;
+        if (backfillFailRef.current.has(settleKey)) continue;
+        backfillFailRef.current.set(settleKey, 1);
 
         const storedTr = msg.translation?.trim() || null;
         const bodyLooksNative = looksLikeLang(msg.body, native) && !looksLikeLang(msg.body, to);
@@ -1134,16 +1168,10 @@ export default function MessagesPage() {
         const seed = storedTr && !sameChatText(storedTr, msg.body) ? storedTr : msg.body;
         const seedLang = bodyLooksNative ? native : (bodyLooksTo || bodyLang === to ? to : (bodyLang ?? native));
         if (!toText) toText = await tryTranslateChat(seed, seedLang, to);
-        if (!nativeText) {
-          nativeText = await tryTranslateChat(toText ?? seed, toText ? to : seedLang, native)
-            ?? await tryTranslateChat(seed, seedLang, native)
-            ?? (bodyLooksNative ? msg.body : null);
-        }
+        else if (!nativeText) nativeText = await tryTranslateChat(seed, seedLang, native);
         if (!cancelled) {
-          if (toText && nativeText && !sameChatText(toText, nativeText)) {
-            backfillFailRef.current.delete(msg.id);
-          } else {
-            backfillFailRef.current.set(msg.id, fails + 1);
+          if (!toText && !nativeText) {
+            setTranslateFailed((prev) => ({ ...prev, [msg.id]: true }));
           }
           rememberPair(msg.id, toText, nativeText);
         }
@@ -1345,9 +1373,13 @@ export default function MessagesPage() {
           {loadingList && conversations.length === 0 ? (
             <div className="p-6 text-sm text-[#99a1af]">{copy.common.loading}</div>
           ) : conversations.length === 0 ? (
-            <div className="p-6 text-sm text-[#99a1af] flex flex-col items-center gap-2 text-center">
-              <MessageSquare className="w-8 h-8 text-g-blue-200" />
-              <p>{mp.noConversationsHint}</p>
+            <div className="p-8 text-sm text-[#4a5565] flex flex-col items-center gap-3 text-center">
+              <MessageSquare className="w-12 h-12 text-g-blue-700" />
+              <p className="text-base font-semibold text-[#0f1729]">{mp.emptyTitle}</p>
+              <p>{mp.emptyBody}</p>
+              <button type="button" onClick={() => document.getElementById('learner-search')?.focus()} className="h-10 px-4 rounded-xl bg-[#2107AA] text-white text-sm font-semibold">
+                {mp.sendFriend}
+              </button>
             </div>
           ) : (
             conversations.map((c) => {
@@ -1384,7 +1416,7 @@ export default function MessagesPage() {
                         </span>
                       </div>
                       <span className="text-[11px] text-[#99a1af] shrink-0">
-                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt, mp.yesterday)}
+                        {inboxTimestamp(c.lastMessageAt ?? c.lastMessage?.createdAt, mp.yesterday, uiLang)}
                       </span>
                     </div>
                     <div className="flex items-center justify-between gap-2">
@@ -1485,8 +1517,18 @@ export default function MessagesPage() {
               {loadingThread && detail.messages.length === 0 ? (
                 <p className="text-sm text-[#99a1af]">{copy.common.loading}</p>
               ) : (
-                detail.messages.map((m) => {
+                detail.messages.map((m, i) => {
                   const mine = Boolean(m.mine || (user?.id && m.senderId === user.id));
+                  const next = detail.messages[i + 1];
+                  const showAvatar = !mine && (!next || Boolean(next.mine) || next.senderId !== m.senderId);
+                  const prev = detail.messages[i - 1];
+                  const dayKey = tashkentParts(m.createdAt)?.key;
+                  const prevKey = prev ? tashkentParts(prev.createdAt)?.key : null;
+                  const dayLabel = dayKey && dayKey !== prevKey
+                    ? (dayKey === tashkentParts(new Date().toISOString())?.key
+                      ? copy.commonExt.today
+                      : inboxTimestamp(m.createdAt, copy.commonExt.yesterday, uiLang))
+                    : null;
                   const forced = linesById[m.id];
                   const presented = presentBubble({
                     body: m.body,
@@ -1521,8 +1563,11 @@ export default function MessagesPage() {
                       key={m.id}
                       className={cx('group flex w-full flex-col gap-1', mine ? 'items-end' : 'items-start')}
                     >
+                      {dayLabel ? (
+                        <p className="self-center text-[11px] font-semibold text-[#6a7282] py-1">{dayLabel}</p>
+                      ) : null}
                       <div className={cx('flex items-end gap-1.5 max-w-[min(86%,32rem)]', mine && 'flex-row-reverse')}>
-                        {!mine && (
+                        {showAvatar && (
                           <button
                             type="button"
                             className="hidden sm:block mb-0.5"
@@ -1575,11 +1620,11 @@ export default function MessagesPage() {
                                     setSelectedNativeLine(secondary ? sentenceAroundPhrase(secondary, word) : '');
                                     setSelectedLineLang(presented.primaryLang);
                                   }}
-                                  className="text-[15px] leading-5"
+                                  className="text-[15px] leading-5 [overflow-wrap:anywhere]"
                                 />
                               ) : (
-                                <p className={cx('italic text-[13px]', mine ? 'text-white/80' : 'text-[#6a7282]')}>
-                                  {chatTranslatingLabel(uiLang)}
+                                <p className={cx('italic text-[13px] min-h-5', mine ? 'text-white/80' : 'text-[#6a7282]')}>
+                                  {translateFailed[m.id] ? chatTranslateFailedLabel(uiLang) : chatTranslatingLabel(uiLang)}
                                 </p>
                               )}
                               {secondary ? (
@@ -1666,7 +1711,7 @@ export default function MessagesPage() {
                       </div>
                       <span className="text-[10px] text-[#99a1af] inline-flex items-center gap-1 px-1">
                         {formatTime(m.createdAt)}
-                        {m.editedAt && !m.deleted ? ' · edited' : ''}
+                        {m.editedAt && !m.deleted ? ` · ${mp.edited}` : ''}
                         {mine && !m.deleted && (
                           m.status === 'sending' ? (
                             <Clock className="w-3 h-3 animate-pulse" />

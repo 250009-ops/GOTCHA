@@ -22,7 +22,10 @@ assert.equal(needsAgePrompt({ birthYear: 2000, agePromptedAt: null }), false);
 assert.equal(canMessage('under13', 'adult', true), false);
 assert.equal(canMessage('adult', 'under13', true), false);
 assert.equal(canMessage('teen', 'adult', false), false);
+assert.equal(canMessage('teen', 'adult', true), false);
+assert.equal(canMessage('adult', 'teen', true), false);
 assert.equal(canMessage('teen', 'teen', true), true);
+assert.equal(canMessage('teen', 'teen', false), false);
 assert.equal(canMessage('adult', 'adult', false), true);
 // Expected labels come from the PM README 'Sign-up tick-box labels' section matching the shipped version:
 // .3 = CURRENT (pre-oferta), .4 = PENDING (payments-02 under G1: Terms + Privacy + Public Offer).

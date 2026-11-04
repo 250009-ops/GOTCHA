@@ -35,10 +35,16 @@ export function needsAgePrompt(u: { birthYear?: number | null; agePromptedAt?: D
   return u.birthYear == null && u.agePromptedAt == null;
 }
 
-/** Messaging gate (owner 13:04): under-13 off; 13-17 only with mutually accepted friends; adults open. */
+/**
+ * Messaging gate: under-13 off; under-18 only with other under-18 friends; adults only with adults.
+ * A missing birth year is rejected before this runs (BIRTH_YEAR_REQUIRED).
+ */
 export function canMessage(sender: AgeBand, recipient: AgeBand, areFriends: boolean): boolean {
   if (sender === 'under13' || recipient === 'under13') return false;
-  if (sender === 'teen' || recipient === 'teen') return areFriends;
+  const senderAdult = sender === 'adult';
+  const recipientAdult = recipient === 'adult';
+  if (senderAdult !== recipientAdult) return false;
+  if (!senderAdult) return areFriends;
   return true;
 }
 

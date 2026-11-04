@@ -1,8 +1,10 @@
 import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import { SkipThrottle } from '@nestjs/throttler';
 import { AuthUserPayload, CurrentUser } from '../../common/decorators';
 import {
   EditMessageDto,
+  MarkReadDto,
   ReportUserDto,
   SendMessageDto,
   StartConversationDto,
@@ -15,19 +17,33 @@ import { MessagingService } from './messaging.service';
 export class MessagingController {
   constructor(private messaging: MessagingService) {}
 
+  @SkipThrottle()
   @Post('presence')
   heartbeat(@CurrentUser() user: AuthUserPayload) {
     return this.messaging.heartbeat(user.sub);
   }
 
-  @Get('conversations')
-  list(@CurrentUser() user: AuthUserPayload, @Query('q') q?: string) {
-    return this.messaging.listConversations(user.sub, q);
+  @SkipThrottle()
+  @Get('unread-count')
+  unread(@CurrentUser() user: AuthUserPayload) {
+    return this.messaging.unreadTotal(user.sub);
   }
 
+  @SkipThrottle()
+  @Get('conversations')
+  list(@CurrentUser() user: AuthUserPayload, @Query('q') q?: string, @Query('before') before?: string) {
+    return this.messaging.listConversations(user.sub, q, before);
+  }
+
+  @SkipThrottle()
   @Get('conversations/:id')
-  getOne(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.messaging.getConversation(user.sub, id);
+  getOne(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('before') before?: string,
+    @Query('after') after?: string,
+  ) {
+    return this.messaging.getConversation(user.sub, id, { before, after });
   }
 
   @Post('conversations')
@@ -72,21 +88,29 @@ export class MessagingController {
     return this.messaging.setTyping(user.sub, id, dto.typing !== false);
   }
 
+  @SkipThrottle()
   @Get('conversations/:id/status')
   status(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.messaging.conversationStatus(user.sub, id);
   }
 
+  @SkipThrottle()
   @Post('conversations/:id/read')
-  markRead(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
-    return this.messaging.markRead(user.sub, id);
+  markRead(
+    @CurrentUser() user: AuthUserPayload,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: MarkReadDto,
+  ) {
+    return this.messaging.markRead(user.sub, id, dto.messageId);
   }
 
+  @SkipThrottle()
   @Get('suggestions')
   suggestions(@CurrentUser() user: AuthUserPayload) {
     return this.messaging.suggestions(user.sub);
   }
 
+  @SkipThrottle()
   @Get('learners')
   learners(
     @CurrentUser() user: AuthUserPayload,
@@ -103,6 +127,7 @@ export class MessagingController {
   }
 
   // P3b report & block (Play UGC policy).
+  @SkipThrottle()
   @Get('blocks')
   blocks(@CurrentUser() user: AuthUserPayload) {
     return this.messaging.listBlocks(user.sub);
@@ -123,6 +148,7 @@ export class MessagingController {
     return this.messaging.report(user.sub, dto);
   }
 
+  @SkipThrottle()
   @Get('peers/:id')
   peer(@CurrentUser() user: AuthUserPayload, @Param('id', ParseUUIDPipe) id: string) {
     return this.messaging.peerProfile(user.sub, id);

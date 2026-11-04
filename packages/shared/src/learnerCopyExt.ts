@@ -192,6 +192,11 @@ export interface LearnerCopyExt {
     edit: string;
     delete: string;
     messageDeleted: string;
+    edited: string;
+    translateFailed: string;
+    emptyTitle: string;
+    emptyBody: string;
+    sendFriend: string;
     you: string;
     wordMeaning: string;
     editingMessage: string;
@@ -294,6 +299,8 @@ export interface LearnerCopyExt {
     confirm: string;
     retry: string;
     error: string;
+    offline: string;
+    tooLong: string;
     success: string;
     new: string;
     days: string;
@@ -573,6 +580,11 @@ const EXT_EN: LearnerCopyExt = {
     edit: 'Edit',
     delete: 'Delete',
     messageDeleted: 'This message was deleted',
+    edited: 'edited',
+    translateFailed: 'Couldn\'t translate',
+    emptyTitle: 'No conversations yet',
+    emptyBody: 'Messaging is for friends. Send a friend request to start.',
+    sendFriend: 'Send friend request',
     you: 'You',
     wordMeaning: 'Word Meaning',
     editingMessage: 'Editing message',
@@ -676,6 +688,8 @@ const EXT_EN: LearnerCopyExt = {
     confirm: 'Confirm',
     retry: 'Retry',
     error: 'Error',
+    offline: 'Couldn\'t reach Gotcha. Check your connection and try again.',
+    tooLong: 'That message is too long.',
     success: 'Success',
     new: 'New',
     days: 'days',
@@ -958,6 +972,11 @@ const EXT_RU: LearnerCopyExt = {
     edit: 'Изменить',
     delete: 'Удалить',
     messageDeleted: 'Сообщение удалено',
+    edited: 'изменено',
+    translateFailed: 'Не удалось перевести',
+    emptyTitle: 'Пока нет разговоров',
+    emptyBody: 'Писать можно друзьям. Отправьте запрос в друзья.',
+    sendFriend: 'Отправить запрос в друзья',
     you: 'Вы',
     wordMeaning: 'Значение слова',
     editingMessage: 'Редактирование',
@@ -1061,6 +1080,8 @@ const EXT_RU: LearnerCopyExt = {
     confirm: 'Подтвердить',
     retry: 'Повторить',
     error: 'Ошибка',
+    offline: 'Нет связи с Gotcha. Проверьте интернет и попробуйте снова.',
+    tooLong: 'Слишком длинное сообщение.',
     success: 'Успех',
     new: 'Новое',
     days: 'дн.',
@@ -1343,6 +1364,11 @@ const EXT_UZ: LearnerCopyExt = {
     edit: 'Tahrirlash',
     delete: 'Oʻchirish',
     messageDeleted: 'Xabar oʻchirildi',
+    edited: 'tahrirlangan',
+    translateFailed: 'Tarjima qilib boʻlmadi',
+    emptyTitle: 'Hali suhbat yoʻq',
+    emptyBody: 'Xabar yozish doʻstlar uchun. Boshlash uchun doʻstlik soʻrovi yuboring.',
+    sendFriend: 'Doʻstlik soʻrovi',
     you: 'Siz',
     wordMeaning: 'Soʻz maʼnosi',
     editingMessage: 'Xabar tahrirlanmoqda',
@@ -1446,6 +1472,8 @@ const EXT_UZ: LearnerCopyExt = {
     confirm: 'Tasdiqlash',
     retry: 'Qayta urinish',
     error: 'Xato',
+    offline: 'Gotcha bilan aloqa yoʻq. Internetni tekshirib, qayta urinib koʻring.',
+    tooLong: 'Xabar juda uzun.',
     success: 'Muvaffaqiyat',
     new: 'Yangi',
     days: 'kun',

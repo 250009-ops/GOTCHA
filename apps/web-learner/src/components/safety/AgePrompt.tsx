@@ -43,10 +43,11 @@ export function AgePrompt() {
       setBusy(false);
     }
   };
-  return (
-    <div role="dialog" aria-modal="false" aria-labelledby="age-prompt-title" data-testid="age-prompt"
-      className="relative z-10 mx-3 mt-3 md:fixed md:bottom-4 md:right-4 md:left-auto md:mx-0 md:mt-0 md:z-[60] md:w-[22rem] pointer-events-none">
-      <div className="pointer-events-auto rounded-2xl bg-white p-4 shadow-xl border border-[#e5e7eb] flex flex-col gap-3">
+  const onNarrowMessages = typeof window !== 'undefined'
+    && window.location.pathname.includes('/messages')
+    && window.matchMedia('(max-width: 420px)').matches;
+  const card = (
+      <div className="pointer-events-auto w-full max-w-sm rounded-2xl bg-white p-4 shadow-xl border border-[#e5e7eb] flex flex-col gap-3">
         <div className="flex items-start justify-between gap-2">
           <h2 id="age-prompt-title" className="text-base font-bold text-[#101828]">{c.promptTitle}</h2>
           <button type="button" aria-label={CLOSE[lc]} onClick={dismiss} className="-m-1 h-8 w-8 rounded-full text-[#4a5565] hover:bg-[#f3f4f6]">✕</button>
@@ -62,6 +63,18 @@ export function AgePrompt() {
           <button type="button" disabled={busy || year == null} onClick={() => void send(year)} className="flex-1 h-11 rounded-[14px] bg-[#2107AA] text-white text-sm font-bold disabled:opacity-50">{c.save}</button>
         </div>
       </div>
+  );
+  if (onNarrowMessages) {
+    return (
+      <div role="dialog" aria-modal="false" aria-labelledby="age-prompt-title" data-testid="age-prompt" className="relative z-10 mx-3 mt-3 pointer-events-none">
+        {card}
+      </div>
+    );
+  }
+  return (
+    <div role="dialog" aria-modal="false" aria-labelledby="age-prompt-title" data-testid="age-prompt"
+      className="pointer-events-none fixed top-1/2 left-1/2 z-[80] w-[min(100%,24rem)] -translate-x-1/2 -translate-y-1/2 p-4">
+      {card}
     </div>
   );
 }

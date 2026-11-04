@@ -78,6 +78,7 @@ export default function LearnerShell() {
   const [expanded, setExpanded] = useState(prefersExpandedSidebar);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [unreadNotifs, setUnreadNotifs] = useState(0);
+  const [unreadMessages, setUnreadMessages] = useState(0);
   const [onboardingStep, setOnboardingStep] = useState<OnboardingStep | 'done'>('done');
 
   const isActive = (path: string, exact = false) => {
@@ -123,6 +124,9 @@ export default function LearnerShell() {
       void api<{ unreadCount: number }>('/notifications/unread-count')
         .then((res) => setUnreadNotifs(res.unreadCount ?? 0))
         .catch(() => undefined);
+      void api<{ unreadCount: number }>('/messaging/unread-count')
+        .then((res) => setUnreadMessages(res.unreadCount ?? 0))
+        .catch(() => undefined);
     };
     load();
     const id = window.setInterval(load, 30_000);
@@ -158,14 +162,14 @@ export default function LearnerShell() {
       >
         <item.icon className={cn('w-[18px] h-[18px] shrink-0', active ? 'text-white' : 'text-white/50 group-hover:text-white/80')} />
         {!collapsed && <span className="truncate">{label}</span>}
-        {item.path === '/app/notifications' && unreadNotifs > 0 && (
+        {(item.path === '/app/notifications' && unreadNotifs > 0) || (item.path === '/app/messages' && unreadMessages > 0) ? (
           <span className={cn(
             'min-w-5 h-5 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center',
             collapsed ? 'absolute top-0.5 right-0.5' : 'ml-auto',
           )}>
-            {unreadNotifs > 9 ? '9+' : unreadNotifs}
+            {(item.path === '/app/messages' ? unreadMessages : unreadNotifs) > 9 ? '9+' : (item.path === '/app/messages' ? unreadMessages : unreadNotifs)}
           </span>
-        )}
+        ) : null}
       </button>
     );
 
@@ -290,6 +294,20 @@ export default function LearnerShell() {
 
               <button
                 type="button"
+                aria-label={copy.nav.messages}
+                onClick={() => navigate('/app/messages')}
+                className="md:hidden relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-g-blue-700"
+              >
+                <MessageSquare className="w-4 h-4" />
+                {unreadMessages > 0 && (
+                  <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-[#ff3b30] text-[10px] font-bold text-white grid place-items-center">
+                    {unreadMessages > 9 ? '9+' : unreadMessages}
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
                 aria-label={copy.shell.notificationsAria}
                 onClick={() => navigate('/app/notifications')}
                 className="relative size-9 rounded-full border border-gray-200 bg-white grid place-items-center text-gray-600 hover:text-g-blue-700 hover:border-violet-200"
@@ -329,6 +347,12 @@ export default function LearnerShell() {
                     </div>
                   </div>
                   <div className="h-px bg-[#e5e7eb] my-2.5" />
+                  <button type="button" onClick={() => { setUserMenuOpen(false); navigate('/app/settings'); }} className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-[#111827] hover:bg-gray-50">
+                    {locale === 'ru' ? 'Профиль' : locale === 'en' ? 'Profile' : 'Profil'}
+                  </button>
+                  <button type="button" onClick={() => { setUserMenuOpen(false); navigate('/app/settings'); }} className="w-full text-left px-3 py-2 rounded-xl text-sm font-medium text-[#111827] hover:bg-gray-50">
+                    {copy.nav.settings}
+                  </button>
                   <button
                     type="button"
                     onClick={handleLogout}

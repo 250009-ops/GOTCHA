@@ -26,7 +26,7 @@ export type SafetyPrisma = {
   };
   userReport: { create(args: unknown): Promise<{ id: string; status: string; createdAt: Date }> };
   user: { findFirst(args: unknown): Promise<{ id: string } | null> };
-  message: { findFirst(args: unknown): Promise<{ id: string; senderId: string; body: string; conversationId: string } | null> };
+  message: { findFirst(args: unknown): Promise<{ id: string; senderId: string; body: string; originalBody?: string | null; conversationId: string } | null> };
   conversationParticipant: { findUnique(args: unknown): Promise<unknown | null> };
 };
 
@@ -103,7 +103,7 @@ export async function reportUser(
       where: { conversationId_userId: { conversationId: msg.conversationId, userId: reporterId } },
     });
     if (!member) throw new ForbiddenException('Not a participant');
-    messageSnapshot = msg.body.slice(0, 4000);
+    messageSnapshot = (msg.originalBody || msg.body || '').slice(0, 4000);
     conversationId = msg.conversationId;
   }
 

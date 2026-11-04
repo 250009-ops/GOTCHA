@@ -7,6 +7,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { safeAvatarUrl } from '../users/avatar-image';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
@@ -554,20 +555,24 @@ export class AuthService {
     id: string;
     email: string;
     displayName: string | null;
+    avatarUrl?: string | null;
     nativeLanguage: string;
     uiLanguage: string;
     streakCount: number;
     emailVerifiedAt?: Date | null;
+    birthYear?: number | null;
     targetLanguages?: unknown[];
   }) {
     return {
       id: user.id,
       email: user.email,
       displayName: user.displayName,
+      avatarUrl: safeAvatarUrl(user.avatarUrl),
       nativeLanguage: user.nativeLanguage,
       uiLanguage: user.uiLanguage,
       streakCount: user.streakCount,
       emailVerified: !!user.emailVerifiedAt,
+      birthYear: user.birthYear ?? null,
       targetLanguages: user.targetLanguages ?? [],
     };
   }

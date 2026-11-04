@@ -11,8 +11,8 @@ import { resolveMediaUrl } from '../lib/media';
 import { formatUzs } from '../lib/importBilling';
 import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { openReader } from '../lib/readerReturn';
-import { useLearnerCopy } from '../lib/learnerLocaleContext';
-import { type ContentItem } from '../lib/types';
+import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
+import { LANGUAGE_META, type ContentItem } from '../lib/types';
 import { BookCover, coverDisplayTitle } from '../components/cover/BookCover';
 
 const cefrStyle: Record<string, string> = {
@@ -27,7 +27,14 @@ const staticFilterIds = ['Fiction', 'News', 'Imports', 'A1–A2', 'B1–B2', 'C1
 type StaticFilterId = (typeof staticFilterIds)[number];
 type FilterTab = 'All' | StaticFilterId | string;
 
-function filterLabel(filter: FilterTab, copy: ReturnType<typeof useLearnerCopy>): string {
+const CHIP_UZ: Record<string, string> = {
+  de: 'Nemischa', ar: 'Arabcha', ko: 'Koreyscha', tr: 'Turkcha', ru: 'Ruscha', uz: 'Oʻzbekcha', en: 'Inglizcha',
+};
+const CHIP_RU: Record<string, string> = {
+  de: 'Немецкий', ar: 'Арабский', ko: 'Корейский', tr: 'Турецкий', ru: 'Русский', uz: 'Узбекский', en: 'Английский',
+};
+
+function filterLabel(filter: FilterTab, copy: ReturnType<typeof useLearnerCopy>, locale = 'uz'): string {
   switch (filter) {
     case 'All':
       return copy.library.filterAll;
@@ -43,8 +50,15 @@ function filterLabel(filter: FilterTab, copy: ReturnType<typeof useLearnerCopy>)
       return copy.library.filterB1B2;
     case 'C1–C2':
       return copy.library.filterC1C2;
-    default:
+    default: {
+      const code = filter.toLowerCase();
+      if (code.length === 2) {
+        if (locale === 'uz') return CHIP_UZ[code] ?? LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.nativeName ?? filter;
+        if (locale === 'ru') return CHIP_RU[code] ?? LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.label ?? filter;
+        return LANGUAGE_META[code as keyof typeof LANGUAGE_META]?.label ?? filter;
+      }
       return filter;
+    }
   }
 }
 
@@ -388,6 +402,7 @@ export default function LibraryPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user, stats } = useAuth();
   const copy = useLearnerCopy();
+  const { locale } = useLearnerLocale();
   const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [feedError, setFeedError] = useState(false);
@@ -687,7 +702,7 @@ export default function LibraryPage() {
                   activeFilter === f ? 'bg-g-blue-700 text-g-on-cta border-g-blue-700 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-gray-300',
                 )}
               >
-                {filterLabel(f, copy)}
+                {filterLabel(f, copy, locale)}
               </button>
             ))}
           </div>

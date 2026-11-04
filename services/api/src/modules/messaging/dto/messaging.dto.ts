@@ -34,6 +34,12 @@ export class SendMessageDto {
   replyToId?: string;
 }
 
+export class MarkReadDto {
+  @IsOptional()
+  @IsUUID()
+  messageId?: string;
+}
+
 export class TypingDto {
   @IsOptional()
   @IsBoolean()

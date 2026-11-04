@@ -58,6 +58,13 @@ export class SafetyController {
   queue(@Query('kind') kind?: string, @Query('status') status?: string) {
     return this.safety.queue(kind === 'content' ? 'content' : 'user', status);
   }
+  @Get('admin/safety/reports/user/:id/context')
+  @UseGuards(RolesGuard)
+  @Roles(AdminRole.superadmin, AdminRole.moderator)
+  context(@Param('id', ParseUUIDPipe) id: string) {
+    return this.safety.messageContext(id);
+  }
+
   @Patch('admin/safety/reports/:kind/:id')
   @UseGuards(RolesGuard)
   @Roles(AdminRole.superadmin, AdminRole.moderator)

@@ -4,11 +4,20 @@
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
   --font-serif: "Lora", Georgia, serif;
+  --font-ar: "Noto Naskh Arabic", Amiri, serif;
+  --font-ko: "Noto Serif KR", "Noto Sans KR", sans-serif;
   --font-brand: "Bagel Fat One", cursive;
   --color-brand: #2107aa;
   --color-brand-deep: #101828;
   --color-sidebar: var(--g-sidebar);
   --color-app-bg: var(--g-canvas);
+}
+
+:lang(ar), :lang(fa), :lang(ur), :lang(he) {
+  font-family: var(--font-ar);
+}
+:lang(ko) {
+  font-family: var(--font-ko);
 }
 
 @layer base {

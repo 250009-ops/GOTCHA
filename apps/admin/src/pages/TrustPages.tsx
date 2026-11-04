@@ -81,6 +81,7 @@ export function SafetyReportsPage() {
   const [rows, setRows] = useState<ReportRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [context, setContext] = useState<Array<{ id: string; body: string; reported?: boolean; deleted?: boolean }> | null>(null);
 
   const load = useCallback(async () => {
     setError(null);
@@ -114,7 +115,7 @@ export function SafetyReportsPage() {
     <div>
       <PageHeader
         title="Safety reports"
-        subtitle="Learner reports about people and content. Open items are waiting for a decision."
+        subtitle="Learner reports about people and content. Open items are waiting for a decision. Deleted messages still show the original text."
         actions={
           <div className="flex gap-2">
             <Select aria-label="Report type" value={kind} onChange={(e) => setKind(e.target.value as 'user' | 'content')} className="w-36">
@@ -131,6 +132,14 @@ export function SafetyReportsPage() {
         }
       />
       {error && <p className="mb-3 text-sm text-rose-700">{error}</p>}
+      {context && (
+        <Card className="mb-3 p-4 space-y-2">
+          <div className="text-sm font-semibold">Reported conversation (±5)</div>
+          {context.length === 0 ? <p className="text-sm text-slate-500">No message was attached.</p> : context.map((m) => (
+            <p key={m.id} className={m.reported ? 'text-sm font-semibold' : 'text-sm text-slate-700'}>{m.deleted ? '(deleted) ' : ''}{m.body}</p>
+          ))}
+        </Card>
+      )}
       {rows.length === 0 ? (
         <Card className="p-8 text-center text-sm text-slate-500">No reports in this view.</Card>
       ) : (
@@ -142,6 +151,13 @@ export function SafetyReportsPage() {
                   <div className="font-semibold">{row.reportedUser?.displayName || row.reportedUser?.email || row.reporter?.displayName || 'Report'}</div>
                   <div className="text-xs text-slate-500">{row.reporter?.email}</div>
                   {row.details && <div className="mt-1 text-slate-600">{row.details}</div>}
+                  {kind === 'user' && (
+                    <button type="button" className="mt-1 text-xs font-semibold text-g-blue-700" onClick={() => {
+                      void api<{ messages: Array<{ id: string; body: string; reported?: boolean; deleted?: boolean }> }>(`/admin/safety/reports/user/${row.id}/context`)
+                        .then((data) => setContext(data.messages))
+                        .catch((e) => setError(e instanceof Error ? e.message : 'Could not load the conversation'));
+                    }}>View messages</button>
+                  )}
                 </td>
                 <td className="px-4 py-2.5">{row.reason}</td>
                 <td className="px-4 py-2.5 whitespace-nowrap">{tashkent(row.createdAt)}</td>

@@ -29,19 +29,16 @@ function fake(users: Record<string, number | null>) {
   await assertCanMessage(p as any, 'adult', 'adult2'); // open
   await assert.rejects(assertCanMessage(p as any, 'kid', 'adult'), /not available/);
   await assert.rejects(assertCanMessage(p as any, 'adult', 'kid'), /not available/);
-  await assert.rejects(assertCanMessage(p as any, 'teen', 'adult'), /friends/);
-  await assert.rejects(assertCanMessage(p as any, 'unknown', 'adult'), /friends/); // unknown = teen limits
+  await assert.rejects(assertCanMessage(p as any, 'teen', 'adult'), /cannot message/);
+  await assert.rejects(assertCanMessage(p as any, 'adult', 'teen'), /cannot message/);
+  await assert.rejects(assertCanMessage(p as any, 'unknown', 'adult'), /birth year/);
   await assert.rejects(sendFriendRequest(p as any, 'kid', 'teen'), /not available/);
+  await assert.rejects(sendFriendRequest(p as any, 'unknown', 'teen'), /birth year/);
   const r = await sendFriendRequest(p as any, 'teen', 'teen2');
   await assert.rejects(assertCanMessage(p as any, 'teen', 'teen2'), /friends/); // pending isn't enough
   await respondFriendRequest(p as any, 'teen2', r.id, true);
   await assertCanMessage(p as any, 'teen', 'teen2');
   await assertCanMessage(p as any, 'teen2', 'teen');
-  // Mutual request auto-accepts.
-  // WL4-12: an adult can't initiate to a no-age user, but the no-age user can, and the adult's reply auto-accepts.
   await assert.rejects(sendFriendRequest(p as any, 'adult', 'unknown'), /not found/);
-  await sendFriendRequest(p as any, 'unknown', 'adult');
-  await sendFriendRequest(p as any, 'adult', 'unknown');
-  await assertCanMessage(p as any, 'unknown', 'adult');
   console.log('friend-gate: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

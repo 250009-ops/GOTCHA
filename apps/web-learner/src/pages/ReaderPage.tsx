@@ -1184,7 +1184,9 @@ export default function ReaderPage() {
           </div>
 
           <div
-            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6"
+            dir={['ar', 'fa', 'he', 'ur'].includes(String(content.language || '').toLowerCase()) ? 'rtl' : 'ltr'}
+            lang={String(content.language || 'en').toLowerCase()}
+            className="max-w-[68ch] mx-auto px-5 py-8 lg:py-12 pb-6 text-start"
             style={{ fontSize: `${fontScale}rem`, lineHeight: preferences?.readerLineSpacing ?? 1.5 }}
           >
             {isTrial ? (

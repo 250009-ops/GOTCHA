@@ -317,6 +317,8 @@ model UserPreferences {
   dailyNewWords        Int     @default(10) @map("daily_new_words")
   notificationsEnabled Boolean @default(true) @map("notifications_enabled")
   onboardingDone       Boolean @default(false) @map("onboarding_done")
+  /// Presence (online, last seen) is hidden until the learner opts in. Minors stay off until they turn this on.
+  showOnlineStatus     Boolean @default(false) @map("show_online_status")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1099,8 +1101,11 @@ model Conversation {
 model ConversationParticipant {
   conversationId String    @map("conversation_id") @db.Uuid
   userId         String    @map("user_id") @db.Uuid
-  lastReadAt     DateTime? @map("last_read_at")
-  joinedAt       DateTime  @default(now()) @map("joined_at")
+  lastReadAt        DateTime? @map("last_read_at")
+  /// Last message this participant has actually seen. Unread is counted after this row, not after a clock time.
+  lastReadMessageId String?   @map("last_read_message_id") @db.Uuid
+  typingUntil       DateTime? @map("typing_until")
+  joinedAt          DateTime  @default(now()) @map("joined_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1120,16 +1125,32 @@ model Message {
   replyToId      String?      @map("reply_to_id") @db.Uuid
   editedAt       DateTime?    @map("edited_at")
   deletedAt      DateTime?    @map("deleted_at")
+  /// First body, kept after edit or delete so admins can still read a reported message.
+  originalBody   String?      @map("original_body")
   createdAt      DateTime     @default(now()) @map("created_at")
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User?        @relation(fields: [senderId], references: [id], onDelete: SetNull) // final-5 WL4-11 B: hard delete keeps messages as "Deleted user"
   replyTo      Message?     @relation("MessageReply", fields: [replyToId], references: [id], onDelete: SetNull)
   replies      Message[]    @relation("MessageReply")
+  edits        MessageEdit[]
 
   @@index([conversationId, createdAt])
   @@index([replyToId])
   @@map("messages")
+}
+
+/// Prior bodies of an edited message. Learners never see this; Safety reports do.
+model MessageEdit {
+  id        String   @id @default(uuid()) @db.Uuid
+  messageId String   @map("message_id") @db.Uuid
+  body      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId, createdAt])
+  @@map("message_edits")
 }
 
 /// Items issued by GET /practice/daily. POST /practice/answer only grades an issued (vocabId, type).
@@ -1326,6 +1347,7 @@ model UserReport {
 
   @@index([status, createdAt])
   @@index([reportedUserId])
+  @@unique([reporterId, messageId])
   @@map("user_reports")
 }
 

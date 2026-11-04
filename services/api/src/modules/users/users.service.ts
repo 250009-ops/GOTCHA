@@ -1,7 +1,9 @@
 import { limitDayStart } from '../../common/plan-limits';
-import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
-import { mkdir, rm, writeFile } from 'fs/promises';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException, OnModuleInit, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { access, mkdir, rm, writeFile } from 'fs/promises';
 import { join } from 'path';
+import { randomUUID } from 'crypto';
+import { avatarFileName, avatarPublicPath, encodeAvatar, privateAvatarsDir, reprocessAvatarsOnce, safeAvatarUrl } from './avatar-image';
 
 import * as bcrypt from 'bcryptjs';
 
@@ -31,7 +33,7 @@ import {
 
 @Injectable()
 
-export class UsersService {
+export class UsersService implements OnModuleInit {
 
   private readonly logger = new Logger('UsersService');
 
@@ -41,6 +43,33 @@ export class UsersService {
     private devAuth: DevAuthService,
 
   ) {}
+
+  async onModuleInit() {
+    if (!this.prisma.dbAvailable) return;
+    try {
+      await reprocessAvatarsOnce(this.prisma);
+    } catch (err) {
+      this.logger.warn(`Avatar reprocess skipped: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  async avatarAbsolutePath(file: string) {
+    const name = avatarFileName(file);
+    if (!name) throw new NotFoundException('Avatar not found');
+    const abs = join(privateAvatarsDir(), name);
+    try {
+      await access(abs);
+    } catch {
+      throw new NotFoundException('Avatar not found');
+    }
+    return abs;
+  }
+
+  private async deleteAvatarFile(url: string | null | undefined) {
+    const name = avatarFileName(url);
+    if (!name) return;
+    await rm(join(privateAvatarsDir(), name), { force: true });
+  }
 
   /** Target languages must never equal native — drop conflicts and fix primary if needed. */
   private async removeNativeFromTargets(userId: string, nativeLanguage: string) {
@@ -153,10 +182,13 @@ export class UsersService {
       },
     });
     if (!refreshed) throw new NotFoundException('User not found');
-    return toPublicProfile(refreshed, {
-      ageBand: ageBand(refreshed.birthYear),
-      needsAgePrompt: needsAgePrompt(refreshed),
-    });
+    return toPublicProfile(
+      { ...refreshed, avatarUrl: safeAvatarUrl(refreshed.avatarUrl) },
+      {
+        ageBand: ageBand(refreshed.birthYear),
+        needsAgePrompt: needsAgePrompt(refreshed),
+      },
+    );
 
   }
 
@@ -372,15 +404,14 @@ export class UsersService {
       throw new BadRequestException('Image must be 2 MB or smaller.');
     }
 
-    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
-    const dir = join(root, 'avatars');
+    const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    await this.deleteAvatarFile(previous?.avatarUrl);
+    const dir = privateAvatarsDir();
     await mkdir(dir, { recursive: true });
-    for (const oldExt of ['jpg', 'jpeg', 'png', 'webp']) {
-      await rm(join(dir, `${userId}.${oldExt}`), { force: true });
-    }
-    const fileName = `${userId}.${ext}`;
-    await writeFile(join(dir, fileName), file.buffer);
-    const avatarUrl = `/uploads/avatars/${fileName}?v=${Date.now()}`;
+    const encoded = await encodeAvatar(file.buffer);
+    const fileName = `${randomUUID()}.webp`;
+    await writeFile(join(dir, fileName), encoded);
+    const avatarUrl = `${avatarPublicPath(fileName)}?v=${Date.now()}`;
 
     return this.prisma.user.update({
       where: { id: userId },
@@ -401,11 +432,8 @@ export class UsersService {
     if (isDevAuthEnabled() && this.devAuth.isDevUser(userId)) {
       throw new BadRequestException('Photo upload is not available for demo accounts.');
     }
-    const root = process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads');
-    const dir = join(root, 'avatars');
-    for (const oldExt of ['jpg', 'jpeg', 'png', 'webp']) {
-      await rm(join(dir, `${userId}.${oldExt}`), { force: true });
-    }
+    const previous = await this.prisma.user.findUnique({ where: { id: userId }, select: { avatarUrl: true } });
+    await this.deleteAvatarFile(previous?.avatarUrl);
     return this.prisma.user.update({
       where: { id: userId },
       data: { avatarUrl: null },

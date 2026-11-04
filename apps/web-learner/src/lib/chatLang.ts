@@ -33,6 +33,7 @@ const LOOKUP_SENTENCE_MAX = 4000;
 
 const translationCache = new Map<string, string>();
 let translateRouteMissing = false;
+const translateOkCache = new Map<string, string>();
 
 export function normalizeChatLang(code?: string | null): string {
   const next = (code ?? 'en').toUpperCase().slice(0, 2);
@@ -167,11 +168,22 @@ export function chatLangName(code: string, uiLang?: string | null): string {
 export function chatToLabel(uiLang?: string | null): string {
   switch (normalizeChatLang(uiLang)) {
     case 'RU':
-      return 'На';
+      return 'Перевод на';
     case 'UZ':
-      return 'Ga';
+      return 'Tarjima tili';
     default:
-      return 'To';
+      return 'Translate to';
+  }
+}
+
+export function chatTranslateFailedLabel(uiLang?: string | null): string {
+  switch (normalizeChatLang(uiLang)) {
+    case 'RU':
+      return 'Не удалось перевести';
+    case 'UZ':
+      return 'Tarjima qilib boʻlmadi';
+    default:
+      return "Couldn't translate";
   }
 }
 
@@ -308,6 +320,9 @@ export async function translateChat(
   const dst = apiChatLang(targetLang);
   const trimmed = text.trim();
   if (src === dst || !trimmed) return trimmed;
+  const cacheKey = `${src}|${dst}|${trimmed}`;
+  const cachedOk = translateOkCache.get(cacheKey);
+  if (cachedOk) return cachedOk;
 
   if (!translateRouteMissing) {
     try {
@@ -315,7 +330,9 @@ export async function translateChat(
         method: 'POST',
         body: JSON.stringify({ text: trimmed, sourceLang: src, targetLang: dst }),
       });
-      return acceptTranslation(trimmed, res.translation);
+      const out = acceptTranslation(trimmed, res.translation);
+      translateOkCache.set(cacheKey, out);
+      return out;
     } catch (err) {
       const status = (err as Error & { status?: number }).status;
       if (status === 404 || status === 405) {
@@ -325,7 +342,9 @@ export async function translateChat(
       }
     }
   }
-  return translateViaLookup(trimmed, src, dst);
+  const out = await translateViaLookup(trimmed, src, dst);
+  translateOkCache.set(cacheKey, out);
+  return out;
 }
 
 export async function translateToward(
@@ -366,7 +385,7 @@ export async function composeChatPair(
   const source = inferComposerSource(trimmed, native, to);
   let toText: string | null = source === to ? trimmed : null;
   let nativeText: string | null = source === native ? trimmed : null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     if (!toText) toText = await tryTranslateChat(trimmed, source, to);
     if (!nativeText) {
       nativeText = await tryTranslateChat(trimmed, source, native)
@@ -388,14 +407,16 @@ export async function tryTranslateChat(
   const src = normalizeChatLang(sourceLang);
   const dst = normalizeChatLang(destLang);
   if (src === dst) return text;
-  for (let i = 0; i < 2; i += 1) {
+  try {
+    return await translateToward(text, src, dst);
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 600));
     try {
       return await translateToward(text, src, dst);
     } catch {
-      // retry once, then give up
+      return null;
     }
   }
-  return null;
 }
 
 export type PresentedBubble = {

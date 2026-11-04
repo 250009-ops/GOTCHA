@@ -57,7 +57,7 @@ export const AGE_COPY: Record<ConsentLocale, { label: string; preferNot: string;
     label: 'Tugʻilgan yilingiz (ixtiyoriy)',
     preferNot: 'Aytmaslikni afzal koʻraman',
     promptTitle: 'Tugʻilgan yilingiz',
-    promptBody: 'Bu yoshingizga mos sozlamalarni tanlashimizga yordam beradi. Faqat bir marta soʻraymiz.',
+    promptBody: 'Xabarlar xavfsizligi uchun tugʻilgan yilingiz kerak. Voyaga yetmaganlar faqat tengdoshlari bilan yozishadi.',
     save: 'Saqlash',
     skip: 'Aytmaslikni afzal koʻraman',
   },
@@ -65,7 +65,7 @@ export const AGE_COPY: Record<ConsentLocale, { label: string; preferNot: string;
     label: 'Год рождения (необязательно)',
     preferNot: 'Предпочитаю не указывать',
     promptTitle: 'Ваш год рождения',
-    promptBody: 'Это поможет нам выбрать подходящие для вашего возраста настройки. Мы спросим только один раз.',
+    promptBody: 'Год рождения нужен для безопасности сообщений. Подростки пишут только сверстникам.',
     save: 'Сохранить',
     skip: 'Предпочитаю не указывать',
   },
@@ -73,7 +73,7 @@ export const AGE_COPY: Record<ConsentLocale, { label: string; preferNot: string;
     label: 'Birth year (optional)',
     preferNot: 'Prefer not to say',
     promptTitle: 'Your birth year',
-    promptBody: 'This helps us pick settings that suit your age. We only ask once.',
+    promptBody: 'We ask for your birth year so messaging stays safe. Under-18 learners can only message each other.',
     save: 'Save',
     skip: 'Prefer not to say',
   },
@@ -82,6 +82,6 @@ export const AGE_COPY: Record<ConsentLocale, { label: string; preferNot: string;
 export function birthYearOptions(now = new Date()): number[] {
   const y = now.getFullYear();
   const out: number[] = [];
-  for (let v = y; v >= y - 100; v--) out.push(v);
+  for (let v = y - 5; v >= y - 100; v--) out.push(v);
   return out;
 }

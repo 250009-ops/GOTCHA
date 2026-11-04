@@ -4,12 +4,15 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
   Param,
   Patch,
   Post,
+  StreamableFile,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
+import { createReadStream } from 'fs';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { memoryStorage } from 'multer';
@@ -29,6 +32,15 @@ import {
 @Controller('users')
 export class UsersController {
   constructor(private users: UsersService) {}
+
+  /** Logged-out requests are rejected by the global auth guard (401). */
+  @Get('avatars/:file')
+  @Header('Cache-Control', 'private, max-age=60')
+  @Header('X-Content-Type-Options', 'nosniff')
+  async avatar(@Param('file') file: string) {
+    const abs = await this.users.avatarAbsolutePath(file);
+    return new StreamableFile(createReadStream(abs), { type: 'image/webp' });
+  }
 
   @Get('me')
   me(@CurrentUser() user: AuthUserPayload) {

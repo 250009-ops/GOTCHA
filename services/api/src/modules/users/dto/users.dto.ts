@@ -80,6 +80,11 @@ export class UpdatePreferencesDto {
   @IsBoolean()
   onboardingDone?: boolean;
 
+  /** When false (the default, and the default for minors), peers do not see online status or last seen. */
+  @IsOptional()
+  @IsBoolean()
+  showOnlineStatus?: boolean;
+
   /** `dark` is still accepted so older clients don't get a 400. The service stores it as `system`. */
   @IsOptional()
   @IsIn(['system', 'light', 'dark'])
