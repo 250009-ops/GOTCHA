@@ -20,6 +20,7 @@ import { assertJpegPngOrWebp } from '../../common/upload-magic';
 import { ageBand, needsAgePrompt } from '../../common/safety/age-policy';
 import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
 import { toPublicProfile } from './public-profile';
+import { maskPhone } from '../../common/phone';
 import {
   AddTargetLanguageDto,
   ChangePasswordDto,
@@ -178,6 +179,8 @@ export class UsersService {
       {
         ageBand: ageBand(refreshed.birthYear),
         needsAgePrompt: needsAgePrompt(refreshed),
+        phone: refreshed.phone ? maskPhone(refreshed.phone) : null,
+        hasEmail: Boolean(refreshed.email),
       },
     );
 
@@ -673,7 +676,7 @@ export class UsersService {
     const valid = await bcrypt.compare(dto.currentPassword, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Current password is incorrect.');
 
-    if (user.email.startsWith('deleted-')) {
+    if (user.email?.startsWith('deleted-')) {
       throw new ConflictException('Account already deleted.');
     }
 

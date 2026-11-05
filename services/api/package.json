@@ -55,6 +55,7 @@
     "class-validator": "^0.14.1",
     "compression": "^1.8.2",
     "express": "^5.2.1",
+    "grammy": "^1.46.0",
     "ioredis": "^5.4.2",
     "jsdom": "^30.0.1",
     "jszip": "^3.10.1",

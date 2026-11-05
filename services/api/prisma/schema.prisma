@@ -218,7 +218,14 @@ enum AchievementCategory {
 
 model User {
   id                       String      @id @default(uuid()) @db.Uuid
-  email                    String      @unique @db.Citext
+  email                    String?     @unique @db.Citext
+  /// E.164, e.g. +998901234567. A user may have an email, a phone, or both.
+  phone                    String?     @unique
+  phoneVerifiedAt          DateTime?   @map("phone_verified_at")
+  telegramId               BigInt?     @unique @map("telegram_id")
+  telegramUsername         String?     @map("telegram_username")
+  /// Set when Telegram returns 403. Cleared when the user messages the bot again.
+  telegramBotBlockedAt     DateTime?   @map("telegram_bot_blocked_at")
   passwordHash             String?     @map("password_hash")
   displayName              String?     @map("display_name")
   avatarUrl                String?     @map("avatar_url")
@@ -286,6 +293,10 @@ model User {
   friendRequestsSent       FriendRequest[]           @relation("FriendRequestsSent")
   friendRequestsReceived   FriendRequest[]           @relation("FriendRequestsReceived")
   contentReports           ContentReport[]
+  telegramChallenges       TelegramLoginChallenge[]
+  referralCode             ReferralCode?
+  referralsMade            Referral[]              @relation("ReferralsMade")
+  referralReceived         Referral?               @relation("ReferralReceived")
 
   @@map("users")
 }
@@ -1521,4 +1532,106 @@ model PageQuestionSeen {
   @@id([userId, questionId])
   @@index([userId, seenAt])
   @@map("page_question_seen")
+}
+
+enum TelegramChallengeKind {
+  code
+  link
+}
+
+enum TelegramChallengeStatus {
+  pending
+  approved
+  denied
+  expired
+  used
+}
+
+enum ReferralSource {
+  web
+  telegram
+}
+
+enum ReferralStatus {
+  registered
+  rewarded
+  void
+}
+
+/// Website phone login, password reset, and "continue in the bot" confirmation.
+model TelegramLoginChallenge {
+  id         String                  @id @default(uuid()) @db.Uuid
+  userId     String?                 @map("user_id") @db.Uuid
+  kind       TelegramChallengeKind
+  /// login | reset
+  purpose    String                  @default("login")
+  codeHash   String?                 @map("code_hash")
+  token      String?                 @unique
+  status     TelegramChallengeStatus @default(pending)
+  attempts   Int                     @default(0)
+  userAgent  String?                 @map("user_agent")
+  ip         String?
+  expiresAt  DateTime                @map("expires_at")
+  lastSentAt DateTime?               @map("last_sent_at")
+  createdAt  DateTime                @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([status, expiresAt])
+  @@map("telegram_login_challenges")
+}
+
+/// Telegram user who has not finished mini-app sign-up. The bot writes the shared phone here.
+model TelegramPendingSignup {
+  telegramId    BigInt    @id @map("telegram_id")
+  phone         String?
+  phoneSharedAt DateTime? @map("phone_shared_at")
+  firstName     String    @default("") @map("first_name")
+  lastName      String    @default("") @map("last_name")
+  username      String?
+  startParam    String?   @map("start_param")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@map("telegram_pending_signups")
+}
+
+model ReferralCode {
+  userId    String   @id @map("user_id") @db.Uuid
+  code      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("referral_codes")
+}
+
+model Referral {
+  id              String         @id @default(uuid()) @db.Uuid
+  referrerId      String         @map("referrer_id") @db.Uuid
+  refereeId       String         @unique @map("referee_id") @db.Uuid
+  code            String
+  source          ReferralSource
+  status          ReferralStatus @default(registered)
+  rewardPaymentId String?        @unique @map("reward_payment_id") @db.Uuid
+  rewardedAt      DateTime?      @map("rewarded_at")
+  createdAt       DateTime       @default(now()) @map("created_at")
+
+  referrer User @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
+  referee  User @relation("ReferralReceived", fields: [refereeId], references: [id], onDelete: Cascade)
+
+  @@index([referrerId, status])
+  @@index([referrerId, rewardedAt])
+  @@map("referrals")
+}
+
+/// Notification pushes through the bot, for the 3-a-day limit. Auth codes are not logged here.
+model TelegramOutboundLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  kind      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId, createdAt])
+  @@map("telegram_outbound_log")
 }

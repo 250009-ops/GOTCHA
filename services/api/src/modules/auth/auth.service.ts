@@ -4,6 +4,7 @@ import {
   ConflictException,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -15,8 +16,13 @@ import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { DevAuthService } from '../../common/dev-auth/dev-auth.service';
 import { MailService } from '../../common/mail/mail.service';
 import { PrismaService } from '../../prisma/prisma.service';
-import { LoginDto, RegisterDto } from './dto/auth.dto';
+import { LoginDto, RegisterDto, TelegramLinkDto, TelegramRegisterDto } from './dto/auth.dto';
 import { assertEnabledLanguage } from '../../common/language-catalog';
+import { looksLikeEmail, maskPhone, normalizePhone } from '../../common/phone';
+import { TelegramLoginService } from '../telegram/telegram-login.service';
+import { botLocale, codeErrorText } from '../telegram/copy';
+import { ReferralService } from '../referrals/referral.service';
+import { parseStartParam } from '../referrals/capture';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -61,6 +67,8 @@ export class AuthService {
     private devAuth: DevAuthService,
     private mail: MailService,
     private config: ConfigService,
+    @Optional() private telegram?: TelegramLoginService,
+    @Optional() private referrals?: ReferralService,
   ) {}
 
   private hashToken(token: string) {
@@ -128,9 +136,10 @@ export class AuthService {
   }
 
   private async sendVerification(
-    user: { id: string; email: string; displayName: string | null },
+    user: { id: string; email: string | null; displayName: string | null },
     clientPlatform?: string,
   ) {
+    if (!user.email) return;
     const rawToken = await this.createVerificationToken(user.id);
     const adminQuery = await this.adminReturnQuery(user.id);
     const verifyUrl = this.authActionUrl('verify-email', rawToken, adminQuery, clientPlatform);
@@ -148,12 +157,12 @@ export class AuthService {
    * re-check `AdminUser` in RolesGuard on every request, so a revoked admin
    * loses access immediately even if their token has not expired.
    */
-  private async issueTokens(userId: string, email: string, deviceName?: string) {
+  private async issueTokens(userId: string, email: string | null, deviceName?: string) {
     const admin = await this.prisma.adminUser.findUnique({ where: { userId } });
 
     const payload = {
       sub: userId,
-      email,
+      email: email ?? '',
       isAdmin: !!admin,
       adminRole: admin?.role,
     };
@@ -278,6 +287,10 @@ export class AuthService {
       });
     }
 
+    if (dto.referralCode) {
+      await this.referrals?.attachNewUser({ refereeId: user.id, code: dto.referralCode, source: 'web' }).catch(() => undefined);
+    }
+
     await this.sendVerification(user, clientPlatform);
 
     return {
@@ -287,12 +300,21 @@ export class AuthService {
     };
   }
 
-  async login(dto: LoginDto) {
+  async login(dto: LoginDto, meta?: { userAgent?: string; ip?: string }) {
     if (isDevAuthEnabled()) {
       return this.devAuth.login(dto);
     }
 
-    const email = dto.email.trim().toLowerCase();
+    const raw = (dto.email ?? dto.identifier ?? '').trim();
+    if (!raw) throw new UnauthorizedException('Invalid credentials');
+    if (dto.email || looksLikeEmail(raw)) {
+      return this.loginWithEmail((dto.email ?? raw).trim().toLowerCase(), dto.password, dto.deviceName);
+    }
+    return this.loginWithPhone(raw, dto.password, dto.deviceName, meta);
+  }
+
+  private async loginWithEmail(emailRaw: string, password: string, deviceName?: string) {
+    const email = emailRaw.trim().toLowerCase();
     assertNotLocked(email);
 
     const user = await this.prisma.user.findUnique({
@@ -300,7 +322,7 @@ export class AuthService {
       include: { targetLanguages: true },
     });
 
-    const valid = await bcrypt.compare(dto.password, user?.passwordHash ?? TIMING_SAFE_HASH);
+    const valid = await bcrypt.compare(password, user?.passwordHash ?? TIMING_SAFE_HASH);
     if (!user?.passwordHash || !valid) {
       recordLoginFailure(email);
       throw new UnauthorizedException('Invalid credentials');
@@ -320,7 +342,46 @@ export class AuthService {
     }
 
     clearLoginFailures(email);
-    const tokens = await this.issueTokens(user.id, user.email, dto.deviceName);
+    const tokens = await this.issueTokens(user.id, user.email, deviceName);
+    return { user: this.sanitizeUser(user), ...tokens };
+  }
+
+  private async loginWithPhone(raw: string, password: string, deviceName?: string, meta?: { userAgent?: string; ip?: string }) {
+    const phone = normalizePhone(raw);
+    const gateKey = phone ?? raw.trim();
+    assertNotLocked(gateKey);
+    const user = phone
+      ? await this.prisma.user.findUnique({ where: { phone }, include: { targetLanguages: true } })
+      : null;
+    const valid = await bcrypt.compare(password, user?.passwordHash ?? TIMING_SAFE_HASH);
+    if (!phone || !user?.passwordHash || !valid) {
+      recordLoginFailure(gateKey);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (user.deletedAt) throw new UnauthorizedException('This account has been deleted or suspended.');
+    if (user.email && !user.emailVerifiedAt && !user.phoneVerifiedAt) {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        error: 'Unauthorized',
+        message: 'Please verify your email before signing in.',
+        code: 'EMAIL_NOT_VERIFIED',
+      });
+    }
+    clearLoginFailures(gateKey);
+    if (user.telegramId) {
+      if (!this.telegram) throw new UnauthorizedException('Invalid credentials');
+      const challenge = await this.telegram.createCodeChallenge({
+        userId: user.id,
+        phone,
+        purpose: 'login',
+        userAgent: meta?.userAgent,
+        ip: meta?.ip,
+        locale: botLocale(user.uiLanguage),
+        telegramId: user.telegramId,
+      });
+      return challenge;
+    }
+    const tokens = await this.issueTokens(user.id, user.email, deviceName);
     return { user: this.sanitizeUser(user), ...tokens };
   }
 
@@ -343,7 +404,7 @@ export class AuthService {
       throw new UnauthorizedException('This account has been deleted or suspended.');
     }
 
-    if (!stored.user.emailVerifiedAt) {
+    if (stored.user.email && !stored.user.emailVerifiedAt && !stored.user.phoneVerifiedAt) {
       throw new UnauthorizedException('Please verify your email before signing in.');
     }
 
@@ -458,13 +519,14 @@ export class AuthService {
   }
 
   private async sendPasswordReset(
-    user: { id: string; email: string; displayName: string | null },
+    user: { id: string; email: string | null; displayName: string | null },
     clientPlatform?: string,
   ) {
+    if (!user.email) return;
     const rawToken = await this.createPasswordResetToken(user.id);
     const adminQuery = await this.adminReturnQuery(user.id);
     const resetUrl = this.authActionUrl('reset-password', rawToken, adminQuery, clientPlatform);
-    const name = user.displayName?.trim() || user.email.split('@')[0];
+    const name = user.displayName?.trim() || user.email?.split('@')[0] || 'Gotcha';
 
     void this.mail.sendPasswordResetEmail(user.email, name, resetUrl).catch((err) => {
       console.error('Failed to send password reset email', err);
@@ -473,8 +535,15 @@ export class AuthService {
     return resetUrl;
   }
 
-  async forgotPassword(emailRaw: string, clientPlatform?: string) {
-    const email = emailRaw.trim().toLowerCase();
+  async forgotPassword(emailRaw?: string, clientPlatform?: string, identifier?: string, meta?: { userAgent?: string; ip?: string }) {
+    const raw = (emailRaw ?? identifier ?? '').trim();
+    if (raw && !emailRaw && !looksLikeEmail(raw)) {
+      return this.forgotPasswordByPhone(raw, meta);
+    }
+    const email = raw.toLowerCase();
+    if (!looksLikeEmail(email)) {
+      return { sent: true, message: 'If an account exists for that email, we sent a password reset link.' };
+    }
     const user = await this.prisma.user.findUnique({ where: { email } });
 
     // Always return the same generic success (no account enumeration).
@@ -551,9 +620,231 @@ export class AuthService {
     };
   }
 
+  private async forgotPasswordByPhone(raw: string, meta?: { userAgent?: string; ip?: string }) {
+    const generic = { sent: true, message: 'If an account exists for that email, we sent a password reset link.' };
+    const phone = normalizePhone(raw);
+    if (!phone || !this.telegram) return generic;
+    const user = await this.prisma.user.findUnique({ where: { phone } });
+    if (!user?.passwordHash || !user.telegramId || user.deletedAt) return generic;
+    const challenge = await this.telegram.createCodeChallenge({
+      userId: user.id,
+      phone,
+      purpose: 'reset',
+      userAgent: meta?.userAgent,
+      ip: meta?.ip,
+      locale: botLocale(user.uiLanguage),
+      telegramId: user.telegramId,
+    });
+    return { ...generic, ...challenge };
+  }
+
+  async verifyTelegramCode(challengeId: string, code: string) {
+    if (!this.telegram) throw new BadRequestException({ code: 'telegram_code_expired', message: codeErrorText('uz', 'expired') });
+    const verified = await this.telegram.verifyCode(challengeId, code, 'login');
+    const user = await this.prisma.user.findUnique({ where: { id: verified.userId }, include: { targetLanguages: true } });
+    if (!user || user.deletedAt) throw new UnauthorizedException('Invalid credentials');
+    const tokens = await this.issueTokens(user.id, user.email);
+    return { user: this.sanitizeUser(user), ...tokens };
+  }
+
+  async resendTelegramCode(challengeId: string) {
+    if (!this.telegram) throw new BadRequestException({ code: 'telegram_code_expired', message: codeErrorText('uz', 'expired') });
+    return this.telegram.resendCode(challengeId);
+  }
+
+  async createLoginLink(meta?: { userAgent?: string; ip?: string }) {
+    if (!this.telegram) throw new BadRequestException('Telegram sign-in is not available.');
+    return this.telegram.createLinkChallenge(meta ?? {});
+  }
+
+  async pollLoginLink(token: string) {
+    if (!this.telegram) return { status: 'expired' as const };
+    return this.telegram.pollLink(token);
+  }
+
+  async exchangeLoginLink(token: string) {
+    if (!this.telegram) throw new BadRequestException({ code: 'telegram_link_expired', message: 'This sign-in link has expired.' });
+    const userId = await this.telegram.consumeLink(token);
+    const user = await this.prisma.user.findUnique({ where: { id: userId }, include: { targetLanguages: true } });
+    if (!user || user.deletedAt) throw new UnauthorizedException('Invalid credentials');
+    const tokens = await this.issueTokens(user.id, user.email);
+    return { user: this.sanitizeUser(user), ...tokens };
+  }
+
+  async telegramSession(initData: string) {
+    if (!this.telegram) throw new UnauthorizedException({ code: 'telegram_initdata_invalid', message: 'Telegram login data is not valid.' });
+    const checked = this.telegram.checkInitData(initData);
+    const telegramId = BigInt(checked.user.id);
+    const user = await this.telegram.userByTelegram(telegramId);
+    if (user && !user.deletedAt) {
+      const tokens = await this.issueTokens(user.id, user.email);
+      return { user: this.sanitizeUser(user), ...tokens };
+    }
+    const pending = await this.telegram.pending(telegramId);
+    const fullName = [checked.user.first_name, checked.user.last_name].filter(Boolean).join(' ').trim();
+    return {
+      needsSignup: true as const,
+      prefill: { fullName: fullName || pending?.firstName || '' },
+      phone: pending?.phone && pending.phoneSharedAt ? maskPhone(pending.phone) : null,
+    };
+  }
+
+  async telegramContact(initData: string) {
+    if (!this.telegram) throw new UnauthorizedException({ code: 'telegram_initdata_invalid', message: 'Telegram login data is not valid.' });
+    const checked = this.telegram.checkInitData(initData);
+    const pending = await this.telegram.pending(BigInt(checked.user.id));
+    if (pending?.phone && pending.phoneSharedAt) {
+      return { phone: maskPhone(pending.phone), verified: true as const };
+    }
+    return { phone: null, verified: false as const };
+  }
+
+  async registerTelegram(dto: TelegramRegisterDto, ip?: string) {
+    if (!this.telegram) throw new BadRequestException('Telegram sign-up is not available.');
+    if (dto.acceptTerms !== true || (dto.acceptAi !== true && dto.acceptAiConsent !== true)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'CONSENT_REQUIRED',
+        message: 'Please accept the Terms of Use, the Privacy Policy, and AI processing to create an account.',
+      });
+    }
+    const checked = this.telegram.checkInitData(dto.initData);
+    const telegramId = BigInt(checked.user.id);
+    const pending = await this.telegram.pending(telegramId);
+    if (!pending?.phone || !pending.phoneSharedAt) {
+      throw new BadRequestException({ code: 'telegram_phone_required', message: 'Share your Telegram phone number before creating an account.' });
+    }
+    const takenPhone = await this.prisma.user.findUnique({ where: { phone: pending.phone }, select: { id: true } });
+    if (takenPhone) throw new ConflictException({ statusCode: 409, code: 'PHONE_ALREADY_REGISTERED', message: 'This phone number is already registered.' });
+    const takenTelegram = await this.prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    if (takenTelegram) throw new ConflictException({ statusCode: 409, code: 'TELEGRAM_ALREADY_LINKED', message: 'This Telegram account is already linked.' });
+
+    await assertEnabledLanguage(this.prisma, dto.nativeLanguage, 'Native language');
+    for (const lang of dto.targetLanguages) {
+      await assertEnabledLanguage(this.prisma, lang, 'Target language');
+      if (lang === dto.nativeLanguage) throw new BadRequestException('Target languages cannot include your native language.');
+    }
+    const consentVersion = recordedConsentVersion(dto.consentVersion);
+    if (!consentVersion) throw new BadRequestException({ statusCode: 400, code: 'consent_version_unknown', message: 'Unknown consent version.' });
+    const passwordHash = await bcrypt.hash(dto.password, 12);
+    const primaryTarget = dto.targetLanguages[0];
+    const ui = botLocale(checked.user.language_code);
+    const user = await this.prisma.user.create({
+      data: {
+        email: null,
+        phone: pending.phone,
+        phoneVerifiedAt: pending.phoneSharedAt,
+        telegramId,
+        telegramUsername: checked.user.username ?? pending.username ?? null,
+        passwordHash,
+        displayName: dto.fullName.trim(),
+        nativeLanguage: dto.nativeLanguage,
+        birthYear: dto.birthYear ?? null,
+        agePromptedAt: new Date(),
+        consentVersion,
+        consentAt: new Date(),
+        consentIp: ip?.slice(0, 64) ?? null,
+        uiLanguage: ui,
+        preferences: { create: { dailyGoalMinutes: 15 } },
+        targetLanguages: {
+          create: dto.targetLanguages.map((lang, idx) => ({
+            targetLanguage: lang,
+            isPrimary: lang === primaryTarget || idx === 0,
+          })),
+        },
+      },
+      include: { targetLanguages: true },
+    });
+    await this.prisma.auditLog.create({
+      data: {
+        actorId: user.id,
+        action: 'consent.ai',
+        entityType: 'user',
+        entityId: user.id,
+        metadata: { version: consentVersion, at: new Date().toISOString(), channel: 'telegram' },
+      },
+    });
+    const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
+    if (freePlan) {
+      await this.prisma.userSubscription.create({ data: { userId: user.id, planId: freePlan.id, status: 'active' } });
+    }
+    const start = parseStartParam(pending.startParam);
+    if (start.type === 'referral') {
+      await this.referrals?.attachNewUser({
+        refereeId: user.id,
+        code: start.code,
+        source: 'telegram',
+        phone: pending.phone,
+        telegramId,
+      }).catch(() => undefined);
+    }
+    await this.telegram.deletePending(telegramId);
+    const tokens = await this.issueTokens(user.id, null);
+    return { user: this.sanitizeUser(user), ...tokens };
+  }
+
+  async linkTelegram(dto: TelegramLinkDto) {
+    if (!this.telegram) throw new BadRequestException('Telegram sign-in is not available.');
+    const checked = this.telegram.checkInitData(dto.initData);
+    const telegramId = BigInt(checked.user.id);
+    const raw = dto.identifier.trim();
+    const user = looksLikeEmail(raw)
+      ? await this.prisma.user.findUnique({ where: { email: raw.toLowerCase() }, include: { targetLanguages: true } })
+      : await this.prisma.user.findUnique({ where: { phone: normalizePhone(raw) ?? 'invalid' }, include: { targetLanguages: true } });
+    const valid = await bcrypt.compare(dto.password, user?.passwordHash ?? TIMING_SAFE_HASH);
+    if (!user?.passwordHash || !valid || user.deletedAt) throw new UnauthorizedException('Invalid credentials');
+    if (looksLikeEmail(raw) && user.email && !user.emailVerifiedAt) {
+      throw new UnauthorizedException({
+        statusCode: 401,
+        code: 'EMAIL_NOT_VERIFIED',
+        message: 'Please verify your email before signing in.',
+      });
+    }
+    if (user.telegramId && user.telegramId !== telegramId) {
+      throw new ConflictException({ statusCode: 409, code: 'TELEGRAM_ALREADY_LINKED', message: 'This account is already linked to another Telegram account.' });
+    }
+    const other = await this.prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
+    if (other && other.id !== user.id) {
+      throw new ConflictException({ statusCode: 409, code: 'TELEGRAM_ALREADY_LINKED', message: 'This Telegram account is already linked to another Gotcha account.' });
+    }
+    const updated = await this.prisma.user.update({
+      where: { id: user.id },
+      data: { telegramId, telegramUsername: checked.user.username ?? user.telegramUsername },
+      include: { targetLanguages: true },
+    });
+    await this.telegram.deletePending(telegramId);
+    const tokens = await this.issueTokens(updated.id, updated.email);
+    return { user: this.sanitizeUser(updated), ...tokens };
+  }
+
+  async resetWithTelegramCode(challengeId: string, code: string, newPassword: string) {
+    if (!this.telegram) throw new BadRequestException({ code: 'telegram_code_expired', message: codeErrorText('uz', 'expired') });
+    if (!newPassword || newPassword.length < 8) throw new BadRequestException('Password must be at least 8 characters.');
+    const verified = await this.telegram.verifyCode(challengeId, code, 'reset');
+    const user = await this.prisma.user.findUnique({ where: { id: verified.userId } });
+    if (!user || user.deletedAt) throw new UnauthorizedException('Invalid credentials');
+    const passwordHash = await bcrypt.hash(newPassword, 12);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash,
+          passwordResetToken: null,
+          passwordResetExpires: null,
+          ...(user.email ? { emailVerifiedAt: user.emailVerifiedAt ?? new Date(), emailVerificationToken: null, emailVerificationExpires: null } : {}),
+        },
+      }),
+      this.prisma.authRefreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+    return { reset: true, message: 'Password updated. You can sign in with your new password.' };
+  }
+
   sanitizeUser(user: {
     id: string;
-    email: string;
+    email: string | null;
     displayName: string | null;
     avatarUrl?: string | null;
     nativeLanguage: string;

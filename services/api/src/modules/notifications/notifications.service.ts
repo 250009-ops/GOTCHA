@@ -1,5 +1,5 @@
 import { deletedUserName, isDeletedAccount } from '../../common/deleted-user';
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma, PublishStatus } from '@prisma/client';
 import {
   formatNotification,
@@ -9,6 +9,7 @@ import {
 import { campaignAudienceMatches, PUSH_CAMPAIGN_CHANNELS } from '../../common/campaign-audience';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { TelegramNotifyService } from '../telegram/telegram-notify.service';
 
 type Draft = {
   kind: string;
@@ -23,7 +24,15 @@ type Draft = {
 
 @Injectable()
 export class NotificationsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Optional() private telegram?: TelegramNotifyService,
+  ) {}
+
+  /** Creates one notification and, for bot kinds, also tries to deliver it in Telegram. */
+  async push(userId: string, draft: Draft) {
+    await this.upsertDraft(userId, draft);
+  }
 
   async list(userId: string) {
     if (!this.prisma.dbAvailable) {
@@ -124,6 +133,7 @@ export class NotificationsService {
     };
     if (!existing) {
       await this.prisma.userNotification.create({ data });
+      await this.telegram?.send(userId, draft).catch(() => undefined);
       return;
     }
     const newerEvent =

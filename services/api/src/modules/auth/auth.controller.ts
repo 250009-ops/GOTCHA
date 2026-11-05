@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Ip, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, Headers, Ip, Param, Post, Query } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { AuthUserPayload, CurrentUser, Public } from '../../common/decorators';
@@ -10,6 +10,12 @@ import {
   RegisterDto,
   ResendEmailVerificationDto,
   ResetPasswordDto,
+  TelegramCodeDto,
+  TelegramInitDto,
+  TelegramLinkDto,
+  TelegramRegisterDto,
+  TelegramResendDto,
+  TelegramResetDto,
   VerifyEmailDto,
 } from './dto/auth.dto';
 
@@ -35,8 +41,62 @@ export class AuthController {
 
   @Public()
   @Post('login')
-  login(@Body() dto: LoginDto) {
-    return this.auth.login(dto);
+  login(@Body() dto: LoginDto, @Headers('user-agent') userAgent?: string, @Ip() ip?: string) {
+    return this.auth.login(dto, { userAgent, ip });
+  }
+
+  @Public()
+  @Post('login/telegram-code')
+  telegramCode(@Body() dto: TelegramCodeDto) {
+    return this.auth.verifyTelegramCode(dto.challengeId, dto.code);
+  }
+
+  @Public()
+  @Post('login/telegram-code/resend')
+  telegramCodeResend(@Body() dto: TelegramResendDto) {
+    return this.auth.resendTelegramCode(dto.challengeId);
+  }
+
+  @Public()
+  @Post('telegram/session')
+  telegramSession(@Body() dto: TelegramInitDto) {
+    return this.auth.telegramSession(dto.initData);
+  }
+
+  @Public()
+  @Get('telegram/contact')
+  telegramContact(@Query('initData') initData: string) {
+    return this.auth.telegramContact(initData);
+  }
+
+  @Public()
+  @Post('telegram/register')
+  telegramRegister(@Body() dto: TelegramRegisterDto, @Ip() ip?: string) {
+    return this.auth.registerTelegram(dto, ip);
+  }
+
+  @Public()
+  @Post('telegram/link')
+  telegramLink(@Body() dto: TelegramLinkDto) {
+    return this.auth.linkTelegram(dto);
+  }
+
+  @Public()
+  @Post('telegram/login-link')
+  loginLink(@Headers('user-agent') userAgent?: string, @Ip() ip?: string) {
+    return this.auth.createLoginLink({ userAgent, ip });
+  }
+
+  @Public()
+  @Get('telegram/login-link/:token')
+  loginLinkPoll(@Param('token') token: string) {
+    return this.auth.pollLoginLink(token);
+  }
+
+  @Public()
+  @Post('telegram/login-link/:token/exchange')
+  loginLinkExchange(@Param('token') token: string) {
+    return this.auth.exchangeLoginLink(token);
   }
 
   @Public()
@@ -84,8 +144,16 @@ export class AuthController {
   forgotPassword(
     @Body() dto: ForgotPasswordDto,
     @Headers('x-gotcha-client-platform') clientHeader?: string,
+    @Headers('user-agent') userAgent?: string,
+    @Ip() ip?: string,
   ) {
-    return this.auth.forgotPassword(dto.email, dto.clientPlatform ?? clientHeader);
+    return this.auth.forgotPassword(dto.email, dto.clientPlatform ?? clientHeader, dto.identifier, { userAgent, ip });
+  }
+
+  @Public()
+  @Post('reset-password/telegram')
+  resetPasswordTelegram(@Body() dto: TelegramResetDto) {
+    return this.auth.resetWithTelegramCode(dto.challengeId, dto.code, dto.password);
   }
 
   @Public()

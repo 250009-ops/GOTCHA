@@ -68,7 +68,9 @@ export class DevAuthService {
   }
 
   async login(dto: LoginDto) {
-    const dbUser = await this.tryFindDbUser(dto.email);
+    const email = (dto.email ?? (dto.identifier && dto.identifier.includes('@') ? dto.identifier : '')).trim().toLowerCase();
+    if (!email) throw new UnauthorizedException('Invalid credentials');
+    const dbUser = await this.tryFindDbUser(email);
     if (dbUser) {
       if (dbUser.passwordHash) {
         const bcrypt = await import('bcryptjs');
@@ -79,7 +81,7 @@ export class DevAuthService {
       return { user: this.sanitizeUser(dbUser), ...tokens };
     }
 
-    const user = this.getOrCreateMemoryUser(dto.email);
+    const user = this.getOrCreateMemoryUser(email);
     const tokens = await this.issueDevTokens(user.id, user.email, dto.deviceName);
     return { user: this.sanitizeUser(user), ...tokens };
   }
@@ -190,7 +192,7 @@ export class DevAuthService {
 
   sanitizeUser(user: {
     id: string;
-    email: string;
+    email: string | null;
     displayName: string | null;
     nativeLanguage: AppLanguage;
     uiLanguage: AppLanguage;
@@ -269,8 +271,8 @@ export class DevAuthService {
     return user;
   }
 
-  private async issueDevTokens(userId: string, email: string, deviceName?: string) {
-    const payload = { sub: userId, email, isAdmin: false };
+  private async issueDevTokens(userId: string, email: string | null, deviceName?: string) {
+    const payload = { sub: userId, email: email ?? '', isAdmin: false };
     const accessToken = await this.jwt.signAsync(payload);
     const refreshToken = randomBytes(48).toString('hex');
     const refreshHash = this.hashToken(refreshToken);
@@ -279,11 +281,11 @@ export class DevAuthService {
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + expiresDays);
 
-    this.refreshTokens.set(refreshHash, { userId, email, deviceName, expiresAt });
+    this.refreshTokens.set(refreshHash, { userId, email: email ?? '', deviceName, expiresAt });
     return { accessToken, refreshToken, isAdmin: false, adminRole: null as string | null };
   }
 
-  private async issueTokensForUser(userId: string, email: string, deviceName?: string) {
+  private async issueTokensForUser(userId: string, email: string | null, deviceName?: string) {
     if (!this.prisma.dbAvailable) {
       return this.issueDevTokens(userId, email, deviceName);
     }
@@ -292,7 +294,7 @@ export class DevAuthService {
       const admin = await this.prisma.adminUser.findUnique({ where: { userId } });
       const payload = {
         sub: userId,
-        email,
+        email: email ?? '',
         isAdmin: !!admin,
         adminRole: admin?.role,
       };

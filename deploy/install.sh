@@ -37,6 +37,10 @@ S3_SECRET_KEY="$(get_env S3_SECRET_KEY)"
 S3_ACCESS_KEY="$(get_env S3_ACCESS_KEY)"
 S3_ACCESS_KEY="${S3_ACCESS_KEY:-gotcha}"
 JWT_SECRET="$(get_env JWT_SECRET)"
+TELEGRAM_BOT_TOKEN="$(get_env TELEGRAM_BOT_TOKEN)"
+TELEGRAM_BOT_USERNAME="$(get_env TELEGRAM_BOT_USERNAME)"
+TELEGRAM_WEBHOOK_SECRET="$(get_env TELEGRAM_WEBHOOK_SECRET)"
+TELEGRAM_MINI_APP_URL="$(get_env TELEGRAM_MINI_APP_URL)"
 JWT_EXPIRES_IN="$(get_env JWT_EXPIRES_IN)"
 JWT_REFRESH_EXPIRES_IN="$(get_env JWT_REFRESH_EXPIRES_IN)"
 OPENAI_API_KEY="$(get_env OPENAI_API_KEY)"
@@ -164,6 +168,12 @@ SMTP_USER=${SMTP_USER:-}
 SMTP_PASS=${SMTP_PASS:-}
 SMTP_FROM=${SMTP_FROM:-GOTCHA <noreply@${DOMAIN}>}
 SMTP_REPLY_TO=${SMTP_REPLY_TO:-}
+TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME:-}
+TELEGRAM_WEBHOOK_SECRET=${TELEGRAM_WEBHOOK_SECRET:-}
+TELEGRAM_MINI_APP_URL=${TELEGRAM_MINI_APP_URL:-https://${DOMAIN}/tg}
+TELEGRAM_WEBHOOK_URL=https://${DOMAIN}/api/v1/telegram/webhook
+DOMAIN=${DOMAIN}
 EOF
 chmod 600 "${APP_DIR}/.env"
 mkdir -p "${APP_DIR}/uploads"
@@ -224,6 +234,11 @@ if [[ "$SKIP_SSL" != "1" ]]; then
     --non-interactive --agree-tos -m "$CERTBOT_EMAIL" --redirect || {
     echo "WARN: certbot failed — HTTP may still work until DNS/ports are ready"
   }
+fi
+
+if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]]; then
+  echo "==> Telegram webhook"
+  DOMAIN="$DOMAIN" node services/api/scripts/register-telegram-webhook.mjs || echo "WARN: telegram webhook registration failed"
 fi
 
 echo ""

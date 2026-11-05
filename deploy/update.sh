@@ -83,6 +83,16 @@ sync_runtime_env_key SMTP_USER "${SMTP_USER}"
 sync_runtime_env_key SMTP_PASS "${SMTP_PASS}"
 sync_runtime_env_key SMTP_FROM "${SMTP_FROM:-GOTCHA <noreply@${DOMAIN}>}"
 sync_runtime_env_key SMTP_REPLY_TO "${SMTP_REPLY_TO}"
+for tg_key in TELEGRAM_BOT_TOKEN TELEGRAM_BOT_USERNAME TELEGRAM_WEBHOOK_SECRET TELEGRAM_MINI_APP_URL; do
+  tg_val="$(get_env "$tg_key")"
+  if [[ -n "$tg_val" ]]; then
+    sync_runtime_env_key "$tg_key" "$tg_val"
+  fi
+done
+if [[ -z "$(get_env TELEGRAM_MINI_APP_URL)" ]]; then
+  sync_runtime_env_key TELEGRAM_MINI_APP_URL "https://${DOMAIN}/tg"
+fi
+sync_runtime_env_key TELEGRAM_WEBHOOK_URL "https://${DOMAIN}/api/v1/telegram/webhook"
 
 # Defaults if deploy/.env omitted optional keys
 if [[ -z "$(get_env API_CORS_ORIGINS)" ]]; then
@@ -162,6 +172,11 @@ if [[ -d "/etc/letsencrypt/live/${DOMAIN}" ]]; then
       -m "admin@${DOMAIN}" --redirect --reinstall
   fi
   nginx -t && systemctl reload nginx
+fi
+
+if [[ -n "$(get_env TELEGRAM_BOT_TOKEN)" && -n "$(get_env TELEGRAM_WEBHOOK_SECRET)" ]]; then
+  echo "==> Telegram webhook"
+  DOMAIN="$DOMAIN" node services/api/scripts/register-telegram-webhook.mjs || echo "WARN: telegram webhook registration failed"
 fi
 
 echo "Update complete: https://${DOMAIN}/"

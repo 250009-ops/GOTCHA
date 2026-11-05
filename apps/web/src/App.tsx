@@ -4,6 +4,7 @@ import LandingPage from './pages/LandingPage';
 import { PrivacyPage, TermsPage, OfertaPage } from './pages/LegalPage';
 import NotFoundPage from './pages/NotFoundPage';
 import { WebLocaleProvider } from './lib/webLocaleContext';
+import ReferralCapturePage from './pages/ReferralCapturePage';
 
 // web-launch-04: the wl01 legal drafts and the VITE_LEGAL_V2 QA path are retired. Canonical legal text lives in
 // team/pm/legal/web/ (+ pending-payments-02/); the live pages stay LegalPage until that text is wired with its guards.
@@ -16,6 +17,7 @@ export default function App() {
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/oferta" element={<OfertaPage />} />
+        <Route path="/r/:code" element={<ReferralCapturePage />} />
         <Route path="/:locale" element={<LocalePage page="home" />} />
         <Route path="/:locale/privacy" element={<LocalePage page="privacy" />} />
         <Route path="/:locale/terms" element={<LocalePage page="terms" />} />

@@ -73,9 +73,9 @@ import { assertValidPageTiers, type TierRow } from '../../common/page-tiers';
 import { PLAN_LIMIT_KEYS, effectivePlanLimits, planLimits, refreshPlanLimits, resetPlanLimitsCache } from '../../common/plan-limits';
 
 export const DELETION_RETENTION_DAYS = 365;
-export const isSelfDeleted = (u: { email: string; deletedAt: Date | null }) => Boolean(u.deletedAt) && u.email.startsWith('deleted-');
+export const isSelfDeleted = (u: { email: string | null; deletedAt: Date | null }) => Boolean(u.deletedAt) && Boolean(u.email?.startsWith('deleted-'));
 /** Self-service deletion: anonymised row kept 1 year, then purged (Privacy §8). Null for suspended / active users. */
-export function deletionPurgeAfter(u: { email: string; deletedAt: Date | null }): Date | null {
+export function deletionPurgeAfter(u: { email: string | null; deletedAt: Date | null }): Date | null {
   return isSelfDeleted(u) ? new Date(u.deletedAt!.getTime() + DELETION_RETENTION_DAYS * 86_400_000) : null;
 }
 
@@ -2122,9 +2122,9 @@ export class AdminService {
       ...users.map((u) => ({
         id: u.id,
         type: 'user' as const,
-        title: u.displayName || u.email,
-        subtitle: u.email,
-        href: `/users?q=${encodeURIComponent(u.email)}`,
+        title: u.displayName || u.email || 'Gotcha',
+        subtitle: u.email ?? '',
+        href: `/users?q=${encodeURIComponent(u.email ?? '')}`,
       })),
       ...content.map((c) => ({
         id: c.id,
@@ -2377,7 +2377,7 @@ export class AdminService {
 
     const byUser = new Map<
       string,
-      { email: string; displayName: string | null; lookups: number; tokens: number }
+      { email: string | null; displayName: string | null; lookups: number; tokens: number }
     >();
     for (const r of rows) {
       const existing = byUser.get(r.userId);
@@ -3228,7 +3228,7 @@ export class AdminService {
   private mapUserRow(
     u: {
       id: string;
-      email: string;
+      email: string | null;
       displayName: string | null;
       avatarUrl: string | null;
       createdAt: Date;

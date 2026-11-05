@@ -56,11 +56,25 @@ export class RegisterDto {
   @Min(1900)
   @Max(new Date().getUTCFullYear())
   birthYear?: number;
+
+  /** Set when the visitor arrived from /r/:code or the gotcha_ref cookie. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  referralCode?: string;
 }
 
 export class LoginDto {
+  /** Kept for existing clients. */
+  @IsOptional()
   @IsEmail()
-  email!: string;
+  email?: string;
+
+  /** Email or phone. Used when `email` is omitted. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  identifier?: string;
 
   @IsString()
   @MinLength(1)
@@ -95,12 +109,107 @@ export class VerifyEmailDto {
 }
 
 export class ForgotPasswordDto {
+  @IsOptional()
   @IsEmail()
-  email!: string;
+  email?: string;
+
+  /** Email or phone. Phone accounts receive the reset code in Telegram. */
+  @IsOptional()
+  @IsString()
+  @MaxLength(128)
+  identifier?: string;
 
   @IsOptional()
   @IsIn(['android', 'web'])
   clientPlatform?: 'android' | 'web';
+}
+
+export class TelegramInitDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(8192)
+  initData!: string;
+}
+
+export class TelegramRegisterDto extends TelegramInitDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(80)
+  fullName!: string;
+
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
+
+  @IsEnum(AppLanguage)
+  nativeLanguage!: AppLanguage;
+
+  @IsArray()
+  @ArrayMinSize(1)
+  @IsEnum(AppLanguage, { each: true })
+  targetLanguages!: AppLanguage[];
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1900)
+  @Max(new Date().getUTCFullYear())
+  birthYear?: number;
+
+  @IsBoolean()
+  acceptTerms!: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  acceptAi?: boolean;
+
+  @IsOptional()
+  @IsBoolean()
+  acceptAiConsent?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  consentVersion?: string;
+}
+
+export class TelegramLinkDto extends TelegramInitDto {
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  identifier!: string;
+
+  @IsString()
+  @MinLength(1)
+  @MaxLength(128)
+  password!: string;
+}
+
+export class TelegramCodeDto {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(64)
+  challengeId!: string;
+
+  @IsString()
+  @MinLength(4)
+  @MaxLength(16)
+  code!: string;
+}
+
+export class TelegramResendDto {
+  @IsString()
+  @MinLength(16)
+  @MaxLength(64)
+  challengeId!: string;
+}
+
+export class TelegramResetDto extends TelegramCodeDto {
+  @IsString()
+  @MinLength(8)
+  @MaxLength(128)
+  password!: string;
 }
 
 export class ResetPasswordDto {

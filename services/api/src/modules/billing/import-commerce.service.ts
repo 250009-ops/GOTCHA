@@ -27,6 +27,7 @@ import { adminRefundBlockReason } from './import-refund';
 import { getPlanCaps, userCapPlan } from '../../common/plan-caps';
 import { AI_SETTING_KEYS, coerceNonNegInt, defaultAiPlatformSettings, resolveLearnerDailyAiQuota } from '../ai/ai-settings';
 import { PricingService, promoDiscountTiyins } from './pricing.service';
+import { ReferralService } from '../referrals/referral.service';
 import {
   catalogAccessGranted,
   catalogContentIdFromFormat,
@@ -183,6 +184,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     private prisma: PrismaService,
     private atmos: AtmosClient,
     @Optional() private pricing?: PricingService,
+    @Optional() private referrals?: ReferralService,
   ) {}
 
   gatewayEnabled(): boolean {
@@ -872,6 +874,11 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       metadata: { reason: opts.reason, reversedAtAtmos: hasTx, atmosMode: mode, idempotencyKey: opts.idempotencyKey ?? null, userId: payment.userId, amountUzs: Math.round(payment.amountTiyins / 100) },
     });
     await projectPlus(this.prisma, payment.userId).catch(() => undefined); // a refund ends Plus immediately
+    if (plusPassDaysFromFormat(payment.contentFormat)) {
+      await this.referrals?.onPlusRefunded({ id: payment.id, userId: payment.userId }).catch((e) => {
+        this.logger.error(`referral void failed for ${payment.id}: ${(e as Error).message}`);
+      });
+    }
     return { paymentId, status: ImportPaymentStatus.refunded, reversedAtAtmos: hasTx, accessRevoked: revoked, alreadyRefunded: false };
   }
 
@@ -1289,15 +1296,29 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     const active = await this.plusBenefitsFor(userId);
     const on = cfg.enabled && this.gatewayEnabled() && this.atmos.configured();
     const play = await this.prisma.entitlement.findFirst({ where: { userId, kind: 'plus', source: 'google_play', status: 'active', OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }] } });
+    let discountLine: string | null = null;
+    const plans = on ? await Promise.all(cfg.plans.map(async (p) => {
+      const quote = this.referrals
+        ? await this.referrals.quotePlus(userId, p.priceUzs * 100, null, this.atmos.minAmountTiyins())
+        : null;
+      if (quote?.line) discountLine = quote.line;
+      return {
+        days: p.days,
+        priceUzs: quote ? Math.round(quote.amountTiyins / 100) : p.priceUzs,
+        listPriceUzs: p.priceUzs,
+        sku: p.sku,
+      };
+    })) : [];
     return {
       enabled: on && cfg.plans.length > 0,
-      plans: on ? cfg.plans.map((p) => ({ days: p.days, priceUzs: p.priceUzs, sku: p.sku })) : [],
+      plans,
       benefits: cfg.benefits,
       active: Boolean(active),
       expiresAt: active?.expiresAt ?? null,
       /** Plus from Google Play: hide the web paywall, show "manage in Google Play". */
       playActive: Boolean(play),
       recurring: false,
+      discountLine,
       /** Paywall numbers from admin config (PAYMENTS §14): never hardcoded in the UI. */
       limits: await this.plusLimits(cfg.benefits.importDiscountPct),
     };
@@ -1310,7 +1331,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     return { plusLookups: caps.plus.lookups, freeLookups: caps.free.lookups, plusQuizzes: caps.plus.quizzes, freeQuizzes: caps.free.quizzes, plusMashq: caps.plus.mashq, freeMashq: caps.free.mashq, importDiscountPct };
   }
 
-  async plusCheckout(userId: string, days: number, acceptOferta?: unknown) {
+  async plusCheckout(userId: string, days: number, acceptOferta?: unknown, promoCode?: string) {
     // G1: no Plus checkout without an explicit Public Offer acceptance (recorded per purchase below).
     if (acceptOferta !== true) throw new BadRequestException({ message: 'Please accept the Public Offer to continue.', code: 'oferta_required' });
     const ofertaAcceptedAt = new Date();
@@ -1321,7 +1342,12 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (play) throw new ConflictException({ message: 'Your Plus is managed in Google Play.', code: 'plus_via_play' });
     const plan = cfg.plans.find((p) => p.days === days);
     if (!plan) throw new BadRequestException({ message: 'This Plus plan is not available.', code: 'plus_unavailable' });
-    const amountTiyins = plan.priceUzs * 100;
+    const promo = promoCode?.trim() && this.pricing ? await this.pricing.resolvePromo(promoCode, userId, 'plus') : null;
+    const quoted = this.referrals
+      ? await this.referrals.quotePlus(userId, plan.priceUzs * 100, promo, this.atmos.minAmountTiyins())
+      : { amountTiyins: plan.priceUzs * 100, discountTiyins: 0, line: null as string | null, source: null as 'referral' | 'promo' | null };
+    const amountTiyins = quoted.amountTiyins;
+    const amountUzs = Math.round(amountTiyins / 100);
     const format = plusPassFormat(plan.days);
     const reusable = await this.prisma.importPayment.findFirst({
       where: { userId, status: ImportPaymentStatus.pending, contentFormat: format, amountTiyins, providerPaymentId: { not: null }, expiresAt: { gt: new Date(Date.now() + 5 * 60_000) } },
@@ -1329,7 +1355,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     });
     if (reusable) {
       await this.prisma.importPayment.update({ where: { id: reusable.id }, data: { ofertaVersion: OFERTA_VERSION, ofertaAcceptedAt } });
-      return { paymentId: reusable.id, account: reusable.account, transactionId: Number(reusable.providerPaymentId), amountUzs: plan.priceUzs, days: plan.days, status: 'pending', step: 'card' as const, reused: true };
+      return { paymentId: reusable.id, account: reusable.account, transactionId: Number(reusable.providerPaymentId), amountUzs, listAmountUzs: plan.priceUzs, discountLine: quoted.line, days: plan.days, status: 'pending', step: 'card' as const, reused: true };
     }
     const account = `${PLUS_ACCOUNT_PREFIX}${plan.days}_${randomUUID().replace(/-/g, '').slice(0, 20)}`;
     await this.assertPayCreateRate(userId); // final-6: per-user pay/create limit
@@ -1340,9 +1366,10 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
         importType: ImportType.paste, status: ImportPaymentStatus.pending, provider: 'atmos',
         providerPaymentId: String(created.transactionId), rawCreateJson: redactAtmosRaw(created.raw) as Prisma.InputJsonValue,
         expiresAt: new Date(Date.now() + 60 * 60_000), ofertaVersion: OFERTA_VERSION, ofertaAcceptedAt,
+        ...(quoted.source === 'promo' && promo ? { promoCodeId: promo.id } : {}),
       },
     });
-    return { paymentId: payment.id, account, transactionId: created.transactionId, amountUzs: plan.priceUzs, days: plan.days, status: 'pending', step: 'card' as const, reused: false };
+    return { paymentId: payment.id, account, transactionId: created.transactionId, amountUzs, listAmountUzs: plan.priceUzs, discountLine: quoted.line, days: plan.days, status: 'pending', step: 'card' as const, reused: false };
   }
 
   /** Paid Plus payment → plus entitlement (idempotent on source+sourceRef+kind), stacked on any active pass. */
@@ -1370,6 +1397,9 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
       }).catch((e: { code?: string }) => { if (e?.code !== 'P2002') throw e; }); // concurrent webhook + apply
     });
     await projectPlus(this.prisma, payment.userId);
+    await this.referrals?.onRefereePlusPaid({ id: payment.id, userId: payment.userId }).catch((e) => {
+      this.logger.error(`referral reward failed for ${payment.id}: ${(e as Error).message}`);
+    });
   }
 
   /** PAY2-01: per-payment Atmos status-check backoff (in-process; the 24 h cap below is derived from expiresAt, so a restart only re-checks sooner). */

@@ -57,7 +57,7 @@ const messageInclude = {
 type PeerUser = {
   id: string;
   displayName: string | null;
-  email: string;
+  email: string | null;
   avatarUrl: string | null;
   nativeLanguage: AppLanguage;
   lastSeenAt?: Date | null;
@@ -68,7 +68,7 @@ type PeerUser = {
 };
 
 function isLiveMessagingPeer(user: {
-  email: string;
+  email: string | null;
   displayName: string | null;
   adminProfile?: { userId: string } | null;
 }) {
@@ -157,14 +157,14 @@ export class MessagingService {
       : user.nativeLanguage;
     const handle =
       '@' +
-      (user.displayName ?? user.email.split('@')[0] ?? 'learner')
+      (user.displayName ?? user.email?.split('@')[0] ?? 'learner')
         .toLowerCase()
         .replace(/[^a-z0-9_]+/g, '_')
         .replace(/^_+|_+$/g, '')
         .slice(0, 24);
     return {
       id: user.id,
-      displayName: user.displayName ?? user.email.split('@')[0] ?? 'Learner',
+      displayName: user.displayName ?? user.email?.split('@')[0] ?? 'Learner',
       handle,
       avatarUrl: safeAvatarUrl(user.avatarUrl),
       nativeLanguage: user.nativeLanguage,
@@ -192,7 +192,7 @@ export class MessagingService {
       editedAt?: Date | null;
       deletedAt?: Date | null;
       replyToId?: string | null;
-      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string } | null;
+      sender?: { id: string; displayName: string | null; avatarUrl: string | null; email?: string | null } | null;
       replyTo?: {
         id: string;
         body: string;
@@ -945,7 +945,7 @@ export class MessagingService {
     for (const row of recipients) {
       const user = row.user;
       if (!user || user.deletedAt) continue;
-      if (!user.emailVerifiedAt) continue;
+      if (!user.email || !user.emailVerifiedAt) continue;
       if (isSyntheticUserEmail(user.email)) continue;
       if (user.preferences?.notificationsEnabled === false) continue;
       if (user.lastSeenAt && now - user.lastSeenAt.getTime() < ONLINE_WINDOW_MS) continue;

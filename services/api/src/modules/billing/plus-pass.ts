@@ -71,9 +71,14 @@ export function plusPassDaysFromFormat(format: string | null | undefined): PlusP
 }
 
 /** Stack on top of an active pass: new expiry = max(now, current) + days. */
-export function plusPassExpiry(currentExpiry: Date | null | undefined, days: PlusPassDays, now = new Date()): Date {
+export function extendedEnd(currentExpiry: Date | null | undefined, days: number, now = new Date()): Date {
+  const span = Math.max(0, Math.floor(days)) * 86_400_000;
   const base = currentExpiry && currentExpiry > now ? currentExpiry : now;
-  return new Date(base.getTime() + days * 86_400_000);
+  return new Date(base.getTime() + span);
+}
+
+export function plusPassExpiry(currentExpiry: Date | null | undefined, days: PlusPassDays, now = new Date()): Date {
+  return extendedEnd(currentExpiry, days, now);
 }
 
 /** Percent discount for Plus; never below the Atmos minimum, and 0 stays 0. */
