@@ -294,9 +294,6 @@ model User {
   friendRequestsReceived   FriendRequest[]           @relation("FriendRequestsReceived")
   contentReports           ContentReport[]
   telegramChallenges       TelegramLoginChallenge[]
-  referralCode             ReferralCode?
-  referralsMade            Referral[]              @relation("ReferralsMade")
-  referralReceived         Referral?               @relation("ReferralReceived")
 
   @@map("users")
 }
@@ -1547,17 +1544,6 @@ enum TelegramChallengeStatus {
   used
 }
 
-enum ReferralSource {
-  web
-  telegram
-}
-
-enum ReferralStatus {
-  registered
-  rewarded
-  void
-}
-
 /// Website phone login, password reset, and "continue in the bot" confirmation.
 model TelegramLoginChallenge {
   id         String                  @id @default(uuid()) @db.Uuid
@@ -1590,39 +1576,9 @@ model TelegramPendingSignup {
   firstName     String    @default("") @map("first_name")
   lastName      String    @default("") @map("last_name")
   username      String?
-  startParam    String?   @map("start_param")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   @@map("telegram_pending_signups")
-}
-
-model ReferralCode {
-  userId    String   @id @map("user_id") @db.Uuid
-  code      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@map("referral_codes")
-}
-
-model Referral {
-  id              String         @id @default(uuid()) @db.Uuid
-  referrerId      String         @map("referrer_id") @db.Uuid
-  refereeId       String         @unique @map("referee_id") @db.Uuid
-  code            String
-  source          ReferralSource
-  status          ReferralStatus @default(registered)
-  rewardPaymentId String?        @unique @map("reward_payment_id") @db.Uuid
-  rewardedAt      DateTime?      @map("rewarded_at")
-  createdAt       DateTime       @default(now()) @map("created_at")
-
-  referrer User @relation("ReferralsMade", fields: [referrerId], references: [id], onDelete: Cascade)
-  referee  User @relation("ReferralReceived", fields: [refereeId], references: [id], onDelete: Cascade)
-
-  @@index([referrerId, status])
-  @@index([referrerId, rewardedAt])
-  @@map("referrals")
 }
 
 /// Notification pushes through the bot, for the 3-a-day limit. Auth codes are not logged here.

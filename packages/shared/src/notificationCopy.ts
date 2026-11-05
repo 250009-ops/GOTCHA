@@ -11,7 +11,6 @@ export interface NotificationParams {
   messagePreview?: string;
   contentTitle?: string;
   contentKind?: 'book' | 'article' | 'story' | 'news';
-  rewardDays?: number;
 }
 
 type Templates = {
@@ -24,7 +23,6 @@ type Templates = {
   messageTitle: (peerName: string) => string;
   contentTitle: (kind: NotificationParams['contentKind']) => string;
   contentBody: (title: string) => string;
-  referralSentence: (days: number) => string;
 };
 
 const EN: Templates = {
@@ -41,7 +39,6 @@ const EN: Templates = {
     return `New ${label} in the library`;
   },
   contentBody: (title) => `${title} is now available to read.`,
-  referralSentence: (days) => `Your friend got Plus — we added +${days} days of Plus for you`,
 };
 
 const RU: Templates = {
@@ -59,7 +56,6 @@ const RU: Templates = {
     return `Новая ${label} в библиотеке`;
   },
   contentBody: (title) => `«${title}» уже доступна для чтения.`,
-  referralSentence: (days) => `Ваш друг оформил Plus — вам начислено +${days} дн. Plus`,
 };
 
 const UZ: Templates = {
@@ -79,7 +75,6 @@ const UZ: Templates = {
     return `Kutubxonada yangi ${label}`;
   },
   contentBody: (title) => `«${title}» endi oʻqishga tayyor.`,
-  referralSentence: (days) => `Doʻstingiz Plus oldi — sizga +${days} kun Plus qoʻshildi`,
 };
 
 const TEMPLATES: Record<UiLanguage, Templates> = { en: EN, ru: RU, uz: UZ };
@@ -122,9 +117,6 @@ export function parseNotificationParams(kind: string, title: string, body: strin
       body.match(/^(.+?)\s+is now available/i)?.[1]?.trim() ||
       body.match(/^«(.+?)»/)?.[1]?.trim() ||
       body.replace(/\s+(is now available|уже доступна|endi oʻqishga).*$/i, '').trim();
-  } else if (kind === 'referral') {
-    const m = `${title} ${body}`.match(/\+(\d+)/);
-    params.rewardDays = m ? parseInt(m[1], 10) : 30;
   }
   return params;
 }
@@ -162,11 +154,6 @@ export function formatNotification(
         title: t.contentTitle(params.contentKind ?? 'book'),
         body: t.contentBody(params.contentTitle ?? fallback?.body ?? ''),
       };
-    case 'referral': {
-      const sentence = t.referralSentence(params.rewardDays ?? 30);
-      const split = sentence.split(' — ');
-      return { title: split[0] ?? sentence, body: sentence };
-    }
     default:
       return fallback ?? { title: '', body: '' };
   }

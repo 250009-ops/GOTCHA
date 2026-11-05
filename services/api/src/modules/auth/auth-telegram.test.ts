@@ -37,7 +37,7 @@ function store() {
   const sender = {
     send: async () => ({ status: 'ok' as const }),
   };
-  return { prisma, users, refresh, sender };
+  return { prisma, users, refresh, challenges, sender };
 }
 
 async function main() {
@@ -50,7 +50,8 @@ async function main() {
     emailVerifiedAt: new Date(),
     phoneVerifiedAt: null,
     deletedAt: null,
-    telegramId: null,
+    phone: '+998901110011',
+    telegramId: 7n,
     targetLanguages: [],
   });
   bag.users.push({
@@ -96,6 +97,27 @@ async function main() {
   assert.equal(phone.step, 'telegram_code');
   assert.equal(phone.maskedPhone, '+998 90 *** ** 67');
   assert.equal(bag.refresh.length, before);
+
+  bag.users.push({
+    id: 'phone-without-telegram',
+    email: null,
+    phone: '+998909998877',
+    passwordHash,
+    emailVerifiedAt: null,
+    phoneVerifiedAt: new Date(),
+    deletedAt: null,
+    telegramId: null,
+    uiLanguage: 'uz',
+    targetLanguages: [],
+  });
+  const challengesBefore = bag.challenges.length;
+  await assert.rejects(
+    () => auth.login({ identifier: '998 90 999-88-77', password: 'correct-horse' }),
+    (error: unknown) => error instanceof UnauthorizedException && error.message === 'Invalid credentials',
+  );
+  assert.equal(bag.refresh.length, before);
+  assert.equal(bag.challenges.length, challengesBefore);
+  console.log('phoneAccountWithoutTelegramIdIsRefused ok');
 
   console.log('auth-telegram.test.ts ok');
 }

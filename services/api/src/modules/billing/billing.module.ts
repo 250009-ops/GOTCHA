@@ -7,10 +7,7 @@ import { PricingService } from './pricing.service';
 import { EntitlementsService } from './entitlements.service';
 import { GooglePlayClient } from './google-play.client';
 import { PlayBillingService } from './play-billing.service';
-import { ReferralsModule } from '../referrals/referrals.module';
-
 @Module({
-  imports: [ReferralsModule],
   controllers: [BillingController],
   providers: [BillingService, AtmosClient, ImportCommerceService, PricingService, EntitlementsService, GooglePlayClient, PlayBillingService],
   exports: [ImportCommerceService, AtmosClient, PricingService, EntitlementsService, PlayBillingService],

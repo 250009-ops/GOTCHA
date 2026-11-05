@@ -4,7 +4,7 @@ import { Prisma, type PromoCode, type SubscriptionPlan } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type PricingLang = 'en' | 'ru' | 'uz';
-export type PromoScope = 'imports' | 'catalog' | 'plus';
+export type PromoScope = 'imports' | 'catalog';
 export const PROMO_MAX_PERCENT = 70; // PRICING.md §3.6: max total discount 70%
 export const PLAN_PERIODS = ['month', 'year', 'one_time'] as const;
 

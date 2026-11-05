@@ -65,10 +65,7 @@ export class TelegramLoginService {
     firstName: string;
     lastName: string;
     username?: string | null;
-    startParam?: string | null;
   }) {
-    const existing = await this.pending(input.telegramId);
-    const startParam = input.startParam ?? existing?.startParam ?? null;
     return this.prisma.telegramPendingSignup.upsert({
       where: { telegramId: input.telegramId },
       create: {
@@ -76,13 +73,11 @@ export class TelegramLoginService {
         firstName: input.firstName,
         lastName: input.lastName,
         username: input.username ?? null,
-        startParam,
       },
       update: {
         firstName: input.firstName,
         lastName: input.lastName,
         username: input.username ?? null,
-        ...(input.startParam ? { startParam: input.startParam } : {}),
       },
     });
   }
@@ -106,7 +101,6 @@ export class TelegramLoginService {
     const owner = await this.prisma.user.findUnique({ where: { phone }, select: { id: true } });
     if (owner) return 'taken';
     const telegramId = BigInt(input.fromId);
-    const existing = await this.pending(telegramId);
     await this.prisma.telegramPendingSignup.upsert({
       where: { telegramId },
       create: {
@@ -116,7 +110,6 @@ export class TelegramLoginService {
         firstName: input.firstName,
         lastName: input.lastName,
         username: input.username ?? null,
-        startParam: existing?.startParam ?? null,
       },
       update: { phone, phoneSharedAt: new Date(), firstName: input.firstName, lastName: input.lastName },
     });

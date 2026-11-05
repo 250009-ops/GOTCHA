@@ -2,6 +2,8 @@ import * as assert from 'node:assert/strict';
 import { createHmac, randomUUID } from 'crypto';
 import { BadRequestException, ConflictException, HttpException, UnauthorizedException } from '@nestjs/common';
 import { webhookSecretOk } from './telegram.controller';
+import { notificationStartApp } from './copy';
+import { registerTelegramWebhook } from './register-webhook';
 import { handleTelegramUpdate } from './telegram-updates';
 import { TelegramLoginService } from './telegram-login.service';
 import { validateInitData } from './init-data';
@@ -288,6 +290,46 @@ async function main() {
   assert.equal(again.sent, true);
   assert.equal(resend.sent.length, 2);
   assert.equal(resend.challenges[0].attempts, 0);
+
+  assert.equal(notificationStartApp('content', 'book-1'), 'book_book-1');
+  assert.equal(notificationStartApp('goal'), 'read');
+  assert.equal(notificationStartApp('streak'), 'read');
+  assert.equal(notificationStartApp('vocab'), 'mashq');
+  assert.equal(notificationStartApp('message', 'chat-9'), 'chat_chat-9');
+
+  const calls: string[] = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    calls.push(String(input));
+    return { ok: true } as Response;
+  }) as typeof fetch;
+  const savedFlag = process.env.TELEGRAM_MENU_BUTTON_ENABLED;
+  try {
+    delete process.env.TELEGRAM_MENU_BUTTON_ENABLED;
+    const off = await registerTelegramWebhook({
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      TELEGRAM_WEBHOOK_SECRET: 'test-secret',
+      TELEGRAM_WEBHOOK_URL: 'https://gotchaa.uz/api/v1/telegram/webhook',
+      TELEGRAM_MINI_APP_URL: 'https://gotchaa.uz/tg',
+    });
+    assert.equal(off, 'registered');
+    assert.equal(calls.some((url) => url.includes('setWebhook')), true);
+    assert.equal(calls.some((url) => url.includes('setChatMenuButton')), false);
+    calls.length = 0;
+    const on = await registerTelegramWebhook({
+      TELEGRAM_BOT_TOKEN: 'test-token',
+      TELEGRAM_WEBHOOK_SECRET: 'test-secret',
+      TELEGRAM_WEBHOOK_URL: 'https://gotchaa.uz/api/v1/telegram/webhook',
+      TELEGRAM_MINI_APP_URL: 'https://gotchaa.uz/tg',
+      TELEGRAM_MENU_BUTTON_ENABLED: 'true',
+    });
+    assert.equal(on, 'registered');
+    assert.equal(calls.some((url) => url.includes('setChatMenuButton')), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (savedFlag === undefined) delete process.env.TELEGRAM_MENU_BUTTON_ENABLED;
+    else process.env.TELEGRAM_MENU_BUTTON_ENABLED = savedFlag;
+  }
 
   console.log('telegram.test.ts ok');
 }

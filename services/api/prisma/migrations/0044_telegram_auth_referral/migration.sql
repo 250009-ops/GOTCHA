@@ -1,4 +1,4 @@
--- Telegram auth, phone login, and the referral program.
+-- Telegram auth and phone login.
 
 ALTER TABLE "users" ALTER COLUMN "email" DROP NOT NULL;
 
@@ -13,8 +13,6 @@ CREATE UNIQUE INDEX "users_telegram_id_key" ON "users"("telegram_id");
 
 CREATE TYPE "TelegramChallengeKind" AS ENUM ('code', 'link');
 CREATE TYPE "TelegramChallengeStatus" AS ENUM ('pending', 'approved', 'denied', 'expired', 'used');
-CREATE TYPE "ReferralSource" AS ENUM ('web', 'telegram');
-CREATE TYPE "ReferralStatus" AS ENUM ('registered', 'rewarded', 'void');
 
 CREATE TABLE "telegram_login_challenges" (
     "id" UUID NOT NULL,
@@ -48,49 +46,9 @@ CREATE TABLE "telegram_pending_signups" (
     "first_name" TEXT NOT NULL DEFAULT '',
     "last_name" TEXT NOT NULL DEFAULT '',
     "username" TEXT,
-    "start_param" TEXT,
     "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT "telegram_pending_signups_pkey" PRIMARY KEY ("telegram_id")
 );
-
-CREATE TABLE "referral_codes" (
-    "user_id" UUID NOT NULL,
-    "code" TEXT NOT NULL,
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "referral_codes_pkey" PRIMARY KEY ("user_id")
-);
-
-CREATE UNIQUE INDEX "referral_codes_code_key" ON "referral_codes"("code");
-
-ALTER TABLE "referral_codes"
-  ADD CONSTRAINT "referral_codes_user_id_fkey"
-  FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
-CREATE TABLE "referrals" (
-    "id" UUID NOT NULL,
-    "referrer_id" UUID NOT NULL,
-    "referee_id" UUID NOT NULL,
-    "code" TEXT NOT NULL,
-    "source" "ReferralSource" NOT NULL,
-    "status" "ReferralStatus" NOT NULL DEFAULT 'registered',
-    "reward_payment_id" UUID,
-    "rewarded_at" TIMESTAMP(3),
-    "created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT "referrals_pkey" PRIMARY KEY ("id")
-);
-
-CREATE UNIQUE INDEX "referrals_referee_id_key" ON "referrals"("referee_id");
-CREATE UNIQUE INDEX "referrals_reward_payment_id_key" ON "referrals"("reward_payment_id");
-CREATE INDEX "referrals_referrer_id_status_idx" ON "referrals"("referrer_id", "status");
-CREATE INDEX "referrals_referrer_id_rewarded_at_idx" ON "referrals"("referrer_id", "rewarded_at");
-
-ALTER TABLE "referrals"
-  ADD CONSTRAINT "referrals_referrer_id_fkey"
-  FOREIGN KEY ("referrer_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
-ALTER TABLE "referrals"
-  ADD CONSTRAINT "referrals_referee_id_fkey"
-  FOREIGN KEY ("referee_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 CREATE TABLE "telegram_outbound_log" (
     "id" UUID NOT NULL,
@@ -101,11 +59,3 @@ CREATE TABLE "telegram_outbound_log" (
 );
 
 CREATE INDEX "telegram_outbound_log_user_id_created_at_idx" ON "telegram_outbound_log"("user_id", "created_at");
-
-INSERT INTO "platform_settings" ("key", "value", "updated_at")
-VALUES
-  ('referral.friend_discount_pct', '20', CURRENT_TIMESTAMP),
-  ('referral.referrer_reward_days', '30', CURRENT_TIMESTAMP),
-  ('referral.max_rewards_per_year', '12', CURRENT_TIMESTAMP),
-  ('referral.enabled', 'true', CURRENT_TIMESTAMP)
-ON CONFLICT ("key") DO NOTHING;

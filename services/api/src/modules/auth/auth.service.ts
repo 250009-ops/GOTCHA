@@ -3,6 +3,7 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
   UnauthorizedException,
@@ -21,8 +22,6 @@ import { assertEnabledLanguage } from '../../common/language-catalog';
 import { looksLikeEmail, maskPhone, normalizePhone } from '../../common/phone';
 import { TelegramLoginService } from '../telegram/telegram-login.service';
 import { botLocale, codeErrorText } from '../telegram/copy';
-import { ReferralService } from '../referrals/referral.service';
-import { parseStartParam } from '../referrals/capture';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -61,6 +60,8 @@ function clearLoginFailures(email: string) {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
@@ -68,7 +69,6 @@ export class AuthService {
     private mail: MailService,
     private config: ConfigService,
     @Optional() private telegram?: TelegramLoginService,
-    @Optional() private referrals?: ReferralService,
   ) {}
 
   private hashToken(token: string) {
@@ -287,10 +287,6 @@ export class AuthService {
       });
     }
 
-    if (dto.referralCode) {
-      await this.referrals?.attachNewUser({ refereeId: user.id, code: dto.referralCode, source: 'web' }).catch(() => undefined);
-    }
-
     await this.sendVerification(user, clientPlatform);
 
     return {
@@ -368,9 +364,12 @@ export class AuthService {
       });
     }
     clearLoginFailures(gateKey);
-    if (user.telegramId) {
-      if (!this.telegram) throw new UnauthorizedException('Invalid credentials');
-      const challenge = await this.telegram.createCodeChallenge({
+    if (!user.telegramId) {
+      this.logger.warn(`phone login refused: user ${user.id} has no linked Telegram account`);
+      throw new UnauthorizedException('Invalid credentials');
+    }
+    if (!this.telegram) throw new UnauthorizedException('Invalid credentials');
+    const challenge = await this.telegram.createCodeChallenge({
         userId: user.id,
         phone,
         purpose: 'login',
@@ -379,10 +378,7 @@ export class AuthService {
         locale: botLocale(user.uiLanguage),
         telegramId: user.telegramId,
       });
-      return challenge;
-    }
-    const tokens = await this.issueTokens(user.id, user.email, deviceName);
-    return { user: this.sanitizeUser(user), ...tokens };
+    return challenge;
   }
 
   async refresh(refreshToken: string) {
@@ -767,16 +763,6 @@ export class AuthService {
     const freePlan = await this.prisma.subscriptionPlan.findUnique({ where: { tier: 'free' } });
     if (freePlan) {
       await this.prisma.userSubscription.create({ data: { userId: user.id, planId: freePlan.id, status: 'active' } });
-    }
-    const start = parseStartParam(pending.startParam);
-    if (start.type === 'referral') {
-      await this.referrals?.attachNewUser({
-        refereeId: user.id,
-        code: start.code,
-        source: 'telegram',
-        phone: pending.phone,
-        telegramId,
-      }).catch(() => undefined);
     }
     await this.telegram.deletePending(telegramId);
     const tokens = await this.issueTokens(user.id, null);

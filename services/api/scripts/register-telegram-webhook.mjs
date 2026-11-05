@@ -1,5 +1,6 @@
 /**
- * Deploy hook: register the Telegram webhook and the "Ochish" menu button.
+ * Deploy hook: register the Telegram webhook.
+ * The "Ochish" menu button is set only when TELEGRAM_MENU_BUTTON_ENABLED=true.
  * Reads the runtime .env. Never prints the bot token.
  */
 import { readFileSync, existsSync } from 'node:fs';
@@ -44,11 +45,18 @@ const hook = await post('setWebhook', {
   allowed_updates: ['message', 'callback_query'],
   drop_pending_updates: false,
 });
-const menu = await post('setChatMenuButton', {
-  menu_button: { type: 'web_app', text: 'Ochish', web_app: { url: mini } },
-});
-if (!hook.ok || !menu.ok) {
+if (!hook.ok) {
   console.log('telegram webhook skipped');
   process.exit(0);
+}
+const menuOn = ['1', 'true', 'yes', 'on'].includes(String(process.env.TELEGRAM_MENU_BUTTON_ENABLED ?? '').trim().toLowerCase());
+if (menuOn) {
+  const menu = await post('setChatMenuButton', {
+    menu_button: { type: 'web_app', text: 'Ochish', web_app: { url: mini } },
+  });
+  if (!menu.ok) {
+    console.log('telegram webhook skipped');
+    process.exit(0);
+  }
 }
 console.log('telegram webhook registered');

@@ -879,16 +879,6 @@ async function main() {
     if (!existing) await prisma.platformSetting.create({ data: { key, value } });
   }
 
-  for (const [key, value] of [
-    ['referral.friend_discount_pct', 20],
-    ['referral.referrer_reward_days', 30],
-    ['referral.max_rewards_per_year', 12],
-    ['referral.enabled', true],
-  ] as const) {
-    const existing = await prisma.platformSetting.findUnique({ where: { key } });
-    if (!existing) await prisma.platformSetting.create({ data: { key, value } });
-  }
-
   // IDEMPOTENT: Only create importFreeLimits if missing — do not overwrite admin edits
   const existingFreeLimits = await prisma.platformSetting.findUnique({ where: { key: 'importFreeLimits' } });
   if (!existingFreeLimits) {

@@ -83,7 +83,7 @@ sync_runtime_env_key SMTP_USER "${SMTP_USER}"
 sync_runtime_env_key SMTP_PASS "${SMTP_PASS}"
 sync_runtime_env_key SMTP_FROM "${SMTP_FROM:-GOTCHA <noreply@${DOMAIN}>}"
 sync_runtime_env_key SMTP_REPLY_TO "${SMTP_REPLY_TO}"
-for tg_key in TELEGRAM_BOT_TOKEN TELEGRAM_BOT_USERNAME TELEGRAM_WEBHOOK_SECRET TELEGRAM_MINI_APP_URL; do
+for tg_key in TELEGRAM_BOT_TOKEN TELEGRAM_BOT_USERNAME TELEGRAM_WEBHOOK_SECRET TELEGRAM_MINI_APP_URL TELEGRAM_MENU_BUTTON_ENABLED; do
   tg_val="$(get_env "$tg_key")"
   if [[ -n "$tg_val" ]]; then
     sync_runtime_env_key "$tg_key" "$tg_val"

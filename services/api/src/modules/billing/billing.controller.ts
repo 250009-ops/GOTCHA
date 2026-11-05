@@ -88,8 +88,8 @@ export class BillingController {
   /** Start an Atmos payment for a 30/365-day pass; card + OTP reuse imports/payments/:id/pre-apply|apply. */
   @Post('plus/checkout')
   @HttpCode(200)
-  plusCheckout(@CurrentUser() user: AuthUserPayload, @Body() body: { days?: number; acceptOferta?: boolean; promoCode?: string }) {
-    return this.importCommerce.plusCheckout(user.sub, Number(body?.days), body?.acceptOferta, body?.promoCode);
+  plusCheckout(@CurrentUser() user: AuthUserPayload, @Body() body: { days?: number; acceptOferta?: boolean }) {
+    return this.importCommerce.plusCheckout(user.sub, Number(body?.days), body?.acceptOferta);
   }
 
   @Public()

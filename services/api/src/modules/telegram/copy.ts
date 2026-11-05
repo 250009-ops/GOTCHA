@@ -196,7 +196,7 @@ export function resendCooldownText(locale: BotLocale): string {
   return 'Kodni qayta yuborish uchun bir daqiqa kuting.';
 }
 
-export const NOTIFICATION_KINDS = ['content', 'goal', 'vocab', 'message', 'streak', 'referral'] as const;
+export const NOTIFICATION_KINDS = ['content', 'goal', 'vocab', 'message', 'streak'] as const;
 export type BotNotificationKind = (typeof NOTIFICATION_KINDS)[number];
 
 export function notificationButton(locale: BotLocale, kind: string): { text: string; startapp: string } | null {
@@ -211,18 +211,19 @@ export function notificationButton(locale: BotLocale, kind: string): { text: str
       return { text: labels.vocab, startapp: 'mashq' };
     case 'message':
       return { text: labels.reply, startapp: 'chat' };
-    case 'referral':
-      return { text: labels.open, startapp: 'referral' };
     default:
       return null;
   }
 }
 
+/**
+ * startapp values the mini app will read in Phase 2:
+ * book_<id> → /tg/read/<id>, read → last book, mashq → /tg/practice, chat_<id> → /tg/messages?c=<id>.
+ */
 export function notificationStartApp(kind: string, refId?: string | null): string {
   if (kind === 'content' && refId) return `book_${refId}`;
   if (kind === 'message' && refId) return `chat_${refId}`;
   if (kind === 'goal' || kind === 'streak') return 'read';
   if (kind === 'vocab') return 'mashq';
-  if (kind === 'referral') return 'referral';
   return kind;
 }

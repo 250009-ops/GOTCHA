@@ -6,10 +6,9 @@ import { AuthController } from './auth.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from '../../common/guards';
 import { TelegramModule } from '../telegram/telegram.module';
-import { ReferralsModule } from '../referrals/referrals.module';
 
 @Module({
-  imports: [PassportModule.register({ defaultStrategy: 'jwt' }), TelegramModule, ReferralsModule],
+  imports: [PassportModule.register({ defaultStrategy: 'jwt' }), TelegramModule],
   controllers: [AuthController],
   providers: [
     AuthService,

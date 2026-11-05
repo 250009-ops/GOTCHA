@@ -73,14 +73,12 @@ async function onStart(
     return;
   }
 
-  const startParam = payload.startsWith('r_') ? payload : null;
   if (!linked) {
     await login.rememberVisitor({
       telegramId,
       firstName: from.first_name ?? '',
       lastName: from.last_name ?? '',
       username: from.username ?? null,
-      startParam,
     });
   }
   await send(welcomeCard(from, locale, Boolean(linked)));

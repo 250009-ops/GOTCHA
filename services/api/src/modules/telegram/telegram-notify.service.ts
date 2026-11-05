@@ -6,7 +6,7 @@ import { tashkentDayStart } from '../../common/tashkent-window';
 import { inTelegramQuietHours, TELEGRAM_DAILY_LIMIT } from './quiet';
 import { GrammySender, miniAppStartUrl } from './telegram-api';
 
-const BOT_KINDS = new Set(['content', 'goal', 'vocab', 'message', 'streak', 'referral']);
+const BOT_KINDS = new Set(['content', 'goal', 'vocab', 'message', 'streak']);
 
 @Injectable()
 export class TelegramNotifyService {
@@ -44,9 +44,7 @@ export class TelegramNotifyService {
     const startapp = item.kind === 'content' || item.kind === 'message'
       ? notificationStartApp(item.kind, item.refId)
       : notificationStartApp(item.kind);
-    const text = item.kind === 'referral' && item.body
-      ? escape(item.body)
-      : item.title && item.body && item.title !== item.body
+    const text = item.title && item.body && item.title !== item.body
         ? `<b>${escape(item.title)}</b>\n${escape(item.body)}`
         : escape(item.title || item.body);
     const result = await this.sender.send(user.telegramId, text, [[

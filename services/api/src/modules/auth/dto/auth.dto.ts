@@ -56,12 +56,6 @@ export class RegisterDto {
   @Min(1900)
   @Max(new Date().getUTCFullYear())
   birthYear?: number;
-
-  /** Set when the visitor arrived from /r/:code or the gotcha_ref cookie. */
-  @IsOptional()
-  @IsString()
-  @MaxLength(32)
-  referralCode?: string;
 }
 
 export class LoginDto {

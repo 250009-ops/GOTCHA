@@ -22,7 +22,6 @@ import { MarketingModule } from './modules/marketing/marketing.module';
 import { MessagingModule } from './modules/messaging/messaging.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { TelegramModule } from './modules/telegram/telegram.module';
-import { ReferralsModule } from './modules/referrals/referrals.module';
 
 import { HealthController } from './health.controller';
 
@@ -57,7 +56,6 @@ import { HealthController } from './health.controller';
     MessagingModule,
     NotificationsModule,
     TelegramModule,
-    ReferralsModule,
   ],
   controllers: [HealthController],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
