@@ -100,13 +100,20 @@ export function isTelegramDark(): boolean {
 }
 
 /** Paint the Telegram chrome + toggle html[data-tg-dark] (styles/telegram-dark.css) from Telegram's colour scheme. */
+/**
+ * Telegram dark theme is switched off for now: some pages still have light-only colours.
+ * Flip to true once telegram-dark.css covers every page (the CSS, reader and live switching are ready).
+ */
+const TG_DARK_ENABLED = false;
+
 function applyTheme(w: TgWebApp) {
-  const dark = w.colorScheme === 'dark';
+  const dark = TG_DARK_ENABLED && w.colorScheme === 'dark';
   const root = document.documentElement;
   if (dark) root.setAttribute('data-tg-dark', '');
   else root.removeAttribute('data-tg-dark');
   try {
-    w.setHeaderColor?.(dark ? '#17212b' : '#ffffff');
+    // Brand header: on Android the status-bar icons stay white, so a white header hid them (clock, battery).
+    w.setHeaderColor?.(dark ? '#17212b' : '#2107AA');
     w.setBackgroundColor?.(dark ? '#0e1621' : '#f6f7fb');
     w.setBottomBarColor?.(dark ? '#0e1621' : '#f6f7fb');
   } catch {

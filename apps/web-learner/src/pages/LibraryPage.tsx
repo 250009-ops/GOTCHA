@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Newspaper, Search, Upload, X } from 'lucide-react';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, Languages, List, Newspaper, Search, Upload, X } from 'lucide-react';
 import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
 import { Button } from '../components/ui/button';
 import { EmptyState } from '../components/EmptyState';
@@ -34,10 +34,34 @@ const LEVELS: Exclude<LevelFilter, ''>[] = ['A1–A2', 'B1–B2', 'C1–C2'];
 
 /** Browse filter strings not in the shared copy yet (uz / ru / en). */
 const LX = {
-  en: { allLangs: 'All languages', level: 'Level', anyLevel: 'Any', myImports: 'My imports', clear: 'Clear filters', results: (n: number) => `${n} ${n === 1 ? 'title' : 'titles'}`, language: 'Language' },
-  ru: { allLangs: 'Все языки', level: 'Уровень', anyLevel: 'Любой', myImports: 'Мои импорты', clear: 'Сбросить фильтры', results: (n: number) => `Найдено: ${n}`, language: 'Язык' },
-  uz: { allLangs: 'Barcha tillar', level: 'Daraja', anyLevel: 'Hammasi', myImports: 'Importlarim', clear: 'Filtrlarni tozalash', results: (n: number) => `${n} ta natija`, language: 'Til' },
+  en: { allLangs: 'All languages', level: 'Level', anyLevel: 'Any', myImports: 'My imports', clear: 'Clear filters', results: (n: number) => `${n} ${n === 1 ? 'title' : 'titles'}`, language: 'Language', chooseTitle: 'Choose a language', chooseBody: 'The library only shows the languages you are learning.', chooseAction: 'Choose a language' },
+  ru: { allLangs: 'Все языки', level: 'Уровень', anyLevel: 'Любой', myImports: 'Мои импорты', clear: 'Сбросить фильтры', results: (n: number) => `Найдено: ${n}`, language: 'Язык', chooseTitle: 'Выберите язык', chooseBody: 'В библиотеке только языки, которые вы учите.', chooseAction: 'Выбрать язык' },
+  uz: { allLangs: 'Barcha tillar', level: 'Daraja', anyLevel: 'Hammasi', myImports: 'Importlarim', clear: 'Filtrlarni tozalash', results: (n: number) => `${n} ta natija`, language: 'Til', chooseTitle: 'Tilni tanlang', chooseBody: 'Kutubxona faqat siz oʻrganayotgan tillarni koʻrsatadi.', chooseAction: 'Tilni tanlash' },
 };
+
+function ChooseLanguageCard({ title, body, action }: { title: string; body: string; action: string }) {
+  return (
+    <Link
+      to="/app/settings#languages"
+      data-testid="choose-language"
+      className="block rounded-2xl border border-[#c5cafd] bg-[#f4f3ff] p-5 hover:border-g-blue-700 transition-colors"
+    >
+      <div className="flex items-start gap-3">
+        <span className="size-10 rounded-xl bg-g-blue-700 text-white grid place-items-center shrink-0">
+          <Languages className="w-5 h-5" />
+        </span>
+        <span className="min-w-0">
+          <span className="block font-bold text-[#101828]">{title}</span>
+          <span className="block text-sm text-[#4a5565] mt-1">{body}</span>
+          <span className="inline-flex items-center gap-1 mt-3 text-sm font-semibold text-g-blue-700">
+            {action}
+            <ArrowRight className="w-4 h-4" />
+          </span>
+        </span>
+      </div>
+    </Link>
+  );
+}
 
 /** Legacy single `?filter=` plus the newer `?lang=` / `?level=` → three independent filters. */
 function splitFilters(params: URLSearchParams, languageTabs: string[], nativeCode: string | null) {
@@ -456,11 +480,15 @@ export default function LibraryPage() {
     .sort()
     .join(',');
 
+  // Only the languages the learner chose. Nothing else, and no fallback when none are chosen.
   const learnableLangCodes = useMemo(() => {
-    return catalogLangs
-      .map((l) => l.code.toLowerCase())
-      .filter((code) => Boolean(code) && code !== nativeCode);
-  }, [catalogLangs, nativeCode]);
+    const chosen = targetScopeKey ? targetScopeKey.split(',').filter(Boolean) : [];
+    const catalog = new Set(
+      catalogLangs.map((l) => l.code.toLowerCase()).filter((code) => Boolean(code) && code !== nativeCode),
+    );
+    return chosen.filter((code) => code !== nativeCode && (catalog.size === 0 || catalog.has(code)));
+  }, [catalogLangs, nativeCode, targetScopeKey]);
+  const noTargetLanguages = !targetScopeKey;
   const languageTabs = useMemo(
     () => learnableLangCodes.map((code) => code.toUpperCase()),
     [learnableLangCodes],
@@ -562,6 +590,11 @@ export default function LibraryPage() {
       if (!isBrowse) setCatalogItems([]);
       return;
     }
+    if (!targetScopeKey) {
+      setCatalogItems([]);
+      setCatalogLoading(false);
+      return;
+    }
     let cancelled = false;
     setCatalogLoading(true);
     setCatalogError(false);
@@ -593,6 +626,26 @@ export default function LibraryPage() {
     };
   }, [isBrowse, user, nativeCode, targetScopeKey, collectionSlug, catalogLangQuery, reloadKey]);
 
+  const allowedLangs = useMemo(() => new Set(learnableLangCodes), [learnableLangCodes]);
+  const inLanguageScope = (item: ContentItem) => {
+    if (isUserImport(item)) return true;
+    const lang = itemLanguage(item);
+    return Boolean(lang) && allowedLangs.has(lang);
+  };
+  const scopedHome = useMemo(() => {
+    const ok = (item: ContentItem) => {
+      if (isUserImport(item)) return true;
+      const lang = itemLanguage(item);
+      return Boolean(lang) && allowedLangs.has(lang);
+    };
+    const continueReading = (feed?.continueReading ?? []).filter(ok);
+    const recentlyPublished = (feed?.recentlyPublished ?? []).filter(ok);
+    const featuredCollections = (feed?.featuredCollections ?? [])
+      .map((c) => ({ ...c, items: c.items.filter((i) => i.content && ok(i.content)) }))
+      .filter((c) => c.items.length > 0);
+    return { continueReading, recentlyPublished, featuredCollections };
+  }, [feed, allowedLangs]);
+
   const uniqueItems = useMemo(() => {
     if (!feed) return [];
     return dedupeItems([
@@ -606,8 +659,10 @@ export default function LibraryPage() {
   const highlightId = searchParams.get('item');
   const highlightedItem = useMemo(() => {
     if (!highlightId) return null;
-    return uniqueItems.find((item) => item.id === highlightId) ?? null;
-  }, [highlightId, uniqueItems]);
+    const found = uniqueItems.find((item) => item.id === highlightId) ?? null;
+    if (!found || !inLanguageScope(found)) return null;
+    return found;
+  }, [highlightId, uniqueItems, allowedLangs]);
 
   useEffect(() => {
     if (!highlightedItem || isBrowse) return;
@@ -626,13 +681,8 @@ export default function LibraryPage() {
     return uniqueItems;
   }, [activeCollection, isBrowse, kindFilter, feed, catalogItems, uniqueItems]);
 
-  const allowedLangs = useMemo(() => new Set(learnableLangCodes), [learnableLangCodes]);
   const filtered = browseBaseItems.filter((item) => {
-    if (!isUserImport(item)) {
-      const lang = itemLanguage(item);
-      if (nativeCode && lang === nativeCode) return false;
-      if (allowedLangs.size > 0 && !allowedLangs.has(lang)) return false;
-    }
+    if (!inLanguageScope(item)) return false;
     return (
       matchesSearch(item, search) &&
       matchesFilter(item, kindFilter, languageTabs) &&
@@ -649,16 +699,14 @@ export default function LibraryPage() {
   });
   const filtersActive = kindFilter !== 'All' || Boolean(langFilter) || Boolean(levelFilter);
 
-  const hero = feed?.continueReading?.[0];
+  const hero = scopedHome.continueReading[0];
   // `??` does not fall through empty arrays — fill from recently published when continue-reading has ≤1 item
   const heroSideItems = useMemo(() => {
-    const continued = feed?.continueReading?.slice(1, 4) ?? [];
+    const continued = scopedHome.continueReading.slice(1, 4);
     if (continued.length > 0) return continued;
-    const heroId = feed?.continueReading?.[0]?.id;
-    return (feed?.recentlyPublished ?? [])
-      .filter((item) => item.id !== heroId)
-      .slice(0, 3);
-  }, [feed]);
+    const heroId = scopedHome.continueReading[0]?.id;
+    return scopedHome.recentlyPublished.filter((item) => item.id !== heroId).slice(0, 3);
+  }, [scopedHome]);
   const hour = new Date().getHours();
   const greetingText =
     hour < 12 ? copy.libraryPage.goodMorning : hour < 18 ? copy.libraryPage.goodAfternoon : copy.libraryPage.goodEvening;
@@ -667,7 +715,12 @@ export default function LibraryPage() {
   const libraryEmpty =
     isBrowse
       ? !loading && !catalogLoading && !catalogError && browseBaseItems.length === 0
-      : !loading && !feedError && uniqueItems.length === 0;
+      : !loading &&
+        !feedError &&
+        scopedHome.continueReading.length === 0 &&
+        scopedHome.recentlyPublished.length === 0 &&
+        (feed?.myImports?.length ?? 0) === 0 &&
+        scopedHome.featuredCollections.length === 0;
 
   const writeFilters = (next: { kind?: KindFilter; lang?: string; level?: LevelFilter }) => {
     const kind = next.kind ?? kindFilter;
@@ -849,7 +902,9 @@ export default function LibraryPage() {
           </div>
         )}
 
-        {catalogError && catalogItems.length === 0 ? (
+        {noTargetLanguages && kindFilter !== 'Imports' ? (
+          <ChooseLanguageCard title={lx.chooseTitle} body={lx.chooseBody} action={lx.chooseAction} />
+        ) : catalogError && catalogItems.length === 0 ? (
           <EmptyState
             icon={BookOpen}
             title={copy.libraryPage.loadErrorTitle}
@@ -923,6 +978,10 @@ export default function LibraryPage() {
         </div>
       </div>
 
+      {noTargetLanguages && (
+        <ChooseLanguageCard title={lx.chooseTitle} body={lx.chooseBody} action={lx.chooseAction} />
+      )}
+
       {highlightedItem && (
         <section className="space-y-3">
           <div>
@@ -963,14 +1022,14 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {(feed?.recentlyPublished?.length ?? 0) > 0 && (
+      {scopedHome.recentlyPublished.length > 0 && (
         <section>
           <SectionHeading
             title={copy.libraryPage.newInLibrary}
             onSeeAll={() => navigate('/app/browse')}
           />
           <div className="flex gap-4 overflow-x-auto pb-3 -mx-3 px-3 sm:mx-0 sm:px-0 scrollbar-hide snap-x snap-mandatory lg:grid lg:grid-cols-4 xl:grid-cols-5 lg:overflow-visible lg:pb-0 lg:gap-4 lg:snap-none">
-            {feed!.recentlyPublished.slice(0, 10).map((item) => (
+            {scopedHome.recentlyPublished.slice(0, 10).map((item) => (
               <div key={item.id} className="snap-start shrink-0 w-[8.5rem] sm:w-40 lg:w-auto lg:shrink">
                 <ContentCard item={item} compact highlighted={item.id === highlightId} />
               </div>
@@ -997,7 +1056,7 @@ export default function LibraryPage() {
         </section>
       )}
 
-      {feed?.featuredCollections?.map((collection) => {
+      {scopedHome.featuredCollections.map((collection) => {
         const items = collection.items.map((i) => i.content).filter(Boolean);
         if (!items.length) return null;
         return (
@@ -1029,7 +1088,7 @@ export default function LibraryPage() {
         />
       )}
 
-      {libraryEmpty && (
+      {libraryEmpty && !noTargetLanguages && (
         <div className="space-y-4">
           <EmptyState
             icon={BookOpen}
@@ -1051,7 +1110,7 @@ export default function LibraryPage() {
         </div>
       )}
 
-      {!feedError && !libraryEmpty && (!feed?.featuredCollections?.length || feed.featuredCollections.every((c) => !c.items.length)) && !(feed?.recentlyPublished?.length) && (
+      {!feedError && !libraryEmpty && !noTargetLanguages && scopedHome.featuredCollections.length === 0 && scopedHome.recentlyPublished.length === 0 && (
         <section>
           <SectionHeading
             title={copy.libraryPage.browseTitle}

@@ -75,6 +75,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [tgCode, setTgCode] = useState<TelegramCodeStep | null>(null);
   const [tgLink, setTgLink] = useState<{ token: string; deepLink: string } | null>(null);
   const [tgLinkBusy, setTgLinkBusy] = useState(false);
+  const [phoneLoginHelp, setPhoneLoginHelp] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
   // Native starts as the UI language. Target comes from the landing `lang` query.
@@ -227,6 +228,11 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
           { pathname: '/login', search: q ? `?${q}` : '' },
           { replace: true, state: { email } },
         );
+        return;
+      }
+      // Phone sign-in failed: a phone account exists only if it was opened in the Telegram bot — say so clearly.
+      if (isLogin && email.trim() && !email.includes('@') && (e.status === 401 || e.status === 400)) {
+        setPhoneLoginHelp(true);
         return;
       }
       toast.error(err instanceof Error ? err.message : copy.authToasts.authFailed);
@@ -424,7 +430,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                   autoCorrect="off"
                   spellCheck={false}
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => { setEmail(e.target.value); setPhoneLoginHelp(false); }}
                   placeholder={isLogin ? tx.identifierPlaceholder : copy.auth.emailPlaceholder}
                   className={inputCls}
                 />
@@ -486,6 +492,15 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     copy.common.continue
                   )}
               </Button>
+              {isLogin && phoneLoginHelp && (
+                <div role="alert" className="-mt-1.5 rounded-xl border border-[#fde68a] bg-[#fffbeb] p-3.5 text-[13px] leading-relaxed text-[#92400e]">
+                  <b className="block text-[13.5px]">{tx.phoneLoginFailTitle}</b>
+                  {tx.phoneLoginFailBody}
+                  <a href={telegramBotLink('signup')} target="_blank" rel="noopener noreferrer" className="mt-1.5 inline-block font-bold text-[#1d5f96] underline underline-offset-2">
+                    {tx.signupWithBot}
+                  </a>
+                </div>
+              )}
               {isLogin && !adminReturnUrl && (
                 <button type="button" onClick={() => void startBotLogin()} disabled={tgLinkBusy} className={`-mt-1.5 ${telegramButtonCls}`}>
                   <TelegramBadge />

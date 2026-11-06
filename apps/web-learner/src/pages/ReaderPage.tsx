@@ -1,4 +1,3 @@
-import { ReportButton } from '../components/safety/SafetyActions';
 import { handleLimitError } from '../lib/limits';
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
@@ -11,11 +10,9 @@ import {
   ChevronRight,
   Eye,
   EyeOff,
-  Flag,
   GraduationCap,
   Loader2,
   Minus,
-  MoreHorizontal,
   Type,
   PanelLeftClose,
   PanelLeftOpen,
@@ -1094,20 +1091,6 @@ export default function ReaderPage() {
         <div className="hidden lg:block w-px h-5 bg-[#e5e7eb] shrink-0" />
 
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowUnknownOnly((v) => !v)}
-            className={cn(
-              'inline-flex items-center gap-1.5 h-9 px-2.5 rounded-[10px] text-xs font-semibold transition-colors',
-              showUnknownOnly ? 'bg-g-blue-50 text-g-blue-700' : 'hover:bg-gray-100 text-[#4a5565]',
-            )}
-            aria-pressed={showUnknownOnly}
-            title={copy.reader.unknownOnlyTitle}
-          >
-            <Eye className="w-4 h-4" />
-            <span className="hidden xl:inline">{copy.reader.unknownOnly}</span>
-          </button>
-
           <div ref={displayRef} className="relative">
             <button
               type="button"
@@ -1165,6 +1148,15 @@ export default function ReaderPage() {
                     <span className={cn('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', ttsOn ? 'left-[18px]' : 'left-0.5')} />
                   </button>
                 </div>
+                {/* Was an unlabeled eye icon in the toolbar: now a named switch here. */}
+                <div className="flex items-center justify-between gap-3">
+                  <span className="min-w-0">
+                    <span className="text-sm font-medium text-[#101828] inline-flex items-center gap-2"><Eye className="w-4 h-4 text-[#6b7080]" />{copy.reader.unknownOnlyTitle}</span>
+                  </span>
+                  <button type="button" role="switch" aria-checked={showUnknownOnly} aria-label={copy.reader.unknownOnlyTitle} onClick={() => setShowUnknownOnly((v) => !v)} className={cn('relative w-10 h-6 rounded-full transition-colors shrink-0', showUnknownOnly ? 'bg-g-blue-700' : 'bg-[#d6d9e3]')}>
+                    <span className={cn('absolute top-0.5 size-5 rounded-full bg-white shadow transition-all', showUnknownOnly ? 'left-[18px]' : 'left-0.5')} />
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -1188,27 +1180,6 @@ export default function ReaderPage() {
             <span className="hidden sm:inline">{copy.reader.practice}</span>
           </button>
 
-          {/* Report stays reachable (Play policy for AI / user content) but out of the toolbar. */}
-          <div ref={moreRef} className="relative">
-            <button
-              type="button"
-              onClick={() => { setMoreOpen((v) => !v); setDisplayOpen(false); }}
-              aria-expanded={moreOpen}
-              aria-haspopup="menu"
-              aria-label={rx.more}
-              className="inline-flex items-center justify-center size-9 rounded-[10px] hover:bg-gray-100 text-[#6b7080]"
-            >
-              <MoreHorizontal className="w-4 h-4" />
-            </button>
-            <div className={cn('absolute right-0 top-11 z-40 w-56 bg-white border border-[#e9ebf3] rounded-xl shadow-[0_18px_40px_rgba(16,24,40,.14)] p-1.5', !moreOpen && 'hidden')} role="menu">
-              <ReportButton lang={locale}
-                target={{ kind: 'content', contentId: content.id }}
-                icon={<Flag className="w-4 h-4" />}
-                name={content.title}
-                className="w-full flex items-center gap-2.5 h-10 px-3 rounded-lg text-sm font-medium text-[#101828] hover:bg-[#f6f7fb]"
-              />
-            </div>
-          </div>
         </div>
       </header>
 

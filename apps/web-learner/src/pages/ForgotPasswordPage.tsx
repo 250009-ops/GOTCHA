@@ -9,13 +9,14 @@ import { openEmailInbox } from '../lib/emailInbox';
 import { MARKETING_URL, isAllowedAdminReturnUrl } from '../lib/links';
 import { authFlowSearch, loginPathWithReturn } from '../lib/authRoutes';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
-import { telegramAuthCopy } from '../components/auth/TelegramAuth';
+import { CodeInput, telegramAuthCopy, telegramButtonCls, TelegramBadge } from '../components/auth/TelegramAuth';
+import { telegramBotLink } from '../lib/telegram';
 
 /** Phone (Telegram) reset strings (uz / ru / en). */
 const FX = {
-  uz: { title: 'Telegramdagi kodni kiriting', body: (p: string) => `${p} raqamli hisob uchun Gotcha botiga 6 xonali kod yubordik.`, code: 'Kod', newPw: 'Yangi parol', pwRule: 'Kamida 8 ta belgi', save: 'Parolni yangilash', done: 'Parol yangilandi. Endi kirishingiz mumkin.', maybe: 'Agar bu raqam bilan hisob boʻlsa, kod Telegramga yuborildi.' },
-  ru: { title: 'Введите код из Telegram', body: (p: string) => `Мы отправили 6-значный код в бота Gotcha для аккаунта ${p}.`, code: 'Код', newPw: 'Новый пароль', pwRule: 'Минимум 8 символов', save: 'Обновить пароль', done: 'Пароль обновлён. Теперь можно войти.', maybe: 'Если аккаунт с этим номером есть, код отправлен в Telegram.' },
-  en: { title: 'Enter the code from Telegram', body: (p: string) => `We sent a 6-digit code to the Gotcha bot for ${p}.`, code: 'Code', newPw: 'New password', pwRule: 'At least 8 characters', save: 'Update password', done: 'Password updated. You can sign in now.', maybe: 'If an account exists for this number, we sent a code to Telegram.' },
+  uz: { title: 'Telegramdagi kodni kiriting', body: (p: string) => `${p} raqamli hisob uchun Gotcha botiga 6 xonali kod yubordik.`, code: 'Kod', newPw: 'Yangi parol', pwRule: 'Kamida 8 ta belgi', save: 'Parolni yangilash', done: 'Parol yangilandi. Endi kirishingiz mumkin.', maybe: 'Agar bu raqam bilan hisob boʻlsa, kod Telegramga yuborildi.', notFound: 'Bu raqam bilan hisob topilmadi. Telefon raqam bilan hisob faqat Telegram botimiz orqali ochiladi.' },
+  ru: { title: 'Введите код из Telegram', body: (p: string) => `Мы отправили 6-значный код в бота Gotcha для аккаунта ${p}.`, code: 'Код', newPw: 'Новый пароль', pwRule: 'Минимум 8 символов', save: 'Обновить пароль', done: 'Пароль обновлён. Теперь можно войти.', maybe: 'Если аккаунт с этим номером есть, код отправлен в Telegram.', notFound: 'Аккаунт с этим номером не найден. Аккаунт по номеру телефона создаётся только через нашего Telegram-бота.' },
+  en: { title: 'Enter the code from Telegram', body: (p: string) => `We sent a 6-digit code to the Gotcha bot for ${p}.`, code: 'Code', newPw: 'New password', pwRule: 'At least 8 characters', save: 'Update password', done: 'Password updated. You can sign in now.', maybe: 'If an account exists for this number, we sent a code to Telegram.', notFound: 'No account was found for this number. Phone accounts are created only in our Telegram bot.' },
 };
 
 /** Figma 187:8 — Reset password request (email → send link). */
@@ -34,6 +35,7 @@ export default function ForgotPasswordPage() {
   const fx = FX[locale === 'ru' || locale === 'en' ? locale : 'uz'];
   const isPhone = !!email.trim() && !email.includes('@');
   const [phoneReset, setPhoneReset] = useState<{ challengeId: string; maskedPhone: string } | null>(null);
+  const [phoneNotFound, setPhoneNotFound] = useState(false);
   const [resetCode, setResetCode] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
@@ -60,7 +62,7 @@ export default function ForgotPasswordPage() {
           body: JSON.stringify({ identifier: email.trim(), clientPlatform: 'web' }),
         });
         if (r.challengeId && r.maskedPhone) setPhoneReset({ challengeId: r.challengeId, maskedPhone: r.maskedPhone });
-        else toast.message(fx.maybe);
+        else setPhoneNotFound(true);
         return;
       }
       await api('/auth/forgot-password', {
@@ -121,17 +123,10 @@ export default function ForgotPasswordPage() {
                 <h2 className="text-[26px] font-extrabold tracking-tight text-[#101828] leading-8">{fx.title}</h2>
                 <p className="text-[#6b7280] text-sm leading-5">{fx.body(phoneReset.maskedPhone)}</p>
               </div>
-              <label className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
                 <span className="text-sm font-semibold text-[#4a5565]">{fx.code}</span>
-                <input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={7}
-                  value={resetCode}
-                  onChange={(e) => setResetCode(e.target.value.replace(/[^\d ]/g, ''))}
-                  className="w-full h-12 px-3.5 bg-white border border-[#dfe2ec] rounded-xl text-[20px] font-bold tracking-[0.3em] text-[#101828] outline-none focus:border-g-blue-700 focus:ring-4 focus:ring-g-blue-700/10"
-                />
-              </label>
+                <CodeInput value={resetCode} onChange={setResetCode} label={tx.digit} />
+              </div>
               <label className="flex flex-col gap-2">
                 <span className="text-sm font-semibold text-[#4a5565]">{fx.newPw}</span>
                 <input
@@ -172,7 +167,7 @@ export default function ForgotPasswordPage() {
                   <input
                     type="text"
                     value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    onChange={(e) => { setEmail(e.target.value); setPhoneNotFound(false); }}
                     placeholder={tx.identifierPlaceholder}
                     autoComplete="username"
                     className="w-full h-12 pl-11 pr-3.5 bg-white border border-[#dfe2ec] rounded-xl text-[15px] text-[#101828] placeholder:text-[#9aa0ae] hover:border-[#c5cafd] outline-none focus:border-g-blue-700 focus:ring-4 focus:ring-g-blue-700/10 transition-all"
@@ -193,6 +188,15 @@ export default function ForgotPasswordPage() {
                     copy.authPages.sendResetLink
                   )}
                 </Button>
+                {phoneNotFound && isPhone && (
+                  <div role="alert" className="flex flex-col gap-2.5 rounded-xl border border-[#fde68a] bg-[#fffbeb] p-3.5">
+                    <p className="text-[13px] leading-relaxed text-[#92400e]">{fx.notFound}</p>
+                    <a href={telegramBotLink('signup')} target="_blank" rel="noopener noreferrer" className={telegramButtonCls}>
+                      <TelegramBadge />
+                      {tx.signupWithBot}
+                    </a>
+                  </div>
+                )}
               </form>
 
               <div className="flex items-center justify-between text-[13px] whitespace-nowrap">

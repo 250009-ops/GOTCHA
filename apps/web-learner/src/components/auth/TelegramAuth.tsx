@@ -31,6 +31,8 @@ export const TX = {
     denied: 'Kirish rad etildi.',
     linkExpired: 'Havola muddati tugadi. Qayta urinib koʻring.',
     unavailable: 'Telegram orqali kirish hozircha ishlamayapti.',
+    phoneLoginFailTitle: 'Telefon raqam yoki parol notoʻgʻri.',
+    phoneLoginFailBody: 'Telefon raqam bilan hisob faqat Telegram botimiz orqali ochiladi. Hali roʻyxatdan oʻtmagan boʻlsangiz, botda 1 daqiqada roʻyxatdan oʻting.',
   },
   ru: {
     identifier: 'Email или номер телефона',
@@ -56,6 +58,8 @@ export const TX = {
     denied: 'Вход отклонён.',
     linkExpired: 'Срок ссылки истёк. Попробуйте ещё раз.',
     unavailable: 'Вход через Telegram сейчас недоступен.',
+    phoneLoginFailTitle: 'Неверный номер телефона или пароль.',
+    phoneLoginFailBody: 'Аккаунт по номеру телефона создаётся только через нашего Telegram-бота. Если вы ещё не зарегистрированы, сделайте это в боте за 1 минуту.',
   },
   en: {
     identifier: 'Email or phone number',
@@ -81,6 +85,8 @@ export const TX = {
     denied: 'Sign-in was declined.',
     linkExpired: 'The link expired. Please try again.',
     unavailable: 'Telegram sign-in is not available right now.',
+    phoneLoginFailTitle: 'Wrong phone number or password.',
+    phoneLoginFailBody: 'Phone accounts are created only in our Telegram bot. If you haven’t signed up yet, do it in the bot in a minute.',
   },
 };
 export type TelegramAuthCopy = (typeof TX)['uz'];
@@ -104,6 +110,34 @@ export function TelegramBadge() {
       <TelegramGlyph />
     </span>
   );
+}
+
+
+/**
+ * One box changed. Handles: a single digit; typing over a filled box (value becomes 2 chars);
+ * paste / keyboard autofill of the whole code, including the bot's spaced format "126 799"
+ * (the boxes have no maxLength, so nothing gets cut off before we strip the non-digits).
+ */
+export function applyDigitInput(digits: string[], i: number, raw: string): { next: string[]; focus: number } {
+  let only = raw.replace(/\D/g, '');
+  // A paste into a box that already had a digit arrives as that digit + the code: keep the last 6.
+  if (only.length > 6) only = only.slice(-6);
+  const next = [...digits];
+  if (only.length <= 1) {
+    next[i] = only;
+    return { next, focus: only ? Math.min(i + 1, 5) : i };
+  }
+  if (only.length === 2 && digits[i]) {
+    next[i] = only[0] === digits[i] ? only[1] : only[0];
+    return { next, focus: Math.min(i + 1, 5) };
+  }
+  // Paste / autofill: a full code always fills from the first box.
+  const start = only.length >= 6 ? 0 : i;
+  const chars = only.slice(0, 6 - start).split('');
+  chars.forEach((c, k) => {
+    next[start + k] = c;
+  });
+  return { next, focus: Math.min(start + chars.length, 5) };
 }
 
 const RESEND_SECONDS = 60;
@@ -160,20 +194,9 @@ export function TelegramCodeCard({
   };
 
   const setAt = (i: number, raw: string) => {
-    const only = raw.replace(/\D/g, '');
-    if (only.length > 1) {
-      // Paste of the whole code.
-      const next = only.slice(0, 6).split('');
-      while (next.length < 6) next.push('');
-      setDigits(next);
-      refs.current[Math.min(only.length, 6) - 1]?.focus();
-      if (only.length >= 6) void submit(only.slice(0, 6));
-      return;
-    }
-    const next = [...digits];
-    next[i] = only;
+    const { next, focus } = applyDigitInput(digits, i, raw);
     setDigits(next);
-    if (only && i < 5) refs.current[i + 1]?.focus();
+    refs.current[focus]?.focus();
     if (next.every(Boolean)) void submit(next.join(''));
   };
 
@@ -213,7 +236,6 @@ export function TelegramCodeCard({
             inputMode="numeric"
             autoComplete={i === 0 ? 'one-time-code' : 'off'}
             aria-label={t.digit(i + 1)}
-            maxLength={6}
             value={d}
             onChange={(e) => setAt(i, e.target.value)}
             onKeyDown={(e) => {
@@ -323,17 +345,11 @@ export function CodeInput({
   const refs = useRef<Array<HTMLInputElement | null>>([]);
   const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? '');
   const put = (i: number, raw: string) => {
-    const only = raw.replace(/\D/g, '');
-    let next: string;
-    if (only.length > 1) next = only.slice(0, 6);
-    else {
-      const arr = [...digits];
-      arr[i] = only;
-      next = arr.join('').slice(0, 6);
-      if (only && i < 5) refs.current[i + 1]?.focus();
-    }
+    const r = applyDigitInput(digits, i, raw);
+    const next = r.next.join('');
+    refs.current[r.focus]?.focus();
     onChange(next);
-    if (next.length === 6) onComplete?.(next);
+    if (r.next.every(Boolean)) onComplete?.(next);
   };
   return (
     <div className="grid grid-cols-6 gap-2" onPaste={(e) => { e.preventDefault(); put(0, e.clipboardData.getData('text')); }}>
@@ -344,7 +360,6 @@ export function CodeInput({
           inputMode="numeric"
           autoComplete={i === 0 ? 'one-time-code' : 'off'}
           aria-label={label(i + 1)}
-          maxLength={6}
           value={d}
           onChange={(e) => put(i, e.target.value)}
           onKeyDown={(e) => {

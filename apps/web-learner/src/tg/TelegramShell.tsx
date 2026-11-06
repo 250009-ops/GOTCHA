@@ -31,7 +31,8 @@ export default function TelegramShell() {
   const [due, setDue] = useState(0);
 
   const isRoot = TG_TAB_ROOTS.includes(path);
-  const showTabs = !NO_TABBAR.some((p) => path.startsWith(p));
+  // Tabs only on the 5 main screens; sub-pages (Statistika, Xabarlar, Plus…) use Telegram's back button.
+  const showTabs = isRoot && !NO_TABBAR.some((p) => path.startsWith(p));
 
   useEffect(() => {
     if (!user || !getAccessToken()) return;

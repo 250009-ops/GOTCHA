@@ -10,10 +10,11 @@ const del = r('src/components/safety/DeleteAccount.tsx');
 const copy = r('../../packages/shared/src/learnerCopy.ts');
 const ext = r('../../packages/shared/src/learnerCopyExt.ts');
 
-test('WL4-05: Settings App language, Delete, AI switch and reader Report follow the active UI locale', () => {
+test('WL4-05: Settings App language, Delete and AI switch follow the active UI locale', () => {
   assert.match(settings, /value=\{locale\}/);
   assert.match(settings, /<DeleteAccount lang=\{locale\}/);
-  assert.match(reader, /<ReportButton lang=\{locale\}/);
+  // Reader no longer has a Report action (owner decision, web + Telegram; the Android app keeps its own).
+  assert.doesNotMatch(reader, /<ReportButton/);
   assert.doesNotMatch(settings + reader, /lang=\{user\?\.uiLanguage\}/);
 });
 test('WL4-06: no English leftovers in uz', () => {
