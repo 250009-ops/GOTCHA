@@ -695,6 +695,11 @@ export class AuthService {
     return { phone: null, verified: false as const };
   }
 
+  async sendTelegramSignupCode(initData: string) {
+    if (!this.telegram) throw new BadRequestException('Telegram sign-up is not available.');
+    return this.telegram.sendSignupCode(initData);
+  }
+
   async registerTelegram(dto: TelegramRegisterDto, ip?: string) {
     if (!this.telegram) throw new BadRequestException('Telegram sign-up is not available.');
     if (dto.acceptTerms !== true || (dto.acceptAi !== true && dto.acceptAiConsent !== true)) {
@@ -714,6 +719,7 @@ export class AuthService {
     if (takenPhone) throw new ConflictException({ statusCode: 409, code: 'PHONE_ALREADY_REGISTERED', message: 'This phone number is already registered.' });
     const takenTelegram = await this.prisma.user.findUnique({ where: { telegramId }, select: { id: true } });
     if (takenTelegram) throw new ConflictException({ statusCode: 409, code: 'TELEGRAM_ALREADY_LINKED', message: 'This Telegram account is already linked.' });
+    await this.telegram.verifySignupCode(telegramId, dto.code);
 
     await assertEnabledLanguage(this.prisma, dto.nativeLanguage, 'Native language');
     for (const lang of dto.targetLanguages) {
@@ -764,6 +770,7 @@ export class AuthService {
     if (freePlan) {
       await this.prisma.userSubscription.create({ data: { userId: user.id, planId: freePlan.id, status: 'active' } });
     }
+    await this.telegram.clearSignupCode(telegramId);
     await this.telegram.deletePending(telegramId);
     const tokens = await this.issueTokens(user.id, null);
     return { user: this.sanitizeUser(user), ...tokens };

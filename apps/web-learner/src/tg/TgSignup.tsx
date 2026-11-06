@@ -9,6 +9,7 @@ import { useCatalogLanguages } from '../lib/catalogLanguages';
 import { LanguageSearchInput } from '../components/LanguageSearchInput';
 import { SignupSafetyFields } from '../components/safety/SignupSafetyFields';
 import { CONSENT_VERSION } from '../components/safety/signupConsent';
+import { CodeInput } from '../components/auth/TelegramAuth';
 import { type AppLanguage } from '../lib/types';
 import { getWebApp, haptic, markTelegramMode, setupWebApp, tgInitData, waitForWebApp } from '../lib/telegram';
 import { tgCopyFor } from './tgCopy';
@@ -55,6 +56,11 @@ export default function TgSignup() {
   const [birthYear, setBirthYear] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const poll = useRef<number | null>(null);
+  // Verification code the bot sends once the phone is shared (required by /auth/telegram/register).
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [cooldown, setCooldown] = useState(0);
+  const codeRequested = useRef(false);
 
   useEffect(() => {
     // Reload on this screen: make sure the SDK is ready and the name is prefilled.
@@ -73,6 +79,41 @@ export default function TgSignup() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const id = window.setTimeout(() => setCooldown((c) => c - 1), 1000);
+    return () => window.clearTimeout(id);
+  }, [cooldown]);
+
+  const requestCode = async () => {
+    const initData = tgInitData();
+    if (!initData) return;
+    setCodeError(null);
+    try {
+      const r = await api<{ sent: boolean; resendIn?: number }>('/auth/telegram/signup-code', {
+        method: 'POST',
+        body: JSON.stringify({ initData }),
+      });
+      setCooldown(r.resendIn ?? 60);
+    } catch (err) {
+      const e2 = err as Error & { status?: number; code?: string };
+      if (e2.status === 429) setCooldown(60);
+      else if (e2.status === 409) {
+        toast.error(t.phoneTaken);
+        navigate('/tg/login', { replace: true });
+      } else toast.error(e2.message || t.sessionError);
+    }
+  };
+
+  // As soon as the phone is known, ask the bot to send the code (once; "resend" handles the rest).
+  useEffect(() => {
+    if (phone && !codeRequested.current) {
+      codeRequested.current = true;
+      void requestCode();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [phone]);
 
   useEffect(() => {
     if (nativeLanguage) setTargetLanguages((prev) => prev.filter((l) => l !== nativeLanguage));
@@ -127,6 +168,10 @@ export default function TgSignup() {
       toast.error(t.phoneNeeded);
       return;
     }
+    if (code.length !== 6) {
+      setCodeError(t.codeNeeded);
+      return;
+    }
     if (!fullName.trim() || password.length < 8) return;
     setStep(2);
     window.scrollTo({ top: 0 });
@@ -143,6 +188,7 @@ export default function TgSignup() {
           initData: tgInitData(),
           fullName: fullName.trim(),
           password,
+          code,
           nativeLanguage,
           targetLanguages,
           acceptTerms,
@@ -163,6 +209,13 @@ export default function TgSignup() {
     } catch (err) {
       const e2 = err as Error & { status?: number };
       haptic('error');
+      const errCode = (err as { code?: string }).code;
+      if (errCode === 'telegram_code_invalid' || errCode === 'telegram_code_expired') {
+        setCode('');
+        setCodeError(errCode === 'telegram_code_expired' ? t.codeExpired : t.codeWrong);
+        setStep(1);
+        return;
+      }
       if (e2.status === 409) {
         toast.error(t.phoneTaken);
         navigate('/tg/login', { replace: true });
@@ -175,7 +228,7 @@ export default function TgSignup() {
   };
 
   const pwOk = password.length >= 8;
-  const step1Ready = !!phone && !!fullName.trim() && pwOk;
+  const step1Ready = !!phone && code.length === 6 && !!fullName.trim() && pwOk;
 
   return (
     <div className="min-h-[100dvh] bg-[#f6f7fb] font-sans text-[#101828]">
@@ -207,6 +260,23 @@ export default function TgSignup() {
                     <span className="flex items-center gap-1 text-xs font-bold text-[#047857]"><Check className="w-[15px] h-[15px]" strokeWidth={2.6} />{t.fromTelegram}</span>
                   </div>
                   <span className="text-xs text-[#6b7080]">{t.phoneNote}</span>
+                  <div className="mt-2 flex flex-col gap-2">
+                    <span className="text-[13.5px] font-semibold text-[#4a5565]">{t.codeLabel}</span>
+                    <CodeInput value={code} onChange={(v) => { setCode(v); setCodeError(null); }} label={t.digit} invalid={!!codeError} />
+                    {codeError ? (
+                      <span role="alert" className="text-xs font-medium text-[#dc2626]">{codeError}</span>
+                    ) : (
+                      <span className="text-xs text-[#6b7080]">{t.codeSent}</span>
+                    )}
+                    <button
+                      type="button"
+                      disabled={cooldown > 0}
+                      onClick={() => void requestCode()}
+                      className="self-start min-h-9 text-[13px] font-semibold text-g-blue-700 disabled:text-[#9aa0ae]"
+                    >
+                      {cooldown > 0 ? t.codeResendIn(`${Math.floor(cooldown / 60)}:${String(cooldown % 60).padStart(2, '0')}`) : t.codeResend}
+                    </button>
+                  </div>
                 </>
               ) : (
                 <button

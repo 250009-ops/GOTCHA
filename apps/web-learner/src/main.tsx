@@ -9,6 +9,7 @@ import { LearnerLocaleProvider } from './lib/learnerLocaleContext';
 import { DocumentTitle } from './components/DocumentTitle';
 import { DailyLimitNotice } from './components/DailyLimitNotice';
 import './styles/index.css';
+import './styles/telegram-dark.css';
 
 const basename = import.meta.env.BASE_URL.replace(/\/$/, '') || undefined;
 

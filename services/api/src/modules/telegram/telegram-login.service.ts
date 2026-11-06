@@ -10,7 +10,7 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { maskPhone, normalizePhone } from '../../common/phone';
 import { PrismaService } from '../../prisma/prisma.service';
-import { botLocale, codeErrorText, loginCodeHtml, resendCooldownText, type BotLocale } from './copy';
+import { botLocale, codeErrorText, loginCodeHtml, resendCooldownText, signupCodeText, type BotLocale } from './copy';
 import { CODE_TTL_MS, MAX_CODE_ATTEMPTS, RESEND_COOLDOWN_MS, codeMatches, hashLoginCode, randomLinkToken, randomLoginCode } from './code-hash';
 import { botDeepLink, GrammySender, learnerForgotUrl, miniAppUrl } from './telegram-api';
 import { botButtons, loginConfirmHtml, notLinkedHtml, passwordMayBeKnownHtml, phoneTakenHtml } from './copy';
@@ -18,6 +18,11 @@ import { parseDevice } from './device';
 import { validateInitData, type InitDataResult } from './init-data';
 
 type ChallengePurpose = 'login' | 'reset';
+
+/** Salt for the pending-signup code. Same hash as a login code, scoped to this Telegram user. */
+function signupCodeId(telegramId: bigint): string {
+  return `signup:${telegramId.toString()}`;
+}
 
 export interface CodeChallengeResult {
   step: 'telegram_code';
@@ -121,6 +126,76 @@ export class TelegramLoginService {
       text: phoneTakenHtml(locale),
       rows: [[{ text: botButtons(locale).login, webApp: miniAppUrl('/login') }]],
     };
+  }
+
+  /**
+   * Sends a 6-digit sign-up code to this Telegram user.
+   * The phone must already be on the pending row. A second call inside 60s is refused.
+   */
+  async sendSignupCode(initData: string): Promise<{ sent: true; resendIn: 60 }> {
+    const checked = this.checkInitData(initData);
+    const telegramId = BigInt(checked.user.id);
+    const pending = await this.pending(telegramId);
+    if (!pending?.phone || !pending.phoneSharedAt) {
+      throw new BadRequestException({ code: 'telegram_phone_required', message: 'share phone first' });
+    }
+    const takenPhone = await this.prisma.user.findUnique({ where: { phone: pending.phone }, select: { id: true } });
+    if (takenPhone) {
+      throw new ConflictException({ statusCode: 409, code: 'PHONE_ALREADY_REGISTERED', message: 'This phone number is already registered.' });
+    }
+    const locale = botLocale(checked.user.language_code);
+    if (pending.codeSentAt && Date.now() - pending.codeSentAt.getTime() < RESEND_COOLDOWN_MS) {
+      throw new HttpException(
+        { statusCode: 429, code: 'telegram_code_resend_cooldown', message: resendCooldownText(locale) },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    const code = randomLoginCode();
+    const now = new Date();
+    await this.prisma.telegramPendingSignup.update({
+      where: { telegramId },
+      data: {
+        codeHash: hashLoginCode(code, signupCodeId(telegramId)),
+        codeExpiresAt: new Date(now.getTime() + CODE_TTL_MS),
+        codeAttempts: 0,
+        codeSentAt: now,
+      },
+    });
+    await this.sender.send(telegramId, signupCodeText(locale, code));
+    return { sent: true, resendIn: 60 };
+  }
+
+  /** Checks the sign-up code. Does not clear it; register clears it after the user exists. */
+  async verifySignupCode(telegramId: bigint, code: string | undefined | null) {
+    const digits = (code ?? '').replace(/\D/g, '');
+    if (digits.length !== 6) {
+      throw new BadRequestException({ code: 'telegram_code_invalid', message: codeErrorText('uz', 'invalid') });
+    }
+    const row = await this.pending(telegramId);
+    const attempts = row?.codeAttempts ?? 0;
+    if (!row?.codeHash || !row.codeExpiresAt || row.codeExpiresAt.getTime() <= Date.now() || attempts >= MAX_CODE_ATTEMPTS) {
+      throw new BadRequestException({ code: 'telegram_code_expired', message: codeErrorText('uz', 'expired') });
+    }
+    if (!codeMatches(digits, signupCodeId(telegramId), row.codeHash)) {
+      const next = attempts + 1;
+      await this.prisma.telegramPendingSignup.update({
+        where: { telegramId },
+        data: { codeAttempts: next },
+      });
+      if (next >= MAX_CODE_ATTEMPTS) {
+        throw new BadRequestException({ code: 'telegram_code_expired', message: codeErrorText('uz', 'expired') });
+      }
+      throw new BadRequestException({ code: 'telegram_code_invalid', message: codeErrorText('uz', 'invalid') });
+    }
+  }
+
+  async clearSignupCode(telegramId: bigint) {
+    await this.prisma.telegramPendingSignup.update({
+      where: { telegramId },
+      data: { codeHash: null, codeExpiresAt: null, codeAttempts: 0, codeSentAt: null },
+    }).catch((error: { code?: string }) => {
+      if (error?.code !== 'P2025') throw error;
+    });
   }
 
   async createCodeChallenge(input: {

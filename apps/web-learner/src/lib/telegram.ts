@@ -1,3 +1,5 @@
+import { useEffect, useState } from 'react';
+
 /**
  * Telegram Mini App bridge (https://core.telegram.org/bots/webapps).
  * The SDK script is injected by index.html only when the page is opened inside Telegram,
@@ -90,19 +92,44 @@ export function waitForWebApp(timeoutMs = 3000): Promise<TgWebApp | null> {
   });
 }
 
-/** One-time setup for the Telegram chrome. The app stays light (dark mode does not cover every page yet). */
+let themeBound = false;
+
+/** True when the Mini App follows Telegram's dark theme. */
+export function isTelegramDark(): boolean {
+  return typeof document !== 'undefined' && document.documentElement.hasAttribute('data-tg-dark');
+}
+
+/** Paint the Telegram chrome + toggle html[data-tg-dark] (styles/telegram-dark.css) from Telegram's colour scheme. */
+function applyTheme(w: TgWebApp) {
+  const dark = w.colorScheme === 'dark';
+  const root = document.documentElement;
+  if (dark) root.setAttribute('data-tg-dark', '');
+  else root.removeAttribute('data-tg-dark');
+  try {
+    w.setHeaderColor?.(dark ? '#17212b' : '#ffffff');
+    w.setBackgroundColor?.(dark ? '#0e1621' : '#f6f7fb');
+    w.setBottomBarColor?.(dark ? '#0e1621' : '#f6f7fb');
+  } catch {
+    /* older clients ignore unsupported calls */
+  }
+  window.dispatchEvent(new Event('gotcha:tg-theme'));
+}
+
+/** One-time setup for the Telegram chrome; the app follows Telegram's light/dark theme live. */
 export function setupWebApp(w: TgWebApp) {
   try {
     w.ready();
     w.expand();
     w.disableVerticalSwipes?.();
-    w.setHeaderColor?.('#ffffff');
-    w.setBackgroundColor?.('#f6f7fb');
-    w.setBottomBarColor?.('#f6f7fb');
   } catch {
     /* older clients ignore unsupported calls */
   }
   document.documentElement.dataset.tg = '1';
+  applyTheme(w);
+  if (!themeBound && w.onEvent) {
+    themeBound = true;
+    w.onEvent('themeChanged', () => applyTheme(w));
+  }
 }
 
 /** startapp deep link → in-app route (sent by the bot, see services/api telegram copy). */
@@ -133,6 +160,17 @@ export function openTelegramLink(url: string) {
   else window.open(url, '_blank', 'noopener');
 }
 
-export const TELEGRAM_BOT_USERNAME = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) || 'gotchaa_app';
+export const TELEGRAM_BOT_USERNAME = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME as string | undefined) || 'gotchaa_app_bot';
 export const telegramBotLink = (start?: string) =>
   `https://t.me/${TELEGRAM_BOT_USERNAME}${start ? `?start=${encodeURIComponent(start)}` : ''}`;
+
+/** Re-renders when Telegram switches between light and dark. */
+export function useTelegramDark(): boolean {
+  const [dark, setDark] = useState(isTelegramDark);
+  useEffect(() => {
+    const on = () => setDark(isTelegramDark());
+    window.addEventListener('gotcha:tg-theme', on);
+    return () => window.removeEventListener('gotcha:tg-theme', on);
+  }, []);
+  return dark;
+}

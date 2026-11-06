@@ -1,0 +1,163 @@
+/*
+ * Telegram Mini App dark theme. Active only inside Telegram when the user's Telegram is dark
+ * (html[data-tg-dark], set in lib/telegram.ts and kept in sync on Telegram's themeChanged event).
+ * The app colours are inline Tailwind classes, so this file maps that light palette onto
+ * Telegram's dark palette. Unlayered CSS outranks Tailwind's @layer utilities, so no !important.
+ * When you add a new light colour class to a page, add its dark twin here.
+ */
+html[data-tg-dark] { color-scheme: dark; background-color: #0e1621; }
+html[data-tg-dark] body { background-color: #0e1621; color: #f1f4f8; }
+html[data-tg-dark] input, html[data-tg-dark] select, html[data-tg-dark] textarea { color: #f1f4f8; }
+html[data-tg-dark] input::placeholder, html[data-tg-dark] textarea::placeholder { color: #6f8195; }
+html[data-tg-dark] .shadow-sm, html[data-tg-dark] [class*="shadow-[0_"] { box-shadow: 0 10px 30px -14px rgba(0,0,0,.7); }
+html[data-tg-dark] img { filter: none; }
+
+html[data-tg-dark] .bg-\[\#f6f7fb\],
+html[data-tg-dark] .bg-\[\#f4f5fb\],
+html[data-tg-dark] .bg-gray-50,
+html[data-tg-dark] .bg-\[\#f9fafb\],
+html[data-tg-dark] .bg-\[\#fafbfd\],
+html[data-tg-dark] .bg-g-reader-bg { background-color: #0e1621; }
+html[data-tg-dark] .bg-white:not([role="switch"] > *) { background-color: #17212b; }
+html[data-tg-dark] .bg-\[\#f1f2f7\],
+html[data-tg-dark] .bg-gray-100,
+html[data-tg-dark] .bg-\[\#f3f4f6\],
+html[data-tg-dark] .bg-\[\#eef0f5\],
+html[data-tg-dark] .bg-\[\#f1f2f6\],
+html[data-tg-dark] .bg-\[\#f9faff\],
+html[data-tg-dark] .bg-\[\#eceef4\],
+html[data-tg-dark] .bg-white\/95,
+html[data-tg-dark] .bg-white\/90 { background-color: #1e2c3a; }
+html[data-tg-dark] .hover\:bg-gray-50:hover,
+html[data-tg-dark] .hover\:bg-gray-100:hover,
+html[data-tg-dark] .hover\:bg-\[\#f9fafb\]:hover,
+html[data-tg-dark] .hover\:bg-white:hover,
+html[data-tg-dark] .hover\:bg-\[\#f1f2f7\]:hover,
+html[data-tg-dark] .hover\:bg-\[\#fafbfd\]:hover { background-color: #223142; }
+html[data-tg-dark] .text-\[\#101828\],
+html[data-tg-dark] .text-gray-900,
+html[data-tg-dark] .text-\[\#14112B\],
+html[data-tg-dark] .text-\[\#1e2939\],
+html[data-tg-dark] .text-\[\#0f1729\],
+html[data-tg-dark] .text-\[\#111827\] { color: #f1f4f8; }
+html[data-tg-dark] .text-\[\#344054\],
+html[data-tg-dark] .text-\[\#364153\],
+html[data-tg-dark] .text-\[\#374151\],
+html[data-tg-dark] .text-gray-700,
+html[data-tg-dark] .text-\[\#4a5565\],
+html[data-tg-dark] .text-gray-600 { color: #d5dde6; }
+html[data-tg-dark] .text-\[\#6b7080\],
+html[data-tg-dark] .text-\[\#6b7280\],
+html[data-tg-dark] .text-\[\#6a7282\],
+html[data-tg-dark] .text-\[\#6b7382\],
+html[data-tg-dark] .text-gray-500,
+html[data-tg-dark] .text-\[\#5d6475\] { color: #9fb0c1; }
+html[data-tg-dark] .text-\[\#8a8fa0\],
+html[data-tg-dark] .text-\[\#9aa0ae\],
+html[data-tg-dark] .text-\[\#99a1af\],
+html[data-tg-dark] .text-\[\#9ca3af\],
+html[data-tg-dark] .text-gray-400 { color: #7d8fa1; }
+html[data-tg-dark] .hover\:text-\[\#101828\]:hover,
+html[data-tg-dark] .hover\:text-\[\#1e2939\]:hover,
+html[data-tg-dark] .hover\:text-\[\#4a5565\]:hover,
+html[data-tg-dark] .hover\:text-gray-600:hover,
+html[data-tg-dark] .hover\:text-gray-900:hover { color: #f1f4f8; }
+html[data-tg-dark] .border-\[\#e5e7eb\],
+html[data-tg-dark] .border-\[\#e9ebf3\],
+html[data-tg-dark] .border-\[\#e3e5ee\],
+html[data-tg-dark] .border-\[\#e1e3ec\],
+html[data-tg-dark] .border-\[\#eceef5\],
+html[data-tg-dark] .border-\[\#e6e8f0\],
+html[data-tg-dark] .border-\[\#f2f3f7\],
+html[data-tg-dark] .border-\[\#dfe2ec\],
+html[data-tg-dark] .border-\[\#eef0f5\],
+html[data-tg-dark] .border-\[\#f0f1f6\],
+html[data-tg-dark] .border-gray-200,
+html[data-tg-dark] .border-gray-100,
+html[data-tg-dark] .border-\[\#f3f4f6\],
+html[data-tg-dark] .border-\[\#e4e7ef\],
+html[data-tg-dark] .border-\[\#e6e8ef\],
+html[data-tg-dark] .border-white,
+html[data-tg-dark] .border-\[\#e2e4ec\] { border-color: #26364a; }
+html[data-tg-dark] .divide-\[\#f0f1f6\] > * + *,
+html[data-tg-dark] .divide-gray-100 > * + *,
+html[data-tg-dark] .divide-\[\#f2f3f7\] > * + * { border-color: #26364a; }
+html[data-tg-dark] .hover\:border-gray-300:hover,
+html[data-tg-dark] .hover\:border-\[\#c5cafd\]:hover { border-color: #3b4f68; }
+html[data-tg-dark] .bg-\[\#e5e7eb\],
+html[data-tg-dark] .bg-\[\#e2e4ec\],
+html[data-tg-dark] .bg-\[\#eceef5\] { background-color: #26364a; }
+html[data-tg-dark] .bg-\[\#eef0ff\],
+html[data-tg-dark] .bg-\[\#f1efff\],
+html[data-tg-dark] .bg-\[\#f4f5ff\],
+html[data-tg-dark] .bg-\[\#f4f3ff\],
+html[data-tg-dark] .bg-g-blue-50,
+html[data-tg-dark] .bg-\[\#ecebff\],
+html[data-tg-dark] .bg-\[\#e9f3fb\],
+html[data-tg-dark] .bg-\[\#f2f8fd\] { background-color: rgba(143,125,255,.16); }
+html[data-tg-dark] .text-g-blue-700,
+html[data-tg-dark] .text-\[\#2107AA\],
+html[data-tg-dark] .text-\[\#14056b\],
+html[data-tg-dark] .text-g-blue-800 { color: #b9afff; }
+html[data-tg-dark] .border-g-blue-700,
+html[data-tg-dark] .border-\[\#2107AA\],
+html[data-tg-dark] .border-\[\#cfe3f4\],
+html[data-tg-dark] .border-\[\#c5cafd\] { border-color: #6f5ff0; }
+html[data-tg-dark] .text-\[\#1d5f96\],
+html[data-tg-dark] .text-\[\#2481cc\] { color: #7cc0f5; }
+html[data-tg-dark] .bg-\[\#ecfdf5\],
+html[data-tg-dark] .bg-emerald-50,
+html[data-tg-dark] .bg-\[\#f0fbf6\],
+html[data-tg-dark] .bg-emerald-100 { background-color: rgba(16,185,129,.16); }
+html[data-tg-dark] .text-\[\#047857\],
+html[data-tg-dark] .text-emerald-600,
+html[data-tg-dark] .text-emerald-700,
+html[data-tg-dark] .text-\[\#065f46\] { color: #5fe0a8; }
+html[data-tg-dark] .border-\[\#b7e4cf\],
+html[data-tg-dark] .border-\[\#a7f3d0\],
+html[data-tg-dark] .border-\[\#d1fae5\] { border-color: rgba(16,185,129,.35); }
+html[data-tg-dark] .bg-\[\#fffbeb\],
+html[data-tg-dark] .bg-\[\#fff7ed\],
+html[data-tg-dark] .bg-\[\#fef3c7\],
+html[data-tg-dark] .bg-\[\#fff7e6\],
+html[data-tg-dark] .bg-amber-50 { background-color: rgba(245,158,11,.14); }
+html[data-tg-dark] .text-\[\#b45309\],
+html[data-tg-dark] .text-\[\#c2410c\],
+html[data-tg-dark] .text-\[\#92400e\],
+html[data-tg-dark] .text-\[\#bb4d00\],
+html[data-tg-dark] .text-amber-700 { color: #fbbf24; }
+html[data-tg-dark] .border-\[\#fde68a\],
+html[data-tg-dark] .border-\[\#fee685\],
+html[data-tg-dark] .border-\[\#fde3a7\],
+html[data-tg-dark] .border-\[\#fcd34d\] { border-color: rgba(245,158,11,.35); }
+html[data-tg-dark] .bg-\[\#fff1f1\],
+html[data-tg-dark] .bg-red-50,
+html[data-tg-dark] .bg-rose-50,
+html[data-tg-dark] .bg-\[\#ffe1e1\] { background-color: rgba(239,68,68,.14); }
+html[data-tg-dark] .text-\[\#dc2626\],
+html[data-tg-dark] .text-\[\#b91c1c\],
+html[data-tg-dark] .text-red-600,
+html[data-tg-dark] .text-rose-600 { color: #f87171; }
+html[data-tg-dark] .border-\[\#fecaca\],
+html[data-tg-dark] .border-\[\#fca5a5\] { border-color: rgba(239,68,68,.4); }
+
+html[data-tg-dark] .bg-\[\#f7f8fc\],
+html[data-tg-dark] .bg-\[\#fffdf3\],
+html[data-tg-dark] .bg-\[\#f5f3ff\],
+html[data-tg-dark] .bg-\[\#e3e5ee\] { background-color: #1e2c3a; }
+html[data-tg-dark] .bg-g-learning-bg,
+html[data-tg-dark] .bg-\[\#ecfeff\],
+html[data-tg-dark] .bg-violet-50,
+html[data-tg-dark] .bg-g-accent-soft { background-color: rgba(96,165,250,.14); }
+html[data-tg-dark] .text-\[\#155dfc\],
+html[data-tg-dark] .text-\[\#0e7490\],
+html[data-tg-dark] .text-\[\#6d28d9\] { color: #8ec5ff; }
+html[data-tg-dark] .border-\[\#bedbff\] { border-color: rgba(96,165,250,.35); }
+html[data-tg-dark] .text-\[\#e17100\] { color: #fbbf24; }
+html[data-tg-dark] .bg-\[\#f0fdf8\],
+html[data-tg-dark] .bg-\[\#dcfce7\] { background-color: rgba(16,185,129,.16); }
+html[data-tg-dark] .hover\:bg-\[\#dcfce7\]:hover { background-color: rgba(16,185,129,.26); }
+html[data-tg-dark] .bg-\[\#fff6cc\],
+html[data-tg-dark] .bg-\[\#fff7d6\] { background-color: rgba(250,204,21,.22); }
+html[data-tg-dark] .text-\[\#344054\] { color: #d5dde6; }
+html[data-tg-dark] .hover\:bg-\[\#fff1f1\]:hover { background-color: rgba(239,68,68,.18); }

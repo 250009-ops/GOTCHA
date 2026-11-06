@@ -136,6 +136,12 @@ export class TelegramRegisterDto extends TelegramInitDto {
   @MaxLength(128)
   password!: string;
 
+  /** 6-digit code the bot sent after the phone was shared. */
+  @IsString()
+  @MinLength(6)
+  @MaxLength(16)
+  code!: string;
+
   @IsEnum(AppLanguage)
   nativeLanguage!: AppLanguage;
 

@@ -7,7 +7,7 @@ import { useLearnerLocale } from '../lib/learnerLocaleContext';
 import { LimitDialog } from '../components/LimitDialog';
 import { AgePrompt } from '../components/safety/AgePrompt';
 import { cn } from '../components/ui/utils';
-import { getWebApp, haptic } from '../lib/telegram';
+import { getWebApp, haptic, setupWebApp, waitForWebApp } from '../lib/telegram';
 import { tgCopyFor } from './tgCopy';
 
 /** Tab roots: no Telegram back button here, the floating tab bar is shown instead. */
@@ -150,6 +150,13 @@ export function TelegramBackButton() {
   useEffect(() => {
     depth.current += 1;
   }, [location.key]);
+
+  // Reload inside Telegram lands straight on /app/*: still apply theme + chrome once.
+  useEffect(() => {
+    void waitForWebApp().then((w) => {
+      if (w?.initData) setupWebApp(w);
+    });
+  }, []);
 
   useEffect(() => {
     const back = getWebApp()?.BackButton;

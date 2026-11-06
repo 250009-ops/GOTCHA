@@ -70,6 +70,12 @@ export class AuthController {
   }
 
   @Public()
+  @Post('telegram/signup-code')
+  telegramSignupCode(@Body() dto: TelegramInitDto) {
+    return this.auth.sendTelegramSignupCode(dto.initData);
+  }
+
+  @Public()
   @Post('telegram/register')
   telegramRegister(@Body() dto: TelegramRegisterDto, @Ip() ip?: string) {
     return this.auth.registerTelegram(dto, ip);

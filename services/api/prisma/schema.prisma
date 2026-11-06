@@ -1576,6 +1576,11 @@ model TelegramPendingSignup {
   firstName     String    @default("") @map("first_name")
   lastName      String    @default("") @map("last_name")
   username      String?
+  /// sha256 of the 6-digit mini-app sign-up code. Cleared after a successful register.
+  codeHash      String?   @map("code_hash")
+  codeExpiresAt DateTime? @map("code_expires_at")
+  codeAttempts  Int       @default(0) @map("code_attempts")
+  codeSentAt    DateTime? @map("code_sent_at")
   createdAt     DateTime  @default(now()) @map("created_at")
 
   @@map("telegram_pending_signups")

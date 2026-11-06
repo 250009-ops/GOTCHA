@@ -96,6 +96,18 @@ export function formatLoginCode(code: string): string {
   return `${digits.slice(0, 3)} ${digits.slice(3)}`;
 }
 
+/** Mini-app sign-up code. Plain sentence (the bot still sends it as HTML). */
+export function signupCodeText(locale: BotLocale, code: string): string {
+  const shown = formatLoginCode(code);
+  if (locale === 'ru') {
+    return `Код регистрации Gotcha: ${shown} — действует 5 минут. Никому его не сообщайте.`;
+  }
+  if (locale === 'en') {
+    return `Gotcha sign-up code: ${shown} — valid for 5 minutes. Do not share it with anyone.`;
+  }
+  return `Gotcha roʻyxatdan oʻtish kodi: ${shown} — 5 daqiqa amal qiladi. Uni hech kimga bermang.`;
+}
+
 /** Screen 05, first message. */
 export function loginCodeHtml(locale: BotLocale, code: string): string {
   const shown = escapeHtml(formatLoginCode(code));

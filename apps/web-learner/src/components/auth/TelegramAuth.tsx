@@ -305,3 +305,54 @@ export function TelegramLinkWait({
     </div>
   );
 }
+
+/** Six single-digit boxes with auto-advance, backspace and paste. Calls onComplete when all 6 are filled. */
+export function CodeInput({
+  value,
+  onChange,
+  onComplete,
+  label,
+  invalid,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  onComplete?: (v: string) => void;
+  label: (n: number) => string;
+  invalid?: boolean;
+}) {
+  const refs = useRef<Array<HTMLInputElement | null>>([]);
+  const digits = Array.from({ length: 6 }, (_, i) => value[i] ?? '');
+  const put = (i: number, raw: string) => {
+    const only = raw.replace(/\D/g, '');
+    let next: string;
+    if (only.length > 1) next = only.slice(0, 6);
+    else {
+      const arr = [...digits];
+      arr[i] = only;
+      next = arr.join('').slice(0, 6);
+      if (only && i < 5) refs.current[i + 1]?.focus();
+    }
+    onChange(next);
+    if (next.length === 6) onComplete?.(next);
+  };
+  return (
+    <div className="grid grid-cols-6 gap-2" onPaste={(e) => { e.preventDefault(); put(0, e.clipboardData.getData('text')); }}>
+      {digits.map((d, i) => (
+        <input
+          key={i}
+          ref={(el) => { refs.current[i] = el; }}
+          inputMode="numeric"
+          autoComplete={i === 0 ? 'one-time-code' : 'off'}
+          aria-label={label(i + 1)}
+          maxLength={6}
+          value={d}
+          onChange={(e) => put(i, e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Backspace' && !digits[i] && i > 0) refs.current[i - 1]?.focus();
+          }}
+          className={`h-[52px] min-w-0 text-center rounded-xl border bg-white text-[21px] font-bold text-[#101828] outline-none focus:border-2 focus:border-[#2107AA] ${invalid ? 'border-[#fca5a5]' : 'border-[#dfe2ec]'}`}
+        />
+      ))}
+    </div>
+  );
+}

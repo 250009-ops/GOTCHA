@@ -40,6 +40,7 @@ import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
+import { useTelegramDark } from '../lib/telegram';
 
 function displayChapterTitle(title: string | undefined | null, fallbackIndex: number, chapterN: (n: number) => string) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
@@ -323,6 +324,7 @@ function DictionaryPanel({
 }
 
 export default function ReaderPage() {
+  const tgDark = useTelegramDark();
   const copy = useLearnerCopy();
   const { locale } = useLearnerLocale(); // WL4-05: Report follows the active UI language
   const { id } = useParams<{ id: string }>();
@@ -1042,7 +1044,9 @@ export default function ReaderPage() {
   const currentChapterLabel = currentChapter?.title
     || displayChapterTitle(segment?.chapterTitle || segment?.title || outline[segmentIndex]?.chapterTitle || outline[segmentIndex]?.title, segmentIndex, copy.reader.chapterN);
   const zoomPct = Math.round(fontScale * 100);
-  const readerTheme = preferences?.readerTheme ?? 'light';
+  const savedReaderTheme = preferences?.readerTheme ?? 'light';
+  // Telegram dark theme: the light page would glare, so read on the dark page (sepia stays if chosen).
+  const readerTheme = savedReaderTheme === 'light' && tgDark ? 'dark' : savedReaderTheme;
   const pageTone =
     readerTheme === 'sepia'
       ? 'bg-[#F4E8D0] text-[#3D2B1F]'
