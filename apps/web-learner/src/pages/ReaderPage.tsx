@@ -37,7 +37,30 @@ import { isDailyLimitError, isSlowDownError } from '../lib/dailyLimit';
 import type { ContentItem, ContentOutlineSegment, ContentSegment, LookupResult, WordStatus } from '../lib/types';
 import { clampPhraseSpan, extractSentenceAround, findPhraseTokenRange, isSentenceLikeSelection, isVocabMarkableSelection, lookupHeadline, tokenInSpan, type TokenSpan } from '../lib/phraseSpan';
 import { useReaderStanzaBreaks } from '../lib/readingStanzas';
-import { useTelegramDark } from '../lib/telegram';
+import { isTelegramMode, useTelegramDark } from '../lib/telegram';
+
+/** Telegram draws the back button. The reader's own arrow would sit next to it. */
+function ReaderLibraryBack({
+  onClick,
+  label,
+  labelVisibility = 'always',
+}: {
+  onClick: () => void;
+  label: string;
+  labelVisibility?: 'always' | 'sm';
+}) {
+  if (isTelegramMode()) return null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium shrink-0"
+    >
+      <ArrowLeft className="w-4 h-4" />
+      {labelVisibility === 'sm' ? <span className="hidden sm:inline">{label}</span> : label}
+    </button>
+  );
+}
 
 function displayChapterTitle(title: string | undefined | null, fallbackIndex: number, chapterN: (n: number) => string) {
   const raw = title?.trim().replace(/^#+\s*/, '') ?? '';
@@ -894,10 +917,7 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
-            <ArrowLeft className="w-4 h-4" />
-            {copy.nav.library}
-          </button>
+          <ReaderLibraryBack onClick={goToLibrary} label={copy.nav.library} />
         </header>
         <div className="flex-1 flex items-center justify-center p-6 text-[#99a1af] text-sm">{copy.reader.contentNotFound}</div>
       </div>
@@ -908,10 +928,7 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
-            <ArrowLeft className="w-4 h-4" />
-            {copy.nav.library}
-          </button>
+          <ReaderLibraryBack onClick={goToLibrary} label={copy.nav.library} />
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
           <CatalogPaywall
@@ -1014,10 +1031,7 @@ export default function ReaderPage() {
     return (
       <div className="min-h-screen flex flex-col bg-g-reader-bg">
         <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-3 px-4 shrink-0">
-          <button type="button" onClick={goToLibrary} className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium">
-            <ArrowLeft className="w-4 h-4" />
-            {copy.nav.library}
-          </button>
+          <ReaderLibraryBack onClick={goToLibrary} label={copy.nav.library} />
         </header>
         <div className="flex-1 flex items-center justify-center p-6">
           <div className="text-center text-[#99a1af]">
@@ -1062,15 +1076,8 @@ export default function ReaderPage() {
     <div className={cn('flex flex-col h-screen max-h-dvh overflow-hidden', pageTone)}>
       {/* Header — Figma 8:5841 */}
       <header className="h-12 bg-white border-b border-[#e5e7eb] flex items-center gap-2 sm:gap-3 px-3 sm:px-4 shrink-0 min-w-0">
-        <button
-          type="button"
-          onClick={goToLibrary}
-          className="flex items-center gap-1.5 text-[#6a7282] hover:text-[#1e2939] text-sm font-medium shrink-0"
-        >
-          <ArrowLeft className="w-4 h-4" />
-          <span className="hidden sm:inline">{copy.nav.library}</span>
-        </button>
-        <div className="w-px h-4 bg-[#e5e7eb] shrink-0" />
+        <ReaderLibraryBack onClick={goToLibrary} label={copy.nav.library} labelVisibility="sm" />
+        {!isTelegramMode() && <div className="w-px h-4 bg-[#e5e7eb] shrink-0" />}
         <div className="flex-1 min-w-0 flex items-baseline gap-2 overflow-hidden">
           <span className="font-semibold text-[#1e2939] text-sm truncate">{content.title}</span>
           <span className="hidden md:inline text-xs text-[#99a1af] truncate shrink min-w-0">{currentChapterLabel}</span>
