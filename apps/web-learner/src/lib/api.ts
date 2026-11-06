@@ -161,6 +161,40 @@ export async function api<T>(
   return res.json();
 }
 
+/** SSE lookup. Falls back to the JSON route when the stream cannot be read. */
+export async function streamLookup(
+  body: Record<string, unknown>,
+  onDelta: (piece: string) => void,
+): Promise<import('./types').LookupResult> {
+  const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  const accessToken = getAccessToken();
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+  const res = await fetch(`${API_BASE}/ai/lookup/stream`, { method: 'POST', headers, body: JSON.stringify({ ...body, stream: true }) });
+  if (!res.ok || !res.body) throw new Error('lookup stream failed');
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = '';
+  let result: import('./types').LookupResult | null = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    pending += decoder.decode(value, { stream: true });
+    const parts = pending.split('\n\n');
+    pending = parts.pop() ?? '';
+    for (const part of parts) {
+      const event = /^event: (\S+)/m.exec(part)?.[1];
+      const dataLine = part.split('\n').find((line) => line.startsWith('data: '));
+      if (!dataLine) continue;
+      const data = JSON.parse(dataLine.slice(6)) as { text?: string; status?: number; body?: unknown };
+      if (event === 'delta' && data.text) onDelta(data.text);
+      if (event === 'result') result = data as import('./types').LookupResult;
+      if (event === 'error') throw Object.assign(new Error('lookup failed'), { status: data.status, body: data.body });
+    }
+  }
+  if (!result) throw new Error('lookup stream ended without a result');
+  return result;
+}
+
 /** Binary POST helper for TTS audio (and similar). */
 export async function apiAudio(
   path: string,

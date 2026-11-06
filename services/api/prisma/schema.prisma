@@ -400,6 +400,8 @@ model AiLookupCost {
   model            String?
   promptTokens     Int      @default(0) @map("prompt_tokens")
   completionTokens Int      @default(0) @map("completion_tokens")
+  cachedPromptTokens Int    @default(0) @map("cached_prompt_tokens")
+  latencyMs        Int?     @map("latency_ms")
   estCostUsd       Decimal  @default(0) @map("est_cost_usd") @db.Decimal(12, 6)
 
   @@index([usageDate])

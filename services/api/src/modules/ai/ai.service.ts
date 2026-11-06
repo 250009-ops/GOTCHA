@@ -11,7 +11,7 @@ import {
 import { createHash } from 'crypto';
 import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, lookupMode, usageDayStart, userCapPlan, type PlanCaps } from '../../common/plan-caps';
 
-type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number };
+type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number; cachedPromptTokens?: number; latencyMs?: number };
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
@@ -45,6 +45,7 @@ import {
 import {
   LOOKUP_CACHE_VERSION,
   LOOKUP_SYSTEM_PROMPT,
+  bookLookupCacheMaterial,
   classifyLookup,
   clampContext,
   displaySentenceHead,
@@ -258,6 +259,7 @@ export class AiService {
    */
   private buildLookupCacheKey(dto: LookupDto, surface: string, context: string, band?: AgeBand) {
     const lemma = normalizeLemmaKey(dto.lemma?.trim() || surface) || normalizeLemmaKey(surface);
+    const minor = Boolean(band && isMinorBand(band));
     const hash = this.contentHash(
       [
         LOOKUP_CACHE_VERSION,
@@ -266,10 +268,19 @@ export class AiService {
         dto.targetLang,
         this.sentenceHash(context),
         // WL4-04: minors never share cache entries with adults (child-safe prompt + moderated output).
-        ...(band && isMinorBand(band) ? ['minor'] : []),
+        ...(minor ? ['minor'] : []),
       ].join('|'),
     );
-    return { lemma, hash };
+    const bookHash = dto.contentId
+      ? this.contentHash(bookLookupCacheMaterial({
+        lemma,
+        sourceLang: dto.sourceLang,
+        targetLang: dto.targetLang,
+        contentId: dto.contentId,
+        minor,
+      }))
+      : null;
+    return { lemma, hash, bookHash };
   }
 
   private memoryGet(hash: string): MemoryLookup | null {
@@ -382,53 +393,69 @@ export class AiService {
    * Quota / Admin AI Usage (`lookupCount`) increment only on successful uncached OpenAI calls.
    * Pure cache hits never burn quota or platform daily OpenAI budget.
    */
+  private async readSharedLookup(lemma: string, dto: LookupDto, contentHash: string) {
+    const cached = await this.prisma.lemmaCache.findUnique({
+      where: {
+        lemma_sourceLang_targetLang_contentHash: {
+          lemma,
+          sourceLang: dto.sourceLang,
+          targetLang: dto.targetLang,
+          contentHash,
+        },
+      },
+    });
+    if (!cached) return null;
+    const unpacked = unpackLookupNote(cached.grammarNote);
+    return {
+      lemma: cached.lemma,
+      translation: cached.translation,
+      contextualMeaning: unpacked.contextualMeaning,
+      phrase: unpacked.phrase,
+      partOfSpeech: cached.partOfSpeech,
+    };
+  }
+
   /** Word lookup: silent speed guard → cached/AI lookup → per-lookup cost log (ai_lookup_costs + structured log). */
-  async lookup(userId: string, dto: LookupDto) {
+  async lookup(userId: string, dto: LookupDto, emit?: (event: 'delta' | 'result', data: unknown) => void) {
+    const started = Date.now();
     await this.burstGuard(userId);
     const meta: LookupMeta = {};
-    const res = await this.lookupInner(userId, dto, meta);
+    const res = await this.lookupInner(userId, dto, meta, emit);
+    meta.latencyMs = Date.now() - started;
     void this.logLookupCost(userId, meta, Boolean((res as { cached?: boolean }).cached), (res as { mode?: string }).mode ?? 'ai');
     // 14:36: no mode field in responses (dictionary mode dropped; dormant path stays internal).
     const { mode: _mode, dictionaryMiss: _miss, ...out } = res as typeof res & { mode?: string; dictionaryMiss?: boolean };
+    if (emit) emit('result', out);
     return out;
   }
 
-  private async lookupInner(userId: string, dto: LookupDto, meta: LookupMeta) {
+  private async lookupInner(userId: string, dto: LookupDto, meta: LookupMeta, emit?: (event: 'delta' | 'result', data: unknown) => void) {
     const { band, uiLanguage } = await this.userAiGate(userId);
     const surface = (dto.token ?? '').trim();
     const context = clampContext(dto.sentence);
     const kind = classifyLookup(surface, context);
-    const { lemma: cacheKeyLemma, hash } = this.buildLookupCacheKey(dto, surface, context, band);
+    const { lemma: cacheKeyLemma, hash, bookHash } = this.buildLookupCacheKey(dto, surface, context, band);
 
-    const fromMemory = this.memoryGet(hash);
+    const fromMemory = this.memoryGet(hash) ?? (bookHash ? this.memoryGet(bookHash) : null);
     if (fromMemory) {
       return this.presentLookup(await this.moderateLookupForMinor(band, fromMemory, uiLanguage), surface, context, true);
     }
 
     if (!this.useMemory()) {
-      const cached = await this.prisma.lemmaCache.findUnique({
-        where: {
-          lemma_sourceLang_targetLang_contentHash: {
-            lemma: cacheKeyLemma,
-            sourceLang: dto.sourceLang,
-            targetLang: dto.targetLang,
-            contentHash: hash,
-          },
-        },
-      });
-
+      const cached = await this.readSharedLookup(cacheKeyLemma, dto, hash)
+        ?? (bookHash ? await this.readSharedLookup(cacheKeyLemma, dto, bookHash) : null);
       if (cached) {
-        const unpacked = unpackLookupNote(cached.grammarNote);
         const limits = glossLimitsFor(kind);
         const payload: MemoryLookup = {
           lemma: cached.lemma || cacheKeyLemma,
           translation: sanitizeGloss(cached.translation, surface, limits, kind),
-          contextualMeaning: sanitizeContextualMeaning(unpacked.contextualMeaning, cached.translation, kind, context),
-          phrase: sanitizePhrase(unpacked.phrase, context, surface, kind),
+          contextualMeaning: sanitizeContextualMeaning(cached.contextualMeaning, cached.translation, kind, context),
+          phrase: sanitizePhrase(cached.phrase, context, surface, kind),
           grammarNote: null,
           partOfSpeech: cached.partOfSpeech ?? null,
         };
         this.memorySet(hash, payload);
+        if (bookHash) this.memorySet(bookHash, payload);
         return this.presentLookup(await this.moderateLookupForMinor(band, payload, uiLanguage), surface, context, true);
       }
     }
@@ -472,15 +499,16 @@ export class AiService {
             : kind === 'phrase'
               ? 'MODE=PHRASE. Gloss the whole selected phrase as used in SENTENCE, not the auxiliary alone. If a particle is nearby (by/out/up/off), phraseIfAny must include it. contextualMeaning = one in-sentence meaning, no synonym lists. No software/execute sense.'
               : 'MODE=WORD. translation = dictionary/base gloss of TARGET (1–3 words, sense that fits SENTENCE). contextualMeaning = natural in-context meaning. If TARGET is inside an idiom or phrasal verb, phraseIfAny MUST be that exact span copied from SENTENCE, including the particle.';
-        const response = await client.chat.completions.create({
+        const request = {
           model,
           temperature: 0,
           max_tokens: lookupMaxTokens(kind, surface),
-          response_format: { type: 'json_object' },
+          response_format: { type: 'json_object' as const },
           messages: [
-            { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, band) },
+            // Static instructions stay the first message so OpenAI can cache that prefix.
+            { role: 'system' as const, content: withChildSafe(LOOKUP_SYSTEM_PROMPT, band) },
             {
-              role: 'user',
+              role: 'user' as const,
               content: [
                 `TARGET: "${surface}"`,
                 dto.lemma && surfaceWords <= 2 ? `Lemma hint: "${dto.lemma}"` : null,
@@ -493,14 +521,39 @@ export class AiService {
                 .join('\n'),
             },
           ],
-        }, this.lookupRequestOptions());
+        };
+        const streamDeltas = Boolean(emit && dto.stream);
+        let content = '';
+        if (streamDeltas) {
+          const stream = await client.chat.completions.create(
+            { ...request, stream: true, stream_options: { include_usage: true } },
+            this.lookupRequestOptions(),
+          );
+          for await (const chunk of stream) {
+            const delta = chunk.choices[0]?.delta?.content ?? '';
+            if (delta) {
+              content += delta;
+              emit!('delta', { text: delta });
+            }
+            const usage = chunk.usage;
+            if (usage) {
+              meta.promptTokens = usage.prompt_tokens ?? meta.promptTokens ?? 0;
+              meta.completionTokens = usage.completion_tokens ?? meta.completionTokens ?? 0;
+              meta.cachedPromptTokens = usage.prompt_tokens_details?.cached_tokens ?? meta.cachedPromptTokens ?? 0;
+            }
+          }
+        } else {
+          const response = await client.chat.completions.create(request, this.lookupRequestOptions());
+          content = response.choices[0]?.message?.content ?? '';
+          meta.promptTokens = response.usage?.prompt_tokens ?? 0;
+          meta.completionTokens = response.usage?.completion_tokens ?? 0;
+          meta.cachedPromptTokens = response.usage?.prompt_tokens_details?.cached_tokens ?? 0;
+        }
         usedOpenAi = true;
         meta.model = model;
-        meta.promptTokens = response.usage?.prompt_tokens ?? 0;
-        meta.completionTokens = response.usage?.completion_tokens ?? 0;
 
         try {
-          const parsed = JSON.parse(response.choices[0]?.message?.content ?? '{}') as {
+          const parsed = JSON.parse(content || '{}') as {
             lemma?: string;
             translation?: string;
             contextualMeaning?: string;
@@ -518,7 +571,7 @@ export class AiService {
           translation = sanitizeGloss(parsed.translation, surface, limits, kind);
           contextualMeaning = sanitizeContextualMeaning(parsed.contextualMeaning, translation, kind, context);
         } catch {
-          translation = sanitizeGloss(response.choices[0]?.message?.content, surface, limits, kind);
+          translation = sanitizeGloss(content, surface, limits, kind);
         }
 
         try {
@@ -607,36 +660,41 @@ export class AiService {
       throw err;
     }
     this.memorySet(hash, payload);
+    if (bookHash) this.memorySet(bookHash, payload);
 
     if (!this.useMemory()) {
       // Speed: the shared cache write no longer delays the response (memory cache serves repeats meanwhile).
-      try {
-        void Promise.resolve(this.prisma.lemmaCache.upsert({
-          where: {
-            lemma_sourceLang_targetLang_contentHash: {
-              lemma: cacheKeyLemma,
-              sourceLang: dto.sourceLang,
-              targetLang: dto.targetLang,
-              contentHash: hash,
-            },
-          },
-          create: {
+      const write = (contentHash: string) => this.prisma.lemmaCache.upsert({
+        where: {
+          lemma_sourceLang_targetLang_contentHash: {
             lemma: cacheKeyLemma,
             sourceLang: dto.sourceLang,
             targetLang: dto.targetLang,
-            translation,
-            grammarNote: packLookupNote(contextualMeaning, phrase),
-            partOfSpeech,
-            modelVersion: client ? model : 'offline',
-            contentHash: hash,
+            contentHash,
           },
-          update: {
-            translation,
-            grammarNote: packLookupNote(contextualMeaning, phrase),
-            partOfSpeech,
-            modelVersion: client ? model : 'offline',
-          },
-        })).catch(() => undefined);
+        },
+        create: {
+          lemma: cacheKeyLemma,
+          sourceLang: dto.sourceLang,
+          targetLang: dto.targetLang,
+          translation,
+          grammarNote: packLookupNote(contextualMeaning, phrase),
+          partOfSpeech,
+          modelVersion: client ? model : 'offline',
+          contentHash,
+        },
+        update: {
+          translation,
+          grammarNote: packLookupNote(contextualMeaning, phrase),
+          partOfSpeech,
+          modelVersion: client ? model : 'offline',
+        },
+      });
+      try {
+        void Promise.all([
+          write(hash),
+          ...(bookHash ? [write(bookHash)] : []),
+        ]).catch(() => undefined);
       } catch {
         // Race or transient DB error — memory cache still serves the hit path.
       }
@@ -823,7 +881,7 @@ export class AiService {
       const promptTokens = meta.promptTokens ?? 0, completionTokens = meta.completionTokens ?? 0;
       const estCostUsd = Number(((promptTokens * inP + completionTokens * outP) / 1e6).toFixed(6));
       const plan = await userCapPlan(this.prisma, userId);
-      const row = { userId, usageDate: usageDayStart(), plan, mode, cacheHit, model: meta.model ?? null, promptTokens, completionTokens, estCostUsd };
+      const row = { userId, usageDate: usageDayStart(), plan, mode, cacheHit, model: meta.model ?? null, promptTokens, completionTokens, cachedPromptTokens: meta.cachedPromptTokens ?? 0, latencyMs: meta.latencyMs ?? null, estCostUsd };
       this.logger.log(JSON.stringify({ event: 'lookup_cost', ...row, usageDate: row.usageDate.toISOString().slice(0, 10) }));
       const t = (this.prisma as unknown as { aiLookupCost?: { create?: (a: unknown) => Promise<unknown> } }).aiLookupCost;
       if (!this.useMemory() && typeof t?.create === 'function') await t.create({ data: row });

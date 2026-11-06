@@ -1,5 +1,6 @@
-import { Body, Controller, Header, Post, StreamableFile } from '@nestjs/common';
+import { Body, Controller, Header, HttpException, Post, Res, StreamableFile } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 import { CurrentUser, AuthUserPayload } from '../../common/decorators';
 import { AiService } from './ai.service';
 import { LookupDto, SpeechDto, TranslateDto } from './dto/ai.dto';
@@ -12,6 +13,25 @@ export class AiController {
   @Post('lookup')
   lookup(@CurrentUser() user: AuthUserPayload, @Body() dto: LookupDto) {
     return this.ai.lookup(user.sub, dto);
+  }
+
+  /** Deltas, then one sanitized result. nginx must not buffer this (X-Accel-Buffering). */
+  @Post('lookup/stream')
+  async lookupStream(@CurrentUser() user: AuthUserPayload, @Body() dto: LookupDto, @Res() res: Response) {
+    res.status(200);
+    res.setHeader('Content-Type', 'text/event-stream; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('X-Accel-Buffering', 'no');
+    try {
+      await this.ai.lookup(user.sub, { ...dto, stream: true }, (event, data) => {
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      });
+    } catch (err) {
+      const status = err instanceof HttpException ? err.getStatus() : 503;
+      const body = err instanceof HttpException ? err.getResponse() : { message: 'lookup failed' };
+      res.write(`event: error\ndata: ${JSON.stringify({ status, body })}\n\n`);
+    }
+    res.end();
   }
 
   @Post('translate')

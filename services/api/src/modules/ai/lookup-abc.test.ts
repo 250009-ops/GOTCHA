@@ -38,5 +38,33 @@ function make(reply: Record<string, unknown>) {
   // (b) server glosses into the requested targetLang (client sends the UI language), not the profile uiLanguage/native
   assert.match(user, /GLOSS LANGUAGE: .*uz/i);
   assert.equal(calls.upserts[0]?.create?.partOfSpeech, 'noun', 'POS cached');
+
+  const bookId = '11111111-1111-4111-8111-111111111111';
+  const rows = new Map<string, any>();
+  const bookCalls = { chats: 0 };
+  const prisma: any = {
+    dbAvailable: true,
+    user: { findUnique: async () => ({ aiDisabled: false, aiDisabledBy: null, birthYear: 1990, uiLanguage: 'uz' }) },
+    lemmaCache: {
+      findUnique: async (q: any) => rows.get(q.where.lemma_sourceLang_targetLang_contentHash.contentHash) ?? null,
+      upsert: async (q: any) => { rows.set(q.where.lemma_sourceLang_targetLang_contentHash.contentHash, { lemma: q.create.lemma, translation: q.create.translation, grammarNote: q.create.grammarNote, partOfSpeech: q.create.partOfSpeech }); return {}; },
+    },
+  };
+  const bookSvc: any = new AiService(prisma);
+  bookSvc.getClient = () => ({ chat: { completions: { create: async () => { bookCalls.chats += 1; return { choices: [{ message: { content: JSON.stringify({ lemma: 'ship', partOfSpeech: 'noun', translation: 'kema', contextualMeaning: 'dengiz kemasi' }) } }], usage: { prompt_tokens: 10, completion_tokens: 8, prompt_tokens_details: { cached_tokens: 0 } } }; } } } });
+  bookSvc.getPlatformAiSettings = async () => ({ enabled: true, lookupModel: 'm', defaultUserQuota: 100 });
+  bookSvc.assertAiAvailable = async () => undefined;
+  bookSvc.checkQuota = async () => ({ today: new Date(), memoryKey: 'k' });
+  bookSvc.incrementUsage = async () => undefined;
+  bookSvc.useMemory = () => false;
+  const first: any = await bookSvc.lookup('u1', { token: 'ship', sentence: 'The ship sailed.', sourceLang: 'en', targetLang: 'uz', contentId: bookId });
+  bookSvc.memoryCache.clear();
+  await new Promise((resolve) => setImmediate(resolve));
+  const second: any = await bookSvc.lookup('u1', { token: 'ship', sentence: 'Another ship waited.', sourceLang: 'en', targetLang: 'uz', contentId: bookId });
+  assert.equal(first.cached, false);
+  assert.equal(second.cached, true);
+  assert.equal(second.translation, 'kema');
+  assert.equal(bookCalls.chats, 1, 'second tap in the same book must not call the model');
+
   console.log('lookup-abc: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

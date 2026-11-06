@@ -24,7 +24,7 @@ import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { cn } from '../components/ui/utils';
 import { CatalogPaywall } from '../components/CatalogPaywall';
-import { api } from '../lib/api';
+import { api, streamLookup } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { useLearnerCopy, useLearnerLocale } from '../lib/learnerLocaleContext';
 import { mashqCopy, surfaceCopy } from '@gotcha/shared';
@@ -636,16 +636,33 @@ export default function ReaderPage() {
       const tokenCount = span.endI - span.startI + 1;
       setVocabMarkable(isVocabMarkableSelection(surface, tokenCount));
       try {
-        const res = await api<LookupResult>('/ai/lookup', {
+        const payload = {
+          token: surface.slice(0, 4000),
+          lemma: lemma.slice(0, 4000),
+          sentence,
+          sourceLang,
+          targetLang,
+          ...(id ? { contentId: id } : {}),
+        };
+        let draft = '';
+        const res = await streamLookup(payload, (piece) => {
+          draft += piece;
+          const match = /"translation"\s*:\s*"((?:\\.|[^"\\])*)/.exec(draft);
+          if (!match?.[1]) return;
+          const translation = match[1].replace(/\\n/g, ' ').replace(/\\"/g, '"');
+          setLookupLoading(false);
+          setActiveLookup((prev) => ({
+            lemma: prev?.lemma || lemma,
+            translation,
+            contextualMeaning: prev?.contextualMeaning ?? null,
+            phrase: prev?.phrase ?? null,
+            kind: prev?.kind,
+            partOfSpeech: prev?.partOfSpeech ?? null,
+          }));
+        }).catch(() => api<LookupResult>('/ai/lookup', {
           method: 'POST',
-          body: JSON.stringify({
-            token: surface.slice(0, 4000),
-            lemma: lemma.slice(0, 4000),
-            sentence,
-            sourceLang,
-            targetLang,
-          }),
-        });
+          body: JSON.stringify(payload),
+        }));
         const sentenceLike = res.kind === 'sentence' || isSentenceLikeSelection(surface, sentence);
         const phrase = sentenceLike
           ? null
@@ -695,7 +712,7 @@ export default function ReaderPage() {
         setLookupLoading(false);
       }
     },
-    [sourceLang, targetLang, copy.errors.lookupFailed, rx],
+    [id, sourceLang, targetLang, copy.errors.lookupFailed, rx],
   );
 
   const markStatus = async (status: WordStatus) => {

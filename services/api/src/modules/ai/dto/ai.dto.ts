@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import { IsBoolean, IsEnum, IsOptional, IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
 import { AppLanguage } from '@prisma/client';
 
 export class LookupDto {
@@ -22,6 +22,16 @@ export class LookupDto {
 
   @IsEnum(AppLanguage)
   targetLang!: AppLanguage;
+
+  /** Published book this tap came from. Same lemma + languages + book is served from the shared cache. */
+  @IsOptional()
+  @IsUUID()
+  contentId?: string;
+
+  /** When true, the stream route forwards model deltas before the sanitized result. */
+  @IsOptional()
+  @IsBoolean()
+  stream?: boolean;
 }
 
 export class TranslateDto {

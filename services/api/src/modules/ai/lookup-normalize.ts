@@ -12,6 +12,25 @@ export const LOOKUP_PHRASE_MAX_CHARS = 80;
 /** Bump when prompt/normalization changes so stale lemma_cache rows are skipped. */
 export const LOOKUP_CACHE_VERSION = 'v13'; // v13: Uzbek Latin + ʻ orthography, comma meanings kept (accuracy pass 2026-11-04)
 
+/** Same word, same book, same language pair. The sentence is not part of this key. */
+export function bookLookupCacheMaterial(input: {
+  lemma: string;
+  sourceLang: string;
+  targetLang: string;
+  contentId: string;
+  minor: boolean;
+}): string {
+  return [
+    LOOKUP_CACHE_VERSION,
+    input.lemma,
+    input.sourceLang,
+    input.targetLang,
+    'book',
+    input.contentId,
+    input.minor ? 'minor' : 'adult',
+  ].join('|');
+}
+
 export type LookupKind = 'word' | 'phrase' | 'sentence';
 
 export const LOOKUP_SYSTEM_PROMPT = `You are a bilingual glossary for a language-learning reader.
