@@ -1442,7 +1442,7 @@ export class ImportCommerceService implements OnModuleInit, OnModuleDestroy {
     if (!cfg.enabled || !cfg.reminderDays.length) return 0;
     const horizon = new Date(now.getTime() + Math.max(1, ...cfg.reminderDays) * 86_400_000);
     const rows = await this.prisma.entitlement.findMany({
-      where: { kind: 'plus', source: 'atmos', status: 'active', expiresAt: { gt: now, lte: horizon } },
+      where: { kind: 'plus', source: 'atmos', status: 'active', expiresAt: { gt: now, lte: horizon }, user: { deletedAt: null } },
       take: 500,
     });
     let sent = 0;

@@ -681,6 +681,7 @@ export class UsersService {
     }
 
     const anonymizedEmail = `deleted-${userId}@deleted.gotcha.app`;
+    const deletedAt = new Date();
 
     await this.prisma.$transaction([
       this.prisma.user.update({
@@ -694,7 +695,7 @@ export class UsersService {
           displayName: 'Deleted user',
           avatarUrl: null,
           passwordHash: null,
-          deletedAt: new Date(),
+          deletedAt,
           emailVerificationToken: null,
           passwordResetToken: null,
           birthYear: null,
@@ -703,8 +704,9 @@ export class UsersService {
       }),
       this.prisma.authRefreshToken.updateMany({
         where: { userId, revokedAt: null },
-        data: { revokedAt: new Date() },
+        data: { revokedAt: deletedAt },
       }),
+      this.prisma.entitlement.updateMany(plusEndedByDeletion(userId, deletedAt)),
     ]);
     const purged = await this.purgeUserData(userId);
     // LG4-09: a failed purge step must alert (admin health flag + support email/stub), never stay silent.
@@ -843,6 +845,14 @@ export class UsersService {
     return this.getProfile(userId);
   }
 
+}
+
+/** Active Plus on a deleted account stays in the ledger, ended at the wipe time. Rows are not deleted. */
+export function plusEndedByDeletion(userId: string, endedAt: Date) {
+  return {
+    where: { userId, kind: 'plus' as const, status: 'active' as const },
+    data: { status: 'revoked' as const, expiresAt: endedAt, revokedReason: 'account_deleted' },
+  };
 }
 
 function dayKey(d: Date): string {

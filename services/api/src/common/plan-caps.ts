@@ -28,6 +28,7 @@ type PlanRow = { tier: string; aiDailyQuota: number; quizDailyQuota?: number | n
 type Db = {
   subscriptionPlan?: { findMany?: (a: unknown) => Promise<PlanRow[]> };
   platformSetting?: { findMany?: (a: unknown) => Promise<Array<{ key: string; value: unknown }>> };
+  user?: { findUnique?: (a: unknown) => Promise<{ deletedAt?: Date | null } | null> };
   userSubscription?: { findFirst?: (a: unknown) => Promise<{ plan?: { tier?: string } | null } | null> };
 };
 
@@ -69,6 +70,10 @@ export async function getPlanCaps(prisma: unknown, now = Date.now()): Promise<Pl
 
 export async function userCapPlan(prisma: unknown, userId: string): Promise<CapPlan> {
   const db = prisma as Db;
+  const owner = await Promise.resolve()
+    .then(() => db.user?.findUnique?.({ where: { id: userId }, select: { deletedAt: true } }) ?? null)
+    .catch(() => null);
+  if (owner?.deletedAt) return 'free';
   // Any active premium row counts. A newer canceled admin grant must not hide a paid pass.
   const sub = await Promise.resolve()
     .then(() => db.userSubscription?.findFirst?.({

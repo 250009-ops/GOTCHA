@@ -34,6 +34,7 @@ async function main() {
     const cr = await prisma.contentReport.create({ data: { reporterId: del.id, reason: 'spam' as never, details: 'c' } });
     const phone = `+99890${String(t).slice(-7)}`;
     await prisma.user.update({ where: { id: del.id }, data: { phone, telegramId: BigInt(t), telegramUsername: 'wipe-me' } as never });
+    const plus = await prisma.entitlement.create({ data: { userId: del.id, kind: 'plus', source: 'admin', sourceRef: `purge-${t}`, sku: 'plus_admin_grant', status: 'active' } });
     const { mkdir, writeFile, access } = await import('node:fs/promises');
     const { join } = await import('node:path');
     const uploadRoot = join(process.cwd(), 'uploads');
@@ -70,6 +71,12 @@ async function main() {
     assert.equal(await prisma.lookupBurstHit.count({ where: { userId: del.id } }), 0);
     assert.equal(await prisma.telegramOutboundLog.count({ where: { userId: del.id } }), 0);
     assert.equal(await prisma.userSubscription.count({ where: { userId: del.id } }), 0);
+    const endedPlus = await prisma.entitlement.findUniqueOrThrow({ where: { id: plus.id } });
+    const wiped = await prisma.user.findUniqueOrThrow({ where: { id: del.id } });
+    assert.equal(endedPlus.status, 'revoked');
+    assert.equal(endedPlus.revokedReason, 'account_deleted');
+    assert.equal(endedPlus.expiresAt?.toISOString(), wiped.deletedAt?.toISOString());
+    assert.equal(await prisma.entitlement.count({ where: { id: plus.id } }), 1, 'Plus row is kept');
     const keptTicket = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
     assert.equal(keptTicket.userId, null); assert.equal(keptTicket.body, 'keep me');
     assert.equal(await prisma.message.count({ where: { id: mine.id } }), 1, 'own sent message KEPT (Privacy §11)');
@@ -121,6 +128,7 @@ async function main() {
     assert.equal(c.reporterId, null); assert.equal(c.details, 'c');
     console.log('wl4-11-delete-purge: OK');
   } finally {
+    await prisma.entitlement.deleteMany({ where: { sourceRef: `purge-${t}` } });
     await prisma.supportTicket.deleteMany({ where: { subject: `purge-${t}` } });
     await prisma.pageQuestionSeen.deleteMany({ where: { userId: del.id } });
     await prisma.lookupBurstHit.deleteMany({ where: { userId: del.id } });

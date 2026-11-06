@@ -53,6 +53,8 @@ export class EntitlementsService {
  * so admin/dev grants are never cancelled here. Expired/revoked entitlements (refund) drop Plus immediately.
  */
 export async function projectPlus(prisma: PrismaService, userId: string) {
+  const owner = await prisma.user?.findUnique?.({ where: { id: userId }, select: { deletedAt: true } })?.catch(() => null);
+  if (owner?.deletedAt) return;
   const now = new Date();
   const active = await prisma.entitlement.findMany({
     where: { userId, kind: EntitlementKind.plus, status: EntitlementStatus.active, source: { in: [PurchaseSource.google_play, PurchaseSource.atmos] }, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },

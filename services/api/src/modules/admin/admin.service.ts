@@ -3235,6 +3235,7 @@ export class AdminService {
       streakCount: number;
       targetLanguages: Array<{ targetLanguage: AppLanguage; cefrLevel: string; isPrimary: boolean }>;
       subscriptions: Array<{ status: string; currentPeriodEnd?: Date | null; plan: { name: string; tier: string } }>;
+      deletedAt?: Date | null;
     },
     opts?: { payAsYouGo?: boolean },
   ) {
@@ -3242,7 +3243,7 @@ export class AdminService {
     const payAsYouGo = Boolean(opts?.payAsYouGo);
     // WLF-17: an active premium subscription is Plus (same rule as userCapPlan/activeSubWhere), ahead of Pay as you go.
     const sub = u.subscriptions[0];
-    const plus = sub?.status === 'active' && sub.plan?.tier === 'premium' && (!sub.currentPeriodEnd || +sub.currentPeriodEnd > Date.now());
+    const plus = !('deletedAt' in u && u.deletedAt) && sub?.status === 'active' && sub.plan?.tier === 'premium' && (!sub.currentPeriodEnd || +sub.currentPeriodEnd > Date.now());
     return {
       id: u.id,
       email: u.email,
