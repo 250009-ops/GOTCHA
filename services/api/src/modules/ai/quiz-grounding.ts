@@ -156,3 +156,30 @@ export function parsePageBankItems(raw: unknown): PageBankItem[] {
   }
   return items;
 }
+
+/** Same instructions generatePageQuiz sends. The batch job must not drift from this text. */
+export const PAGE_QUIZ_SYSTEM =
+  'Return JSON {"questions":[{"prompt":{"en":"","uz":"","ru":""},"options":{"en":["","","",""],"uz":["","","",""],"ru":["","","",""]},"answerIndex":0,"evidenceQuote":"","explanation":{"en":"","uz":"","ru":""}}]}. Use ONLY the passage. evidenceQuote must be copied word for word. Exactly 4 options, exactly one correct, answerIndex 0-3. Every number you write must appear in the passage. Uzbek in Latin. Russian in Cyrillic.';
+
+export const PAGE_QUIZ_USER_LEAD =
+  'Write 8 questions about the story on this page. Ignore publisher advertisements, download offers and license text.';
+
+export function pageQuizUserContent(passage: string, avoidQuotes: string[] = []): string {
+  return [
+    PAGE_QUIZ_USER_LEAD,
+    avoidQuotes.filter(Boolean).length
+      ? `Do not repeat these passages, which were already asked:\n${avoidQuotes.filter(Boolean).slice(0, 12).map((quote) => `- ${quote.slice(0, 180)}`).join('\n')}`
+      : '',
+    `Page:\n\n${passage}`,
+  ].filter(Boolean).join('\n\n');
+}
+
+/** Eight grounded questions, each language present, answer index 0-3, quotes distinct and copied from the page. */
+export function acceptPageQuiz(raw: unknown, passage: string): PageBankItem[] | null {
+  const text = readingPassage(passage).slice(0, 4000);
+  const items = groundPageItems(parsePageBankItems(raw), text);
+  if (items.length !== 8) return null;
+  const quotes = new Set(items.map((item) => foldSpace(item.evidenceQuote).toLowerCase()));
+  if (quotes.size !== 8) return null;
+  return items;
+}

@@ -13,6 +13,23 @@ export function readBuildInfo(dir = __dirname): { sha: string; date: string } {
   }
 }
 
+function readMashqProgress(dir = process.cwd()): { done: number; total: number; failed: number; costUsd: number; stopped: string | null } | null {
+  try {
+    const row = JSON.parse(readFileSync(join(dir, 'mashq-progress.json'), 'utf8')) as {
+      done?: unknown; total?: unknown; failed?: unknown; costUsd?: unknown; stopped?: unknown;
+    };
+    return {
+      done: Number(row.done ?? 0),
+      total: Number(row.total ?? 0),
+      failed: Number(row.failed ?? 0),
+      costUsd: Number(row.costUsd ?? 0),
+      stopped: typeof row.stopped === 'string' ? row.stopped : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** WL4-01: liveness for the boot smoke test and uptime checks. No DB call, no secrets. */
 @Controller('health')
 export class HealthController {
@@ -21,7 +38,7 @@ export class HealthController {
   @Public()
   @Get()
   health() {
-    return { ok: true, build: this.build };
+    return { ok: true, build: this.build, mashq: readMashqProgress() };
   }
 
   @Public()

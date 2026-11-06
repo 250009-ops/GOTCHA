@@ -16,7 +16,7 @@ import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
 import { DAILY_CAP_FALLBACKS, LOOKUP_BURST_FALLBACKS, LOOKUP_BURST_KEYS, languagePromptLabel, slowDownMessage, ttsLocale } from '@gotcha/shared';
-import { groundPageItems, groundQuizQuestions, parsePageBankItems, readingPassage, type PageBankItem } from './quiz-grounding';
+import { groundPageItems, groundQuizQuestions, PAGE_QUIZ_SYSTEM, pageQuizUserContent, parsePageBankItems, readingPassage, type PageBankItem } from './quiz-grounding';
 import { PracticeType } from '@prisma/client';
 import { isDevAuthEnabled } from '../../common/dev-auth/dev-auth.config';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -1125,23 +1125,8 @@ export class AiService {
       temperature: 0.2,
       response_format: { type: 'json_object' },
       messages: [
-        {
-          role: 'system',
-          content: withChildSafe(
-            'Return JSON {"questions":[{"prompt":{"en":"","uz":"","ru":""},"options":{"en":["","","",""],"uz":["","","",""],"ru":["","","",""]},"answerIndex":0,"evidenceQuote":"","explanation":{"en":"","uz":"","ru":""}}]}. Use ONLY the passage. evidenceQuote must be copied word for word. Exactly 4 options, exactly one correct, answerIndex 0-3. Every number you write must appear in the passage. Uzbek in Latin. Russian in Cyrillic.',
-            band,
-          ),
-        },
-        {
-          role: 'user',
-          content: [
-            'Write 8 questions about the story on this page. Ignore publisher advertisements, download offers and license text.',
-            avoidQuotes.filter(Boolean).length
-              ? `Do not repeat these passages, which were already asked:\n${avoidQuotes.filter(Boolean).slice(0, 12).map((quote) => `- ${quote.slice(0, 180)}`).join('\n')}`
-              : '',
-            `Page:\n\n${text}`,
-          ].filter(Boolean).join('\n\n'),
-        },
+        { role: 'system', content: withChildSafe(PAGE_QUIZ_SYSTEM, band) },
+        { role: 'user', content: pageQuizUserContent(text, avoidQuotes) },
       ],
     });
     let parsed: { questions?: unknown } = {};

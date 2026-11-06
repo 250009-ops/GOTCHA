@@ -3,6 +3,7 @@ import { hostname } from 'os';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
 import { recordJobFailure, recordJobSuccess } from '../../common/jobs/job-health';
+import { MashqBatchRunner } from '../practice/mashq-batch';
 import { ImportsService, isRetryableImportError } from './imports.service';
 import {
   claimNextImportJob,
@@ -43,6 +44,7 @@ export class ImportWorker implements OnApplicationShutdown {
   private stopping = false;
   private pollTimer?: ReturnType<typeof setTimeout>;
   private reapTimer?: ReturnType<typeof setInterval>;
+  private mashqTimer?: ReturnType<typeof setInterval>;
   private idle: Array<() => void> = [];
   readonly concurrency = importWorkerConcurrency();
   /** Optional hook for tests/benchmarks. */
@@ -51,6 +53,7 @@ export class ImportWorker implements OnApplicationShutdown {
   constructor(
     private prisma: PrismaService,
     private imports: ImportsService,
+    private mashq: MashqBatchRunner,
   ) {}
 
   start(pollMs = 1000) {
@@ -60,6 +63,8 @@ export class ImportWorker implements OnApplicationShutdown {
       .then((c) => this.logger.log(`Queue on start: ${JSON.stringify(c)}`))
       .catch(() => undefined);
     void this.housekeeping();
+    void this.mashq.tick();
+    this.mashqTimer = setInterval(() => void this.mashq.tick(), 60_000);
     this.reapTimer = setInterval(() => void this.housekeeping(), IMPORT_REAP_INTERVAL_MS);
     const loop = async () => {
       if (this.stopping) return;
@@ -154,6 +159,7 @@ export class ImportWorker implements OnApplicationShutdown {
     this.stopping = true;
     if (this.pollTimer) clearTimeout(this.pollTimer);
     if (this.reapTimer) clearInterval(this.reapTimer);
+    if (this.mashqTimer) clearInterval(this.mashqTimer);
     if (this.running > 0) {
       await Promise.race([new Promise<void>((r) => this.idle.push(r)), new Promise((r) => setTimeout(r, waitMs))]);
     }

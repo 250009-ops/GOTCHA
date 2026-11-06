@@ -8,6 +8,7 @@ import { ImportCommerceService } from '../billing/import-commerce.service';
 import { LimitsService } from '../../services/limits.service';
 import { ImportsService } from './imports.service';
 import { ImportWorker } from './import-worker';
+import { MashqBatchRunner } from '../practice/mashq-batch';
 
 /** Minimal DI graph for the worker process: no HTTP, no controllers, no unrelated timers. */
 @Module({
@@ -15,7 +16,7 @@ import { ImportWorker } from './import-worker';
     ConfigModule.forRoot({ isGlobal: true, envFilePath: [join(process.cwd(), '.env'), join(process.cwd(), '../../.env')] }),
     PrismaModule,
   ],
-  providers: [AiService, AtmosClient, ImportCommerceService, LimitsService, ImportsService, ImportWorker],
+  providers: [AiService, AtmosClient, ImportCommerceService, LimitsService, ImportsService, MashqBatchRunner, ImportWorker],
   exports: [ImportWorker, ImportsService],
 })
 export class ImportWorkerModule {}
