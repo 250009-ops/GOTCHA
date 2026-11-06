@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnApplicationShutdown } from '@nestjs/common';
+import { Injectable, Logger, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { hostname } from 'os';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -53,7 +53,7 @@ export class ImportWorker implements OnApplicationShutdown {
   constructor(
     private prisma: PrismaService,
     private imports: ImportsService,
-    private mashq: MashqBatchRunner,
+    @Optional() private mashq?: MashqBatchRunner,
   ) {}
 
   start(pollMs = 1000) {
@@ -63,8 +63,10 @@ export class ImportWorker implements OnApplicationShutdown {
       .then((c) => this.logger.log(`Queue on start: ${JSON.stringify(c)}`))
       .catch(() => undefined);
     void this.housekeeping();
-    void this.mashq.tick();
-    this.mashqTimer = setInterval(() => void this.mashq.tick(), 60_000);
+    if (this.mashq) {
+      void this.mashq.tick();
+      this.mashqTimer = setInterval(() => void this.mashq?.tick(), 60_000);
+    }
     this.reapTimer = setInterval(() => void this.housekeeping(), IMPORT_REAP_INTERVAL_MS);
     const loop = async () => {
       if (this.stopping) return;
