@@ -1,4 +1,5 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { logIncomingCustomEmoji } from './custom-emoji';
 import { GrammySender } from './telegram-api';
 import { registerTelegramWebhook } from './register-webhook';
 import { TelegramLoginService } from './telegram-login.service';
@@ -23,8 +24,9 @@ export class TelegramBotService implements OnModuleInit {
   }
 
   async handleUpdate(update: unknown) {
+    logIncomingCustomEmoji(update);
     await handleTelegramUpdate(update as TelegramUpdateBody, this.login, async (message) => {
-      const result = await this.sender.send(message.chatId, message.text, message.rows, message.photo);
+      const result = await this.sender.send(message.chatId, message.text, message.rows, message.photo, message.entities);
       if (result.status === 'blocked') {
         const user = await this.login.userByTelegram(BigInt(message.chatId));
         if (user) await this.login.markBlocked(user.id);

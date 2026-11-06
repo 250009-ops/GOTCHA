@@ -4,10 +4,12 @@ import { ConflictException, HttpException } from '@nestjs/common';
 import { AuthService } from '../auth/auth.service';
 import { TelegramRegisterDto } from '../auth/dto/auth.dto';
 import { CODE_TTL_MS, hashLoginCode } from './code-hash';
+import { CUSTOM_EMOJI_FALLBACK } from './custom-emoji';
 import { TelegramLoginService } from './telegram-login.service';
 import type { GrammySender } from './telegram-api';
 
 delete process.env.DEV_AUTH_ANY_CREDENTIAL;
+delete process.env.TELEGRAM_CUSTOM_EMOJI_IDS;
 process.env.TELEGRAM_BOT_TOKEN = 'test-bot-token';
 
 const TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -197,7 +199,7 @@ async function main() {
   const good = codeFrom(bag.sent[0].text);
   assert.equal(
     bag.sent[0].text,
-    `Gotcha roʻyxatdan oʻtish kodi: ${good.slice(0, 3)} ${good.slice(3)} — 5 daqiqa amal qiladi. Uni hech kimga bermang.`,
+    `${CUSTOM_EMOJI_FALLBACK.key} Gotcha roʻyxatdan oʻtish kodi: ${good.slice(0, 3)} ${good.slice(3)} — 5 daqiqa amal qiladi. Uni hech kimga bermang.`,
   );
   const row = bag.pending[0];
   assert.equal(row.codeHash, hashLoginCode(good, `signup:${TELEGRAM_ID.toString()}`));
@@ -215,7 +217,7 @@ async function main() {
   const again = await telegram.sendSignupCode(initData('ru'));
   assert.deepEqual(again, { sent: true, resendIn: 60 });
   assert.equal(bag.sent.length, 2);
-  assert.match(bag.sent[1].text, /^Код регистрации Gotcha: \d{3} \d{3} — действует 5 минут\. Никому его не сообщайте\.$/);
+  assert.match(bag.sent[1].text, new RegExp(`^${CUSTOM_EMOJI_FALLBACK.key} Код регистрации Gotcha: \\d{3} \\d{3} — действует 5 минут\\. Никому его не сообщайте\\.$`));
   assert.equal(row.codeAttempts, 0);
   const resent = codeFrom(bag.sent[1].text);
 
@@ -234,7 +236,7 @@ async function main() {
   seedPending(aged);
   const agedServices = services(aged);
   await agedServices.telegram.sendSignupCode(initData('en'));
-  assert.match(aged.sent[0].text, /^Gotcha sign-up code: \d{3} \d{3} — valid for 5 minutes\. Do not share it with anyone\.$/);
+  assert.match(aged.sent[0].text, new RegExp(`^${CUSTOM_EMOJI_FALLBACK.key} Gotcha sign-up code: \\d{3} \\d{3} — valid for 5 minutes\\. Do not share it with anyone\\.$`));
   const agedCode = codeFrom(aged.sent[0].text);
   aged.pending[0].codeExpiresAt = new Date(Date.now() - 1000);
   await expectHttp(() => agedServices.auth.registerTelegram(registerDto(agedCode)), 400, 'telegram_code_expired');

@@ -2,6 +2,7 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import { Bot, GrammyError, InlineKeyboard, InputFile } from 'grammy';
 import { Logger } from '@nestjs/common';
+import type { BotEntity } from './custom-emoji';
 
 export interface BotButton {
   text: string;
@@ -15,7 +16,7 @@ export interface SendResult {
 }
 
 export interface TelegramSender {
-  send(chatId: number | bigint, text: string, rows?: BotButton[][], photo?: boolean): Promise<SendResult>;
+  send(chatId: number | bigint, text: string, rows?: BotButton[][], photo?: boolean, entities?: BotEntity[]): Promise<SendResult>;
 }
 
 export function welcomeImagePath(): string | null {
@@ -54,24 +55,32 @@ export class GrammySender implements TelegramSender {
     return this.bot;
   }
 
-  async send(chatId: number | bigint, text: string, rows?: BotButton[][], photo?: boolean): Promise<SendResult> {
+  async send(
+    chatId: number | bigint,
+    text: string,
+    rows?: BotButton[][],
+    photo?: boolean,
+    entities?: BotEntity[],
+  ): Promise<SendResult> {
     const bot = this.client();
     if (!bot) return { status: 'failed' };
     const reply_markup = keyboard(rows);
     const id = Number(chatId);
+    const markup = entities?.length
+      ? { reply_markup, entities }
+      : { reply_markup, parse_mode: 'HTML' as const };
     try {
       if (photo) {
         const file = welcomeImagePath();
         if (file) {
-          await bot.api.sendPhoto(id, new InputFile(file), {
-            caption: text,
-            parse_mode: 'HTML',
-            reply_markup,
-          });
+          const caption = entities?.length
+            ? { caption: text, caption_entities: entities, reply_markup }
+            : { caption: text, parse_mode: 'HTML' as const, reply_markup };
+          await bot.api.sendPhoto(id, new InputFile(file), caption);
           return { status: 'ok' };
         }
       }
-      await bot.api.sendMessage(id, text, { parse_mode: 'HTML', reply_markup });
+      await bot.api.sendMessage(id, text, markup);
       return { status: 'ok' };
     } catch (error) {
       const code = error instanceof GrammyError ? error.error_code : 0;

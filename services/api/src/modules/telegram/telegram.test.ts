@@ -11,6 +11,7 @@ import { welcomeHtml } from './copy';
 import type { GrammySender } from './telegram-api';
 
 process.env.TELEGRAM_BOT_USERNAME = process.env.TELEGRAM_BOT_USERNAME || 'GotchaBot';
+delete process.env.TELEGRAM_CUSTOM_EMOJI_IDS;
 
 function memory() {
   const users: Array<Record<string, unknown>> = [];

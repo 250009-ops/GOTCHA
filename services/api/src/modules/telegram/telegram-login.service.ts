@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { maskPhone, normalizePhone } from '../../common/phone';
 import { PrismaService } from '../../prisma/prisma.service';
+import { applyCustomEmoji, CODE_EMOJI_KEYS } from './custom-emoji';
 import { botLocale, codeErrorText, loginCodeHtml, resendCooldownText, signupCodeText, type BotLocale } from './copy';
 import { CODE_TTL_MS, MAX_CODE_ATTEMPTS, RESEND_COOLDOWN_MS, codeMatches, hashLoginCode, randomLinkToken, randomLoginCode } from './code-hash';
 import { botDeepLink, GrammySender, learnerForgotUrl, miniAppUrl } from './telegram-api';
@@ -161,7 +162,8 @@ export class TelegramLoginService {
         codeSentAt: now,
       },
     });
-    await this.sender.send(telegramId, signupCodeText(locale, code));
+    const signup = applyCustomEmoji(signupCodeText(locale, code), CODE_EMOJI_KEYS);
+    await this.sender.send(telegramId, signup.text, undefined, undefined, signup.entities);
     return { sent: true, resendIn: 60 };
   }
 
@@ -227,10 +229,13 @@ export class TelegramLoginService {
     });
     const locale = input.locale ?? 'uz';
     const labels = botButtons(locale);
+    const loginCode = applyCustomEmoji(loginCodeHtml(locale, code), CODE_EMOJI_KEYS);
     const sent = await this.sender.send(
       input.telegramId,
-      loginCodeHtml(locale, code),
+      loginCode.text,
       [[{ text: labels.deny, callback: `no:${id}` }]],
+      undefined,
+      loginCode.entities,
     );
     if (sent.status === 'blocked') await this.markBlocked(input.userId);
     const masked = maskPhone(input.phone);
@@ -268,10 +273,13 @@ export class TelegramLoginService {
       },
     });
     const userLocale = botLocale(row.user.uiLanguage);
+    const resent = applyCustomEmoji(loginCodeHtml(userLocale, code), CODE_EMOJI_KEYS);
     const sent = await this.sender.send(
       row.user.telegramId,
-      loginCodeHtml(userLocale, code),
+      resent.text,
       [[{ text: botButtons(userLocale).deny, callback: `no:${row.id}` }]],
+      undefined,
+      resent.entities,
     );
     if (sent.status === 'blocked') await this.markBlocked(row.user.id);
     return { sent: true, challengeId: row.id };

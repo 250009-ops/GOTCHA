@@ -1,7 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { normalizeNotificationLocale } from '@gotcha/shared';
 import { PrismaService } from '../../prisma/prisma.service';
-import { botButtons, botLocale, notificationButton, notificationStartApp } from './copy';
+import { applyCustomEmoji, notificationEmojiKeys } from './custom-emoji';
+import { botButtons, botLocale, notificationButton, notificationHtml, notificationStartApp } from './copy';
 import { tashkentDayStart } from '../../common/tashkent-window';
 import { inTelegramQuietHours, TELEGRAM_DAILY_LIMIT } from './quiet';
 import { GrammySender, miniAppStartUrl } from './telegram-api';
@@ -44,12 +45,10 @@ export class TelegramNotifyService {
     const startapp = item.kind === 'content' || item.kind === 'message'
       ? notificationStartApp(item.kind, item.refId)
       : notificationStartApp(item.kind);
-    const text = item.title && item.body && item.title !== item.body
-        ? `<b>${escape(item.title)}</b>\n${escape(item.body)}`
-        : escape(item.title || item.body);
-    const result = await this.sender.send(user.telegramId, text, [[
+    const prepared = applyCustomEmoji(notificationHtml(item.kind, item.title, item.body), notificationEmojiKeys(item.kind));
+    const result = await this.sender.send(user.telegramId, prepared.text, [[
       { text: button.text, webApp: miniAppStartUrl(startapp) },
-    ]]);
+    ]], undefined, prepared.entities);
     if (result.status === 'blocked') {
       await this.prisma.user.update({ where: { id: userId }, data: { telegramBotBlockedAt: new Date() } });
       return false;
@@ -58,8 +57,4 @@ export class TelegramNotifyService {
     await this.prisma.telegramOutboundLog.create({ data: { userId, kind: item.kind } });
     return true;
   }
-}
-
-function escape(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }

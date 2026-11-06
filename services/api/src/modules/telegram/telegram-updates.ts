@@ -1,4 +1,5 @@
 import { botButtons, botLocale, confirmedHtml, linkStaleHtml, welcomeHtml, type BotLocale } from './copy';
+import { applyCustomEmoji, WELCOME_EMOJI_KEYS, type BotEntity } from './custom-emoji';
 import { miniAppUrl, type BotButton } from './telegram-api';
 import type { TelegramLoginService } from './telegram-login.service';
 
@@ -28,6 +29,7 @@ export interface Outgoing {
   text: string;
   rows?: BotButton[][];
   photo?: boolean;
+  entities?: BotEntity[];
 }
 
 /**
@@ -165,9 +167,11 @@ function welcomeCard(from: TelegramFrom, locale: BotLocale, linked: boolean): Ou
         { text: labels.signup, webApp: miniAppUrl('/signup') },
         { text: labels.login, webApp: miniAppUrl('/login') },
       ]];
+  const prepared = applyCustomEmoji(welcomeHtml(locale, from.first_name || ''), WELCOME_EMOJI_KEYS);
   return {
     chatId: from.id,
-    text: welcomeHtml(locale, from.first_name || ''),
+    text: prepared.text,
+    entities: prepared.entities,
     rows,
     photo: true,
   };
