@@ -6,9 +6,37 @@ const { wave, book, tap, key } = CUSTOM_EMOJI_FALLBACK;
 
 export function botLocale(code?: string | null): BotLocale {
   const value = (code ?? '').trim().toLowerCase();
-  if (value.startsWith('ru')) return 'ru';
-  if (value.startsWith('en')) return 'en';
+  if (value === 'ru' || value.startsWith('ru-')) return 'ru';
+  if (value === 'en' || value.startsWith('en-')) return 'en';
   return 'uz';
+}
+
+/** Reply keyboard. The apostrophe in Oʻzbekcha is U+02BB, matching the product copy. */
+export const LANGUAGE_BUTTONS: Array<{ locale: BotLocale; text: string }> = [
+  { locale: 'uz', text: '🇺🇿 Oʻzbekcha' },
+  { locale: 'ru', text: '🇷🇺 Русский' },
+  { locale: 'en', text: '🇬🇧 English' },
+];
+
+export function languageKeyboard(): string[][] {
+  return [LANGUAGE_BUTTONS.map((button) => button.text)];
+}
+
+export function localeFromLanguageButton(text: string): BotLocale | null {
+  const value = text.trim();
+  return LANGUAGE_BUTTONS.find((button) => button.text === value)?.locale ?? null;
+}
+
+export function languageSetText(locale: BotLocale): string {
+  if (locale === 'ru') return 'Язык: русский.';
+  if (locale === 'en') return 'Language: English.';
+  return 'Til: oʻzbekcha.';
+}
+
+export function languageHintText(locale: BotLocale): string {
+  if (locale === 'ru') return 'Выберите язык';
+  if (locale === 'en') return 'Choose a language';
+  return 'Tilni tanlang';
 }
 
 export function escapeHtml(value: string): string {

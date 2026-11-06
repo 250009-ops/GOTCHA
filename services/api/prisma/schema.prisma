@@ -1576,6 +1576,8 @@ model TelegramPendingSignup {
   firstName     String    @default("") @map("first_name")
   lastName      String    @default("") @map("last_name")
   username      String?
+  /// Bot language chosen in Telegram. New rows stay uz until the person taps the keyboard.
+  locale        String    @default("uz")
   /// sha256 of the 6-digit mini-app sign-up code. Cleared after a successful register.
   codeHash      String?   @map("code_hash")
   codeExpiresAt DateTime? @map("code_expires_at")

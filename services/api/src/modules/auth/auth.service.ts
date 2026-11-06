@@ -747,7 +747,7 @@ export class AuthService {
     if (!consentVersion) throw new BadRequestException({ statusCode: 400, code: 'consent_version_unknown', message: 'Unknown consent version.' });
     const passwordHash = await bcrypt.hash(dto.password, 12);
     const primaryTarget = dto.targetLanguages[0];
-    const ui = botLocale(checked.user.language_code);
+    const ui = botLocale(pending.locale ?? 'uz');
     const user = await this.prisma.user.create({
       data: {
         email: null,

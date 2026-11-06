@@ -90,25 +90,42 @@ async function main() {
   }
   console.log('Updating @gotchaa_app');
 
-  const locales: Array<{ key: string; language_code?: string }> = [
-    { key: 'uz' },
-    { key: 'ru', language_code: 'ru' },
-    { key: 'en', language_code: 'en' },
-  ];
-  for (const locale of locales) {
-    const row = profile[locale.key];
-    if (!row) throw new Error(`bot-profile.json has no ${locale.key} block`);
-    const language = locale.language_code ? { language_code: locale.language_code } : {};
-    await call('setMyName', { name: row.name, ...language });
-    await call('setMyDescription', { description: row.desc, ...language });
-    await call('setMyShortDescription', { short_description: row.short, ...language });
-    await call('setMyCommands', {
-      commands: [{ command: 'start', description: row.cmd }],
-      ...language,
-    });
-    console.log(`profile set (${locale.language_code ?? 'default'})`);
+  const uz = profile.uz;
+  const name = 'Gotcha';
+  if (profile.uz.name !== name || profile.ru.name !== name || profile.en.name !== name) {
+    throw new Error('bot-profile.json name must be Gotcha for uz, ru and en');
+  }
+  await call('setMyName', { name });
+  for (const language_code of ['uz', 'ru', 'en']) await call('setMyName', { name, language_code });
+  await call('setMyDescription', { description: uz.desc });
+  await call('setMyShortDescription', { short_description: uz.short });
+  await call('setMyCommands', { commands: [{ command: 'start', description: uz.cmd }] });
+  for (const language_code of ['ru', 'en'] as const) {
+    const row = profile[language_code];
+    await call('setMyDescription', { description: row.desc, language_code });
+    await call('setMyShortDescription', { short_description: row.short, language_code });
+    await call('setMyCommands', { commands: [{ command: 'start', description: row.cmd }], language_code });
   }
   console.log('Bot profile updated.');
+
+  const names = [];
+  for (const language_code of [undefined, 'uz', 'ru', 'en'] as const) {
+    const body = language_code ? { language_code } : {};
+    const got = await call('getMyName', body);
+    names.push({ language_code: language_code ?? 'default', name: (got.result as { name?: string } | undefined)?.name ?? '' });
+  }
+  const descriptions = [];
+  for (const language_code of [undefined, 'ru', 'en'] as const) {
+    const body = language_code ? { language_code } : {};
+    const got = await call('getMyDescription', body);
+    const short = await call('getMyShortDescription', body);
+    descriptions.push({
+      language_code: language_code ?? 'default',
+      description: (got.result as { description?: string } | undefined)?.description ?? '',
+      short: (short.result as { short_description?: string } | undefined)?.short_description ?? '',
+    });
+  }
+  console.log(JSON.stringify({ names, descriptions }, null, 2));
 }
 
 main().catch((error: unknown) => {

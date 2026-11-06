@@ -1,4 +1,4 @@
-import { botButtons, botLocale, confirmedHtml, linkStaleHtml, welcomeHtml, type BotLocale } from './copy';
+import { botButtons, botLocale, confirmedHtml, languageHintText, languageKeyboard, languageSetText, linkStaleHtml, localeFromLanguageButton, welcomeHtml, type BotLocale } from './copy';
 import { applyCustomEmoji, WELCOME_EMOJI_KEYS, type BotEntity } from './custom-emoji';
 import { miniAppUrl, type BotButton } from './telegram-api';
 import type { TelegramLoginService } from './telegram-login.service';
@@ -30,6 +30,7 @@ export interface Outgoing {
   rows?: BotButton[][];
   photo?: boolean;
   entities?: BotEntity[];
+  replyKeyboard?: string[][];
 }
 
 /**
@@ -54,6 +55,11 @@ export async function handleTelegramUpdate(
     return;
   }
   const text = message?.text?.trim() ?? '';
+  const picked = localeFromLanguageButton(text);
+  if (picked) {
+    await onLanguage(from, picked, login, send);
+    return;
+  }
   if (!text.startsWith('/start')) return;
   const payload = text.replace(/^\/start(?:@\w+)?/, '').trim();
   await onStart(from, payload, login, send);
@@ -65,8 +71,8 @@ async function onStart(
   login: TelegramLoginService,
   send: (message: Outgoing) => Promise<void>,
 ) {
-  const locale = botLocale(from.language_code);
   const telegramId = BigInt(from.id);
+  const locale = await login.botLocaleFor(telegramId);
   const linked = await login.userByTelegram(telegramId);
   if (linked) await login.clearBlocked(linked.id).catch(() => undefined);
 
@@ -83,6 +89,20 @@ async function onStart(
       username: from.username ?? null,
     });
   }
+  await send(welcomeCard(from, locale, Boolean(linked)));
+  await send(languagePrompt(from.id, locale));
+}
+
+async function onLanguage(
+  from: TelegramFrom,
+  locale: BotLocale,
+  login: TelegramLoginService,
+  send: (message: Outgoing) => Promise<void>,
+) {
+  const telegramId = BigInt(from.id);
+  await login.setBotLocale(telegramId, locale);
+  const linked = await login.userByTelegram(telegramId);
+  await send({ chatId: from.id, text: languageSetText(locale), replyKeyboard: languageKeyboard() });
   await send(welcomeCard(from, locale, Boolean(linked)));
 }
 
@@ -116,7 +136,7 @@ async function onContact(
   login: TelegramLoginService,
   send: (message: Outgoing) => Promise<void>,
 ) {
-  const locale = botLocale(from.language_code);
+  const locale = await login.botLocaleFor(BigInt(from.id));
   const result = await login.acceptContact({
     fromId: from.id,
     contactUserId: contact.user_id,
@@ -138,7 +158,7 @@ async function onCallback(
   login: TelegramLoginService,
   send: (message: Outgoing) => Promise<void>,
 ) {
-  const locale = botLocale(from.language_code);
+  const locale = await login.botLocaleFor(BigInt(from.id));
   const [action, id] = data.split(':');
   if (!id || (action !== 'ok' && action !== 'no')) return;
   const telegramId = BigInt(from.id);
@@ -159,13 +179,17 @@ async function onCallback(
   }
 }
 
+function languagePrompt(chatId: number, locale: BotLocale): Outgoing {
+  return { chatId, text: languageHintText(locale), replyKeyboard: languageKeyboard() };
+}
+
 function welcomeCard(from: TelegramFrom, locale: BotLocale, linked: boolean): Outgoing {
   const labels = botButtons(locale);
   const rows = linked
-    ? [[{ text: labels.open, webApp: miniAppUrl() }]]
+    ? [[{ text: labels.open, webApp: miniAppUrl('', locale) }]]
     : [[
-        { text: labels.signup, webApp: miniAppUrl('/signup') },
-        { text: labels.login, webApp: miniAppUrl('/login') },
+        { text: labels.signup, webApp: miniAppUrl('/signup', locale) },
+        { text: labels.login, webApp: miniAppUrl('/login', locale) },
       ]];
   const prepared = applyCustomEmoji(welcomeHtml(locale, from.first_name || ''), WELCOME_EMOJI_KEYS);
   return {

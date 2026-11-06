@@ -26,7 +26,7 @@ export class TelegramBotService implements OnModuleInit {
   async handleUpdate(update: unknown) {
     logIncomingCustomEmoji(update);
     await handleTelegramUpdate(update as TelegramUpdateBody, this.login, async (message) => {
-      const result = await this.sender.send(message.chatId, message.text, message.rows, message.photo, message.entities);
+      const result = await this.sender.send(message.chatId, message.text, message.rows, message.photo, message.entities, message.replyKeyboard);
       if (result.status === 'blocked') {
         const user = await this.login.userByTelegram(BigInt(message.chatId));
         if (user) await this.login.markBlocked(user.id);

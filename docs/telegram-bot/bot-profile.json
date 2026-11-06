@@ -1,18 +1,18 @@
 {
   "uz": {
-    "name": "Gotcha — til oʻrganish",
+    "name": "Gotcha",
     "short": "📚 Kitob va maqolalarni oʻqib til oʻrganing. 👆 Istalgan soʻzga bosing — tarjima va izoh. 🌐 gotchaa.uz",
     "desc": "👋 Gotcha — oʻqish orqali til oʻrganish ilovasi.\n\n🇬🇧🇩🇪🇰🇷 Ingliz, nemis, koreys va boshqa tillarni sevgan kitob va maqolalaringizni oʻqib oʻrganing:\n\n👆 Istalgan soʻzga bosing — tarjima va izoh darhol chiqadi\n🧠 Soʻzlar lugʻatingizga tushadi va Mashqda takrorlanadi\n📄 Oʻz PDF, EPUB va maqolalaringizni yuklang\n🔥 Kunlik maqsad va seriya bilan har kuni oʻsing\n\n⚡️ Roʻyxatdan oʻtish 1 daqiqa: ism, Telegram raqamingiz va parol — saytga ham shu bilan kirasiz.\n\n👇 Boshlash uchun «Start» tugmasini bosing",
     "cmd": "Gotchaʼni ochish"
   },
   "ru": {
-    "name": "Gotcha — изучение языков",
+    "name": "Gotcha",
     "short": "📚 Учите языки, читая книги и статьи. 👆 Нажмите на любое слово — перевод и пояснение. 🌐 gotchaa.uz",
     "desc": "👋 Gotcha — приложение для изучения языков через чтение.\n\n🇬🇧🇩🇪🇰🇷 Учите английский, немецкий, корейский и другие языки на любимых книгах, статьях и новостях:\n\n👆 Нажмите на любое слово — перевод и пояснение сразу\n🧠 Слова попадают в словарь и повторяются в Практике\n📄 Загружайте свои PDF, EPUB и статьи\n🔥 Цель на день и серия помогают не сбиться\n\n⚡️ Регистрация за 1 минуту: имя, номер Telegram и пароль — с ними вы войдёте и на gotchaa.uz.\n\n👇 Нажмите «Start», чтобы начать",
     "cmd": "Открыть Gotcha"
   },
   "en": {
-    "name": "Gotcha — learn languages",
+    "name": "Gotcha",
     "short": "📚 Learn languages by reading books and articles. 👆 Tap any word for a translation and explanation. 🌐 gotchaa.uz",
     "desc": "👋 Gotcha is a language app built around reading.\n\n🇬🇧🇩🇪🇰🇷 Learn English, German, Korean and more from books, articles and news you enjoy:\n\n👆 Tap any word for an instant translation and explanation\n🧠 Words go to your vocabulary and come back in Practice\n📄 Import your own PDFs, EPUBs and articles\n🔥 A daily goal and streak keep you going\n\n⚡️ Sign up in a minute: name, your Telegram number and a password — the same login works on gotchaa.uz.\n\n👇 Press Start to begin",
     "cmd": "Open Gotcha"

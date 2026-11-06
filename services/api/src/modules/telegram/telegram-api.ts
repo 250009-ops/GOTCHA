@@ -16,7 +16,7 @@ export interface SendResult {
 }
 
 export interface TelegramSender {
-  send(chatId: number | bigint, text: string, rows?: BotButton[][], photo?: boolean, entities?: BotEntity[]): Promise<SendResult>;
+  send(chatId: number | bigint, text: string, rows?: BotButton[][], photo?: boolean, entities?: BotEntity[], replyKeyboard?: string[][]): Promise<SendResult>;
 }
 
 export function welcomeImagePath(): string | null {
@@ -26,6 +26,15 @@ export function welcomeImagePath(): string | null {
     join(__dirname, '../../../../assets/telegram/welcome-quietly.png'),
   ];
   return candidates.find((path) => existsSync(path)) ?? null;
+}
+
+export function replyKeyboardMarkup(rows: string[][] | undefined) {
+  if (!rows?.length) return undefined;
+  return {
+    keyboard: rows.map((row) => row.map((text) => ({ text }))),
+    resize_keyboard: true,
+    is_persistent: true,
+  };
 }
 
 export function keyboard(rows: BotButton[][] | undefined): InlineKeyboard | undefined {
@@ -61,10 +70,11 @@ export class GrammySender implements TelegramSender {
     rows?: BotButton[][],
     photo?: boolean,
     entities?: BotEntity[],
+    replyKeyboard?: string[][],
   ): Promise<SendResult> {
     const bot = this.client();
     if (!bot) return { status: 'failed' };
-    const reply_markup = keyboard(rows);
+    const reply_markup = keyboard(rows) ?? replyKeyboardMarkup(replyKeyboard);
     const id = Number(chatId);
     const markup = entities?.length
       ? { reply_markup, entities }
@@ -91,14 +101,16 @@ export class GrammySender implements TelegramSender {
   }
 }
 
-export function miniAppUrl(path = ''): string {
+export function miniAppUrl(path = '', lang?: string): string {
   const base = (process.env.TELEGRAM_MINI_APP_URL || 'https://gotchaa.uz/learn/tg').replace(/\/$/, '');
-  if (!path) return base;
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  const url = !path ? base : `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  if (!lang) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}lang=${encodeURIComponent(lang)}`;
 }
 
-export function miniAppStartUrl(startapp: string): string {
-  return `${miniAppUrl()}?startapp=${encodeURIComponent(startapp)}`;
+export function miniAppStartUrl(startapp: string, lang?: string): string {
+  const url = `${miniAppUrl()}?startapp=${encodeURIComponent(startapp)}`;
+  return lang ? `${url}&lang=${encodeURIComponent(lang)}` : url;
 }
 
 export function botDeepLink(payload: string): string {

@@ -88,6 +88,27 @@ export class TelegramLoginService {
     });
   }
 
+  /** Linked accounts use the saved profile language. Everyone else is Uzbek until they tap the keyboard. */
+  async botLocaleFor(telegramId: bigint): Promise<BotLocale> {
+    const user = await this.prisma.user.findUnique({ where: { telegramId } });
+    if (user && !user.deletedAt && user.uiLanguage) return botLocale(user.uiLanguage);
+    const row = await this.pending(telegramId);
+    return botLocale(row?.locale ?? 'uz');
+  }
+
+  /** Saves the choice on the Telegram id and on the linked account, so the bot and the mini app match. */
+  async setBotLocale(telegramId: bigint, locale: BotLocale) {
+    await this.prisma.telegramPendingSignup.upsert({
+      where: { telegramId },
+      create: { telegramId, locale, firstName: '', lastName: '' },
+      update: { locale },
+    });
+    const user = await this.prisma.user.findUnique({ where: { telegramId } });
+    if (user && !user.deletedAt) {
+      await this.prisma.user.update({ where: { id: user.id }, data: { uiLanguage: locale } });
+    }
+  }
+
   /**
    * Saves a shared contact only when contact.user_id is the sender.
    * Returns 'mismatch' without writing, or 'taken' when the number is already on a user.
@@ -125,7 +146,7 @@ export class TelegramLoginService {
   phoneTakenReply(locale: BotLocale) {
     return {
       text: phoneTakenHtml(locale),
-      rows: [[{ text: botButtons(locale).login, webApp: miniAppUrl('/login') }]],
+      rows: [[{ text: botButtons(locale).login, webApp: miniAppUrl('/login', locale) }]],
     };
   }
 
@@ -144,7 +165,7 @@ export class TelegramLoginService {
     if (takenPhone) {
       throw new ConflictException({ statusCode: 409, code: 'PHONE_ALREADY_REGISTERED', message: 'This phone number is already registered.' });
     }
-    const locale = botLocale(checked.user.language_code);
+    const locale = await this.botLocaleFor(telegramId);
     if (pending.codeSentAt && Date.now() - pending.codeSentAt.getTime() < RESEND_COOLDOWN_MS) {
       throw new HttpException(
         { statusCode: 429, code: 'telegram_code_resend_cooldown', message: resendCooldownText(locale) },
@@ -429,7 +450,7 @@ export class TelegramLoginService {
   notLinkedCard(locale: BotLocale) {
     return {
       text: notLinkedHtml(locale),
-      rows: [[{ text: botButtons(locale).signup, webApp: miniAppUrl('/signup') }]],
+      rows: [[{ text: botButtons(locale).signup, webApp: miniAppUrl('/signup', locale) }]],
     };
   }
 

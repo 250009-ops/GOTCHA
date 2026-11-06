@@ -214,7 +214,8 @@ async function main() {
 
   row.codeSentAt = new Date(Date.now() - 61_000);
   row.codeAttempts = 3;
-  const again = await telegram.sendSignupCode(initData('ru'));
+  row.locale = 'ru';
+  const again = await telegram.sendSignupCode(initData('en'));
   assert.deepEqual(again, { sent: true, resendIn: 60 });
   assert.equal(bag.sent.length, 2);
   assert.match(bag.sent[1].text, new RegExp(`^${CUSTOM_EMOJI_FALLBACK.key} Код регистрации Gotcha: \\d{3} \\d{3} — действует 5 минут\\. Никому его не сообщайте\\.$`));
@@ -234,8 +235,9 @@ async function main() {
 
   const aged = world();
   seedPending(aged);
+  aged.pending[0].locale = 'en';
   const agedServices = services(aged);
-  await agedServices.telegram.sendSignupCode(initData('en'));
+  await agedServices.telegram.sendSignupCode(initData('ru'));
   assert.match(aged.sent[0].text, new RegExp(`^${CUSTOM_EMOJI_FALLBACK.key} Gotcha sign-up code: \\d{3} \\d{3} — valid for 5 minutes\\. Do not share it with anyone\\.$`));
   const agedCode = codeFrom(aged.sent[0].text);
   aged.pending[0].codeExpiresAt = new Date(Date.now() - 1000);
@@ -252,6 +254,7 @@ async function main() {
   assert.equal(ok.users.length, 1);
   assert.equal(ok.users[0].phone, '+998901112233');
   assert.equal(ok.users[0].telegramId, TELEGRAM_ID);
+  assert.equal(ok.users[0].uiLanguage, 'uz');
   assert.equal(ok.pending.length, 0);
   assert.equal(ok.refresh.length, 1);
   await expectHttp(() => okServices.auth.registerTelegram(registerDto(okCode)), 400, 'telegram_phone_required');

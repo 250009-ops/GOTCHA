@@ -332,6 +332,37 @@ async function main() {
     else process.env.TELEGRAM_MENU_BUTTON_ENABLED = savedFlag;
   }
 
+  const langBag = memory();
+  const langLogin = new TelegramLoginService(langBag.prisma as never, langBag.sender as unknown as GrammySender);
+  const langReplies: Array<{ text: string; rows?: unknown; replyKeyboard?: string[][] }> = [];
+  const collect = async (message: { text: string; rows?: unknown; replyKeyboard?: string[][] }) => {
+    langReplies.push(message);
+  };
+  await handleTelegramUpdate({
+    message: { text: '/start', from: { id: 900, first_name: 'Ali', language_code: 'en' } },
+  }, langLogin, collect);
+  assert.match(langReplies[0].text, /Assalomu alaykum/);
+  assert.equal(langReplies[0].text.includes('Hello'), false);
+  assert.match(JSON.stringify(langReplies[0].rows), /lang=uz/);
+  assert.deepEqual(langReplies[1].replyKeyboard, [['🇺🇿 Oʻzbekcha', '🇷🇺 Русский', '🇬🇧 English']]);
+
+  langReplies.length = 0;
+  await handleTelegramUpdate({
+    message: { text: '🇷🇺 Русский', from: { id: 900, first_name: 'Ali', language_code: 'en' } },
+  }, langLogin, collect);
+  assert.match(langReplies[0].text, /Язык: русский/);
+  assert.match(langReplies[1].text, /Здравствуйте/);
+  assert.match(JSON.stringify(langReplies[1].rows), /lang=ru/);
+  assert.equal(langBag.pending.find((row) => row.telegramId === 900n)?.locale, 'ru');
+
+  langBag.users.push({ id: 'linked-900', telegramId: 900n, uiLanguage: 'en', deletedAt: null, displayName: 'Ali' });
+  langReplies.length = 0;
+  await handleTelegramUpdate({
+    message: { text: '/start', from: { id: 900, first_name: 'Ali', language_code: 'ru' } },
+  }, langLogin, collect);
+  assert.match(langReplies[0].text, /Hello, Ali/);
+  assert.match(JSON.stringify(langReplies[0].rows), /lang=en/);
+
   console.log('telegram.test.ts ok');
 }
 

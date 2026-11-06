@@ -47,7 +47,7 @@ export class TelegramNotifyService {
       : notificationStartApp(item.kind);
     const prepared = applyCustomEmoji(notificationHtml(item.kind, item.title, item.body), notificationEmojiKeys(item.kind));
     const result = await this.sender.send(user.telegramId, prepared.text, [[
-      { text: button.text, webApp: miniAppStartUrl(startapp) },
+      { text: button.text, webApp: miniAppStartUrl(startapp, locale) },
     ]], undefined, prepared.entities);
     if (result.status === 'blocked') {
       await this.prisma.user.update({ where: { id: userId }, data: { telegramBotBlockedAt: new Date() } });
