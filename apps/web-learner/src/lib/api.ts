@@ -29,7 +29,8 @@ const PUBLIC_AUTH_API = new Set([
 
 function isPublicAuthApi(path: string) {
   const bare = path.split('?')[0] ?? path;
-  return PUBLIC_AUTH_API.has(bare);
+  // Telegram sign-in/up and the Telegram login code are public too (no Bearer, no refresh retry).
+  return PUBLIC_AUTH_API.has(bare) || bare.startsWith('/auth/telegram/') || bare.startsWith('/auth/login/');
 }
 
 export interface AuthTokens {

@@ -5,6 +5,8 @@ export const PUBLIC_AUTH_PATHS = [
   '/verify-email',
   '/forgot-password',
   '/reset-password',
+  '/tg/signup',
+  '/tg/login',
 ] as const;
 
 /**

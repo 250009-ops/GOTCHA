@@ -16,7 +16,7 @@ export async function registerTelegramWebhook(env: NodeJS.ProcessEnv = process.e
   const domain = env.DOMAIN?.trim();
   const url = explicit || (domain ? `https://${domain}/api/v1/telegram/webhook` : '');
   if (!url || /localhost|127\.0\.0\.1/.test(url)) return 'skipped';
-  const mini = (env.TELEGRAM_MINI_APP_URL || (domain ? `https://${domain}/tg` : 'https://gotchaa.uz/tg')).replace(/\/$/, '');
+  const mini = (env.TELEGRAM_MINI_APP_URL || (domain ? `https://${domain}/learn/tg` : 'https://gotchaa.uz/learn/tg')).replace(/\/$/, '');
   const hook = await fetch(`https://api.telegram.org/bot${token}/setWebhook`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },

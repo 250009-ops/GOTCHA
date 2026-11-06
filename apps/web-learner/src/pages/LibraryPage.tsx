@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, BookOpen, Brain, ChevronRight, Flame, Grid3X3, List, Newspaper, Search, Upload, X } from 'lucide-react';
 import { CatalogLanguageFlag } from '../components/CatalogLanguageFlag';
@@ -441,6 +441,7 @@ export default function LibraryPage() {
   const { locale } = useLearnerLocale();
   const { langs: catalogLangs } = useCatalogLanguages();
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const continuedFromBot = useRef(false);
   const [feedError, setFeedError] = useState(false);
   const [catalogError, setCatalogError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
@@ -472,6 +473,14 @@ export default function LibraryPage() {
   const isBrowse = location.pathname.replace(/\/$/, '').endsWith('/browse');
 
   // Legacy `/app?q=` deep-links → browse directory
+  useEffect(() => {
+    if (continuedFromBot.current || searchParams.get('continue') !== '1') return;
+    const id = feed?.continueReading?.[0]?.id;
+    if (!id) return;
+    continuedFromBot.current = true;
+    openReader(navigate, id, '/app');
+  }, [feed, navigate, searchParams]);
+
   useEffect(() => {
     if (isBrowse) return;
     const q = searchParams.get('q');

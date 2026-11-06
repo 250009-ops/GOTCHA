@@ -26,11 +26,10 @@ interface AuthContextValue {
   loading: boolean;
   bootstrapError: boolean;
   retryBootstrap: () => void;
-  login: (email: string, password: string) => Promise<{
-    accessToken: string;
-    refreshToken: string;
-    isAdmin: boolean;
-  }>;
+  /** Email or phone. Phone accounts (opened in Telegram) answer with a Telegram code step instead of tokens. */
+  login: (identifier: string, password: string) => Promise<LoginResult>;
+  /** Stores tokens from any sign-in path (Telegram session/code/link) and loads the profile. */
+  adoptSession: (res: SessionResponse) => Promise<void>;
   register: (data: {
     email: string;
     password: string;
@@ -56,6 +55,14 @@ interface AuthContextValue {
   markVocabMastered: (id: string, mastered?: boolean) => Promise<void>;
   removeVocab: (id: string) => Promise<void>;
 }
+
+export type SessionResponse = { accessToken: string; refreshToken: string; isAdmin?: boolean; user: UserProfile };
+export type TelegramCodeStep = { step: 'telegram_code'; challengeId: string; maskedPhone: string };
+export type LoginResult =
+  | { accessToken: string; refreshToken: string; isAdmin: boolean; telegramCode?: undefined }
+  | { telegramCode: TelegramCodeStep; accessToken?: undefined; refreshToken?: undefined; isAdmin?: undefined };
+
+const looksLikeEmail = (v: string) => /@/.test(v);
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
@@ -190,34 +197,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void bootstrap();
   }, [isPublicAuthRoute, bootstrap, bootstrapped, user]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await api<{
-      accessToken: string;
-      refreshToken: string;
-      isAdmin?: boolean;
-      user: UserProfile;
-    }>('/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ email, password }),
-    });
+  const adoptSession = useCallback(async (res: SessionResponse) => {
     setTokens({ accessToken: res.accessToken, refreshToken: res.refreshToken });
     setUser(res.user);
     try {
       await refreshProfile();
     } catch {
-      /* profile fields partially available from login response */
+      /* profile fields partially available from the sign-in response */
     }
     try {
       await refreshVocab();
     } catch {
-      /* vocabulary is non-blocking after login */
+      /* vocabulary is non-blocking after sign-in */
     }
-    return {
-      accessToken: res.accessToken,
-      refreshToken: res.refreshToken,
-      isAdmin: !!res.isAdmin,
-    };
   }, [refreshProfile, refreshVocab]);
+
+  const login = useCallback(async (identifier: string, password: string): Promise<LoginResult> => {
+    const id = identifier.trim();
+    const res = await api<SessionResponse | TelegramCodeStep>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify(looksLikeEmail(id) ? { email: id, password } : { identifier: id, password }),
+    });
+    if ('step' in res && res.step === 'telegram_code') {
+      return { telegramCode: res };
+    }
+    const session = res as SessionResponse;
+    await adoptSession(session);
+    return {
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      isAdmin: !!session.isAdmin,
+    };
+  }, [adoptSession]);
 
   const register = useCallback(
     async (data: {
@@ -346,6 +357,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootstrapError,
       retryBootstrap,
       login,
+      adoptSession,
       register,
       logout,
       refreshProfile,
@@ -368,6 +380,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       bootstrapError,
       retryBootstrap,
       login,
+      adoptSession,
       register,
       logout,
       refreshProfile,

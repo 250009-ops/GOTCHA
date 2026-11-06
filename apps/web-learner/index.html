@@ -23,6 +23,10 @@
       // App chrome stays light until dark mode covers every page. A stored "dark" becomes "system". See src/lib/appTheme.ts.
       (function () { try { var p = localStorage.getItem('gotcha.appTheme'); if (p === 'dark') localStorage.setItem('gotcha.appTheme', 'system'); document.documentElement.dataset.theme = 'light'; } catch (e) {} })();
     </script>
+    <script>
+      // Telegram Mini App: load the SDK only when opened from Telegram (launch hash) or reloaded inside it.
+      (function () { try { var tg = /tgWebApp(Data|Version|Platform)=/.test(location.hash) || sessionStorage.getItem('gotcha.tg') === '1'; if (tg) document.write('<script src="https://telegram.org/js/telegram-web-app.js"><\/script>'); } catch (e) {} })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

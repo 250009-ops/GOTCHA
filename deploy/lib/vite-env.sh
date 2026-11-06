@@ -14,6 +14,12 @@ load_vite_build_env() {
   export VITE_MARKETING_URL="${marketing:-https://${DOMAIN}}"
   export VITE_LEARNER_APP_URL="${learner:-https://${DOMAIN}/learn}"
   export VITE_ADMIN_APP_URL="${admin:-https://${DOMAIN}/admin}"
+  local bot
+  bot="$(get_env VITE_TELEGRAM_BOT_USERNAME)"
+  if [[ -z "$bot" ]]; then
+    bot="$(get_env TELEGRAM_BOT_USERNAME)"
+  fi
+  export VITE_TELEGRAM_BOT_USERNAME="${bot:-gotchaa_app}"
   local sha="dev"
   if [[ -n "${APP_DIR:-}" && -f "${APP_DIR}/deploy/LOCAL_REV" ]]; then
     sha="$(tr -d '[:space:]' < "${APP_DIR}/deploy/LOCAL_REV" | cut -c1-12)"
@@ -30,6 +36,7 @@ load_vite_build_env() {
   echo "==> Vite build env: VITE_API_URL=${VITE_API_URL}"
   echo "==> Vite build env: VITE_LEARNER_APP_URL=${VITE_LEARNER_APP_URL}"
   echo "==> Vite build env: VITE_ADMIN_APP_URL=${VITE_ADMIN_APP_URL}"
+  echo "==> Vite build env: VITE_TELEGRAM_BOT_USERNAME=${VITE_TELEGRAM_BOT_USERNAME}"
 }
 
 build_and_publish_frontends() {

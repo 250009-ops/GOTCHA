@@ -83,7 +83,7 @@ export class GrammySender implements TelegramSender {
 }
 
 export function miniAppUrl(path = ''): string {
-  const base = (process.env.TELEGRAM_MINI_APP_URL || 'https://gotchaa.uz/tg').replace(/\/$/, '');
+  const base = (process.env.TELEGRAM_MINI_APP_URL || 'https://gotchaa.uz/learn/tg').replace(/\/$/, '');
   if (!path) return base;
   return `${base}${path.startsWith('/') ? path : `/${path}`}`;
 }

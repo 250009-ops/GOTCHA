@@ -1,11 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Check, Eye, EyeOff, Lock, Mail, UserRound } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../components/ui/button';
 import { AuthShell } from '../components/AuthShell';
 import { useAuth } from '../lib/auth';
-import { clearTokens } from '../lib/api';
+import { api, clearTokens } from '../lib/api';
+import type { SessionResponse, TelegramCodeStep } from '../lib/auth';
+import { TelegramBadge, TelegramCodeCard, TelegramLinkWait, telegramAuthCopy, telegramButtonCls } from '../components/auth/TelegramAuth';
+import { telegramBotLink } from '../lib/telegram';
 import { adminAppUrl, isAllowedAdminReturnUrl } from '../lib/links';
 import { authSwitchSearch, authFlowSearch } from '../lib/authRoutes';
 import { AuthIcon, authAssets as a } from '../assets/auth';
@@ -37,7 +40,7 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { login, register, updateProfile } = useAuth();
+  const { login, register, updateProfile, adoptSession } = useAuth();
   const copy = useLearnerCopy();
   const { locale } = useLearnerLocale();
   // S3 consent (unticked by default) + W-12 optional birth year.
@@ -68,6 +71,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [name, setName] = useState(seededName);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Phone (Telegram) accounts: code step; "continue with the bot": waiting for the tap in Telegram.
+  const [tgCode, setTgCode] = useState<TelegramCodeStep | null>(null);
+  const [tgLink, setTgLink] = useState<{ token: string; deepLink: string } | null>(null);
+  const [tgLinkBusy, setTgLinkBusy] = useState(false);
 
   // Registration onboarding step: after credentials, pick native + target language(s).
   // Native starts as the UI language. Target comes from the landing `lang` query.
@@ -133,6 +140,10 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     try {
       if (isLogin) {
         const session = await login(email, password);
+        if (session.telegramCode) {
+          setTgCode(session.telegramCode);
+          return;
+        }
         // Admin accounts always go to the admin console (explicit returnUrl or default).
         const handoffTarget = adminReturnUrl || (session.isAdmin ? adminAppUrl() : null);
         if (handoffTarget) {
@@ -224,6 +235,34 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     }
   };
 
+  const tx = telegramAuthCopy(locale);
+  const homeAfterAuth = learnerReturn ?? '/app';
+  const finishTelegramSignIn = useCallback(
+    async (session: SessionResponse) => {
+      await adoptSession(session);
+      toast.success(copy.authToasts.welcomeBack);
+      navigate(homeAfterAuth, { replace: true });
+    },
+    [adoptSession, copy.authToasts.welcomeBack, navigate, homeAfterAuth],
+  );
+  const cancelTelegramLink = useCallback(() => setTgLink(null), []);
+
+  const startBotLogin = async () => {
+    // Open the tab synchronously (popup blockers), then point it at the bot once the link exists.
+    const win = window.open('', '_blank');
+    setTgLinkBusy(true);
+    try {
+      const r = await api<{ token: string; deepLink: string }>('/auth/telegram/login-link', { method: 'POST' });
+      if (win) win.location.href = r.deepLink;
+      setTgLink(r);
+    } catch {
+      win?.close();
+      toast.error(tx.unavailable);
+    } finally {
+      setTgLinkBusy(false);
+    }
+  };
+
   const goingTo = isLogin ? 'register' : 'login';
   const switchSearch = authSwitchSearch(searchParams, goingTo);
   const switchTo = {
@@ -239,6 +278,12 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
     <AuthShell>
       <div className="w-full max-w-[448px] min-w-0">
         <div className="bg-white border border-[#e6e8f0] rounded-[20px] p-5 sm:p-8 flex flex-col gap-6 shadow-[0_24px_48px_-24px_rgba(16,24,40,0.18)]">
+          {tgCode ? (
+            <TelegramCodeCard t={tx} challengeId={tgCode.challengeId} maskedPhone={tgCode.maskedPhone} onSession={finishTelegramSignIn} onBack={() => setTgCode(null)} />
+          ) : tgLink ? (
+            <TelegramLinkWait t={tx} token={tgLink.token} deepLink={tgLink.deepLink} onSession={finishTelegramSignIn} onCancel={cancelTelegramLink} />
+          ) : (
+          <>
           {!isLogin && (
             <div className="flex items-center gap-3" aria-label={sx.stepOf(showLanguageStep ? 2 : 1)}>
               {[sx.step1, sx.step2].map((label, i) => {
@@ -367,20 +412,20 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                 </div>
               )}
               <div className="flex flex-col gap-2">
-                <label htmlFor="auth-email" className="text-[13px] font-semibold text-[#344054]">{copy.auth.email}</label>
+                <label htmlFor="auth-email" className="text-[13px] font-semibold text-[#344054]">{isLogin ? tx.identifier : copy.auth.email}</label>
                 <div className="relative">
                 <Mail className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[#9aa0ae]" />
                 <input
                   id="auth-email"
                   name="email"
-                  type="email"
-                  autoComplete="email"
+                  type={isLogin ? 'text' : 'email'}
+                  autoComplete={isLogin ? 'username' : 'email'}
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  placeholder={copy.auth.emailPlaceholder}
+                  placeholder={isLogin ? tx.identifierPlaceholder : copy.auth.emailPlaceholder}
                   className={inputCls}
                 />
                 </div>
@@ -441,6 +486,21 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
                     copy.common.continue
                   )}
               </Button>
+              {isLogin && !adminReturnUrl && (
+                <button type="button" onClick={() => void startBotLogin()} disabled={tgLinkBusy} className={`-mt-1.5 ${telegramButtonCls}`}>
+                  <TelegramBadge />
+                  {tx.continueWithBot}
+                </button>
+              )}
+              {!isLogin && (
+                <div className="-mt-1.5 flex flex-col gap-2">
+                  <a href={telegramBotLink('signup')} target="_blank" rel="noopener noreferrer" className={telegramButtonCls}>
+                    <TelegramBadge />
+                    {tx.signupWithBot}
+                  </a>
+                  <p className="text-center text-xs text-[#6b7280]">{tx.botHint}</p>
+                </div>
+              )}
               {/* WL4-07: no "By continuing, you agree…" on step 1; agreement is the step-2 tick-box only. WLF-36: plain links. */}
               {!isLogin && <LegalLinksLine locale={locale} />}
             </form>
@@ -461,6 +521,8 @@ export default function AuthPage({ mode }: { mode: 'login' | 'register' }) {
               {isLogin ? copy.auth.signUpFree : copy.auth.signIn}
             </Link>
           </div>
+          )}
+          </>
           )}
         </div>
 

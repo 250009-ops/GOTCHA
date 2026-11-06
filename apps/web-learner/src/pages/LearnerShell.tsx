@@ -2,6 +2,7 @@ import { Onboarding } from '../components/onboarding/Onboarding';
 import { AgePrompt } from '../components/safety/AgePrompt';
 import type { OnboardingStep } from '../lib/onboarding';
 import { LimitDialog } from '../components/LimitDialog';
+import { SidebarPlusCard } from '../components/SidebarPlusCard';
 import { usePaymentsEnabled } from '../lib/limits';
 import { useEffect, useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -11,7 +12,6 @@ import {
   Brain,
   ChevronLeft,
   ChevronRight,
-  Wallet,
   Flame,
   GraduationCap,
   Home,
@@ -264,35 +264,11 @@ export default function LearnerShell() {
             </nav>
 
             <div className="px-2 pb-3 pt-2 border-t border-white/[0.06] space-y-1 shrink-0">
-              {/* final-5 B4: pay-as-you-go upsell only when payments are on (default off). */}
+              {/* Sidebar Plus entry: a working link to /app/plus (free: offer · Plus: days left + Extend). Only when payments are on. */}
               {!payments ? null : expanded ? (
-                <button
-                  type="button"
-                  onClick={() => navigate('/app/import')}
-                  className="w-full p-3 bg-gradient-to-r from-g-blue-700 to-g-blue-900 rounded-[14px] text-left border border-white/10"
-                >
-                  <div className="flex items-center gap-2 mb-0.5">
-                    <Wallet className="w-3.5 h-3.5 text-amber-300" />
-                    <span className="text-white text-xs font-semibold">{copy.shell.payAsYouGo}</span>
-                  </div>
-                  <p className="text-g-blue-200 text-[11px]">{copy.shell.payAsYouGoHint}</p>
-                </button>
+                <SidebarPlusCard collapsed={false} locale={locale} />
               ) : (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <button
-                      type="button"
-                      onClick={() => navigate('/app/import')}
-                      aria-label={copy.shell.payAsYouGo}
-                      className="w-full flex items-center justify-center py-2.5 rounded-[14px] bg-gradient-to-r from-g-blue-700 to-g-blue-900 border border-white/10"
-                    >
-                      <Wallet className="w-3.5 h-3.5 text-amber-300" />
-                    </button>
-                  </TooltipTrigger>
-                  <TooltipContent side="right" sideOffset={8} className="bg-gray-900 text-white border-white/10 text-xs">
-                    {copy.shell.payAsYouGo}
-                  </TooltipContent>
-                </Tooltip>
+                <SidebarPlusCard collapsed locale={locale} />
               )}
 
               <NavLink
@@ -346,19 +322,8 @@ export default function LearnerShell() {
                 ))}
               </div>
               <div className="px-2 pb-3 pt-2 border-t border-white/[0.06] space-y-1 shrink-0">
-                {payments && (
-                  <button
-                    type="button"
-                    onClick={() => navigate('/app/import')}
-                    className="w-full p-3 bg-gradient-to-r from-g-blue-700 to-g-blue-900 rounded-[14px] text-left border border-white/10"
-                  >
-                    <div className="flex items-center gap-2 mb-0.5">
-                      <Wallet className="w-3.5 h-3.5 text-amber-300" />
-                      <span className="text-white text-xs font-semibold">{copy.shell.payAsYouGo}</span>
-                    </div>
-                    <p className="text-g-blue-200 text-[11px]">{copy.shell.payAsYouGoHint}</p>
-                  </button>
-                )}
+                {payments && <SidebarPlusCard collapsed={false} locale={locale} />}
+
                 <NavLink item={{ path: '/app/settings', labelKey: 'settings', icon: Settings }} collapsed={false} />
               </div>
             </aside>

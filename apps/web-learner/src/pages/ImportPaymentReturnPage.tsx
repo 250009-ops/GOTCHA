@@ -1,3 +1,4 @@
+import { invalidatePlusOffer } from '../lib/plusOffer';
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -59,6 +60,8 @@ async function runPendingImport(pending: PendingImport, reselectFileMsg: string)
 }
 
 export default function ImportPaymentReturnPage() {
+  // A Plus purchase lands here: drop the cached offer so the sidebar card shows the new end date.
+  invalidatePlusOffer();
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const copy = useLearnerCopy();

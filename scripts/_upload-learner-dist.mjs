@@ -25,6 +25,7 @@ const VITE_API_URL = (process.env.VITE_API_URL || `https://${DOMAIN}/api/v1`).tr
 const VITE_WEB_URL = (process.env.VITE_WEB_URL || `https://${DOMAIN}`).trim();
 const VITE_MARKETING_URL = (process.env.VITE_MARKETING_URL || VITE_WEB_URL).trim();
 const VITE_LEARNER_APP_URL = (process.env.VITE_LEARNER_APP_URL || `https://${DOMAIN}/learn`).trim();
+const VITE_TELEGRAM_BOT_USERNAME = (process.env.VITE_TELEGRAM_BOT_USERNAME || process.env.TELEGRAM_BOT_USERNAME || 'gotchaa_app').replace(/^@/, '').trim();
 
 if (!IP || !PASSWORD || !DOMAIN) {
   console.error('IP, PASSWORD, and DOMAIN required in deploy/.env');
@@ -48,6 +49,7 @@ const build = spawnSync(npm, ['run', 'build', '--workspace=apps/web-learner'], {
     VITE_WEB_URL,
     VITE_MARKETING_URL,
     VITE_LEARNER_APP_URL,
+    VITE_TELEGRAM_BOT_USERNAME,
   },
 });
 if (build.status !== 0) process.exit(build.status ?? 1);

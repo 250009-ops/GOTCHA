@@ -736,7 +736,8 @@ export default function SettingsPage() {
     : (locale === 'ru' || locale === 'uz' ? locale : 'en');
   const preview = READING_PREVIEW[previewKey];
   const minuteChoices = MINUTE_CHOICES;
-  const verified = Boolean(user?.emailVerifiedAt);
+  const verified = Boolean(user?.email && user?.emailVerifiedAt);
+  const phoneOnlyAccount = user?.hasEmail === false || (user != null && !user.email);
   const removeName = languageOptions.find((l) => l.code === pendingRemove)?.name ?? (pendingRemove ? languageLabel(pendingRemove) : '');
 
   const handleRemoveLanguage = async (lang: string) => {
@@ -1128,6 +1129,11 @@ export default function SettingsPage() {
                 </button>
               </Row>
             </RowPair>
+            {phoneOnlyAccount ? (
+              <Row label={copy.settings.phone} description={copy.settings.phoneHint}>
+                <span className="text-sm text-[#4a5565] truncate min-w-0">{user?.phone}</span>
+              </Row>
+            ) : (
             <Row label={copy.settings.email} description={copy.settings.emailHint}>
               <div className="flex flex-wrap items-center gap-2 min-w-0 max-w-full sm:justify-end">
                 <span className="text-sm text-[#4a5565] truncate min-w-0">{user?.email}</span>
@@ -1136,7 +1142,7 @@ export default function SettingsPage() {
                 ) : (
                   <span className="text-[11.5px] font-semibold text-[#b45309] bg-[#fef3c7] rounded-[7px] px-2 py-0.5 shrink-0">{copy.settings.notVerified}</span>
                 ))}
-                {user && !verified && (
+                {user?.email && !verified && (
                   <button
                     type="button"
                     disabled={resendIn > 0}
@@ -1148,6 +1154,7 @@ export default function SettingsPage() {
                 )}
               </div>
             </Row>
+            )}
           </Section>
 
           <Section

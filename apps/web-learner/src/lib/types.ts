@@ -49,6 +49,9 @@ export interface UserProfile {
   aiDisabled?: boolean;
   aiDisabledBy?: string | null;
   targetLanguages?: UserTargetLanguage[];
+  /** Masked Telegram phone (accounts opened in the Telegram bot). */
+  phone?: string | null;
+  hasEmail?: boolean;
 }
 
 export interface UserStats {

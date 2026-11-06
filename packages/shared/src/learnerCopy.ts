@@ -132,6 +132,8 @@ export interface LearnerCopy {
     appLanguageHint: string;
     email: string;
     emailHint: string;
+    phone: string;
+    phoneHint: string;
     password: string;
     changePassword: string;
     targetLanguages: string;
@@ -487,6 +489,8 @@ const EN: LearnerCopy = {
     appLanguageHint: 'Interface language on web and mobile. Same account value.',
     email: 'Email',
     emailHint: 'Used for login and notifications',
+    phone: 'Phone',
+    phoneHint: 'Confirmed in Telegram. Used to sign in.',
     password: 'Password',
     changePassword: 'Change password',
     targetLanguages: 'Target Languages',
@@ -846,6 +850,8 @@ const RU: LearnerCopy = {
     appLanguageHint: 'Язык интерфейса на веб и в приложении.',
     email: 'Email',
     emailHint: 'Для входа и уведомлений',
+    phone: 'Телефон',
+    phoneHint: 'Подтверждён в Telegram. Используется для входа.',
     password: 'Пароль',
     changePassword: 'Сменить пароль',
     targetLanguages: 'Языки для изучения',
@@ -1208,6 +1214,8 @@ const UZ: LearnerCopy = {
     appLanguageHint: 'Veb va mobil interfeys tili. Bir xil sozlama.',
     email: 'Email',
     emailHint: 'Kirish va bildirishnomalar uchun',
+    phone: 'Telefon',
+    phoneHint: 'Telegramda tasdiqlangan. Kirish uchun ishlatiladi.',
     password: 'Parol',
     changePassword: 'Parolni oʻzgartirish',
     targetLanguages: 'Oʻrganiladigan tillar',

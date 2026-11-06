@@ -27,6 +27,7 @@ const VITE_WEB_URL = (process.env.VITE_WEB_URL || `https://${DOMAIN}`).trim();
 const VITE_MARKETING_URL = (process.env.VITE_MARKETING_URL || VITE_WEB_URL).trim();
 const VITE_LEARNER_APP_URL = (process.env.VITE_LEARNER_APP_URL || `https://${DOMAIN}/learn`).trim();
 const VITE_ADMIN_APP_URL = (process.env.VITE_ADMIN_APP_URL || `https://${DOMAIN}/admin`).trim();
+const VITE_TELEGRAM_BOT_USERNAME = (process.env.VITE_TELEGRAM_BOT_USERNAME || process.env.TELEGRAM_BOT_USERNAME || 'gotchaa_app').replace(/^@/, '').trim();
 
 if (!IP || !PASSWORD || !DOMAIN) {
   console.error('IP, PASSWORD, and DOMAIN required in deploy/.env');
@@ -40,6 +41,7 @@ const viteEnv = {
   VITE_MARKETING_URL,
   VITE_LEARNER_APP_URL,
   VITE_ADMIN_APP_URL,
+  VITE_TELEGRAM_BOT_USERNAME,
   VITE_BASE: '/learn/',
 };
 

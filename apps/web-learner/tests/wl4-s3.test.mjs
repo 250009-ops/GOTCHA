@@ -30,7 +30,9 @@ test('WL4-07: consent tick-box above Create account; no "By continuing" on step 
 });
 test('WL4-08: nav, sliders, toggles, icon buttons and sign-up language inputs are named', () => {
   assert.match(shell, /<nav aria-label=\{copy\.nav\.mainLabel\}/);
-  assert.match(shell, /aria-label=\{copy\.shell\.payAsYouGo\}/);
+  // Phase 4: the sidebar entry is the Plus card (a named link; collapsed icon has aria-label={label}).
+  assert.match(shell, /<SidebarPlusCard collapsed locale=\{locale\} \/>/);
+  assert.match(r('src/components/SidebarPlusCard.tsx'), /aria-label=\{label\}/);
   assert.match(settings, /type="range"\r?\n\s+aria-label=\{label\}/);
   assert.match(settings, /role="switch"/);
   assert.match(auth, /labelledBy="auth-native-label"/);

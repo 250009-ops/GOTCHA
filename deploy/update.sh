@@ -90,7 +90,7 @@ for tg_key in TELEGRAM_BOT_TOKEN TELEGRAM_BOT_USERNAME TELEGRAM_WEBHOOK_SECRET T
   fi
 done
 if [[ -z "$(get_env TELEGRAM_MINI_APP_URL)" ]]; then
-  sync_runtime_env_key TELEGRAM_MINI_APP_URL "https://${DOMAIN}/tg"
+  sync_runtime_env_key TELEGRAM_MINI_APP_URL "https://${DOMAIN}/learn/tg"
 fi
 sync_runtime_env_key TELEGRAM_WEBHOOK_URL "https://${DOMAIN}/api/v1/telegram/webhook"
 

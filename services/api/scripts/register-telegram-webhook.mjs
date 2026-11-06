@@ -27,7 +27,7 @@ if (!token || !secret) {
 }
 const domain = process.env.DOMAIN?.trim();
 const url = process.env.TELEGRAM_WEBHOOK_URL?.trim() || (domain ? `https://${domain}/api/v1/telegram/webhook` : '');
-const mini = (process.env.TELEGRAM_MINI_APP_URL || (domain ? `https://${domain}/tg` : 'https://gotchaa.uz/tg')).replace(/\/$/, '');
+const mini = (process.env.TELEGRAM_MINI_APP_URL || (domain ? `https://${domain}/learn/tg` : 'https://gotchaa.uz/learn/tg')).replace(/\/$/, '');
 if (!url) {
   console.log('telegram webhook skipped');
   process.exit(0);

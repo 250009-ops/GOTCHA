@@ -8,6 +8,8 @@ interface ImportMetaEnv {
   /** Comma-separated admin console origins allowed for login `returnUrl` handoff. */
   readonly VITE_ADMIN_APP_URL?: string;
   readonly VITE_LEARNER_APP_URL?: string;
+  /** Telegram bot username baked into the learner build. Not a secret. */
+  readonly VITE_TELEGRAM_BOT_USERNAME?: string;
 }
 
 interface ImportMeta {
