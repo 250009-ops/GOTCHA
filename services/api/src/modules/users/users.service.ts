@@ -687,6 +687,10 @@ export class UsersService {
         where: { id: userId },
         data: {
           email: anonymizedEmail,
+          phone: null,
+          phoneVerifiedAt: null,
+          telegramId: null,
+          telegramUsername: null,
           displayName: 'Deleted user',
           avatarUrl: null,
           passwordHash: null,
@@ -772,6 +776,21 @@ export class UsersService {
       const c = await p.contentReport.updateMany({ where: { reporterId: userId }, data: { reporterId: null } });
       return a.count + b.count + c.count;
     });
+    // Leftovers found after the 2026-11 wipe: unconsumed upload files, page-quiz history, rate-limit hits,
+    // bot send log and old subscription rows. Support tickets stay for support history but are unlinked.
+    await step('importUploads', async () => {
+      const rows = await p.importUpload.findMany({ where: { userId }, select: { id: true, fileKey: true } });
+      for (const row of rows) {
+        if (row.fileKey) await rm(join(root, row.fileKey), { force: true }).catch(() => undefined);
+      }
+      const r = await p.importUpload.deleteMany({ where: { userId } });
+      return r.count;
+    });
+    await step('pageQuestionSeen', () => p.pageQuestionSeen.deleteMany({ where: { userId } }));
+    await step('lookupBurstHits', () => p.lookupBurstHit.deleteMany({ where: { userId } }));
+    await step('telegramOutboundLog', () => p.telegramOutboundLog.deleteMany({ where: { userId } }));
+    await step('subscriptions', () => p.userSubscription.deleteMany({ where: { userId } }));
+    await step('supportTicketsUnlinked', () => p.supportTicket.updateMany({ where: { userId }, data: { userId: null } }));
     await step('targetLanguages', () => p.userTargetLanguage.deleteMany({ where: { userId } }));
     await step('preferences', () => p.userPreferences.deleteMany({ where: { userId } }));
     await step('avatarFiles', async () => {

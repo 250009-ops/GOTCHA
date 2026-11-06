@@ -32,12 +32,46 @@ async function main() {
     const r1 = await prisma.userReport.create({ data: { reporterId: other.id, reportedUserId: del.id, conversationId: conv.id, messageId: mine.id, reason: 'harassment' as never, details: 'rude', messageSnapshot: 'hi from del' } });
     const r2 = await prisma.userReport.create({ data: { reporterId: del.id, reportedUserId: other.id, conversationId: conv.id, messageId: theirs.id, reason: 'spam' as never, details: 'spam d' } });
     const cr = await prisma.contentReport.create({ data: { reporterId: del.id, reason: 'spam' as never, details: 'c' } });
+    const phone = `+99890${String(t).slice(-7)}`;
+    await prisma.user.update({ where: { id: del.id }, data: { phone, telegramId: BigInt(t), telegramUsername: 'wipe-me' } as never });
+    const { mkdir, writeFile, access } = await import('node:fs/promises');
+    const { join } = await import('node:path');
+    const uploadRoot = join(process.cwd(), 'uploads');
+    const fileKey = `purge-test/${t}.bin`;
+    await mkdir(join(uploadRoot, 'purge-test'), { recursive: true });
+    await writeFile(join(uploadRoot, fileKey), Buffer.from('purge-me'));
+    await prisma.importUpload.create({ data: { userId: del.id, fileKey, originalName: 'a.pdf', mimeType: 'application/pdf', sizeBytes: 8, sha256: 'ab'.repeat(32), importType: 'pdf', pageCount: 1, expiresAt: new Date(Date.now() + 86_400_000) } });
+    const content = await prisma.contentItem.create({ data: { slug: `purge-${t}`, title: 'purge', language: 'en', contentType: 'book', contentSource: 'public_domain', cefrLevel: 'a1' } });
+    const segment = await prisma.contentSegment.create({ data: { contentId: content.id, segmentIndex: 0, plainText: 'hello', tokenMap: [], sentenceMap: [], wordCount: 1 } });
+    const question = await prisma.pageQuestion.create({ data: { segmentId: segment.id, contentId: content.id, segmentHash: 'h', promptI18n: { en: 'q' }, optionsI18n: { en: ['a', 'b', 'c', 'd'] }, answerIndex: 0, evidenceQuote: 'hello', explanationI18n: { en: 'because' } } });
+    await prisma.pageQuestionSeen.create({ data: { userId: del.id, questionId: question.id, correct: true } });
+    await prisma.lookupBurstHit.create({ data: { userId: del.id, hitAt: new Date() } });
+    await prisma.telegramOutboundLog.create({ data: { userId: del.id, kind: 'welcome' } });
+    const existingPlan = await prisma.subscriptionPlan.findFirst({ select: { id: true } });
+    const planId = existingPlan?.id ?? (await prisma.subscriptionPlan.create({ data: { tier: 'free', name: `Free ${t}`, importLimit: 1 } })).id;
+    await prisma.userSubscription.create({ data: { userId: del.id, planId, status: 'active' } });
+    const ticket = await prisma.supportTicket.create({ data: { userId: del.id, subject: `purge-${t}`, body: 'keep me' } });
     const svc = new UsersService(prisma as never, { isDevUser: () => false } as never);
-    await svc.deleteAccount(del.id, { currentPassword: pw } as never);
+    const deleted = await svc.deleteAccount(del.id, { currentPassword: pw } as never);
 
     const u = await prisma.user.findUniqueOrThrow({ where: { id: del.id } });
     assert.equal(u.consentIp, null); assert.ok(u.consentAt); assert.ok(u.deletedAt);
     assert.equal(u.displayName, 'Deleted user'); assert.equal(u.avatarUrl, null); assert.ok(u.email.endsWith('@deleted.gotcha.app'));
+    assert.equal(u.phone, null); assert.equal(u.telegramId, null); assert.equal(u.telegramUsername, null);
+    for (const key of ['importUploads', 'pageQuestionSeen', 'lookupBurstHits', 'telegramOutboundLog', 'subscriptions', 'supportTicketsUnlinked'] as const) {
+      assert.equal(typeof deleted.purged[key], 'number', `${key} count`);
+      assert.ok((deleted.purged[key] as number) >= 1, `${key} purged`);
+      assert.notEqual(deleted.purged[key], 'error', key);
+    }
+    assert.equal(await prisma.importUpload.count({ where: { userId: del.id } }), 0);
+    await assert.rejects(() => access(join(uploadRoot, fileKey)), 'uploaded file removed');
+    assert.equal(await prisma.pageQuestionSeen.count({ where: { userId: del.id } }), 0);
+    assert.equal(await prisma.pageQuestion.count({ where: { id: question.id } }), 1, 'catalog question kept');
+    assert.equal(await prisma.lookupBurstHit.count({ where: { userId: del.id } }), 0);
+    assert.equal(await prisma.telegramOutboundLog.count({ where: { userId: del.id } }), 0);
+    assert.equal(await prisma.userSubscription.count({ where: { userId: del.id } }), 0);
+    const keptTicket = await prisma.supportTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    assert.equal(keptTicket.userId, null); assert.equal(keptTicket.body, 'keep me');
     assert.equal(await prisma.message.count({ where: { id: mine.id } }), 1, 'own sent message KEPT (Privacy §11)');
     assert.equal(await prisma.message.count({ where: { id: theirs.id } }), 1, "other user's message kept");
     // read paths seen by the other user
@@ -87,6 +121,12 @@ async function main() {
     assert.equal(c.reporterId, null); assert.equal(c.details, 'c');
     console.log('wl4-11-delete-purge: OK');
   } finally {
+    await prisma.supportTicket.deleteMany({ where: { subject: `purge-${t}` } });
+    await prisma.pageQuestionSeen.deleteMany({ where: { userId: del.id } });
+    await prisma.lookupBurstHit.deleteMany({ where: { userId: del.id } });
+    await prisma.telegramOutboundLog.deleteMany({ where: { userId: del.id } });
+    await prisma.importUpload.deleteMany({ where: { userId: del.id } });
+    await prisma.contentItem.deleteMany({ where: { slug: `purge-${t}` } });
     await prisma.userReport.deleteMany({ where: { OR: [{ reporterId: other.id }, { reportedUserId: other.id }, { messageSnapshot: 'hi from del' }] } });
     await prisma.contentReport.deleteMany({ where: { details: 'c', reporterId: null } });
     await prisma.conversation.deleteMany({ where: { pairKey: `${del.id}:${other.id}` } });

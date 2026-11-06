@@ -2,6 +2,8 @@ import { consentRequired, recordedConsentVersion } from '../../common/safety/con
 import {
   BadRequestException,
   ConflictException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
@@ -22,6 +24,7 @@ import { assertEnabledLanguage } from '../../common/language-catalog';
 import { looksLikeEmail, maskPhone, normalizePhone } from '../../common/phone';
 import { TelegramLoginService } from '../telegram/telegram-login.service';
 import { botLocale, codeErrorText } from '../telegram/copy';
+import { takeForgotSlot } from './forgot-rate';
 
 const EMAIL_VERIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -31,6 +34,18 @@ const TIMING_SAFE_HASH = bcrypt.hashSync('gotcha-timing-guard', 10);
 
 type LoginGate = { failures: number; lockedUntil: number };
 const loginGates = new Map<string, LoginGate>();
+const forgotHits = new Map<string, number[]>();
+
+function assertForgotRate(ip: string | undefined, identifier: string) {
+  const now = Date.now();
+  const keys = [`ip:${(ip ?? '').trim() || 'unknown'}`, `id:${identifier}`];
+  if (keys.some((key) => !takeForgotSlot(forgotHits, key, now))) {
+    throw new HttpException(
+      { statusCode: 429, code: 'rate_limited', message: 'Too many requests. Please wait a moment and try again.' },
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+}
 
 function loginGateKey(email: string) {
   return email.trim().toLowerCase();
@@ -533,7 +548,10 @@ export class AuthService {
 
   async forgotPassword(emailRaw?: string, clientPlatform?: string, identifier?: string, meta?: { userAgent?: string; ip?: string }) {
     const raw = (emailRaw ?? identifier ?? '').trim();
-    if (raw && !emailRaw && !looksLikeEmail(raw)) {
+    const phoneReset = Boolean(raw) && !emailRaw && !looksLikeEmail(raw);
+    const rateKey = phoneReset ? (normalizePhone(raw) ?? raw) : raw.toLowerCase();
+    assertForgotRate(meta?.ip, rateKey || 'empty');
+    if (phoneReset) {
       return this.forgotPasswordByPhone(raw, meta);
     }
     const email = raw.toLowerCase();
@@ -617,11 +635,10 @@ export class AuthService {
   }
 
   private async forgotPasswordByPhone(raw: string, meta?: { userAgent?: string; ip?: string }) {
-    const generic = { sent: true, message: 'If an account exists for that email, we sent a password reset link.' };
     const phone = normalizePhone(raw);
-    if (!phone || !this.telegram) return generic;
+    if (!phone || !this.telegram) return { sent: true as const };
     const user = await this.prisma.user.findUnique({ where: { phone } });
-    if (!user?.passwordHash || !user.telegramId || user.deletedAt) return generic;
+    if (!user?.passwordHash || !user.telegramId || user.deletedAt) return { sent: true as const };
     const challenge = await this.telegram.createCodeChallenge({
       userId: user.id,
       phone,
@@ -631,7 +648,7 @@ export class AuthService {
       locale: botLocale(user.uiLanguage),
       telegramId: user.telegramId,
     });
-    return { ...generic, ...challenge };
+    return { challengeId: challenge.challengeId, maskedPhone: challenge.maskedPhone };
   }
 
   async verifyTelegramCode(challengeId: string, code: string) {
