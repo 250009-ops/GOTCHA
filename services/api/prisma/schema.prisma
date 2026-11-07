@@ -1506,6 +1506,8 @@ model PageQuestion {
   evidenceEnd   Int      @default(0) @map("evidence_end")
   evidenceQuote String   @map("evidence_quote")
   explanationI18n Json   @map("explanation_i18n")
+  /// cursor-v1 for agent files, openai-batch for the paid revalidation, legacy for older rows.
+  generatorVersion String @default("legacy") @map("generator_version")
   status        String   @default("active")
   timesServed   Int      @default(0) @map("times_served")
   timesCorrect  Int      @default(0) @map("times_correct")
@@ -1518,6 +1520,20 @@ model PageQuestion {
   @@index([segmentId, status])
   @@index([contentId, status])
   @@map("page_questions")
+}
+
+/// One row per catalog lemma. Senses are { uz, ru, en }, most common first. Tap lookup reads this before any AI call.
+model WordDictionary {
+  id               String      @id @default(uuid()) @db.Uuid
+  lemma            String
+  sourceLang       AppLanguage @map("source_lang")
+  senses           Json
+  generatorVersion String      @map("generator_version")
+  createdAt        DateTime    @default(now()) @map("created_at")
+  updatedAt        DateTime    @updatedAt @map("updated_at")
+
+  @@unique([lemma, sourceLang])
+  @@map("word_dictionary")
 }
 
 model PageQuestionSeen {
