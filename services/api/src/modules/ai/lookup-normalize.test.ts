@@ -1,6 +1,7 @@
 import * as assert from 'node:assert/strict';
 import {
   LOOKUP_CACHE_VERSION,
+  catalogLemmas,
   classifyLookup,
   displaySentenceHead,
   glossLimitsFor,
@@ -10,6 +11,7 @@ import {
   looksLikeSynonymDump,
   looksLikeWrongScript,
   needsLookupRepair,
+  normalizeCatalogLemma,
   normalizeUzbekOrthography,
   sanitizeContextualMeaning,
   sanitizeGloss,
@@ -134,5 +136,12 @@ assert.equal(looksLikeWrongScript('колебание', 'ru'), false);
 
 assert.ok(displaySentenceHead(sentence).includes('Nothing'));
 assert.ok(displaySentenceHead('one '.repeat(40)).endsWith('…'));
+
+assert.equal(normalizeCatalogLemma("O'qituvchi"), 'o\u02BBqituvchi');
+assert.equal(normalizeCatalogLemma("G'alaba"), 'g\u02BBalaba');
+assert.equal(normalizeCatalogLemma("Don't"), 'don\u02BCt');
+assert.equal(normalizeCatalogLemma('Книга'), 'книга');
+assert.equal(normalizeCatalogLemma('A'), '');
+assert.deepEqual(catalogLemmas("The o'qituvchi ran."), ['the', 'o\u02BBqituvchi', 'ran']);
 
 console.log('lookup-normalize tests passed');

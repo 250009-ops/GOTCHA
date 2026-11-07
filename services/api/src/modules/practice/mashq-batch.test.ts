@@ -28,8 +28,10 @@ const eight = [
 ];
 
 assert.equal(acceptPageQuiz(eight, passage)?.length, 8);
-assert.equal(acceptPageQuiz(eight.slice(0, 7), passage), null);
-assert.equal(acceptPageQuiz(eight.map((row, index) => (index === 1 ? { ...row, answerIndex: 9 } : row)), passage), null);
+assert.equal(acceptPageQuiz(eight.slice(0, 5), passage)?.length, 5);
+assert.equal(acceptPageQuiz(eight.slice(0, 4), passage), null);
+assert.equal(acceptPageQuiz(eight.map((row, index) => (index === 1 ? { ...row, answerIndex: 9 } : row)), passage)?.length, 7);
+assert.equal(acceptPageQuiz(eight.map((row, index) => (index < 4 ? { ...row, answerIndex: 9 } : row)), passage), null);
 
 const one = projectPageQuizUsd(518);
 const all = projectMashqBatchUsd(Array.from({ length: 17634 }, () => 518));

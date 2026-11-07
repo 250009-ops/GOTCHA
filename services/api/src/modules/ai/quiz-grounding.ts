@@ -174,12 +174,15 @@ export function pageQuizUserContent(passage: string, avoidQuotes: string[] = [])
   ].filter(Boolean).join('\n\n');
 }
 
-/** Eight grounded questions, each language present, answer index 0-3, quotes distinct and copied from the page. */
+/** A paid batch row is usable when 5–8 grounded questions remain, each with its own quote. */
+export const PAGE_QUIZ_MIN = 5;
+export const PAGE_QUIZ_MAX = 8;
+
 export function acceptPageQuiz(raw: unknown, passage: string): PageBankItem[] | null {
   const text = readingPassage(passage).slice(0, 4000);
   const items = groundPageItems(parsePageBankItems(raw), text);
-  if (items.length !== 8) return null;
+  if (items.length < PAGE_QUIZ_MIN || items.length > PAGE_QUIZ_MAX) return null;
   const quotes = new Set(items.map((item) => foldSpace(item.evidenceQuote).toLowerCase()));
-  if (quotes.size !== 8) return null;
+  if (quotes.size !== items.length) return null;
   return items;
 }

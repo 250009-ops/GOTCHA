@@ -151,6 +151,33 @@ export function normalizeLemmaKey(raw: string): string {
     .trim();
 }
 
+const CATALOG_TOKEN = /[\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hangul}][\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hangul}'’‘`´\u02BB\u02BC-]{0,48}/gu;
+
+/**
+ * Dictionary headword: lowercase, Uzbek oʻ/gʻ (U+02BB), other in-word apostrophes as ʼ (U+02BC).
+ * Keeps Latin, Cyrillic, Arabic and Hangul — the scripts of the published catalog.
+ * Returns '' when the token is shorter than 2 letters or longer than 40.
+ */
+export function normalizeCatalogLemma(raw: string): string {
+  let s = (raw ?? '').normalize('NFC').toLowerCase().replace(/\u0307/g, '');
+  s = s.replace(/([og])[''`´‘’ʼ]/g, '$1\u02BB');
+  s = s.replace(/(\p{L})[''`´‘’](?=\p{L})/gu, '$1\u02BC');
+  s = s.replace(/[^\p{Script=Latin}\p{Script=Cyrillic}\p{Script=Arabic}\p{Script=Hangul}\u02BB\u02BC-]+/gu, '');
+  s = s.replace(/^[\u02BB\u02BC-]+|[\u02BB\u02BC-]+$/g, '');
+  if (s.length < 2 || s.length > 40) return '';
+  if (!/\p{L}/u.test(s)) return '';
+  return s;
+}
+
+export function catalogLemmas(text: string): string[] {
+  const out: string[] = [];
+  for (const match of String(text ?? '').matchAll(CATALOG_TOKEN)) {
+    const lemma = normalizeCatalogLemma(match[0]);
+    if (lemma) out.push(lemma);
+  }
+  return out;
+}
+
 export function normalizeSentenceForHash(raw: string): string {
   return clampContext(raw)
     .toLowerCase()

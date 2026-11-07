@@ -292,38 +292,10 @@ export class MashqBatchRunner {
     batch.inserted += 1;
   }
 
+  /** Catalog pages are filled by the agent importer. Live OpenAI retries are off. */
   private async retryLive(state: MashqState) {
-    const next = state.retries.splice(0, 2);
-    for (const segmentId of next) {
-      const perCall = projectPageQuizUsd(518) * 2;
-      if (state.costUsd + perCall > MASHQ_BATCH_BUDGET_USD) {
-        state.retries.unshift(segmentId);
-        state.stopped = 'budget';
-        state.failed += state.retries.length;
-        state.retries = [];
-        return;
-      }
-      const segment = await this.prisma.contentSegment.findUnique({
-        where: { id: segmentId },
-        select: { id: true, contentId: true, plainText: true, pageQuestions: { where: { status: 'active' }, select: { id: true } } },
-      });
-      if (!segment || segment.pageQuestions.length) {
-        if (segment?.pageQuestions.length) state.done += 1;
-        continue;
-      }
-      try {
-        const items = await this.ai.generatePageQuiz(segment.plainText);
-        state.costUsd += perCall;
-        const quotes = new Set(items.map((item) => foldSpace(item.evidenceQuote).toLowerCase()));
-        if (items.length === 8 && quotes.size === 8) {
-          await this.insert(segment, items);
-          state.done += 1;
-        } else {
-          state.failed += 1;
-        }
-      } catch {
-        state.failed += 1;
-      }
+    if (state.retries.length) {
+      this.logger.log(`mashq live retry is off; ${state.retries.length} pages stay for the agent importer`);
     }
   }
 
@@ -345,6 +317,7 @@ export class MashqBatchRunner {
           evidenceStart: Math.max(0, at),
           evidenceEnd: at < 0 ? 0 : at + quote.length,
           explanationI18n: { ...item.explanation, uz: uzOrthography(item.explanation.uz) },
+          generatorVersion: 'openai-batch',
           status: 'active',
         },
       });
