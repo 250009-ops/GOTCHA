@@ -38,6 +38,9 @@ import {
   resolveLearnerDailyAiQuota,
   AI_SETTING_KEYS,
 } from './ai-settings';
+import { openAiChatSampling } from './openai-chat';
+import { claudeModel, createClaudeChatClient } from './claude-chat';
+import { createClaudeCodeChatClient } from './claude-code-chat';
 import { ExtractedChapter } from '../imports/extract-text';
 import {
   buildCleanupUserPrompt,
@@ -122,6 +125,43 @@ export class AiService {
   private getApiKey() {
     const key = process.env.OPENAI_API_KEY?.trim();
     return key || null;
+  }
+
+  /**
+   * Chat AI (word lookups, Mashq quizzes, translate, import cleanup) runs on Claude since 2026-11-07.
+   * getClient() (OpenAI) is now used only for child-safety moderation and text-to-speech.
+   */
+  private chatClient: OpenAI | null = null;
+  private chatClientKey: string | null = null;
+
+  private claudeCodeClient: OpenAI | null = null;
+
+  /**
+   * AI_PROVIDER:
+   *  - "claude-code" (personal mode): official Claude Code CLI with the owner's own Claude plan
+   *    (CLAUDE_CODE_OAUTH_TOKEN). ONLY for accounts in AI_OWNER_USER_IDS — everyone else gets no AI call,
+   *    so the personal plan never serves other people.
+   *  - "anthropic" (default when ANTHROPIC_API_KEY is set): Claude API.
+   */
+  private getChatClient(userId?: string | null): OpenAI | null {
+    const provider = (process.env.AI_PROVIDER ?? '').trim().toLowerCase();
+    if (provider === 'claude-code') {
+      if (!process.env.CLAUDE_CODE_OAUTH_TOKEN?.trim()) return null;
+      const owners = (process.env.AI_OWNER_USER_IDS ?? '').split(',').map((v) => v.trim()).filter(Boolean);
+      if (!userId || !owners.includes(userId)) return null;
+      if (!this.claudeCodeClient) this.claudeCodeClient = createClaudeCodeChatClient() as unknown as OpenAI;
+      return this.claudeCodeClient;
+    }
+    const key = process.env.ANTHROPIC_API_KEY?.trim();
+    if (!key) return null;
+    if (!this.chatClient || this.chatClientKey !== key) {
+      // Claude adapter exposes the same chat.completions.create() surface the code below uses.
+      this.chatClient = createClaudeChatClient(key) as unknown as OpenAI;
+      this.chatClientKey = key;
+    }
+    return this.chatClient;
+    // --- OpenAI chat (switched off 2026-11-07). To roll back: delete the Claude lines above and use:
+    // return this.getClient();
   }
 
   private getClient() {
@@ -521,7 +561,7 @@ export class AiService {
       return { ...this.presentLookup(payload, surface, context, true), contextualMeaning: null, mode: 'dictionary' as const, dictionaryMiss: !row };
     }
 
-    const client = this.getClient();
+    const client = this.getChatClient(userId);
     const limits = glossLimitsFor(kind);
     const surfaceWords = lookupWordCount(surface);
     let lemma = cacheKeyLemma;
@@ -543,8 +583,7 @@ export class AiService {
               : 'MODE=WORD. translation = dictionary/base gloss of TARGET (1–3 words, sense that fits SENTENCE). contextualMeaning = natural in-context meaning. If TARGET is inside an idiom or phrasal verb, phraseIfAny MUST be that exact span copied from SENTENCE, including the particle.';
         const request = {
           model,
-          temperature: 0,
-          max_tokens: lookupMaxTokens(kind, surface),
+          ...openAiChatSampling(model, { temperature: 0, maxTokens: lookupMaxTokens(kind, surface) }),
           response_format: { type: 'json_object' as const },
           messages: [
             // Static instructions stay the first message so OpenAI can cache that prefix.
@@ -592,7 +631,7 @@ export class AiService {
           meta.cachedPromptTokens = response.usage?.prompt_tokens_details?.cached_tokens ?? 0;
         }
         usedOpenAi = true;
-        meta.model = model;
+        meta.model = claudeModel(model);
 
         try {
           const parsed = JSON.parse(content || '{}') as {
@@ -776,8 +815,7 @@ export class AiService {
     try {
       const response = await client.chat.completions.create({
         model,
-        temperature: 0,
-        max_tokens: 60,
+        ...openAiChatSampling(model, { temperature: 0, maxTokens: 60 }),
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -822,8 +860,7 @@ export class AiService {
     try {
       const response = await client.chat.completions.create({
         model,
-        temperature: 0,
-        max_tokens: 250,
+        ...openAiChatSampling(model, { temperature: 0, maxTokens: 250 }),
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: withChildSafe(LOOKUP_SYSTEM_PROMPT, opts.band ?? ageBand(null)) },
@@ -1043,7 +1080,7 @@ export class AiService {
     context?: string | null;
   }): Promise<boolean | null> {
     try {
-      const client = this.getClient();
+      const client = this.getChatClient();
       if (!client) return null;
       const settings = await this.getPlatformAiSettings();
       if (!settings.enabled) return null;
@@ -1053,8 +1090,7 @@ export class AiService {
         const res = await client.chat.completions.create(
           {
             model: settings.lookupModel,
-            temperature: 0,
-            max_tokens: 20,
+            ...openAiChatSampling(settings.lookupModel, { temperature: 0, maxTokens: 20 }),
             response_format: { type: 'json_object' },
             messages: [
               {
@@ -1111,15 +1147,17 @@ export class AiService {
 
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const client = this.getClient();
+    const client = this.getChatClient(userId);
     let translation = text;
 
     if (client) {
       try {
         const response = await client.chat.completions.create({
           model: settings.lookupModel,
-          temperature: 0.1,
-          max_tokens: Math.min(1200, Math.max(80, Math.ceil(text.length * 1.4))),
+          ...openAiChatSampling(settings.lookupModel, {
+            temperature: 0.1,
+            maxTokens: Math.min(1200, Math.max(80, Math.ceil(text.length * 1.4))),
+          }),
           response_format: { type: 'json_object' },
           messages: [
             {
@@ -1149,7 +1187,7 @@ export class AiService {
       } catch (err) {
         const detail = err instanceof Error ? err.message : 'OpenAI request failed';
         throw new ServiceUnavailableException(
-          `AI translate failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
+          `AI translate failed: ${detail}. Check ANTHROPIC_API_KEY and ANTHROPIC_MODEL.`,
         );
       }
     }
@@ -1193,7 +1231,7 @@ export class AiService {
     const questionLabel = languagePromptLabel(questionLang);
     const passageLabel = languagePromptLabel(passageLang);
 
-    const client = this.getClient();
+    const client = this.getChatClient(langs?.userId);
     if (!client) {
       return [
         {
@@ -1212,7 +1250,7 @@ export class AiService {
           correctAnswer:
             questionLang === 'uz' ? 'Kundalik hayot' : questionLang === 'ru' ? 'Быт' : 'Daily life',
           explanation:
-            'Demo question — set OPENAI_API_KEY in .env and restart the API for AI-generated quizzes.',
+            'Demo question — set ANTHROPIC_API_KEY in .env and restart the API for AI-generated quizzes.',
         },
       ];
     }
@@ -1239,7 +1277,7 @@ export class AiService {
     try {
       const response = await client.chat.completions.create({
         model,
-        temperature: 0.4,
+        ...openAiChatSampling(model, { temperature: 0.4 }),
         response_format: { type: 'json_object' },
         messages: [
           {
@@ -1287,11 +1325,11 @@ export class AiService {
     const { band } = await this.userAiGate(userId);
     const settings = await this.getPlatformAiSettings();
     await this.assertAiAvailable(settings);
-    const client = this.getClient();
+    const client = this.getChatClient(userId);
     if (!client) return [];
     const response = await client.chat.completions.create({
       model: settings.quizModel,
-      temperature: 0.2,
+      ...openAiChatSampling(settings.quizModel, { temperature: 0.2 }),
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: withChildSafe(PAGE_QUIZ_SYSTEM, band) },
@@ -1333,9 +1371,9 @@ export class AiService {
       return chapters;
     }
 
-    const client = this.getClient();
+    const client = this.getChatClient(opts.userId);
     if (!client) {
-      this.logger.debug('Import AI cleanup skipped — OPENAI_API_KEY not set');
+      this.logger.debug('Import AI cleanup skipped — ANTHROPIC_API_KEY not set');
       return chapters;
     }
 
@@ -1463,9 +1501,8 @@ export class AiService {
           const response = await client.chat.completions.create(
             {
               model: opts.model,
-              temperature: 0,
+              ...openAiChatSampling(opts.model, { temperature: 0, maxTokens: 1024 }),
               // Selection-only JSON (block indexes + optional snippets) — no rewritten body.
-              max_tokens: 1024,
               response_format: { type: 'json_object' },
               messages: [
                 { role: 'system', content: IMPORT_CLEANUP_SYSTEM_PROMPT },

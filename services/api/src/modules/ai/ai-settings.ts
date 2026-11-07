@@ -1,3 +1,5 @@
+import { openAiChatModel } from './openai-chat';
+
 /** Platform settings keys that control learner-facing AI behavior. */
 export const AI_SETTING_KEYS = {
   enabled: 'aiEnabled',
@@ -49,12 +51,9 @@ export function defaultAiPlatformSettings(): AiPlatformSettings {
   return {
     enabled: true,
     dailyLimit: 150_000,
-    lookupModel: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-4.1-mini',
-    quizModel: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini',
-    importCleanupModel:
-      process.env.OPENAI_MODEL_IMPORT ??
-      process.env.OPENAI_MODEL_LOOKUP ??
-      'gpt-4.1-mini',
+    lookupModel: openAiChatModel(process.env.OPENAI_MODEL_LOOKUP),
+    quizModel: openAiChatModel(process.env.OPENAI_MODEL_QUIZ),
+    importCleanupModel: openAiChatModel(process.env.OPENAI_MODEL_IMPORT, process.env.OPENAI_MODEL_LOOKUP),
     defaultUserQuota: 20,
   };
 }

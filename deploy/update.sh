@@ -9,6 +9,7 @@ get_env() {
   local key="$1"
   local line
   line="$(grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 || true)"
+  line="${line%$'\r'}"
   printf '%s' "${line#*=}"
 }
 
@@ -106,13 +107,13 @@ if [[ -z "$(get_env DEV_UNLIMITED_IMPORTS)" ]]; then
   sync_runtime_env_key DEV_UNLIMITED_IMPORTS "false"
 fi
 if [[ -z "$(get_env OPENAI_MODEL_LOOKUP)" ]]; then
-  sync_runtime_env_key OPENAI_MODEL_LOOKUP "gpt-4.1-mini"
+  sync_runtime_env_key OPENAI_MODEL_LOOKUP "gpt-6-astra"
 fi
 if [[ -z "$(get_env OPENAI_MODEL_QUIZ)" ]]; then
-  sync_runtime_env_key OPENAI_MODEL_QUIZ "gpt-4.1-mini"
+  sync_runtime_env_key OPENAI_MODEL_QUIZ "gpt-6-astra"
 fi
 if [[ -z "$(get_env OPENAI_MODEL_IMPORT)" ]]; then
-  sync_runtime_env_key OPENAI_MODEL_IMPORT "gpt-4.1-mini"
+  sync_runtime_env_key OPENAI_MODEL_IMPORT "gpt-6-astra"
 fi
 if [[ -z "$(get_env IMPORT_AI_CLEANUP_ENABLED)" ]]; then
   sync_runtime_env_key IMPORT_AI_CLEANUP_ENABLED "true"

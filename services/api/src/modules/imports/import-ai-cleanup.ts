@@ -72,7 +72,7 @@ export function isImportAiCleanupEnabled(): boolean {
   return true;
 }
 
-export function importCleanupModel(fallback = 'gpt-4.1-mini'): string {
+export function importCleanupModel(fallback = 'gpt-6-astra'): string {
   return (
     process.env.OPENAI_MODEL_IMPORT?.trim() ||
     process.env.OPENAI_MODEL_LOOKUP?.trim() ||

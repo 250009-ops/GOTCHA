@@ -36,6 +36,7 @@
     "test:cover-migration": "bash scripts/test-cover-migration-pg16.sh"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@gotcha/shared": "*",
     "@mozilla/readability": "^0.6.0",
     "@nestjs/common": "^11.0.7",

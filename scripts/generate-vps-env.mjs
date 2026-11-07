@@ -78,9 +78,9 @@ UPLOADS_DIR=/var/www/gotcha/uploads
 PRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars
 
 OPENAI_API_KEY=${openai}
-OPENAI_MODEL_LOOKUP=gpt-4.1-mini
-OPENAI_MODEL_QUIZ=gpt-4.1-mini
-OPENAI_MODEL_IMPORT=gpt-4.1-mini
+OPENAI_MODEL_LOOKUP=gpt-6-astra
+OPENAI_MODEL_QUIZ=gpt-6-astra
+OPENAI_MODEL_IMPORT=gpt-6-astra
 IMPORT_AI_CLEANUP_ENABLED=true
 
 API_PORT=3200

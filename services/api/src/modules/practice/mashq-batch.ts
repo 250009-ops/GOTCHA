@@ -8,6 +8,7 @@ import OpenAI from 'openai';
 import { ageBand } from '../../common/safety/age-policy';
 import { PrismaService } from '../../prisma/prisma.service';
 import { withChildSafe } from '../ai/ai-safety';
+import { openAiChatModel, openAiChatSampling } from '../ai/openai-chat';
 import { AiService } from '../ai/ai.service';
 import {
   acceptPageQuiz,
@@ -19,7 +20,7 @@ import {
   type PageBankItem,
 } from '../ai/quiz-grounding';
 
-/** gpt-4.1-mini list price is $0.40 / $1.60 per 1M tokens. The Batch API is half of that. */
+/** Batch budget guard. The Batch API bills half the configured chat rate. */
 export const MASHQ_BATCH_USD_PER_1M_IN = 0.2;
 export const MASHQ_BATCH_USD_PER_1M_OUT = 0.8;
 export const MASHQ_BATCH_BUDGET_USD = 40;
@@ -176,6 +177,8 @@ export class MashqBatchRunner {
       await this.save(state);
     }
     const system = pageQuizBatchSystem();
+    const quizModel = openAiChatModel(process.env.OPENAI_MODEL_QUIZ);
+    const quizSampling = openAiChatSampling(quizModel, { temperature: 0.2 });
     while (state.nextOffset < state.queue.length) {
       const ids = state.queue.slice(state.nextOffset, state.nextOffset + CHUNK);
       const slice = await this.prisma.contentSegment.findMany({
@@ -190,8 +193,8 @@ export class MashqBatchRunner {
         method: 'POST',
         url: '/v1/chat/completions',
         body: {
-          model: 'gpt-4.1-mini',
-          temperature: 0.2,
+          model: quizModel,
+          ...quizSampling,
           response_format: { type: 'json_object' },
           messages: [
             { role: 'system', content: system },

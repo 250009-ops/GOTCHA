@@ -155,7 +155,7 @@ try {
   // Windows tar --exclude=.env also drops deploy/.env; upload secrets explicitly.
   console.log('==> Upload deploy/.env');
   await uploadFile(conn, path.join(root, 'deploy/.env'), `${APP_DIR}/deploy/.env`);
-  await sshExec(conn, `chmod 600 ${APP_DIR}/deploy/.env`);
+  await sshExec(conn, `sed -i 's/\\r$//' ${APP_DIR}/deploy/.env && chmod 600 ${APP_DIR}/deploy/.env`);
 
   console.log('==> Install');
   await sshExec(

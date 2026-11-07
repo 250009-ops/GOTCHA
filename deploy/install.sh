@@ -23,6 +23,7 @@ get_env() {
   local key="$1"
   local line
   line="$(grep -E "^${key}=" "${APP_DIR}/deploy/.env" | head -1 || true)"
+  line="${line%$'\r'}"
   printf '%s' "${line#*=}"
 }
 
@@ -138,9 +139,9 @@ S3_FORCE_PATH_STYLE=true
 UPLOADS_DIR=${APP_DIR}/uploads
 PRIVATE_AVATARS_DIR=/var/lib/gotcha/private-avatars
 OPENAI_API_KEY=${OPENAI_API_KEY:-}
-OPENAI_MODEL_LOOKUP=${OPENAI_MODEL_LOOKUP:-gpt-4.1-mini}
-OPENAI_MODEL_QUIZ=${OPENAI_MODEL_QUIZ:-gpt-4.1-mini}
-OPENAI_MODEL_IMPORT=${OPENAI_MODEL_IMPORT:-gpt-4.1-mini}
+OPENAI_MODEL_LOOKUP=${OPENAI_MODEL_LOOKUP:-gpt-6-astra}
+OPENAI_MODEL_QUIZ=${OPENAI_MODEL_QUIZ:-gpt-6-astra}
+OPENAI_MODEL_IMPORT=${OPENAI_MODEL_IMPORT:-gpt-6-astra}
 OPENAI_MODEL_TTS=${OPENAI_MODEL_TTS:-tts-1}
 IMPORT_AI_CLEANUP_ENABLED=${IMPORT_AI_CLEANUP_ENABLED:-true}
 API_PORT=3200

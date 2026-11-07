@@ -954,13 +954,13 @@ async function main() {
   }
   await prisma.platformSetting.upsert({
     where: { key: 'aiLookupModel' },
-    update: { value: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-4.1-mini' },
-    create: { key: 'aiLookupModel', value: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-4.1-mini' },
+    update: { value: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-6-astra' },
+    create: { key: 'aiLookupModel', value: process.env.OPENAI_MODEL_LOOKUP ?? 'gpt-6-astra' },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiQuizModel' },
-    update: { value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini' },
-    create: { key: 'aiQuizModel', value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-4.1-mini' },
+    update: { value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-6-astra' },
+    create: { key: 'aiQuizModel', value: process.env.OPENAI_MODEL_QUIZ ?? 'gpt-6-astra' },
   });
   await prisma.platformSetting.upsert({
     where: { key: 'aiImportCleanupModel' },
@@ -968,14 +968,14 @@ async function main() {
       value:
         process.env.OPENAI_MODEL_IMPORT ??
         process.env.OPENAI_MODEL_LOOKUP ??
-        'gpt-4.1-mini',
+        'gpt-6-astra',
     },
     create: {
       key: 'aiImportCleanupModel',
       value:
         process.env.OPENAI_MODEL_IMPORT ??
         process.env.OPENAI_MODEL_LOOKUP ??
-        'gpt-4.1-mini',
+        'gpt-6-astra',
     },
   });
   const existingAiUserQuota = await prisma.platformSetting.findUnique({ where: { key: 'aiDefaultUserQuota' } });
