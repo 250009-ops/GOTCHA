@@ -66,5 +66,26 @@ function make(reply: Record<string, unknown>) {
   assert.equal(second.translation, 'kema');
   assert.equal(bookCalls.chats, 1, 'second tap in the same book must not call the model');
 
+  const dictCalls = { chats: 0 };
+  const dictPrisma: any = {
+    dbAvailable: true,
+    user: { findUnique: async () => ({ aiDisabled: false, aiDisabledBy: null, birthYear: 1990, uiLanguage: 'uz' }) },
+    wordDictionary: {
+      findUnique: async () => ({
+        lemma: 'ship',
+        senses: { uz: [{ meaning: 'kema', pos: 'noun' }, { meaning: 'kemada suzmoq', pos: 'verb' }] },
+      }),
+    },
+    lemmaCache: { findUnique: async () => { throw new Error('cache should not be read'); } },
+  };
+  const dictSvc: any = new AiService(dictPrisma);
+  dictSvc.getClient = () => ({ chat: { completions: { create: async () => { dictCalls.chats += 1; throw new Error('openai'); } } } });
+  dictSvc.getPlatformAiSettings = async () => ({ enabled: true, lookupModel: 'm', defaultUserQuota: 100 });
+  const dictHit: any = await dictSvc.lookup('u1', { token: 'Ship', sentence: 'The ship sailed.', sourceLang: 'en', targetLang: 'uz', contentId: bookId });
+  assert.equal(dictHit.source, 'dictionary');
+  assert.equal(dictHit.translation, 'kema');
+  assert.equal(dictHit.cached, true);
+  assert.equal(dictCalls.chats, 0, 'dictionary hit must not call OpenAI');
+
   console.log('lookup-abc: OK');
 })().catch((e) => { console.error(e); process.exit(1); });

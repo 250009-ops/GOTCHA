@@ -11,7 +11,15 @@ import {
 import { createHash } from 'crypto';
 import { assertUnderCap, capOf, dailyLimitException, getPlanCaps, lookupMode, usageDayStart, userCapPlan, type PlanCaps } from '../../common/plan-caps';
 
-type LookupMeta = { model?: string; promptTokens?: number; completionTokens?: number; cachedPromptTokens?: number; latencyMs?: number };
+type LookupSource = 'dictionary' | 'lemma_cache' | 'openai' | 'memory';
+type LookupMeta = {
+  model?: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  cachedPromptTokens?: number;
+  latencyMs?: number;
+  source?: LookupSource;
+};
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import { join } from 'path';
 import OpenAI from 'openai';
@@ -56,6 +64,7 @@ import {
   looksLikeWrongScript,
   needsLookupRepair,
   normalizeUzbekOrthography,
+  normalizeCatalogLemma,
   normalizeLemmaKey,
   normalizePartOfSpeech,
   normalizeSentenceForHash,
@@ -66,6 +75,15 @@ import {
   unpackLookupNote,
 } from './lookup-normalize';
 
+function openAiErrorCode(err: unknown): 'insufficient_quota' | '429' | '5xx' | null {
+  const status = typeof err === 'object' && err && 'status' in err ? Number((err as { status?: number }).status) : NaN;
+  const message = err instanceof Error ? err.message : '';
+  if (/insufficient_quota/i.test(message)) return 'insufficient_quota';
+  if (status === 429 || (/\b429\b/.test(message) && /openai/i.test(message))) return '429';
+  if ((status >= 500 && status <= 599) || (/\b5\d\d\b/.test(message) && /openai/i.test(message))) return '5xx';
+  return null;
+}
+
 type MemoryLookup = {
   lemma: string;
   translation: string;
@@ -73,6 +91,7 @@ type MemoryLookup = {
   phrase: string | null;
   grammarNote: string | null;
   partOfSpeech: string | null;
+  source?: LookupSource;
 };
 
 /** In-memory LRU size in front of DB (and for offline/dev). */
@@ -415,18 +434,26 @@ export class AiService {
     };
   }
 
-  /** Word lookup: silent speed guard → cached/AI lookup → per-lookup cost log (ai_lookup_costs + structured log). */
+  /** Word lookup: dictionary, then lemma cache, then OpenAI for a miss. Logs source and latency. */
   async lookup(userId: string, dto: LookupDto, emit?: (event: 'delta' | 'result', data: unknown) => void) {
     const started = Date.now();
-    await this.burstGuard(userId);
     const meta: LookupMeta = {};
-    const res = await this.lookupInner(userId, dto, meta, emit);
-    meta.latencyMs = Date.now() - started;
-    void this.logLookupCost(userId, meta, Boolean((res as { cached?: boolean }).cached), (res as { mode?: string }).mode ?? 'ai');
-    // 14:36: no mode field in responses (dictionary mode dropped; dormant path stays internal).
-    const { mode: _mode, dictionaryMiss: _miss, ...out } = res as typeof res & { mode?: string; dictionaryMiss?: boolean };
-    if (emit) emit('result', out);
-    return out;
+    try {
+      await this.burstGuard(userId);
+      const res = await this.lookupInner(userId, dto, meta, emit);
+      meta.latencyMs = Date.now() - started;
+      const source = meta.source ?? 'openai';
+      void this.logLookupCost(userId, meta, source !== 'openai', source);
+      const { mode: _mode, dictionaryMiss: _miss, ...out } = res as typeof res & { mode?: string; dictionaryMiss?: boolean };
+      const body = { ...out, source };
+      if (emit) emit('result', body);
+      return body;
+    } catch (err) {
+      meta.latencyMs = Date.now() - started;
+      const code = openAiErrorCode(err);
+      if (code) void this.logLookupCost(userId, { ...meta, model: code }, false, 'openai_error');
+      throw err;
+    }
   }
 
   private async lookupInner(userId: string, dto: LookupDto, meta: LookupMeta, emit?: (event: 'delta' | 'result', data: unknown) => void) {
@@ -438,7 +465,19 @@ export class AiService {
 
     const fromMemory = this.memoryGet(hash) ?? (bookHash ? this.memoryGet(bookHash) : null);
     if (fromMemory) {
+      meta.source = fromMemory.source ?? 'memory';
       return this.presentLookup(await this.moderateLookupForMinor(band, fromMemory, uiLanguage), surface, context, true);
+    }
+
+    if (kind === 'word' && !this.useMemory()) {
+      const dictLemma = normalizeCatalogLemma(cacheKeyLemma) || cacheKeyLemma;
+      const fromDictionary = await this.readWordDictionary(dictLemma, dto.sourceLang, dto.targetLang);
+      if (fromDictionary) {
+        meta.source = 'dictionary';
+        this.memorySet(hash, fromDictionary);
+        if (bookHash) this.memorySet(bookHash, fromDictionary);
+        return this.presentLookup(await this.moderateLookupForMinor(band, fromDictionary, uiLanguage), surface, context, true);
+      }
     }
 
     if (!this.useMemory()) {
@@ -454,8 +493,9 @@ export class AiService {
           grammarNote: null,
           partOfSpeech: cached.partOfSpeech ?? null,
         };
-        this.memorySet(hash, payload);
-        if (bookHash) this.memorySet(bookHash, payload);
+        this.memorySet(hash, { ...payload, source: 'lemma_cache' });
+        if (bookHash) this.memorySet(bookHash, { ...payload, source: 'lemma_cache' });
+        meta.source = 'lemma_cache';
         return this.presentLookup(await this.moderateLookupForMinor(band, payload, uiLanguage), surface, context, true);
       }
     }
@@ -659,8 +699,10 @@ export class AiService {
       if (reserved) await this.releaseLookupSlot(userId, today);
       throw err;
     }
-    this.memorySet(hash, payload);
-    if (bookHash) this.memorySet(bookHash, payload);
+    const stored = { ...payload, source: 'openai' as const };
+    this.memorySet(hash, stored);
+    if (bookHash) this.memorySet(bookHash, stored);
+    meta.source = 'openai';
 
     if (!this.useMemory()) {
       // Speed: the shared cache write no longer delays the response (memory cache serves repeats meanwhile).
@@ -695,6 +737,9 @@ export class AiService {
           write(hash),
           ...(bookHash ? [write(bookHash)] : []),
         ]).catch(() => undefined);
+        if (kind === 'word' && usedOpenAi && translation && translation !== surface) {
+          void this.saveWordDictionary(normalizeCatalogLemma(cacheKeyLemma) || cacheKeyLemma, dto, translation, partOfSpeech, model).catch(() => undefined);
+        }
       } catch {
         // Race or transient DB error — memory cache still serves the hit path.
       }
@@ -888,6 +933,59 @@ export class AiService {
     } catch {
       // Never fail a lookup on cost logging.
     }
+  }
+
+  private wordDictionary() {
+    return (this.prisma as unknown as {
+      wordDictionary?: {
+        findUnique: (q: unknown) => Promise<{ lemma: string; senses: unknown; generatorVersion?: string } | null>;
+        upsert: (q: unknown) => Promise<unknown>;
+      };
+    }).wordDictionary;
+  }
+
+  /** Catalog dictionary. A hit is returned as-is and never calls OpenAI. */
+  private async readWordDictionary(lemma: string, sourceLang: string, targetLang: string): Promise<MemoryLookup | null> {
+    const table = this.wordDictionary();
+    if (!table?.findUnique) return null;
+    const row = await table.findUnique({
+      where: { lemma_sourceLang: { lemma, sourceLang } },
+      select: { lemma: true, senses: true },
+    }).catch(() => null);
+    const senses = row?.senses && typeof row.senses === 'object' ? row.senses as Record<string, unknown> : null;
+    const list = Array.isArray(senses?.[targetLang]) ? senses[targetLang] as Array<{ meaning?: string; pos?: string }> : [];
+    const first = list.find((sense) => typeof sense?.meaning === 'string' && sense.meaning.trim());
+    if (!row || !first?.meaning) return null;
+    const second = list.find((sense) => sense !== first && typeof sense?.meaning === 'string' && sense.meaning.trim());
+    return {
+      lemma: row.lemma,
+      translation: first.meaning.trim(),
+      contextualMeaning: second?.meaning?.trim() || null,
+      phrase: null,
+      grammarNote: null,
+      partOfSpeech: typeof first.pos === 'string' ? first.pos : null,
+      source: 'dictionary',
+    };
+  }
+
+  /** Keep a live gloss for the next tap. A cursor-v1 row that already has this language is left as written. */
+  private async saveWordDictionary(lemma: string, dto: LookupDto, translation: string, pos: string | null, model: string) {
+    const table = this.wordDictionary();
+    if (!table?.findUnique || !table.upsert || !lemma) return;
+    const existing = await table.findUnique({
+      where: { lemma_sourceLang: { lemma, sourceLang: dto.sourceLang } },
+    }).catch(() => null);
+    const senses = existing?.senses && typeof existing.senses === 'object'
+      ? { ...(existing.senses as Record<string, unknown>) }
+      : {};
+    const current = Array.isArray(senses[dto.targetLang]) ? senses[dto.targetLang] as unknown[] : [];
+    if (existing?.generatorVersion === 'cursor-v1' && current.length) return;
+    if (!current.length) senses[dto.targetLang] = [{ meaning: translation, pos: pos || 'unknown' }];
+    await table.upsert({
+      where: { lemma_sourceLang: { lemma, sourceLang: dto.sourceLang } },
+      create: { lemma, sourceLang: dto.sourceLang, senses, generatorVersion: `live:${model}` },
+      update: { senses, ...(existing?.generatorVersion === 'cursor-v1' ? {} : { generatorVersion: `live:${model}` }) },
+    });
   }
 
   /** Dictionary-mode answer (Plus past its AI quota): any cached gloss for the same lemma + language pair,

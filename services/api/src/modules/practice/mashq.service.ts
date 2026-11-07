@@ -94,6 +94,7 @@ export class MashqService {
     }
     const passage = readingPassage(segment.plainText);
     const hash = this.hash(passage);
+    const live = await this.isUserImport(segment.contentId);
     const [unseenCount, missedToday, bankSize, remaining] = await Promise.all([
       this.countUnseen(userId, segment.id, hash),
       this.prisma.pageQuestionSeen.count({
@@ -101,14 +102,14 @@ export class MashqService {
           userId,
           correct: false,
           seenAt: { gte: usageDayStart() },
-          question: { segmentId: segment.id, status: 'active', segmentHash: hash },
+          question: { segmentId: segment.id, status: 'active' },
         },
       }),
-      this.prisma.pageQuestion.count({ where: { segmentId: segment.id, status: 'active', segmentHash: hash } }),
+      this.bankCount(segment.id, hash),
       this.remaining(userId),
     ]);
     const key = `${segment.id}:${hash}`;
-    const state = this.bankState(bankSize, unseenCount, missedToday, key);
+    const state = this.bankState(bankSize, unseenCount, missedToday, key, live);
     return {
       state,
       unseenCount,
@@ -118,11 +119,12 @@ export class MashqService {
     };
   }
 
-  /** ready only when something can be served. 0 questions is pending (or empty after a finished attempt). */
-  private bankState(bankSize: number, unseenCount: number, missedToday: number, key: string) {
+  /** Catalog banks are ready or empty. Only a user import with nothing stored is pending. */
+  private bankState(bankSize: number, unseenCount: number, missedToday: number, key: string, live: boolean) {
     if (bankSize > 0) {
       return unseenCount === 0 && missedToday === 0 ? 'empty' as const : 'ready' as const;
     }
+    if (!live) return 'empty' as const;
     if (this.generating.has(key)) return 'pending' as const;
     const gave = this.gaveUp.get(key);
     if (gave && Date.now() - gave < GAVE_UP_MS) return 'empty' as const;
@@ -147,8 +149,9 @@ export class MashqService {
     if (dto.repeatMissed) return this.repeatMissed(userId, segment, dto, count);
 
     const hash = this.hash(segment.plainText);
+    const live = await this.isUserImport(segment.contentId);
     let picked = await this.unseen(userId, segment.id, hash, count);
-    if (picked.length < Math.min(count, 3)) {
+    if (live && picked.length < Math.min(count, 3)) {
       const phase = await this.awaitBank(userId, segment, hash);
       if (phase === 'pending') return quizPendingBody();
       picked = await this.unseen(userId, segment.id, hash, count);
@@ -213,12 +216,8 @@ export class MashqService {
     return job;
   }
 
-  /** Generate, store, and try once more if the first pass produced nothing. */
+  /** Generate, store, and try once more if the first pass produced nothing. Catalog books never reach this. */
   private async fillBank(userId: string, segment: { id: string; contentId: string; plainText: string }, hash: string): Promise<number> {
-    await this.prisma.pageQuestion.updateMany({
-      where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
-      data: { status: 'retired' },
-    });
     for (let attempt = 0; attempt < 2; attempt++) {
       const have = await this.prisma.pageQuestion.count({
         where: { segmentId: segment.id, status: 'active', segmentHash: hash },
@@ -230,7 +229,13 @@ export class MashqService {
           select: { evidenceQuote: true },
         });
         const items = await this.ai.generatePageQuiz(segment.plainText, userId, used.map((row) => row.evidenceQuote));
-        if (items.length) await this.storeItems(segment, hash, items);
+        if (items.length) {
+          await this.prisma.pageQuestion.updateMany({
+            where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
+            data: { status: 'retired' },
+          });
+          await this.storeItems(segment, hash, items);
+        }
       } catch {
         /* try the second pass; a hard failure still ends as empty rather than a false "used up" */
       }
@@ -246,13 +251,12 @@ export class MashqService {
     dto: StartPracticeDto,
     count: number,
   ) {
-    const hash = this.hash(segment.plainText);
     const rows = await this.prisma.pageQuestionSeen.findMany({
       where: {
         userId,
         correct: false,
         seenAt: { gte: usageDayStart() },
-        question: { segmentId: segment.id, status: 'active', segmentHash: hash },
+        question: { segmentId: segment.id, status: 'active' },
       },
       include: { question: true },
       take: count,
@@ -362,42 +366,64 @@ export class MashqService {
           evidenceStart: Math.max(0, at),
           evidenceEnd: at < 0 ? 0 : at + quote.length,
           explanationI18n: { ...item.explanation, uz: uzOrthography(item.explanation.uz) },
+          generatorVersion: 'live',
           status: 'active',
         },
       });
       have.add(quote);
     }
-    const ready = await this.prisma.pageQuestion.count({
-      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
-    });
+    const ready = await this.bankCount(segment.id, hash);
     await this.prisma.contentSegment.update({ where: { id: segment.id }, data: { quizReadyCount: ready } });
   }
 
-  private unseen(userId: string, segmentId: string, hash: string, take: number) {
-    return this.prisma.pageQuestionSeen.findMany({
-      where: { userId, question: { segmentId, status: 'active', segmentHash: hash } },
+  /** Paid rows were hashed from the raw page, while reads hash the folded passage. Serve either. */
+  private async unseen(userId: string, segmentId: string, hash: string, take: number) {
+    const matched = await this.pickUnseen(userId, segmentId, hash, take, true);
+    if (matched.length) return matched;
+    return this.pickUnseen(userId, segmentId, hash, take, false);
+  }
+
+  private async pickUnseen(userId: string, segmentId: string, hash: string, take: number, hashed: boolean) {
+    const seen = await this.prisma.pageQuestionSeen.findMany({
+      where: { userId, question: { segmentId, status: 'active', ...(hashed ? { segmentHash: hash } : {}) } },
       select: { questionId: true },
-    }).then((seen) => this.prisma.pageQuestion.findMany({
+    });
+    return this.prisma.pageQuestion.findMany({
       where: {
         segmentId,
         status: 'active',
-        segmentHash: hash,
+        ...(hashed ? { segmentHash: hash } : {}),
         ...(seen.length ? { id: { notIn: seen.map((row) => row.questionId) } } : {}),
       },
       orderBy: { createdAt: 'asc' },
       take,
-    }));
+    });
   }
 
-  private countUnseen(userId: string, segmentId: string, hash: string) {
-    return this.prisma.pageQuestion.count({
-      where: {
-        segmentId,
-        status: 'active',
-        segmentHash: hash,
-        seen: { none: { userId } },
-      },
+  private async countUnseen(userId: string, segmentId: string, hash: string) {
+    const matched = await this.prisma.pageQuestion.count({
+      where: { segmentId, status: 'active', segmentHash: hash, seen: { none: { userId } } },
     });
+    if (matched > 0) return matched;
+    return this.prisma.pageQuestion.count({
+      where: { segmentId, status: 'active', seen: { none: { userId } } },
+    });
+  }
+
+  private async bankCount(segmentId: string, hash: string) {
+    const matched = await this.prisma.pageQuestion.count({
+      where: { segmentId, status: 'active', segmentHash: hash },
+    });
+    if (matched > 0) return matched;
+    return this.prisma.pageQuestion.count({ where: { segmentId, status: 'active' } });
+  }
+
+  private async isUserImport(contentId: string): Promise<boolean> {
+    const item = await this.prisma.contentItem.findUnique({
+      where: { id: contentId },
+      select: { contentSource: true, contentType: true },
+    });
+    return item?.contentSource === 'user_import' || item?.contentType === 'user_import';
   }
 
   private async remaining(userId: string): Promise<number | null> {

@@ -84,6 +84,49 @@ else
   fi
 fi
 
+if [ -f /var/backups/gotcha/offsite-ok ]; then
+  off_age=$(( $(date +%s) - $(stat -c %Y /var/backups/gotcha/offsite-ok) ))
+  if [ "$off_age" -gt 90000 ]; then
+    problems+=("offsite backup older than 25 hours")
+  fi
+fi
+
+ai_watch=$(python3 - <<'PY'
+import subprocess
+sql = """
+SELECT coalesce((
+  SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms)
+  FROM ai_lookup_costs
+  WHERE created_at > now() - interval '10 minutes' AND latency_ms IS NOT NULL
+), 0),
+coalesce((
+  SELECT count(*) FROM ai_lookup_costs
+  WHERE created_at > now() - interval '10 minutes'
+    AND mode = 'openai_error'
+    AND model IN ('insufficient_quota', '429', '5xx')
+), 0);
+"""
+try:
+    out = subprocess.check_output(
+        ["docker", "exec", "-i", "gotcha-postgres", "psql", "-U", "gotcha", "-d", "gotcha", "-At"],
+        input=sql.encode(), stderr=subprocess.DEVNULL, timeout=20,
+    ).decode().strip()
+    print(out.replace("|", " "))
+except Exception:
+    print("0 0")
+PY
+)
+set -- $ai_watch
+p95=${1:-0}
+ai_errors=${2:-0}
+p95_ms=$(python3 -c "print(int(float('${p95:-0}')))" 2>/dev/null || echo 0)
+if [ "$ai_errors" -gt 5 ]; then
+  problems+=("AI errors $ai_errors in 10 minutes")
+fi
+if [ "$p95_ms" -gt 4000 ]; then
+  problems+=("lookup p95 ${p95_ms}ms")
+fi
+
 if [ -f /var/www/gotcha/services/api/mashq-progress.json ]; then
   stopped=$(python3 - <<'PY'
 import json
@@ -113,4 +156,4 @@ else
   fi
   : > "$STATE"
 fi
-echo "WATCH home=$home learn=$learn health=$health five=$five hook=$hook atmos=$atmos problems=${#problems[@]}"
+echo "WATCH home=$home learn=$learn health=$health five=$five hook=$hook atmos=$atmos ai_errors=$ai_errors p95_ms=$p95_ms problems=${#problems[@]}"
