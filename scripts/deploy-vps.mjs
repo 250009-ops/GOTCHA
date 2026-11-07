@@ -162,6 +162,7 @@ try {
     conn,
     [
       `set -e`,
+      `find ${APP_DIR}/deploy -type f \\( -name '*.sh' -o -name '*.yml' -o -name '*.cjs' \\) -print0 | xargs -0 sed -i 's/\\r$//'`,
       `export VPS_APP_DIR=${APP_DIR} DOMAIN=${DOMAIN}`,
       `bash ${APP_DIR}/deploy/install.sh`,
     ].join(' && '),
