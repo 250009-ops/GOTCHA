@@ -200,6 +200,7 @@ test -f services/api/dist/main.js || {
   (cd services/api && npx tsc -p tsconfig.build.json --incremental false)
   test -f services/api/dist/main.js
 }
+node -e "const fs=require('fs'); const rev=fs.existsSync('deploy/LOCAL_REV')?fs.readFileSync('deploy/LOCAL_REV','utf8').trim().slice(0,12):'dev'; fs.writeFileSync('services/api/dist/build-info.json', JSON.stringify({sha:rev, date:new Date().toISOString().slice(0,10)}));"
 npm run build --workspace=services/worker
 test -f services/worker/dist/index.js
 
@@ -241,6 +242,17 @@ if [[ -n "${TELEGRAM_BOT_TOKEN:-}" && -n "${TELEGRAM_WEBHOOK_SECRET:-}" ]]; then
   echo "==> Telegram webhook"
   DOMAIN="$DOMAIN" node services/api/scripts/register-telegram-webhook.mjs || echo "WARN: telegram webhook registration failed"
 fi
+
+echo "==> Cron: watch every 5 minutes, backup and one daily summary"
+CRON_TMP="$(mktemp)"
+crontab -l 2>/dev/null | grep -v 'gotcha-watch.sh' | grep -v 'gotcha-backup.sh' | grep -v 'gotcha-daily.sh' > "$CRON_TMP" || true
+cat >> "$CRON_TMP" <<EOF
+*/5 * * * * bash ${APP_DIR}/deploy/gotcha-watch.sh >> /var/log/gotcha-watch.log 2>&1
+20 3 * * * bash ${APP_DIR}/deploy/gotcha-backup.sh >> /var/log/gotcha-backup.log 2>&1
+30 3 * * * bash ${APP_DIR}/deploy/gotcha-daily.sh >> /var/log/gotcha-daily.log 2>&1
+EOF
+crontab "$CRON_TMP"
+rm -f "$CRON_TMP"
 
 echo ""
 echo "=============================================="

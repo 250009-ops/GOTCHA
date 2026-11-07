@@ -6,7 +6,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { LimitsService } from '../../services/limits.service';
 import { capOf, getPlanCaps, usageDayStart, userCapPlan } from '../../common/plan-caps';
 import { AiService } from '../ai/ai.service';
-import { foldSpace, readingPassage, type PageBankItem } from '../ai/quiz-grounding';
+import { foldSpace, PAGE_QUIZ_MIN, readingPassage, type PageBankItem } from '../ai/quiz-grounding';
 import { canReadUserImport } from '../content/user-import-privacy';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 import { redactSession } from './practice-redact';
@@ -31,6 +31,21 @@ export function quizEmptyException() {
     ru: 'Вопросы по этой странице закончились.',
   };
   return new ServiceUnavailableException({ statusCode: 503, code: 'quiz_empty', message: messages.en, messages });
+}
+
+/** The model did not return a bank. The screen stays up and the reader can try again. */
+export function quizTryAgainException() {
+  const messages = {
+    en: 'Questions are not ready yet. Please try again in a moment.',
+    uz: 'Savollar hozir tayyor emas. Birozdan keyin qayta urinib koʻring.',
+    ru: 'Вопросы пока не готовы. Попробуйте ещё раз через минуту.',
+  };
+  return new ServiceUnavailableException({ statusCode: 503, code: 'quiz_unavailable', message: messages.en, messages });
+}
+
+/** A page with fewer than five stored questions is filled from the model, then saved. */
+export function mashqNeedsLive(bankSize: number): boolean {
+  return bankSize < PAGE_QUIZ_MIN;
 }
 
 const PENDING_MESSAGES: LangText = {
@@ -141,14 +156,18 @@ export class MashqService {
     if (dto.repeatMissed) return this.repeatMissed(userId, segment, dto, count);
 
     const hash = this.hash(segment.plainText);
-    const live = await this.isUserImport(segment.contentId);
+    const bank = await this.bankCount(segment.id, hash);
     let picked = await this.unseen(userId, segment.id, hash, count);
-    if (live && picked.length < Math.min(count, 3)) {
+    if (mashqNeedsLive(bank)) {
       const phase = await this.awaitBank(userId, segment, hash);
       if (phase === 'pending') return quizPendingBody();
       picked = await this.unseen(userId, segment.id, hash, count);
     }
-    if (!picked.length) throw quizEmptyException();
+    if (!picked.length) {
+      const gave = this.gaveUp.get(`${segment.id}:${hash}`);
+      if (gave && Date.now() - gave < GAVE_UP_MS) throw quizTryAgainException();
+      throw quizEmptyException();
+    }
 
     // Count the allowance only for questions we are about to serve.
     let held = 0;
@@ -174,10 +193,8 @@ export class MashqService {
     hash: string,
   ): Promise<'ready' | 'empty' | 'pending'> {
     const key = `${segment.id}:${hash}`;
-    const existing = await this.prisma.pageQuestion.count({
-      where: { segmentId: segment.id, status: 'active', segmentHash: hash },
-    });
-    if (existing > 0) return 'ready';
+    const existing = await this.bankCount(segment.id, hash);
+    if (!mashqNeedsLive(existing)) return 'ready';
     const gave = this.gaveUp.get(key);
     if (gave && Date.now() - gave < GAVE_UP_MS) return 'empty';
     const job = this.kickGeneration(userId, segment, hash, key);
@@ -208,26 +225,18 @@ export class MashqService {
     return job;
   }
 
-  /** Generate, store, and try once more if the first pass produced nothing. Catalog books never reach this. */
+  /** Generate until the page has at least five questions, then save them. A model failure is retried once. */
   private async fillBank(userId: string, segment: { id: string; contentId: string; plainText: string }, hash: string): Promise<number> {
     for (let attempt = 0; attempt < 2; attempt++) {
-      const have = await this.prisma.pageQuestion.count({
-        where: { segmentId: segment.id, status: 'active', segmentHash: hash },
-      });
-      if (have > 0) return have;
+      const have = await this.bankCount(segment.id, hash);
+      if (!mashqNeedsLive(have)) return have;
       try {
         const used = await this.prisma.pageQuestion.findMany({
-          where: { segmentId: segment.id, status: 'active', segmentHash: hash },
+          where: { segmentId: segment.id, status: 'active' },
           select: { evidenceQuote: true },
         });
         const items = await this.ai.generatePageQuiz(segment.plainText, userId, used.map((row) => row.evidenceQuote));
-        if (items.length) {
-          await this.prisma.pageQuestion.updateMany({
-            where: { segmentId: segment.id, status: 'active', segmentHash: { not: hash } },
-            data: { status: 'retired' },
-          });
-          await this.storeItems(segment, hash, items);
-        }
+        if (items.length) await this.storeItems(segment, hash, items);
       } catch {
         /* try the second pass; a hard failure still ends as empty rather than a false "used up" */
       }

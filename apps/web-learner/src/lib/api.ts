@@ -128,7 +128,7 @@ export async function api<T>(
     };
     // BUG-10: never surface raw English server text in RU/UZ.
     // Daily caps (Free 20/10, Plus 200/200, admin-editable): the server sends uz/ru/en text naming the limit.
-    const capMsg = (err.code === 'lookup_limit' || err.code === 'quiz_limit' || err.code === 'mashq_limit' || err.code === 'fair_use_limit' || err.code === 'lookup_slow_down' || err.code === 'mashq_burst' || err.code === 'quiz_empty' || err.code === 'quiz_pending' || err.code === 'file_too_big') ? (err as { messages?: Record<string, string> }).messages?.[currentUiLang()] : undefined;
+    const capMsg = (err.code === 'lookup_limit' || err.code === 'lookup_unavailable' || err.code === 'quiz_limit' || err.code === 'mashq_limit' || err.code === 'fair_use_limit' || err.code === 'lookup_slow_down' || err.code === 'mashq_burst' || err.code === 'quiz_empty' || err.code === 'quiz_pending' || err.code === 'quiz_unavailable' || err.code === 'file_too_big') ? (err as { messages?: Record<string, string> }).messages?.[currentUiLang()] : undefined;
     const message = capMsg ?? localizeApiError(currentUiLang(), {
       message: err.message,
       code: err.code,

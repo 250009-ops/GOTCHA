@@ -1028,6 +1028,9 @@ export default function ReaderPage() {
           return;
         }
         again();
+      } else if (code === 'quiz_unavailable') {
+        setMashqNotice(null);
+        setMashqPhase('failed');
       } else if (code === 'quiz_empty') {
         setMashqNotice(null);
         setMashqPhase('empty');

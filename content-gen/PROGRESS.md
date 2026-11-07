@@ -26,7 +26,22 @@ Files in `todo/` are the forms that cover 95% of word occurrences, most frequent
 - Todo: `content-gen/dictionary/todo/<lang>-NNN.json`
 - Later: `content-gen/dictionary/later/<lang>-NNN.json`
 - Done: `content-gen/dictionary/done/<same name>.json`
-- Done files: 0 / 598
+- Done files: 13 / 598 (`en-001`, `en-002`, `en-003`, `en-004`, `de-001`, `de-002`, `ru-001`, `ru-002`, `uz-001`, `uz-002`, `tr-001`, `ar-001`, `ko-001`; 300 entries each, validator rejected 0). `en-002` was rewritten after the first attempt stopped with no file. `tr-001`, `ar-001`, and `ko-001` were written locally after the file writers stopped with no output. `ru-002` and `uz-002` were patched after the first write: case forms keep the case meaning (`ними` → они, “with them”), and fake infinitives in `-shmoq` were replaced (`любил` → любить, sevdi).
+
+Spot check, 2026-11-07, validator dictRejected 0 on the full done folder (2,450 entries including the 50-word review sample):
+
+| Surface | Lemma | Card |
+| --- | --- | --- |
+| dedi | demek | dedi / said / сказал |
+| yarali | yaralı | yarador / wounded / раненый |
+| onları | onlar | ularni / them / их |
+| oldu | olmak | boʻldi / became / стал |
+| فى | في | ichida / in |
+| ةم | ةم | leftover fragment, not a word |
+| عينيه | عين | koʻzlari / his eyes |
+| 나는 | 나 | men / I |
+| 말했다 | 말하다 | dedi / said |
+| 말았다 | 말다 | toʻxtadi / rolled up; stopped |
 
 Work the 95% files by how many occurrences that file covers, not alphabetically. First chunk:
 

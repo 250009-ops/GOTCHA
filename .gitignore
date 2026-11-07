@@ -6,6 +6,7 @@ build/
 .env.production
 deploy/.env
 deploy/.secrets
+deploy/LOCAL_REV
 *.log
 *.tsbuildinfo
 services/api/eng.traineddata

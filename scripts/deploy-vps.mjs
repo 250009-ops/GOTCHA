@@ -96,6 +96,9 @@ function uploadFile(conn, localPath, remotePath) {
 }
 
 console.log(`==> Packing project for ${IP} (${DOMAIN})`);
+const rev = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' });
+if (rev.status !== 0 || !rev.stdout.trim()) throw new Error('git rev-parse HEAD failed');
+fs.writeFileSync(path.join(root, 'deploy', 'LOCAL_REV'), `${rev.stdout.trim()}\n`);
 const stamp = new Date().toISOString().replace(/[:.]/g, '-');
 const tarName = `gotcha-deploy-${stamp}.tgz`;
 const tarPath = path.join(os.tmpdir(), tarName);

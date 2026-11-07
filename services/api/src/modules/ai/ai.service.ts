@@ -660,13 +660,20 @@ export class AiService {
         } catch {
           // Keep the first-pass gloss — never fail a successful lookup on the optional repair pass.
         }
-      } catch (err) {
-        // Do not cache errors / billing failures.
-        const detail = err instanceof Error ? err.message : 'OpenAI request failed';
+      } catch {
+        // Do not cache errors / billing failures. The reader sees a try-again message, not the provider error.
         if (reserved) await this.releaseLookupSlot(userId, today); // PAY2-09: nothing served → slot back
-        throw new ServiceUnavailableException(
-          `AI lookup failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
-        );
+        const messages = {
+          en: 'AI lookup failed. Please try again in a moment.',
+          uz: 'Soʻz hozir ochilmadi. Birozdan keyin qayta urinib koʻring.',
+          ru: 'Слово сейчас не открылось. Попробуйте ещё раз через минуту.',
+        };
+        throw new ServiceUnavailableException({
+          statusCode: 503,
+          code: 'lookup_unavailable',
+          message: messages.en,
+          messages,
+        });
       }
     } else {
       // No API key — local-friendly fallback (not a live translation).
@@ -1264,11 +1271,12 @@ export class AiService {
       } catch {
         return [];
       }
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : 'OpenAI request failed';
-      throw new ServiceUnavailableException(
-        `AI quiz generation failed: ${detail}. Check OPENAI_API_KEY and model settings.`,
-      );
+    } catch {
+      throw new ServiceUnavailableException({
+        statusCode: 503,
+        code: 'quiz_unavailable',
+        message: 'Questions are not ready yet. Please try again in a moment.',
+      });
     }
   }
 
