@@ -45,7 +45,9 @@ SELECT json_build_object(
     'contentId', s.content_id,
     'lang', c.language::text,
     'title', c.title,
+    'segmentIndex', s.segment_index,
     'pageIndex', s.page_index,
+    'readers', COALESCE(r.readers, 0),
     'wordCount', s.word_count,
     'active', (
       SELECT count(*) FROM page_questions pq
@@ -55,6 +57,15 @@ SELECT json_build_object(
   )::text
   FROM content_segments s
   JOIN content_items c ON c.id = s.content_id
+  LEFT JOIN (
+    SELECT content_id, count(DISTINCT user_id)::int AS readers
+    FROM (
+      SELECT content_id, user_id FROM reading_progress
+      UNION
+      SELECT content_id, user_id FROM reading_sessions
+    ) opened
+    GROUP BY content_id
+  ) r ON r.content_id = c.id
   WHERE c.publish_status = 'published'
     AND c.content_source <> 'user_import'
     AND c.content_type <> 'user_import'

@@ -1525,7 +1525,10 @@ model PageQuestion {
 /// One row per catalog lemma. Senses are { uz, ru, en }, most common first. Tap lookup reads this before any AI call.
 model WordDictionary {
   id               String      @id @default(uuid()) @db.Uuid
+  /// Tapped surface form. This is the lookup key.
   lemma            String
+  /// Citation form shown on the tap card (стал → стать). Same as lemma when the form is already the headword.
+  headword         String      @default("")
   sourceLang       AppLanguage @map("source_lang")
   senses           Json
   generatorVersion String      @map("generator_version")

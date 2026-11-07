@@ -250,7 +250,9 @@ function DictionaryPanel({
                       </span>
                     ) : null}
                   </div>
-                  {result.kind !== 'sentence' && result.phrase?.trim() && result.lemma.trim() && result.phrase.trim().toLowerCase() !== result.lemma.trim().toLowerCase() ? (
+                  {result.kind === 'word' && result.headword?.trim() ? (
+                    <div className="text-sm text-[#364153] mt-1">{(result.phrase?.trim() || result.lemma)} → {result.headword.trim()}: {result.translation}</div>
+                  ) : result.kind !== 'sentence' && result.phrase?.trim() && result.lemma.trim() && result.phrase.trim().toLowerCase() !== result.lemma.trim().toLowerCase() ? (
                     <div className="text-sm text-[#6b7382] mt-1">{result.lemma}</div>
                   ) : null}
                 </div>

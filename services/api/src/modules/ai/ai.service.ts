@@ -86,6 +86,8 @@ function openAiErrorCode(err: unknown): 'insufficient_quota' | '429' | '5xx' | n
 
 type MemoryLookup = {
   lemma: string;
+  /** Citation form when it differs from the tapped surface. */
+  headword?: string | null;
   translation: string;
   contextualMeaning: string | null;
   phrase: string | null;
@@ -938,7 +940,7 @@ export class AiService {
   private wordDictionary() {
     return (this.prisma as unknown as {
       wordDictionary?: {
-        findUnique: (q: unknown) => Promise<{ lemma: string; senses: unknown; generatorVersion?: string } | null>;
+        findUnique: (q: unknown) => Promise<{ lemma: string; headword?: string; senses: unknown; generatorVersion?: string } | null>;
         upsert: (q: unknown) => Promise<unknown>;
       };
     }).wordDictionary;
@@ -950,15 +952,17 @@ export class AiService {
     if (!table?.findUnique) return null;
     const row = await table.findUnique({
       where: { lemma_sourceLang: { lemma, sourceLang } },
-      select: { lemma: true, senses: true },
+      select: { lemma: true, headword: true, senses: true },
     }).catch(() => null);
     const senses = row?.senses && typeof row.senses === 'object' ? row.senses as Record<string, unknown> : null;
     const list = Array.isArray(senses?.[targetLang]) ? senses[targetLang] as Array<{ meaning?: string; pos?: string }> : [];
     const first = list.find((sense) => typeof sense?.meaning === 'string' && sense.meaning.trim());
     if (!row || !first?.meaning) return null;
     const second = list.find((sense) => sense !== first && typeof sense?.meaning === 'string' && sense.meaning.trim());
+    const headword = typeof row.headword === 'string' ? row.headword.trim() : '';
     return {
       lemma: row.lemma,
+      headword: headword && headword !== row.lemma ? headword : null,
       translation: first.meaning.trim(),
       contextualMeaning: second?.meaning?.trim() || null,
       phrase: null,
@@ -1007,6 +1011,7 @@ export class AiService {
     const phrase = sanitizePhrase(row.phrase, context, surface, kind);
     return {
       lemma: kind === 'sentence' ? displaySentenceHead(surface) : row.lemma,
+      headword: kind === 'word' ? row.headword ?? null : null,
       translation,
       contextualMeaning: sanitizeContextualMeaning(row.contextualMeaning, translation, kind, context),
       phrase,

@@ -15,9 +15,10 @@ export const DICTIONARY_CHUNK = 300;
 export const MASHQ_CHUNK = 20;
 
 export type Sense = { meaning: string; pos: string; example?: string };
-export type SenseBag = { uz: Sense[]; ru: Sense[]; en: Sense[] };
+export type SenseBag = { uz?: Sense[]; ru?: Sense[]; en?: Sense[] };
 
-export type DictEntry = { lemma: string; senses: SenseBag };
+/** surface is the tapped form and the lookup key. lemma is the citation form (стал → стать). */
+export type DictEntry = { surface: string; headword: string; senses: SenseBag };
 export type DictFile = { sourceLang: string; generatorVersion: string; entries: DictEntry[] };
 
 export type QuizQuestion = {
@@ -28,11 +29,21 @@ export type QuizQuestion = {
   explanationI18n: { en: string; uz: string; ru: string };
 };
 
-export type MashqPage = { segmentId: string; questions: QuizQuestion[] };
+export type MashqPage = { segmentId: string; contentId: string; segmentIndex: number; questions: QuizQuestion[] };
 export type MashqFile = { contentId: string; generatorVersion: string; pages: MashqPage[] };
+
+export type CatalogPage = { text: string; sourceLang: string; contentId: string; segmentIndex: number };
 
 const LANGS = ['en', 'uz', 'ru'] as const;
 type Lang = (typeof LANGS)[number];
+
+/** Learner's native language is never a gloss target for that same source. */
+export function targetLanguages(sourceLang: string): Lang[] {
+  if (sourceLang === 'en') return ['uz', 'ru'];
+  if (sourceLang === 'ru') return ['uz', 'en'];
+  if (sourceLang === 'uz') return ['en', 'ru'];
+  return [...LANGS];
+}
 
 export function chunkBy<T>(items: T[], size: number): T[][] {
   const out: T[][] = [];
@@ -82,33 +93,49 @@ function senseList(raw: unknown, lang: Lang): { ok: true; senses: Sense[] } | { 
   return { ok: true, senses };
 }
 
-export function validateDictEntry(raw: unknown): { ok: true; entry: DictEntry } | { ok: false; reason: string } {
+export function validateDictEntry(raw: unknown, sourceLang: string): { ok: true; entry: DictEntry } | { ok: false; reason: string } {
   if (!raw || typeof raw !== 'object') return { ok: false, reason: 'entry is not an object' };
   const rec = raw as Record<string, unknown>;
-  const lemma = nonEmpty(rec.lemma);
-  if (!lemma) return { ok: false, reason: 'empty lemma' };
+  const surface = nonEmpty(rec.surface);
+  const headword = nonEmpty(rec.lemma);
+  if (!surface) return { ok: false, reason: 'missing surface' };
+  if (!headword) return { ok: false, reason: 'missing lemma' };
   const senses = rec.senses;
   if (!senses || typeof senses !== 'object') return { ok: false, reason: 'missing senses' };
   const bag = senses as Record<string, unknown>;
-  const built = {} as SenseBag;
-  for (const lang of LANGS) {
+  const forbidden = sourceLang === 'en' || sourceLang === 'ru' || sourceLang === 'uz' ? sourceLang : null;
+  if (forbidden && Array.isArray(bag[forbidden]) && (bag[forbidden] as unknown[]).length > 0) {
+    return { ok: false, reason: 'same-language target' };
+  }
+  const built: SenseBag = {};
+  for (const lang of targetLanguages(sourceLang)) {
     const parsed = senseList(bag[lang], lang);
     if (!parsed.ok) return parsed;
     built[lang] = parsed.senses;
   }
-  return { ok: true, entry: { lemma, senses: built } };
+  return { ok: true, entry: { surface, headword, senses: built } };
 }
 
-export function validateDictFile(raw: unknown): { ok: DictEntry[]; rejected: Array<{ lemma: string; reason: string }> } {
+export function validateDictFile(
+  raw: unknown,
+  fileLang = '',
+): { ok: Array<DictEntry & { sourceLang: string }>; rejected: Array<{ lemma: string; reason: string }> } {
   const entries = raw && typeof raw === 'object' && Array.isArray((raw as DictFile).entries)
     ? (raw as DictFile).entries
     : [];
-  const ok: DictEntry[] = [];
+  const ok: Array<DictEntry & { sourceLang: string }> = [];
   const rejected: Array<{ lemma: string; reason: string }> = [];
   for (const row of entries) {
-    const parsed = validateDictEntry(row);
-    if (parsed.ok) ok.push(parsed.entry);
-    else rejected.push({ lemma: String((row as DictEntry)?.lemma ?? ''), reason: parsed.reason });
+    const rec = row as DictEntry & { sourceLang?: string; surface?: string };
+    const sourceLang = /^[a-z]{2}$/.test(String(rec?.sourceLang ?? '')) ? String(rec.sourceLang) : fileLang;
+    const label = String(rec?.surface ?? (row as { lemma?: string })?.lemma ?? '');
+    if (!/^[a-z]{2}$/.test(sourceLang)) {
+      rejected.push({ lemma: label, reason: 'missing source language' });
+      continue;
+    }
+    const parsed = validateDictEntry(row, sourceLang);
+    if (parsed.ok) ok.push({ ...parsed.entry, sourceLang });
+    else rejected.push({ lemma: label, reason: parsed.reason });
   }
   return { ok, rejected };
 }
@@ -196,18 +223,32 @@ export function validateQuizQuestion(
 
 export function validateMashqFile(
   raw: unknown,
-  pages: Map<string, { text: string; sourceLang: string }>,
+  pages: Map<string, CatalogPage & { id?: string }>,
 ): { ok: MashqPage[]; rejected: Array<{ segmentId: string; index: number; reason: string }> } {
-  const list = raw && typeof raw === 'object' && Array.isArray((raw as MashqFile).pages)
-    ? (raw as MashqFile).pages
-    : [];
+  const file = raw && typeof raw === 'object' ? raw as MashqFile : null;
+  const list = file && Array.isArray(file.pages) ? file.pages : [];
+  const byPos = new Map<string, CatalogPage & { id: string }>();
+  for (const [id, row] of pages) {
+    if (!row.contentId || !Number.isInteger(row.segmentIndex)) continue;
+    byPos.set(`${row.contentId}:${row.segmentIndex}`, { ...row, id });
+  }
   const ok: MashqPage[] = [];
   const rejected: Array<{ segmentId: string; index: number; reason: string }> = [];
   for (const page of list) {
     const segmentId = String(page?.segmentId ?? '');
-    const known = pages.get(segmentId);
+    const contentId = String(page?.contentId ?? file?.contentId ?? '');
+    const segmentIndex = Number(page?.segmentIndex);
+    if (!contentId || !Number.isInteger(segmentIndex) || segmentIndex < 0) {
+      rejected.push({ segmentId, index: -1, reason: 'missing segment' });
+      continue;
+    }
+    const known = byPos.get(`${contentId}:${segmentIndex}`);
     if (!known) {
-      rejected.push({ segmentId, index: -1, reason: 'unknown page' });
+      rejected.push({ segmentId, index: -1, reason: 'unknown segment' });
+      continue;
+    }
+    if (segmentId && segmentId !== known.id) {
+      rejected.push({ segmentId, index: -1, reason: 'segment id does not match index' });
       continue;
     }
     const questions: QuizQuestion[] = [];
@@ -215,10 +256,13 @@ export function validateMashqFile(
     rows.forEach((row, index) => {
       const parsed = validateQuizQuestion(row, known.text, known.sourceLang);
       if (parsed.ok) questions.push(parsed.question);
-      else rejected.push({ segmentId, index, reason: parsed.reason });
+      else rejected.push({ segmentId: known.id, index, reason: parsed.reason });
     });
-    if (questions.length >= 5 && questions.length <= 8) ok.push({ segmentId, questions });
-    else if (questions.length) rejected.push({ segmentId, index: -1, reason: `only ${questions.length} valid questions` });
+    if (questions.length >= 5 && questions.length <= 8) {
+      ok.push({ segmentId: known.id, contentId, segmentIndex, questions });
+    } else if (questions.length) {
+      rejected.push({ segmentId: known.id, index: -1, reason: `only ${questions.length} valid questions` });
+    }
   }
   return { ok, rejected };
 }

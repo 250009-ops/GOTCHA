@@ -2,14 +2,22 @@
  * Distinct catalog lemmas, 300 per file, most frequent first.
  * Usage: npx ts-node --transpile-only scripts/content/export-lemmas.ts <segments.jsonl>
  */
-import { createReadStream, mkdirSync, writeFileSync } from 'node:fs';
+import { createReadStream, mkdirSync, readdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { catalogLemmas } from '../../src/modules/ai/lookup-normalize';
 import { DICTIONARY_CHUNK, chunkBy } from '../../src/modules/content/content-gen';
 
 const root = resolve(__dirname, '../../../..');
 const outDir = resolve(root, 'content-gen/dictionary/todo');
+const laterDir = resolve(root, 'content-gen/dictionary/later');
+
+function emptyJson(dir: string) {
+  mkdirSync(dir, { recursive: true });
+  for (const name of readdirSync(dir)) {
+    if (name.endsWith('.json')) unlinkSync(resolve(dir, name));
+  }
+}
 
 type Row = { lang?: string; text?: string };
 
@@ -37,19 +45,14 @@ async function main() {
     }
   }
 
-  mkdirSync(outDir, { recursive: true });
+  emptyJson(outDir);
+  emptyJson(laterDir);
   const summary: Array<Record<string, number | string>> = [];
+  let priorityFiles = 0;
+  let priorityLemmas = 0;
   for (const lang of [...byLang.keys()].sort()) {
     const counts = byLang.get(lang)!;
     const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
-    const files = chunkBy(ranked, DICTIONARY_CHUNK);
-    files.forEach((chunk, index) => {
-      const name = `${lang}-${String(index + 1).padStart(3, '0')}.json`;
-      writeFileSync(resolve(outDir, name), JSON.stringify({
-        sourceLang: lang,
-        lemmas: chunk.map(([lemma, count]) => ({ lemma, count })),
-      }));
-    });
     const totalTokens = tokens.get(lang) ?? 0;
     let covered = 0;
     let need95 = ranked.length;
@@ -60,15 +63,31 @@ async function main() {
         break;
       }
     }
+    const priority = chunkBy(ranked.slice(0, need95), DICTIONARY_CHUNK);
+    const later = chunkBy(ranked.slice(need95), DICTIONARY_CHUNK);
+    const writeChunk = (dir: string, chunk: Array<[string, number]>, index: number) => {
+      const name = `${lang}-${String(index + 1).padStart(3, '0')}.json`;
+      writeFileSync(resolve(dir, name), JSON.stringify({
+        sourceLang: lang,
+        lemmas: chunk.map(([lemma, count]) => ({ lemma, count })),
+      }));
+    };
+    priority.forEach((chunk, index) => writeChunk(outDir, chunk, index));
+    later.forEach((chunk, index) => writeChunk(laterDir, chunk, priority.length + index));
+    priorityFiles += priority.length;
+    priorityLemmas += need95;
     summary.push({
       lang,
       lemmas: ranked.length,
       tokens: totalTokens,
-      files: files.length,
+      files: priority.length + later.length,
       lemmasFor95Pct: need95,
+      filesFor95Pct: priority.length,
+      laterFiles: later.length,
     });
-    console.log(`${lang}\tlemmas=${ranked.length}\tfiles=${files.length}\ttokens=${totalTokens}\tlemmas_for_95pct=${need95}`);
+    console.log(`${lang}\tlemmas=${ranked.length}\tfiles=${priority.length + later.length}\ttokens=${totalTokens}\tlemmas_for_95pct=${need95}\tfiles_for_95pct=${priority.length}\tlater_files=${later.length}`);
   }
+  console.log(JSON.stringify({ priorityLemmas, priorityFiles }));
   console.log(JSON.stringify({ directory: 'content-gen/dictionary/todo', languages: summary }));
 }
 

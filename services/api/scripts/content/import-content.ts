@@ -8,7 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { foldSpace, readingPassage } from '../../src/modules/ai/quiz-grounding';
-import { validateDictFile, validateMashqFile, type MashqPage } from '../../src/modules/content/content-gen';
+import { validateDictFile, validateMashqFile, type CatalogPage, type MashqPage } from '../../src/modules/content/content-gen';
 
 const root = resolve(__dirname, '../../../..');
 const dictDir = resolve(root, 'content-gen/dictionary/done');
@@ -45,38 +45,36 @@ function main() {
   let mashqOk = 0;
   let mashqRejected = 0;
   const segmentsPath = resolve(scratch, 'segments.jsonl');
-  const pages = new Map<string, { text: string; sourceLang: string }>();
+  const pages = new Map<string, CatalogPage>();
   try {
     const text = readFileSync(segmentsPath, 'utf8');
     for (const line of text.split('\n')) {
       if (!line.trim()) continue;
-      const row = JSON.parse(line) as { id: string; lang: string; text: string };
-      pages.set(row.id, { text: readingPassage(row.text).slice(0, 4000), sourceLang: row.lang });
+      const row = JSON.parse(line) as { id: string; lang: string; text: string; contentId?: string; segmentIndex?: number };
+      pages.set(row.id, {
+        text: readingPassage(row.text).slice(0, 4000),
+        sourceLang: row.lang,
+        contentId: String(row.contentId ?? ''),
+        segmentIndex: Number(row.segmentIndex),
+      });
     }
   } catch {
     // Mashq validation needs the page text. Dictionary import still runs.
   }
 
   for (const name of files(dictDir)) {
-    const raw = JSON.parse(readFileSync(resolve(dictDir, name), 'utf8')) as { sourceLang?: string; entries?: Array<{ sourceLang?: string; lemma?: string }> };
+    const raw = JSON.parse(readFileSync(resolve(dictDir, name), 'utf8')) as { sourceLang?: string };
     const fileLang = String(raw.sourceLang ?? '');
-    const result = validateDictFile(raw);
+    const result = validateDictFile(raw, fileLang);
     dictOk += result.ok.length;
     dictRejected += result.rejected.length;
     if (result.rejected.length) {
       writeFileSync(resolve(rejectedDir, `dictionary-${name}`), JSON.stringify({ file: name, rejected: result.rejected }, null, 2));
     }
-    const rawEntries = raw.entries ?? [];
     for (const entry of result.ok) {
-      const fromRow = rawEntries.find((row) => row.lemma === entry.lemma)?.sourceLang;
-      const sourceLang = /^[a-z]{2}$/.test(String(fromRow ?? '')) ? String(fromRow) : fileLang;
-      if (!/^[a-z]{2}$/.test(sourceLang)) {
-        dictRejected += 1;
-        continue;
-      }
-      sql.push(`INSERT INTO word_dictionary (id, lemma, source_lang, senses, generator_version, created_at, updated_at)
-VALUES (gen_random_uuid(), ${dollar(entry.lemma)}, '${sourceLang}'::"AppLanguage", ${dollar(JSON.stringify(entry.senses))}::jsonb, 'cursor-v1', now(), now())
-ON CONFLICT (lemma, source_lang) DO UPDATE SET senses = EXCLUDED.senses, generator_version = 'cursor-v1', updated_at = now();`);
+      sql.push(`INSERT INTO word_dictionary (id, lemma, headword, source_lang, senses, generator_version, created_at, updated_at)
+VALUES (gen_random_uuid(), ${dollar(entry.surface)}, ${dollar(entry.headword)}, '${entry.sourceLang}'::"AppLanguage", ${dollar(JSON.stringify(entry.senses))}::jsonb, 'cursor-v1', now(), now())
+ON CONFLICT (lemma, source_lang) DO UPDATE SET headword = EXCLUDED.headword, senses = EXCLUDED.senses, generator_version = 'cursor-v1', updated_at = now();`);
     }
   }
 

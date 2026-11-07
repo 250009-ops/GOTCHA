@@ -39,6 +39,7 @@ apps/android/local.properties
 # Generated dictionary / Mashq payloads. PROGRESS.md stays in git.
 content-gen/.scratch/
 content-gen/dictionary/todo/
+content-gen/dictionary/later/
 content-gen/dictionary/done/
 content-gen/mashq/todo/
 content-gen/mashq/done/

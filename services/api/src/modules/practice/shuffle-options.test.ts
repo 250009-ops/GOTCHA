@@ -1,5 +1,5 @@
 import * as assert from 'node:assert/strict';
-import { shuffle, shuffleQuestionOptions } from './shuffle-options';
+import { shuffle, shuffleAnswerOptions, shuffleQuestionOptions } from './shuffle-options';
 
 // Deterministic PRNG (mulberry32) so the test is stable.
 function rng(seed: number) {
@@ -29,4 +29,16 @@ for (const c of counts) assert.ok(c > 850 && c < 1150, `position counts not unif
 // 3. Cloze / writing questions without options are left alone.
 const [w] = shuffleQuestionOptions([{ correctAnswer: 'x', options: [] as string[] }], r);
 assert.deepEqual(w.options, []);
-console.log('shuffle-options: OK', counts.join('/'));
+
+// 4. Mashq serve: an answer stored at index 0 moves, and the correct text stays the same.
+const mashq = rng(7);
+const mashqCounts = [0, 0, 0, 0];
+for (let i = 0; i < 4000; i++) {
+  const served = shuffleAnswerOptions(['right', 'w1', 'w2', 'w3'], 0, mashq);
+  assert.equal(served.correctAnswer, 'right');
+  assert.equal(served.options[served.answerIndex], 'right');
+  mashqCounts[served.answerIndex]++;
+}
+for (const c of mashqCounts) assert.ok(c > 850 && c < 1150, `mashq position counts not uniform: ${mashqCounts}`);
+
+console.log('shuffle-options: OK', counts.join('/'), 'mashq', mashqCounts.join('/'));

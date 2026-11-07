@@ -172,6 +172,8 @@ export interface ContentSegment {
 
 export interface LookupResult {
   lemma: string;
+  /** Citation form when the tapped word is inflected (стал → стать). */
+  headword?: string | null;
   translation: string;
   /** How this inflected form is used in the tapped sentence (learner language). */
   contextualMeaning?: string | null;

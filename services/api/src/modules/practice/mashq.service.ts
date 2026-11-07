@@ -10,6 +10,7 @@ import { foldSpace, readingPassage, type PageBankItem } from '../ai/quiz-groundi
 import { canReadUserImport } from '../content/user-import-privacy';
 import { catalogAccessGranted, paidCatalogIds, requiresCatalogPayment } from '../content/catalog-access';
 import { redactSession } from './practice-redact';
+import { shuffleAnswerOptions } from './shuffle-options';
 import { StartPracticeDto } from './dto/practice.dto';
 
 const MIN_WORDS = 60;
@@ -63,15 +64,6 @@ function pickText(bag: LangText, lang: Lang): string {
 function pickOpts(bag: LangOpts, lang: Lang): string[] {
   const list = bag[lang]?.length === 4 ? bag[lang] : bag.en;
   return (list ?? []).map((item) => String(item).trim());
-}
-
-function shuffle(options: string[]): string[] {
-  const arr = [...options];
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j]!, arr[i]!];
-  }
-  return arr;
 }
 
 @Injectable()
@@ -279,12 +271,12 @@ export class MashqService {
       const explanationBag = q.explanationI18n as LangText;
       const fix = (value: string) => (lang === 'uz' ? uzOrthography(value) : value);
       const options = pickOpts(optionsBag, lang).map(fix);
-      const answer = optionsBag[lang]?.[q.answerIndex] || optionsBag.en?.[q.answerIndex] || '';
+      const served = shuffleAnswerOptions(options, q.answerIndex);
       return {
         pageQuestionId: q.id,
         prompt: fix(pickText(promptBag, lang)),
-        options: shuffle(options),
-        correctAnswer: fix(String(answer).trim()),
+        options: served.options,
+        correctAnswer: fix(served.correctAnswer.trim()),
         explanation: fix(pickText(explanationBag, lang)),
       };
     }).filter((q) => q.prompt && q.correctAnswer && q.options.length === 4);
