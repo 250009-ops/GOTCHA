@@ -33,8 +33,17 @@ Paid OpenAI batch revalidation (no new model calls): 17,423 lines, 5,399 pages a
 - Done: `content-gen/mashq/done/<same name>.json`
 - Done files: 0 / 404
 
+## Quality sample
+
+Waiting for a reader OK before any launch step. Not imported and not deployed.
+
+- Dictionary: `content-gen/dictionary/done/review-sample.json` — 50 lemmas, 10 each of en, ru, de, tr, uz.
+- Mashq: `content-gen/mashq/done/review-sample.json` — 20 pages across Die Physiker, Шинель, Otamdan qolgan dalalar, The Pearl, and Ses. 5 questions each.
+- Validator without `--apply`: dictOk 50, dictRejected 0, mashqQuestions 100, mashqRejected 0. Done-folder size about 141 KB.
+
 ## Resume
 
 Next dictionary file: `ar-001.json` (or the language you are assigned).
 Next Mashq file: the first name in `content-gen/mashq/todo/`.
+The review samples are not numbered todo files, so the done counts above stay 0 / 832 and 0 / 404.
 Do not commit `done/` when the folder is over 50 MB. Import with `services/api/scripts/content/import-content.ts --apply`.

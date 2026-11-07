@@ -58,16 +58,22 @@ function main() {
   }
 
   for (const name of files(dictDir)) {
-    const raw = JSON.parse(readFileSync(resolve(dictDir, name), 'utf8')) as { sourceLang?: string };
-    const sourceLang = String(raw.sourceLang ?? '');
+    const raw = JSON.parse(readFileSync(resolve(dictDir, name), 'utf8')) as { sourceLang?: string; entries?: Array<{ sourceLang?: string; lemma?: string }> };
+    const fileLang = String(raw.sourceLang ?? '');
     const result = validateDictFile(raw);
     dictOk += result.ok.length;
     dictRejected += result.rejected.length;
     if (result.rejected.length) {
       writeFileSync(resolve(rejectedDir, `dictionary-${name}`), JSON.stringify({ file: name, rejected: result.rejected }, null, 2));
     }
-    if (!/^[a-z]{2}$/.test(sourceLang)) continue;
+    const rawEntries = raw.entries ?? [];
     for (const entry of result.ok) {
+      const fromRow = rawEntries.find((row) => row.lemma === entry.lemma)?.sourceLang;
+      const sourceLang = /^[a-z]{2}$/.test(String(fromRow ?? '')) ? String(fromRow) : fileLang;
+      if (!/^[a-z]{2}$/.test(sourceLang)) {
+        dictRejected += 1;
+        continue;
+      }
       sql.push(`INSERT INTO word_dictionary (id, lemma, source_lang, senses, generator_version, created_at, updated_at)
 VALUES (gen_random_uuid(), ${dollar(entry.lemma)}, '${sourceLang}'::"AppLanguage", ${dollar(JSON.stringify(entry.senses))}::jsonb, 'cursor-v1', now(), now())
 ON CONFLICT (lemma, source_lang) DO UPDATE SET senses = EXCLUDED.senses, generator_version = 'cursor-v1', updated_at = now();`);
